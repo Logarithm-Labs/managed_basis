@@ -228,12 +228,15 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradea
                         OPERATOR LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function utilize(SwapType swapType, bytes calldata data) public virtual {
+    function utilize(uint256 amount, SwapType swapType, bytes calldata data) public virtual {
         if (swapType == SwapType.INCH) {
-            (IAggregationRouter router, address executor, IAggregationRouter.SwapDescription memory desc, bytes memory swapData) = abi.decode(data, (address, SwapDescription, bytes));
-            _prepareInchSwap(router, desc, true);
-            router.swap(executor, desc, data);
+            
         }
+    }
+
+    function receiveAndUtilize(uint256 amount, SwapType swapType, bytes calldata data) public virtual {
+        IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
+        utilize(amount, swapType, data);
     }
 
     function deutilize() public virtual {
@@ -243,7 +246,7 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradea
     function _prepareInchSwap(IAggregationRouter router, IAggregationRouter.SwapDescription memory desc, bool isUtilize) internal virtual returns (bool) {
         address asset_ = asset();
         address product_ = address(product);
-        if (utilize) {
+        if (isUtilize) {
             if (desc.srcToken != asset_ || desc.dstToken != product_) {
                 revert Errors.InchSwapInvailidTokens();
             }
