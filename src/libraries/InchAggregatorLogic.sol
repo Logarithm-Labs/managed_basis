@@ -11,8 +11,19 @@ library InchAggregatorLogic {
     using AddressLib for Address;
     using ProtocolLib for Address;
 
+    error InchInvalidSourceToken(address sourceToken, address requiredSourceToken);
+    error InchInvalidDestinationToken(address destinationToken, address requiredDestinationToken);
+    error InchInvalidReceiver(address receiver, address requiredReceiver);
+    error InchInsufficientSourceBalance(uint256 sourceAmount, uint256 sourceBalance);
+
     uint256 private constant _UNISWAP_ZERO_FOR_ONE_OFFSET = 247;
     uint256 private constant _UNISWAP_ZERO_FOR_ONE_MASK = 0x01;
+    uint256 private constant _CURVE_TO_COINS_SELECTOR_OFFSET = 208;
+    uint256 private constant _CURVE_TO_COINS_SELECTOR_MASK = 0xff;
+    uint256 private constant _CURVE_TO_COINS_ARG_OFFSET = 216;
+    uint256 private constant _CURVE_TO_COINS_ARG_MASK = 0xff;
+    IERC20 private constant _ETH_ADDRESS = IERC20(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+    bytes32 private constant _CURVE_COINS_SELECTORS = 0x87cb4f5723746eb8c6610657b739953eb9947eb0000000000000000000000000;
 
     function _getZeroForOne(Address dex) internal pure returns (bool zeroForOne) {
         assembly ("memory-safe") {
@@ -30,10 +41,43 @@ library InchAggregatorLogic {
             address pool = dex.get();
             tokenOut = zeroForOne ? IUniswapPool(pool).token1() : IUniswapPool(pool).token0();
         } else {
-            
-
+            address pool = dex.get();
+            assembly ("memory-safe") {
+                function reRevert() {
+                    let ptr := mload(0x40)
+                    returndatacopy(ptr, 0, returndatasize())
+                    revert(ptr, returndatasize())
+                }
+                function curveCoins(curvePool, selectorOffset, index) -> coin {
+                    mstore(0, _CURVE_COINS_SELECTORS)
+                    mstore(add(selectorOffset, 4), index)
+                    if iszero(staticcall(gas(), curvePool, selectorOffset, 0x24, 0, 0x20)) {
+                        reRevert()
+                    }
+                    coin := mload(0)
+                }
+                let toSelectorOffset := and(shr(_CURVE_TO_COINS_SELECTOR_OFFSET, dex), _CURVE_TO_COINS_SELECTOR_MASK)
+                let toTokenIndex := and(shr(_CURVE_TO_COINS_ARG_OFFSET, dex), _CURVE_TO_COINS_ARG_MASK)
+                tokenOut := curveCoins(pool, toSelectorOffset, toTokenIndex)
+            }
         }
+    }
 
+    function executeSwap(
+        address asset, 
+        address product, 
+        bool isUtilize, 
+        bytes calldata data
+    ) internal returns(uint256 amountOut) {
+        _prepareInchSwap(asset, product, isUtilize, data);
+        (bool success, bytes memory result) = address(this).call{ value: msg.value }(data);
+        if (success) {
+            amountOut = abi.decode(result, (uint256));
+        } else {
+            assembly {
+                revert(add(result, 32), mload(result))
+            }
+        }
     }
 
     function _prepareInchSwap(
@@ -45,21 +89,117 @@ library InchAggregatorLogic {
         bytes4 selector = bytes4(data[:4]);
         address srcToken;
         address dstToken;
-        uint256 amount;
+        uint256 ampountIn;
+        address receiver;
         if (selector == IAggregationRouter.swap.selector) {
-            (address executor, IAggregationRouter.SwapDescription memory desc, bytes memory swapData) = abi.decode(data[4:], (address, IAggregationRouter.SwapDescription, bytes));
+            (/*address executor*/, IAggregationRouter.SwapDescription memory desc, /*bytes memory swapData*/) = abi.decode(data[4:], (address, IAggregationRouter.SwapDescription, bytes));
             srcToken = desc.srcToken;
             dstToken = desc.dstToken;
-            amount = desc.amount;
-        } else if (selector == IAggregationRouter.unoswap.selector) {
-            (Address token, uint256 amount, uint256 minReturn, Address dex) = abi.decode(data[4:], (Address, uint256, uint256, Address));
-            srcToken = token.get();
-            ProtocolLib.Protocol protocol = dex.protocol();
-            if (protocol == ProtocolLib.Protocol.UniswapV2) {
-
+            ampountIn = desc.amount;
+            receiver = desc.dstReceiver;
+        } else {
+            Address finalDex;
+            if (selector == IAggregationRouter.unoswap.selector) {
+                (Address token, uint256 amount, /*uint256 minReturn*/, Address dex) = abi.decode(data[4:], (Address, uint256, uint256, Address));
+                srcToken = token.get();
+                finalDex = dex;
+                ampountIn = amount;
+                receiver = address(this);
+            } else if (selector == IAggregationRouter.unoswapTo.selector) {
+                (Address to, Address token, uint256 amount, /*uint256 minReturn*/, Address dex) = abi.decode(data[4:], (Address, Address, uint256, uint256, Address));
+                srcToken = token.get();
+                finalDex = dex;
+                ampountIn = amount;
+                receiver = to.get();
+            } else if (selector == IAggregationRouter.unoswap2.selector) {
+                (Address token, uint256 amount, /*uint256 minReturn*/, /*Address dex*/, Address dex2) = abi.decode(data[4:], (Address, uint256, uint256, Address, Address));
+                srcToken = token.get();
+                finalDex = dex2;
+                ampountIn = amount;
+                receiver = address(this);
+            } else if (selector == IAggregationRouter.unoswapTo2.selector) {
+                (Address to, Address token, uint256 amount, /*uint256 minReturn*/, /*Address dex*/, Address dex2) = abi.decode(data[4:], (Address, Address, uint256, uint256, Address, Address));
+                srcToken = token.get();
+                finalDex = dex2;
+                ampountIn = amount;
+                receiver = to.get();
+            } else if (selector == IAggregationRouter.unoswap3.selector) {
+                (Address token, uint256 amount, /*uint256 minReturn*/, /*Address dex*/, /*Address dex2*/, Address dex3) = abi.decode(data[4:], (Address, uint256, uint256, Address, Address, Address));
+                srcToken = token.get();
+                finalDex = dex3;
+                ampountIn = amount;
+                receiver = address(this);
+            } else if (selector == IAggregationRouter.unoswapTo3.selector) {
+                (Address to, Address token, uint256 amount, /*uint256 minReturn*/, /*Address dex*/, /*Address dex2*/, Address dex3) = abi.decode(data[4:], (Address, Address, uint256, uint256, Address, Address, Address));
+                srcToken = token.get();
+                finalDex = dex3;
+                ampountIn = amount;
+                receiver = to.get();
+            } else if (selector == IAggregationRouter.ethUnoswap.selector) {
+                (/*uint256 minReturn*/, Address dex) = abi.decode(data[4:], (uint256, Address));
+                srcToken = address(_ETH_ADDRESS);
+                finalDex = dex;
+                ampountIn = msg.value;
+                receiver = address(this);
+            } else if (selector == IAggregationRouter.ethUnoswapTo.selector) {
+                (Address to, /*uint256 minReturn*/, Address dex) = abi.decode(data[4:], (Address, uint256, Address));
+                srcToken = address(_ETH_ADDRESS);
+                finalDex = dex;
+                ampountIn = msg.value;
+                receiver = to.get();
+            } else if (selector == IAggregationRouter.ethUnoswap2.selector) {
+                (/*uint256 minReturn*/, /*Address dex*/, Address dex2) = abi.decode(data[4:], (uint256, Address, Address));
+                srcToken = address(_ETH_ADDRESS);
+                finalDex = dex2;
+                ampountIn = msg.value;
+                receiver = address(this);
+            } else if (selector == IAggregationRouter.ethUnoswapTo2.selector) {
+                (Address to, /*uint256 minReturn*/, /*Address dex*/, Address dex2) = abi.decode(data[4:], (Address, uint256, Address, Address));
+                srcToken = address(_ETH_ADDRESS);
+                finalDex = dex2;
+                ampountIn = msg.value;
+                receiver = to.get();
+            } else if (selector == IAggregationRouter.ethUnoswap3.selector) {
+                (/*uint256 minReturn*/, /*Address dex*/, /*Address dex2*/, Address dex3) = abi.decode(data[4:], (uint256, Address, Address, Address));
+                srcToken = address(_ETH_ADDRESS);
+                finalDex = dex3;
+                ampountIn = msg.value;
+                receiver = address(this);
+            } else if (selector == IAggregationRouter.ethUnoswapTo3.selector) {
+                (Address to, /*uint256 minReturn*/, /*Address dex*/, /*Address dex2*/, Address dex3) = abi.decode(data[4:], (Address, uint256, Address, Address, Address));
+                srcToken = address(_ETH_ADDRESS);
+                finalDex = dex3;
+                ampountIn = msg.value;
+                receiver = to.get();
             }
-
-
+            dstToken = _getTokenOut(finalDex);
+        }
+        if (isUtilize) {
+            if (srcToken != asset) {
+                revert InchInvalidSourceToken(srcToken, asset);
+            }
+            if (dstToken != product) {
+                revert InchInvalidDestinationToken(dstToken, product);
+            }
+        } else {
+            if (srcToken != product) {
+                revert InchInvalidSourceToken(srcToken, product);
+            }
+            if (dstToken != asset) {
+                revert InchInvalidDestinationToken(dstToken, asset);
+            }
+        }
+        if (receiver != address(this)) {
+            revert InchInvalidReceiver(receiver, address(this));
+        }
+        uint256 sourceBalance;
+        if (srcToken == address(_ETH_ADDRESS)) {
+            sourceBalance = address(this).balance;
+        } else {
+            sourceBalance = IERC20(srcToken).balanceOf(address(this));
+        }
+        if (sourceBalance < ampountIn) {
+            revert InchInsufficientSourceBalance(ampountIn, sourceBalance);
         }
     }
 }

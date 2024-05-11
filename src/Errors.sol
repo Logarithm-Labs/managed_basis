@@ -6,7 +6,12 @@ library Errors {
     error RequestNotExecuted(uint256 requestAmount, uint256 executedAmount);
     error RequestAlreadyClaimed();
     error UnauthoirzedClaimer(address claimer, address receiver);
+
     error InchSwapInvailidTokens();
     error InchSwapAmountExceedsBalance(uint256 swapAmount, uint256 balance);
     error InchInvalidReceiver();
+
+    error IncosistentParamsLength();
+
+    error OracleInvalidPrice();
 }

@@ -1,19 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.25;
 
-import { ERC4626Upgradeable } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IAggregationRouter } from "src/interfaces/IAggregationRouter.sol";
+import { IOracle } from "src/interfaces/IOracle.sol";
+
+import { LogBaseVaultUpgradeable } from "src/LogBaseVaultUpgradeable.sol";
 import { AccessControlDefaultAdminRulesUpgradeable } from "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { IAggregationRouter } from "src/interfaces/IAggregationRouter.sol";
 
-import {Errors} from "./Errors.sol";
+import { LogarithmOracle } from "src/LogarithmOracle.sol";
 
-contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradeable, AccessControlDefaultAdminRulesUpgradeable {
+import { InchAggregatorLogic } from "src/libraries/InchAggregatorLogic.sol";
+import { Errors } from "./Errors.sol";
+
+contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpgradeable, AccessControlDefaultAdminRulesUpgradeable {
     using SafeERC20 for IERC20;
+    using SafeCast for uint256;
     using Math for uint256;
 
     event WithdrawRequest(address indexed sender, address indexed receiver, address indexed owner, bytes32 requestId, uint256 amount);
@@ -24,8 +32,6 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradea
         INCH
     }
     
-    
-
     struct WithdrawState {
         uint128 requestCounter;
         uint128 requestTimestamp;
@@ -36,11 +42,10 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradea
         bool claimed;
     }
 
-    struct ShortState {
-        uint256 collateralAmount;
+    struct PositionState {
+        uint256 netBalance;
         uint256 sizeInTokens;
-        uint256 unrealizedPnl;
-        uint256 accumulatedFundingFee;
+        uint256 markPrice;
         uint256 timestamp;
     }
 
@@ -49,9 +54,10 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradea
     uint256 public constant PRECISION = 1e18;
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
-    IERC20 public product;
     address public operator;
+    IOracle public oracle;
 
+    bool public isLong;
     uint256 public targetLeverage;
     uint256 public minLeverage;
     uint256 public maxLeverage;
@@ -60,22 +66,22 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradea
     uint256 public exitCost;
 
     uint256 public currentRound;
-    mapping(uint256 => ShortState) public shortState;
+    mapping(uint256 => PositionState) public positionStates;
     mapping(address => uint128) public requestCounter;
     mapping(bytes32 => WithdrawState) public withdrawRequests;
 
     uint256 public assetsToClaim;
 
-
+    event Utilize(address indexed caller, uint256 amountIn, uint256 amountOut);
+    event Deutilize(address indexed caller, uint256 amountIn, uint256 amountOut);
 
     /*//////////////////////////////////////////////////////////////
                         INITIALIZATION LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address _asset, address _owner, address _operator) public initializer {
-        __ERC4626_init(IERC20(_asset));
+    function initialize(address _asset, address _owner) public initializer {
+        __LogBaseVault_init(IERC20(_asset));
         __AccessControlDefaultAdminRules_init(1 days, _owner);
-
     }
 
     function _authorizeUpgrade(address /*newImplementation*/) internal virtual override {}
@@ -124,8 +130,6 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradea
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
         }
-
-        address asset_ = asset();
 
         // If _asset is ERC777, `transfer` can trigger a reentrancy AFTER the transfer happens through the
         // `tokensReceived` hook. On the other hand, the `tokensToSend` hook, that is triggered before the transfer,
@@ -182,17 +186,25 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradea
                         DEPOSIT/WITHDRAWAL LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function reportState(ShortState calldata state) external virtual onlyRole(OPERATOR_ROLE) {
-        shortState[currentRound] = state;
-        currentRound ++;
-    }
-
     /*//////////////////////////////////////////////////////////////
                         ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function totalAssets() public view virtual override returns (uint256) {
-
+    // TODO: account for pendings
+    function totalAssets() public view virtual override returns (uint256 total) {
+        address asset_ = asset();
+        address product_ = product();
+        uint256 assetPrice = oracle.getAssetPrice(asset_);
+        uint256 productPrice = oracle.getAssetPrice(product_);
+        uint256 productBalance = IERC20(product_).balanceOf(address(this));
+        uint256 productValueInAsset = productBalance.mulDiv(productPrice, assetPrice, Math.Rounding.Floor);
+        int256 pnl = _getVirtualPnl();
+        total = IERC20(asset_).balanceOf(address(this)) + productValueInAsset + positionStates[currentRound].netBalance;
+        if (pnl > 0) {
+            total += uint256(pnl);
+        } else {
+            total -= uint256(-pnl);
+        }
     }
 
     function idleAssets() public view virtual returns (uint256) {
@@ -215,12 +227,12 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradea
 
     function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {
         uint256 baseShares =  _convertToShares(assets, Math.Rounding.Ceil);
-        return baseShares.mulDiv(PRECISION, PRECISION - entryCost);
+        return baseShares.mulDiv(PRECISION, PRECISION - exitCost);
     }
 
     function previewRedeem(uint256 shares) public view virtual override returns (uint256) {
         uint256 baseAssets =  _convertToAssets(shares, Math.Rounding.Floor);
-        return baseAssets.mulDiv(PRECISION - entryCost, PRECISION);
+        return baseAssets.mulDiv(PRECISION - exitCost, PRECISION);
     }
 
 
@@ -228,10 +240,12 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradea
                         OPERATOR LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function utilize(uint256 amount, SwapType swapType, bytes calldata data) public virtual {
+    function utilize(uint256 amount, SwapType swapType, bytes calldata data) public virtual returns (uint256 amountOut) {
         if (swapType == SwapType.INCH) {
-            
+            amountOut = InchAggregatorLogic.executeSwap(asset(), product(), true, data);
         }
+
+        emit Utilize(msg.sender, amount, amountOut);
     }
 
     function receiveAndUtilize(uint256 amount, SwapType swapType, bytes calldata data) public virtual {
@@ -239,40 +253,29 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, ERC4626Upgradea
         utilize(amount, swapType, data);
     }
 
-    function deutilize() public virtual {
-
+    function deutilize(uint256 amount, SwapType swapType, bytes calldata data) public virtual returns (uint256 amountOut) {
+        if (swapType == SwapType.INCH) {
+            amountOut = InchAggregatorLogic.executeSwap(asset(), product(), false, data);
+        }
+        emit Deutilize(msg.sender, amount, amountOut);
     }
 
-    function _prepareInchSwap(IAggregationRouter router, IAggregationRouter.SwapDescription memory desc, bool isUtilize) internal virtual returns (bool) {
-        address asset_ = asset();
-        address product_ = address(product);
-        if (isUtilize) {
-            if (desc.srcToken != asset_ || desc.dstToken != product_) {
-                revert Errors.InchSwapInvailidTokens();
-            }
-        } else {
-            if (desc.srcToken != product_ || desc.dstToken != asset_) {
-                revert Errors.InchSwapInvailidTokens();
-            }
-        }
-
-        uint256 srcBalance = IERC20(desc.srcToken).balanceOf(address(this));
-        if (desc.amount > srcBalance) {
-            revert Errors.InchSwapAmountExceedsBalance(desc.amount, srcBalance);
-        }
-        if (desc.dstReceiver != address(this) || desc.dstReceiver != address(0)) {
-            revert Errors.InchInvalidReceiver();
-        }
-
-        IERC20(desc.srcToken).safeIncreaseAllowance(address(router), desc.amount);
+    function deutilizeAndSend(uint256 amount, SwapType swapType, bytes calldata data) external virtual {
+        uint256 amountOut = deutilize(amount, swapType, data);
+        IERC20(asset()).safeTransfer(msg.sender, amountOut);
     }
 
-    /*//////////////////////////////////////////////////////////////
-                        REBALANCE LOGIC
-    //////////////////////////////////////////////////////////////*/
+    function reportState(PositionState calldata state) external virtual onlyRole(OPERATOR_ROLE) {
+        currentRound ++;
+        positionStates[currentRound] = state;
+    }
 
-
-
-
-    
+    function _getVirtualPnl() internal view virtual returns (int256 pnl) {
+        PositionState memory state = positionStates[currentRound];
+        uint256 price = oracle.getAssetPrice(product());
+        uint256 positionValue = state.sizeInTokens * price;
+        uint256 positionSize = state.sizeInTokens * state.markPrice;
+        pnl = isLong ? positionValue.toInt256() - positionSize.toInt256() : positionSize.toInt256() - positionValue.toInt256();
+    }
+  
 }
