@@ -37,8 +37,9 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
     struct WithdrawalState {
         uint128 requestCounter;
         uint128 requestTimestamp;
-        uint256 totalWithdrawAmount;
-        uint256 executedWithdrawAmount;
+        uint256 requestedWithdrawAmount;
+        uint256 realizedExecutionLoss;
+        uint256 executedWithdrawAmount; // requestedAmount - realizedExecutionLoss = executedAmount
         address receiver;
         bool isExecuted;
         bool isClaimed;
@@ -98,7 +99,7 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
     //////////////////////////////////////////////////////////////*/
 
     function maxDeposit(address receiver) public view virtual override returns (uint256) {
-
+        // TODO
     }
 
     /**
@@ -106,11 +107,11 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
      */
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
         IERC20 asset_ = IERC20(asset());
-        uint256 targetLeverage_ = targetLeverage;
-        uint256 assetsToSpot = assets.mulDiv(targetLeverage_, targetLeverage_ + PRECISION);
+        // uint256 targetLeverage_ = targetLeverage;
+        // uint256 assetsToSpot = assets.mulDiv(targetLeverage_, targetLeverage_ + PRECISION);
 
         asset_.safeTransferFrom(caller, address(this), assets);
-        asset_.safeTransfer(operator, assets - assetsToSpot);
+        // asset_.safeTransfer(operator, assets - assetsToSpot);
 
         _mint(receiver, shares);
 
@@ -145,7 +146,7 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         withdrawRequests[requestId] = WithdrawalState({
             requestCounter: counter,
             requestTimestamp: uint128(block.timestamp),
-            totalWithdrawAmount: assets,
+            requestedWithdrawAmount: assets,
             executedWithdrawAmount: 0,
             receiver: receiver,
             isExecuted: false,
@@ -166,19 +167,19 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
             revert Errors.UnauthoirzedClaimer(msg.sender, requestData.receiver);
         }
         if (!requestData.isExecuted) {
-            revert Errors.RequestNotExecuted(requestData.totalWithdrawAmount, requestData.executedWithdrawAmount);
+            revert Errors.RequestNotExecuted(requestData.requestedWithdrawAmount, requestData.executedWithdrawAmount);
         }
         if (requestData.isClaimed) {
             revert Errors.RequestAlreadyClaimed();
         }
 
-        assetsToClaim -= requestData.totalWithdrawAmount;
+        assetsToClaim -= requestData.requestedWithdrawAmount;
         withdrawRequests[requestId].isClaimed = true;
         IERC20 asset_ = IERC20(asset());
 
-        asset_.safeTransfer(msg.sender, requestData.totalWithdrawAmount);
+        asset_.safeTransfer(msg.sender, requestData.requestedWithdrawAmount);
 
-        emit Claim(msg.sender, requestId, requestData.totalWithdrawAmount);
+        emit Claim(msg.sender, requestId, requestData.requestedWithdrawAmount);
 
     }
 
@@ -260,10 +261,10 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         emit Deutilize(msg.sender, amount, amountOut);
     }
 
-    function deutilizeAndSend(uint256 amount, SwapType swapType, bytes calldata data) external virtual {
-        uint256 amountOut = deutilize(amount, swapType, data);
-        IERC20(asset()).safeTransfer(msg.sender, amountOut);
-    }
+    // function deutilizeAndSend(uint256 amount, SwapType swapType, bytes calldata data) external virtual {
+    //     uint256 amountOut = deutilize(amount, swapType, data);
+    //     IERC20(asset()).safeTransfer(msg.sender, amountOut);
+    // }
 
     function reportState(PositionState calldata state) public virtual onlyRole(OPERATOR_ROLE) {
         uint256 _currentRount = currentRound + 1;
@@ -273,20 +274,37 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         emit StateReport(msg.sender, _currentRount, state.netBalance, state.sizeInTokens, state.markPrice);
     }
 
-    function reportWithdrawal(bytes32[] calldata requestId, uint256[] calldata amountExecuted) public onlyRole(OPERATOR_ROLE) {
+    // function reportWithdrawal(bytes32[] calldata requestId, uint256[] calldata amountExecuted) public onlyRole(OPERATOR_ROLE) {
+    //     if (requestId.length != amountExecuted.length) {
+    //         revert Errors.IncosistentParamsLength();
+    //     }
+    //     for (uint256 i = 0; i < requestId.length; i++) {
+    //         withdrawRequests[requestId[i]].executedWithdrawAmount += amountExecuted[i];
+
+    //         // TODO: Add check for isExecuted
+
+    //         emit WithdrawReport(msg.sender, requestId[i], amountExecuted[i]);
+    //     }
+    // }
+
+    function reportExecutedWithdrawal(bytes32[] calldata requestId, uint256[] amountExecuted) public onlyRole(OPERATOR_ROLE) {
+        IERC20 _asset = IERC20(asset());
+        uint256 totalExecutedAmount;
         if (requestId.length != amountExecuted.length) {
             revert Errors.IncosistentParamsLength();
         }
         for (uint256 i = 0; i < requestId.length; i++) {
-            withdrawRequests[requestId[i]].executedWithdrawAmount += amountExecuted[i];
-            
-            emit WithdrawReport(msg.sender, requestId[i], amountExecuted[i]);
+            withdrawRequests[requestId[i]].isExecuted = true;
+            withdrawRequests[requestId[i]].executedWithdrawAmount = amountExecuted[i];
+            totalExecutedAmount += amountExecuted[i];
+            emit ExecuteWithdrawal(); // TODO
         }
+        _asset.safeTransferFrom(msg.sender, address(this), totalExecutedAmount);
     }
 
-    function reportStateAndWithdrawal(PositionState calldata state, bytes32[] calldata withdrawal, uint256[] calldata amountExecuted) external onlyRole(OPERATOR_ROLE) {
+    function reportStateAndExecutedWithdrawal(PositionState calldata state, bytes32[] calldata withdrawal, uint256[] calldata amountExecuted) external onlyRole(OPERATOR_ROLE) {
         reportState(state);
-        reportWithdrawal(withdrawal, amountExecuted);
+        reportExecutedWithdrawal(withdrawal, amountExecuted);
     }
 
     function _getVirtualPnl() internal view virtual returns (int256 pnl) {
