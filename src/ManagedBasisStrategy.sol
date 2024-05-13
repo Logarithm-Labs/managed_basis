@@ -268,8 +268,9 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
     function reportState(PositionState calldata state) public virtual onlyRole(OPERATOR_ROLE) {
         uint256 _currentRount = currentRound + 1;
         positionStates[_currentRount] = state;
-        emit StateReport(msg.sender, _currentRount, state.netBalance, state.sizeInTokens, state.markPrice);
         currentRound = _currentRount;
+
+        emit StateReport(msg.sender, _currentRount, state.netBalance, state.sizeInTokens, state.markPrice);
     }
 
     function reportWithdrawal(bytes32[] calldata requestId, uint256[] calldata amountExecuted) public onlyRole(OPERATOR_ROLE) {
@@ -278,6 +279,7 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         }
         for (uint256 i = 0; i < requestId.length; i++) {
             withdrawRequests[requestId[i]].executedWithdrawAmount += amountExecuted[i];
+            
             emit WithdrawReport(msg.sender, requestId[i], amountExecuted[i]);
         }
     }
