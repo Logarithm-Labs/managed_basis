@@ -24,7 +24,9 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
     using SafeCast for uint256;
     using Math for uint256;
 
-    event WithdrawRequest(address indexed sender, address indexed receiver, address indexed owner, bytes32 requestId, uint256 amount);
+    event WithdrawRequest(address indexed caller, address indexed receiver, address indexed owner, bytes32 requestId, uint256 amount);
+    event WithdrawReport(address indexed caller, bytes32 requestId, uint256 amountExecuted);
+    event StateReport(address indexed caller, uint256 roundId, uint256 netBalance, uint256 sizeInTokens, uint256 markPrice);
     event Claim(address indexed claimer, bytes32 requestId, uint256 amount);
 
     enum SwapType {
@@ -32,14 +34,14 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         INCH
     }
     
-    struct WithdrawState {
+    struct WithdrawalState {
         uint128 requestCounter;
         uint128 requestTimestamp;
         uint256 totalWithdrawAmount;
         uint256 executedWithdrawAmount;
         address receiver;
-        bool executed;
-        bool claimed;
+        bool isExecuted;
+        bool isClaimed;
     }
 
     struct PositionState {
@@ -48,8 +50,6 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         uint256 markPrice;
         uint256 timestamp;
     }
-
-    
 
     uint256 public constant PRECISION = 1e18;
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
@@ -68,7 +68,7 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
     uint256 public currentRound;
     mapping(uint256 => PositionState) public positionStates;
     mapping(address => uint128) public requestCounter;
-    mapping(bytes32 => WithdrawState) public withdrawRequests;
+    mapping(bytes32 => WithdrawalState) public withdrawRequests;
 
     uint256 public assetsToClaim;
 
@@ -142,14 +142,14 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         uint128 counter = requestCounter[owner];
 
         bytes32 requestId = getRequestId(owner, counter);
-        withdrawRequests[requestId] = WithdrawState({
+        withdrawRequests[requestId] = WithdrawalState({
             requestCounter: counter,
             requestTimestamp: uint128(block.timestamp),
             totalWithdrawAmount: assets,
             executedWithdrawAmount: 0,
             receiver: receiver,
-            executed: false,
-            claimed: false
+            isExecuted: false,
+            isClaimed: false
         });
 
         requestCounter[owner]++;
@@ -159,21 +159,21 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
     }
 
     function claim(bytes32 requestId) external virtual {
-        WithdrawState memory requestData = withdrawRequests[requestId];
+        WithdrawalState memory requestData = withdrawRequests[requestId];
         
         // validate claim
         if (requestData.receiver != msg.sender) {
             revert Errors.UnauthoirzedClaimer(msg.sender, requestData.receiver);
         }
-        if (!requestData.executed) {
+        if (!requestData.isExecuted) {
             revert Errors.RequestNotExecuted(requestData.totalWithdrawAmount, requestData.executedWithdrawAmount);
         }
-        if (requestData.claimed) {
+        if (requestData.isClaimed) {
             revert Errors.RequestAlreadyClaimed();
         }
 
         assetsToClaim -= requestData.totalWithdrawAmount;
-        withdrawRequests[requestId].claimed = true;
+        withdrawRequests[requestId].isClaimed = true;
         IERC20 asset_ = IERC20(asset());
 
         asset_.safeTransfer(msg.sender, requestData.totalWithdrawAmount);
@@ -265,9 +265,26 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         IERC20(asset()).safeTransfer(msg.sender, amountOut);
     }
 
-    function reportState(PositionState calldata state) external virtual onlyRole(OPERATOR_ROLE) {
-        currentRound ++;
-        positionStates[currentRound] = state;
+    function reportState(PositionState calldata state) public virtual onlyRole(OPERATOR_ROLE) {
+        uint256 _currentRount = currentRound + 1;
+        positionStates[_currentRount] = state;
+        emit StateReport(msg.sender, _currentRount, state.netBalance, state.sizeInTokens, state.markPrice);
+        currentRound = _currentRount;
+    }
+
+    function reportWithdrawal(bytes32[] calldata requestId, uint256[] calldata amountExecuted) public onlyRole(OPERATOR_ROLE) {
+        if (requestId.length != amountExecuted.length) {
+            revert Errors.IncosistentParamsLength();
+        }
+        for (uint256 i = 0; i < requestId.length; i++) {
+            withdrawRequests[requestId[i]].executedWithdrawAmount += amountExecuted[i];
+            emit WithdrawReport(msg.sender, requestId[i], amountExecuted[i]);
+        }
+    }
+
+    function reportStateAndWithdrawal(PositionState calldata state, bytes32[] calldata withdrawal, uint256[] calldata amountExecuted) external onlyRole(OPERATOR_ROLE) {
+        reportState(state);
+        reportWithdrawal(withdrawal, amountExecuted);
     }
 
     function _getVirtualPnl() internal view virtual returns (int256 pnl) {
