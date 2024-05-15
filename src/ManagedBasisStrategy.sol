@@ -1,39 +1,49 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.25;
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { IAggregationRouter } from "src/interfaces/IAggregationRouter.sol";
-import { IOracle } from "src/interfaces/IOracle.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IAggregationRouter} from "src/interfaces/IAggregationRouter.sol";
+import {IOracle} from "src/interfaces/IOracle.sol";
 
-import { LogBaseVaultUpgradeable } from "src/LogBaseVaultUpgradeable.sol";
-import { AccessControlDefaultAdminRulesUpgradeable } from "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
-import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {LogBaseVaultUpgradeable} from "src/LogBaseVaultUpgradeable.sol";
+import {AccessControlDefaultAdminRulesUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import { LogarithmOracle } from "src/LogarithmOracle.sol";
+import {LogarithmOracle} from "src/LogarithmOracle.sol";
 
-import { InchAggregatorLogic } from "src/libraries/InchAggregatorLogic.sol";
-import { Errors } from "./Errors.sol";
+import {InchAggregatorLogic} from "src/libraries/InchAggregatorLogic.sol";
+import {Errors} from "./Errors.sol";
 
-contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpgradeable, AccessControlDefaultAdminRulesUpgradeable {
+contract ManagedBasisStrategy is
+    Initializable,
+    UUPSUpgradeable,
+    LogBaseVaultUpgradeable,
+    AccessControlDefaultAdminRulesUpgradeable
+{
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using Math for uint256;
 
-    event WithdrawRequest(address indexed caller, address indexed receiver, address indexed owner, bytes32 requestId, uint256 amount);
+    event WithdrawRequest(
+        address indexed caller, address indexed receiver, address indexed owner, bytes32 requestId, uint256 amount
+    );
     event WithdrawReport(address indexed caller, bytes32 requestId, uint256 amountExecuted);
-    event StateReport(address indexed caller, uint256 roundId, uint256 netBalance, uint256 sizeInTokens, uint256 markPrice);
+    event StateReport(
+        address indexed caller, uint256 roundId, uint256 netBalance, uint256 sizeInTokens, uint256 markPrice
+    );
     event Claim(address indexed claimer, bytes32 requestId, uint256 amount);
 
     enum SwapType {
         MANUAL,
         INCH
     }
-    
+
     struct WithdrawalState {
         uint128 requestCounter;
         uint128 requestTimestamp;
@@ -85,14 +95,11 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         __AccessControlDefaultAdminRules_init(1 days, _owner);
     }
 
-    function _authorizeUpgrade(address /*newImplementation*/) internal virtual override {}
+    function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override {}
 
     /*//////////////////////////////////////////////////////////////
                             CONFIGURATION
     //////////////////////////////////////////////////////////////*/
-
-
-
 
     /*//////////////////////////////////////////////////////////////
                         DEPOSIT/WITHDRAWAL LOGIC
@@ -121,13 +128,11 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
     /**
      * @dev Withdraw/redeem common workflow.
      */
-    function _withdraw(
-        address caller,
-        address receiver,
-        address owner,
-        uint256 assets,
-        uint256 shares
-    ) internal virtual override {
+    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
+        internal
+        virtual
+        override
+    {
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
         }
@@ -161,7 +166,7 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
 
     function claim(bytes32 requestId) external virtual {
         WithdrawalState memory requestData = withdrawRequests[requestId];
-        
+
         // validate claim
         if (requestData.receiver != msg.sender) {
             revert Errors.UnauthoirzedClaimer(msg.sender, requestData.receiver);
@@ -180,7 +185,6 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         asset_.safeTransfer(msg.sender, requestData.requestedWithdrawAmount);
 
         emit Claim(msg.sender, requestId, requestData.requestedWithdrawAmount);
-
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -208,40 +212,41 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         }
     }
 
-    function idleAssets() public view virtual returns (uint256) {
-
-    }
+    function idleAssets() public view virtual returns (uint256) {}
 
     function getRequestId(address owner, uint128 counter) public view virtual returns (bytes32) {
         return keccak256(abi.encodePacked(address(this), owner, counter));
     }
 
     function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
-        uint256 baseShares =  _convertToShares(assets, Math.Rounding.Floor);
+        uint256 baseShares = _convertToShares(assets, Math.Rounding.Floor);
         return baseShares.mulDiv(PRECISION - entryCost, PRECISION);
     }
 
     function previewMint(uint256 shares) public view virtual override returns (uint256) {
-        uint256 baseAssets =  _convertToAssets(shares, Math.Rounding.Ceil);
+        uint256 baseAssets = _convertToAssets(shares, Math.Rounding.Ceil);
         return baseAssets.mulDiv(PRECISION, PRECISION - entryCost);
     }
 
     function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {
-        uint256 baseShares =  _convertToShares(assets, Math.Rounding.Ceil);
+        uint256 baseShares = _convertToShares(assets, Math.Rounding.Ceil);
         return baseShares.mulDiv(PRECISION, PRECISION - exitCost);
     }
 
     function previewRedeem(uint256 shares) public view virtual override returns (uint256) {
-        uint256 baseAssets =  _convertToAssets(shares, Math.Rounding.Floor);
+        uint256 baseAssets = _convertToAssets(shares, Math.Rounding.Floor);
         return baseAssets.mulDiv(PRECISION - exitCost, PRECISION);
     }
-
 
     /*//////////////////////////////////////////////////////////////
                         OPERATOR LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function utilize(uint256 amount, SwapType swapType, bytes calldata data) public virtual returns (uint256 amountOut) {
+    function utilize(uint256 amount, SwapType swapType, bytes calldata data)
+        public
+        virtual
+        returns (uint256 amountOut)
+    {
         if (swapType == SwapType.INCH) {
             amountOut = InchAggregatorLogic.executeSwap(asset(), product(), true, data);
         }
@@ -254,7 +259,11 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         utilize(amount, swapType, data);
     }
 
-    function deutilize(uint256 amount, SwapType swapType, bytes calldata data) public virtual returns (uint256 amountOut) {
+    function deutilize(uint256 amount, SwapType swapType, bytes calldata data)
+        public
+        virtual
+        returns (uint256 amountOut)
+    {
         if (swapType == SwapType.INCH) {
             amountOut = InchAggregatorLogic.executeSwap(asset(), product(), false, data);
         }
@@ -287,7 +296,10 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
     //     }
     // }
 
-    function reportExecutedWithdrawal(bytes32[] calldata requestId, uint256[] amountExecuted) public onlyRole(OPERATOR_ROLE) {
+    function reportExecutedWithdrawal(bytes32[] calldata requestId, uint256[] amountExecuted)
+        public
+        onlyRole(OPERATOR_ROLE)
+    {
         IERC20 _asset = IERC20(asset());
         uint256 totalExecutedAmount;
         if (requestId.length != amountExecuted.length) {
@@ -302,7 +314,11 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         _asset.safeTransferFrom(msg.sender, address(this), totalExecutedAmount);
     }
 
-    function reportStateAndExecutedWithdrawal(PositionState calldata state, bytes32[] calldata withdrawal, uint256[] calldata amountExecuted) external onlyRole(OPERATOR_ROLE) {
+    function reportStateAndExecutedWithdrawal(
+        PositionState calldata state,
+        bytes32[] calldata withdrawal,
+        uint256[] calldata amountExecuted
+    ) external onlyRole(OPERATOR_ROLE) {
         reportState(state);
         reportExecutedWithdrawal(withdrawal, amountExecuted);
     }
@@ -312,7 +328,8 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
         uint256 price = oracle.getAssetPrice(product());
         uint256 positionValue = state.sizeInTokens * price;
         uint256 positionSize = state.sizeInTokens * state.markPrice;
-        pnl = isLong ? positionValue.toInt256() - positionSize.toInt256() : positionSize.toInt256() - positionValue.toInt256();
+        pnl = isLong
+            ? positionValue.toInt256() - positionSize.toInt256()
+            : positionSize.toInt256() - positionValue.toInt256();
     }
-  
 }
