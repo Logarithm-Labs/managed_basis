@@ -2,7 +2,7 @@
 pragma solidity ^0.8.25;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IAggregationRouter} from "src/interfaces/IAggregationRouter.sol";
+import {IAggregationRouter} from "src/externals/1inch/interfaces/IAggregationRouter.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 
 import {LogBaseVaultUpgradeable} from "src/LogBaseVaultUpgradeable.sol";

@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+pragma solidity ^0.8.0;
+
+interface IBasisGmxV2Factory {
+    /// @notice Used to track the deployed version of this contract. In practice you
+    /// can use this version number to compare with Logarithm's GitHub and
+    /// determine which version of the source matches this deployed contract
+    ///
+    /// @dev
+    /// All contracts must have an `apiVersion()` that matches the Vault's
+    /// `API_VERSION`.
+    function apiVersion() external view returns (string memory);
+}

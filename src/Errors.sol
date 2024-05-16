@@ -14,4 +14,7 @@ library Errors {
     error IncosistentParamsLength();
 
     error OracleInvalidPrice();
+
+    error UnauthoirzedUpgrade();
+    error CallerNotStrategy();
 }

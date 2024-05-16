@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+pragma solidity ^0.8.0;
+
+interface IGmxV2PositionManager {
+    /// @notice Used to track the deployed version of this contract. In practice you
+    /// can use this version number to compare with Logarithm's GitHub and
+    /// determine which version of the source matches this deployed contract
+    ///
+    /// @dev
+    /// All contracts must have an `apiVersion()` that matches the Vault's
+    /// `API_VERSION`.
+    function apiVersion() external view returns (string memory);
+
+    /// @dev create an increase order
+    /// Note: value should be set to cover the gmx execution fee
+    /// this function is callable only by strategy vault
+    ///
+    /// @param collateralDelta collateral delta amount in collateral token to increase
+    /// @param sizeDeltaInTokens position delta size in index token to increase
+    ///
+    /// @return the key of position increase order queued
+    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInTokens) external payable returns (bytes32);
+
+    /// @dev create a decrease order
+    /// Note: value should be set to cover the gmx execution fee
+    /// this function is callable only by strategy vault
+    ///
+    /// @param collateralDelta collateral delta amount in collateral token to decrease
+    /// @param sizeDeltaInTokens position delta size in index token to decrease
+    ///
+    /// @return the key of position decrease order queued
+    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInTokens) external payable returns (bytes32);
+
+    /// @dev claims all the claimable funding fee and claimable collateral
+    /// this is callable by anyone
+    function claim() external;
+
+    /// @notice total asset token amount that can be claimable from gmx position when closing it
+    ///
+    /// @dev this amount includes the pending asset token amount
+    function totalAssets() external view returns (uint256);
+
+    /// @dev calculate the execution fee that is need from gmx when increase and decrease
+    ///
+    /// @return feeIncrease the execution fee for increase
+    /// @return feeDecrease the execution fee for decrease
+    function getExecutionFee() external view returns (uint256 feeIncrease, uint256 feeDecrease);
+}
