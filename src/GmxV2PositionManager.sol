@@ -120,6 +120,10 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
         }
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @inheritdoc IGmxV2PositionManager
     function apiVersion() external pure override returns (string memory) {
         return API_VERSION;
@@ -180,6 +184,12 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
         revert(); // fronzen is not supported for market increase/decrease orders
     }
 
+    
+    /*//////////////////////////////////////////////////////////////
+                        PRIVATE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev create increase/decrease order
     function _adjust(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private returns (bytes32) {
         uint256 executionFee = msg.value;
         address orderVault = _factory().orderVault();
