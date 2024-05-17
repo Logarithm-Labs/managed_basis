@@ -77,31 +77,31 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
         _;
     }
 
-    function initialize(address _strategy) external initializer {
-        address _factory = msg.sender;
-        address _asset = address(IBasisStrategy(_strategy).asset());
-        address _product = address(IBasisStrategy(_strategy).product());
-        address _marketKey = IBasisGmxFactory(_factory).marketKey(_asset, _product);
-        if (_marketKey == address(0)) {
+    function initialize(address strategy) external initializer {
+        address factory = msg.sender;
+        address asset = address(IBasisStrategy(strategy).asset());
+        address product = address(IBasisStrategy(strategy).product());
+        address marketKey = IBasisGmxFactory(factory).marketKey(asset, product);
+        if (marketKey == address(0)) {
             revert Errors.InvalidMarket();
         }
-        address _dataStore = IBasisGmxFactory(_factory).dataStore();
-        address _reader = IBasisGmxFactory(_factory).reader();
-        Market.Props memory _market = IReader(_reader).getMarket(_dataStore, _marketKey);
-        if (_market.shortToken != _asset || _market.longToken != _product) {
+        address dataStore = IBasisGmxFactory(factory).dataStore();
+        address reader = IBasisGmxFactory(factory).reader();
+        Market.Props memory market = IReader(reader).getMarket(dataStore, marketKey);
+        if (market.shortToken != asset || market.longToken != product) {
             revert Errors.InvalidInitializationAssets();
         }
         // always short position
-        bytes32 _positionKey = keccak256(abi.encode(address(this), _market.marketToken, _market.shortToken, false));
+        bytes32 positionKey = keccak256(abi.encode(address(this), market.marketToken, market.shortToken, false));
 
         ConfigStorage storage $ = _getConfigStorage();
-        $._factory = _factory;
-        $._strategy = _strategy;
-        $._marketToken = _market.marketToken;
-        $._indexToken = _market.indexToken;
-        $._longToken = _market.longToken;
-        $._shortToken = _market.shortToken;
-        $._positionKey = _positionKey;
+        $._factory = factory;
+        $._strategy = strategy;
+        $._marketToken = market.marketToken;
+        $._indexToken = market.indexToken;
+        $._longToken = market.longToken;
+        $._shortToken = market.shortToken;
+        $._positionKey = positionKey;
     }
 
     function _authorizeUpgrade(address) internal virtual override {
