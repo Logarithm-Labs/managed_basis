@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
+import {IOrderCallbackReceiver} from "src/externals/gmx-v2/interfaces/IOrderCallbackReceiver.sol";
 import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
@@ -18,7 +19,7 @@ import {Errors} from "./Errors.sol";
 /// @title A gmx position manager
 /// @author Logarithm Labs
 /// @dev this contract must be deployed only by the factory
-contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
+contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderCallbackReceiver {
     using SafeERC20 for IERC20;
 
     string constant API_VERSION = "0.0.1";
@@ -152,6 +153,27 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
     /// @inheritdoc IGmxV2PositionManager
     function getExecutionFee() external view override returns (uint256 feeIncrease, uint256 feeDecrease) {}
 
+    /// @inheritdoc IOrderCallbackReceiver
+    function afterOrderExecution(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
+        external
+    {
+        _validateOrderHandler();
+    }
+
+    /// @inheritdoc IOrderCallbackReceiver
+    function afterOrderCancellation(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
+        external
+    {
+        _validateOrderHandler();
+    }
+
+    /// @inheritdoc IOrderCallbackReceiver
+    function afterOrderFrozen(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
+        external
+    {
+        revert; // fronzen is not supported for market increase/decrease order
+    }
+
     function _adjust(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private returns (bytes32) {
         uint256 executionFee = msg.value;
         address orderVault = _factory().orderVault();
@@ -233,5 +255,12 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
     function _marketTokenAddr() private view returns (address) {
         ConfigStorage storage $ = _getConfigStorage();
         return $._marketToken;
+    }
+
+    /// @dev validate if the caller is OrderHandler of gmx
+    function _validateOrderHandler() private view {
+        if (msg.sender != _factory().orderHandler()) {
+            revert Errors.CallerNotOrderHandler();
+        }
     }
 }

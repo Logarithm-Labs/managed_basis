@@ -31,4 +31,7 @@ interface IBasisGmxFactory {
 
     /// @return the referral code of protocol
     function referralCode() external view returns (bytes32);
+
+    /// @return the address of gmx OrderHandler
+    function orderHandler() external view returns (address);
 }

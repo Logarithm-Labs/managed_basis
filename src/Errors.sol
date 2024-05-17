@@ -22,4 +22,6 @@ library Errors {
     error InvalidMarket();
     /// @notice asset and product are not matched with short and long tokens
     error InvalidInitializationAssets();
+    /// @notice invalid gmx callback function caller
+    error CallerNotOrderHandler();
 }
