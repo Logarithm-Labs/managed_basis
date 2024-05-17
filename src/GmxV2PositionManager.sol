@@ -8,7 +8,10 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {IOrderCallbackReceiver} from "src/externals/gmx-v2/interfaces/IOrderCallbackReceiver.sol";
 import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
+
+import {EventUtils} from "src/externals/gmx-v2/libraries/EventUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
+import {Order} from "src/externals/gmx-v2//libraries/Order.sol";
 
 import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
@@ -156,6 +159,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
     /// @inheritdoc IOrderCallbackReceiver
     function afterOrderExecution(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
         external
+        override
     {
         _validateOrderHandler();
     }
@@ -163,6 +167,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
     /// @inheritdoc IOrderCallbackReceiver
     function afterOrderCancellation(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
         external
+        override
     {
         _validateOrderHandler();
     }
@@ -170,14 +175,16 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
     /// @inheritdoc IOrderCallbackReceiver
     function afterOrderFrozen(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
         external
+        override
     {
-        revert; // fronzen is not supported for market increase/decrease order
+        revert(); // fronzen is not supported for market increase/decrease orders
     }
 
     function _adjust(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private returns (bytes32) {
         uint256 executionFee = msg.value;
         address orderVault = _factory().orderVault();
-        IExchangeRouter(_factory().exchangeRouter()).sendWnt{value: executionFee}(orderVault, executionFee);
+        address exchangeRouter = _factory().exchangeRouter();
+        IExchangeRouter(exchangeRouter).sendWnt{value: executionFee}(orderVault, executionFee);
 
         address[] memory swapPath;
         IExchangeRouter.CreateOrderParamsAddresses memory paramsAddresses = IExchangeRouter.CreateOrderParamsAddresses({
@@ -191,7 +198,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
 
         IExchangeRouter.CreateOrderParamsNumbers memory paramsNumbers;
         IExchangeRouter.OrderType orderType;
-        if (isInrease) {
+        if (isIncrease) {
             if (collateralDelta > 0) {
                 _collateralToken().safeTransferFrom(_strategyAddr(), orderVault, collateralDelta);
             }
@@ -225,9 +232,9 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
             decreasePositionSwapType: swapType,
             isLong: false,
             shouldUnwrapNativeToken: false,
-            referralCode: factory.referralCode()
+            referralCode: _factory().referralCode()
         });
-        return IExchangeRouter(params.exchangeRouter).createOrder(orderParams);
+        return IExchangeRouter(exchangeRouter).createOrder(orderParams);
     }
 
     // this is used in modifier which reduces the code size
