@@ -37,6 +37,15 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
         Pending
     }
 
+    struct InternalClaimFundingParams {
+        IDataStore dataStore;
+        IExchangeRouter exchangeRouter;
+        address marketToken;
+        address longToken;
+        address shortToken;
+        address receiver;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -155,7 +164,23 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
     }
 
     /// @inheritdoc IGmxV2PositionManager
-    function claim() external override {}
+    function claim() external override {
+        IBasisGmxFactory factory = _factory();
+        IDataStore dataStore = IDataStore(factory.dataStore());
+        IExchangeRouter exchangeRouter = IExchangeRouter(factory.exchangeRouter());
+
+        _claimFunding(
+            InternalClaimFundingParams({
+                dataStore: dataStore,
+                exchangeRouter: exchangeRouter,
+                marketToken: _marketTokenAddr(),
+                shortToken: _shortTokenAddr(),
+                longToken: _longTokenAddr(),
+                receiver: _strategyAddr()
+            })
+        );
+        _claimCollateral();
+    }
 
     /// @inheritdoc IGmxV2PositionManager
     function totalAssets() external view override returns (uint256) {}
@@ -220,7 +245,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
         IERC20 collateralToken = _collateralToken();
 
         IExchangeRouter(exchangeRouterAddr).sendWnt{value: executionFee}(orderVaultAddr, executionFee);
-        
+
         address strategyAddr = _strategyAddr();
         address[] memory swapPath;
         IExchangeRouter.CreateOrderParamsAddresses memory paramsAddresses = IExchangeRouter.CreateOrderParamsAddresses({
@@ -273,12 +298,50 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
         return IExchangeRouter(exchangeRouterAddr).createOrder(orderParams);
     }
 
+    function _claimFunding(InternalClaimFundingParams memory params) private {
+        bytes32 key = Keys.claimableFundingAmountKey(params.marketToken, params.shortToken, address(this));
+        uint256 shortTokenAmount = params.dataStore.getUint(key);
+        key = Keys.claimableFundingAmountKey(params.marketToken, params.longToken, address(this));
+        uint256 longTokenAmount = params.dataStore.getUint(key);
+
+        if (shortTokenAmount > 0 || longTokenAmount > 0) {
+            address[] memory markets = new address[](2);
+            markets[0] = params.marketToken;
+            markets[1] = params.marketToken;
+            address[] memory tokens = new address[](2);
+            tokens[0] = params.shortToken;
+            tokens[1] = params.longToken;
+
+            uint256[] memory amounts =
+                IExchangeRouter(params.exchangeRouter).claimFundingFees(markets, tokens, params.receiver);
+
+            (uint256 shortTokenClaimed, uint256 longTokenClaimed) = (amounts[0], amounts[1]);
+        }
+    }
+
+    function _claimCollateral() private {}
+
+    /*//////////////////////////////////////////////////////////////
+                        VALIDATION FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     // this is used in modifier which reduces the code size
     function _onlyStrategy() private view {
         if (msg.sender != _strategyAddr()) {
             revert Errors.CallerNotStrategy();
         }
     }
+
+    /// @dev validate if the caller is OrderHandler of gmx
+    function _validateOrderHandler() private view {
+        if (msg.sender != _factory().orderHandler()) {
+            revert Errors.CallerNotOrderHandler();
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        STORAGE GETTERS
+    //////////////////////////////////////////////////////////////*/
 
     function _factory() private view returns (IBasisGmxFactory) {
         ConfigStorage storage $ = _getConfigStorage();
@@ -300,10 +363,13 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
         return $._marketToken;
     }
 
-    /// @dev validate if the caller is OrderHandler of gmx
-    function _validateOrderHandler() private view {
-        if (msg.sender != _factory().orderHandler()) {
-            revert Errors.CallerNotOrderHandler();
-        }
+    function _longTokenAddr() private view returns (address) {
+        ConfigStorage storage $ = _getConfigStorage();
+        return $._longToken;
+    }
+
+    function _shortTokenAddr() private view returns (address) {
+        ConfigStorage storage $ = _getConfigStorage();
+        return $._shortToken;
     }
 }
