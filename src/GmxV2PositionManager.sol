@@ -3,10 +3,8 @@ pragma solidity ^0.8.0;
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
-
+import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
-import {MarketUtils} from "src/externals/gmx-v2/libraries/MarketUtils.sol";
 
 import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
@@ -35,10 +33,10 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
     struct ConfigStorage {
         address _factory;
         address _strategy;
-        address _shortToken;
-        address _longToken;
-        address _indexToken;
         address _marketToken;
+        address _indexToken;
+        address _longToken;
+        address _shortToken;
         bytes32 _positionKey;
     }
 
@@ -87,25 +85,23 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
         if (_marketKey == address(0)) {
             revert Errors.InvalidMarket();
         }
-        IDataStore _dataStore = IDataStore(IBasisGmxFactory(_factory).dataStore());
-        Market.Props memory _market = MarketStoreUtils.get(_dataStore, _marketKey);
+        address _dataStore = IBasisGmxFactory(_factory).dataStore();
+        address _reader = IBasisGmxFactory(_factory).reader();
+        Market.Props memory _market = IReader(_reader).getMarket(_dataStore, _marketKey);
         if (_market.shortToken != _asset || _market.longToken != _product) {
             revert Errors.InvalidInitializationAssets();
         }
-
         // always short position
         bytes32 _positionKey = keccak256(abi.encode(address(this), _market.marketToken, _market.shortToken, false));
 
         ConfigStorage storage $ = _getConfigStorage();
-        $ = ConfigStorage({
-            _factory: _factory,
-            _strategy: _strategy,
-            _marketToken: _market.marketToken,
-            _indexToken: _market.indexToken,
-            longToken: _market.longToken,
-            shortToken: _market.shortToken,
-            _positionKey: _positionKey
-        });
+        $._factory = _factory;
+        $._strategy = _strategy;
+        $._marketToken = _market.marketToken;
+        $._indexToken = _market.indexToken;
+        $._longToken = _market.longToken;
+        $._shortToken = _market.shortToken;
+        $._positionKey = _positionKey;
     }
 
     function _authorizeUpgrade(address) internal virtual override {
