@@ -14,9 +14,21 @@ interface IBasisGmxFactory {
     /// @return the gmx market key
     function marketKey(address _asset, address _product) external view returns (address);
 
-    /// @return the gmx data store address 
+    /// @return the gmx data store address
     function dataStore() external view returns (address);
 
     /// @return the gmx reader
     function reader() external view returns (address);
+
+    /// @return the gmx order vault address
+    function orderVault() external view returns (address);
+
+    /// @return the gmx exchange router address
+    function exchangeRouter() external view returns (address);
+
+    /// @return the gas limit of position manager's callback function
+    function callbackGasLimit() external view returns (uint256);
+
+    /// @return the referral code of protocol
+    function referralCode() external view returns (bytes32);
 }

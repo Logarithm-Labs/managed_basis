@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
+import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 
 import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
@@ -16,6 +19,8 @@ import {Errors} from "./Errors.sol";
 /// @author Logarithm Labs
 /// @dev this contract must be deployed only by the factory
 contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
+    using SafeERC20 for IERC20;
+
     string constant API_VERSION = "0.0.1";
     uint256 constant PRECISION = 1e18;
 
@@ -117,22 +122,26 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
     }
 
     /// @inheritdoc IGmxV2PositionManager
-    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInTokens)
+    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd)
         external
         payable
         override
         onlyStrategy
         returns (bytes32)
-    {}
+    {
+        return _adjust(collateralDelta, sizeDeltaInUsd, true);
+    }
 
     /// @inheritdoc IGmxV2PositionManager
-    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInTokens)
+    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd)
         external
         payable
         override
         onlyStrategy
         returns (bytes32)
-    {}
+    {
+        return _adjust(collateralDelta, sizeDeltaInUsd, false);
+    }
 
     /// @inheritdoc IGmxV2PositionManager
     function claim() external override {}
@@ -143,11 +152,86 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
     /// @inheritdoc IGmxV2PositionManager
     function getExecutionFee() external view override returns (uint256 feeIncrease, uint256 feeDecrease) {}
 
+    function _adjust(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private returns (bytes32) {
+        uint256 executionFee = msg.value;
+        address orderVault = _factory().orderVault();
+        IExchangeRouter(_factory().exchangeRouter()).sendWnt{value: executionFee}(orderVault, executionFee);
+
+        address[] memory swapPath;
+        IExchangeRouter.CreateOrderParamsAddresses memory paramsAddresses = IExchangeRouter.CreateOrderParamsAddresses({
+            receiver: _strategyAddr(), // the receiver of reduced collateral
+            callbackContract: address(this),
+            uiFeeReceiver: address(0),
+            market: _marketTokenAddr(),
+            initialCollateralToken: address(_collateralToken()),
+            swapPath: swapPath
+        });
+
+        IExchangeRouter.CreateOrderParamsNumbers memory paramsNumbers;
+        IExchangeRouter.OrderType orderType;
+        if (isInrease) {
+            if (collateralDelta > 0) {
+                _collateralToken().safeTransferFrom(_strategyAddr(), orderVault, collateralDelta);
+            }
+            paramsNumbers = IExchangeRouter.CreateOrderParamsNumbers({
+                sizeDeltaUsd: sizeDeltaInUsd,
+                initialCollateralDeltaAmount: 0, // The amount of tokens to withdraw for decrease orders
+                triggerPrice: 0, // not used for market, swap, liquidation orders
+                acceptablePrice: 0, // acceptable index token price
+                executionFee: executionFee,
+                callbackGasLimit: _factory().callbackGasLimit(),
+                minOutputAmount: 0
+            });
+            orderType = IExchangeRouter.OrderType.MarketIncrease;
+        } else {
+            paramsNumbers = IExchangeRouter.CreateOrderParamsNumbers({
+                sizeDeltaUsd: sizeDeltaInUsd,
+                initialCollateralDeltaAmount: collateralDelta, // The amount of tokens to withdraw for decrease orders
+                triggerPrice: 0, // not used for market, swap, liquidation orders
+                acceptablePrice: type(uint256).max, // acceptable index token price
+                executionFee: executionFee,
+                callbackGasLimit: _factory().callbackGasLimit(),
+                minOutputAmount: 0
+            });
+            orderType = IExchangeRouter.OrderType.MarketDecrease;
+        }
+        IExchangeRouter.DecreasePositionSwapType swapType = IExchangeRouter.DecreasePositionSwapType.NoSwap;
+        IExchangeRouter.CreateOrderParams memory orderParams = IExchangeRouter.CreateOrderParams({
+            addresses: paramsAddresses,
+            numbers: paramsNumbers,
+            orderType: orderType,
+            decreasePositionSwapType: swapType,
+            isLong: false,
+            shouldUnwrapNativeToken: false,
+            referralCode: factory.referralCode()
+        });
+        return IExchangeRouter(params.exchangeRouter).createOrder(orderParams);
+    }
+
     // this is used in modifier which reduces the code size
     function _onlyStrategy() private view {
-        ConfigStorage storage $ = _getConfigStorage();
-        if (msg.sender != $._strategy) {
+        if (msg.sender != _strategyAddr()) {
             revert Errors.CallerNotStrategy();
         }
+    }
+
+    function _factory() private view returns (IBasisGmxFactory) {
+        ConfigStorage storage $ = _getConfigStorage();
+        return IBasisGmxFactory($._factory);
+    }
+
+    function _collateralToken() private view returns (IERC20) {
+        ConfigStorage storage $ = _getConfigStorage();
+        return IERC20($._shortToken);
+    }
+
+    function _strategyAddr() private view returns (address) {
+        ConfigStorage storage $ = _getConfigStorage();
+        return $._strategy;
+    }
+
+    function _marketTokenAddr() private view returns (address) {
+        ConfigStorage storage $ = _getConfigStorage();
+        return $._marketToken;
     }
 }

@@ -12,24 +12,28 @@ interface IGmxV2PositionManager {
     function apiVersion() external view returns (string memory);
 
     /// @dev create an increase order
-    /// Note: value should be set to cover the gmx execution fee
+    /// Note: value should be sent to cover the gmx execution fee
     /// this function is callable only by strategy vault
+    /// gmx uses offchain prices so it is much more accurate to use usd value for position size
+    /// instead of token value
     ///
     /// @param collateralDelta collateral delta amount in collateral token to increase
-    /// @param sizeDeltaInTokens position delta size in index token to increase
+    /// @param sizeDeltaInUsd position delta size in usd to increase
     ///
     /// @return the key of position increase order queued
-    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInTokens) external payable returns (bytes32);
+    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable returns (bytes32);
 
     /// @dev create a decrease order
-    /// Note: value should be set to cover the gmx execution fee
+    /// Note: value should be sent to cover the gmx execution fee
     /// this function is callable only by strategy vault
+    /// gmx uses offchain prices so it is much more accurate to use usd value for position size
+    /// instead of token value
     ///
     /// @param collateralDelta collateral delta amount in collateral token to decrease
-    /// @param sizeDeltaInTokens position delta size in index token to decrease
+    /// @param sizeDeltaInUsd position delta size in usd to decrease
     ///
     /// @return the key of position decrease order queued
-    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInTokens) external payable returns (bytes32);
+    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable returns (bytes32);
 
     /// @dev claims all the claimable funding fee and claimable collateral
     /// this is callable by anyone
