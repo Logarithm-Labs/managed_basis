@@ -4,10 +4,9 @@ pragma solidity ^0.8.0;
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {IBasisGmxV2Factory} from "src/interfaces/IBasisGmxV2Factory.sol";
-import {BasisGmxV2FactoryStorage} from "src/storages/BasisGmxV2FactoryStorage.sol";
+import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
 
-contract BasisGmxV2Factory is IBasisGmxV2Factory, BasisGmxV2FactoryStorage, OwnableUpgradeable, UUPSUpgradeable {
+contract BasisGmxFactory is IBasisGmxFactory, OwnableUpgradeable, UUPSUpgradeable {
     string constant API_VERSION = "0.0.1";
 
     function initialize(address _owner) external initializer {
@@ -16,7 +15,7 @@ contract BasisGmxV2Factory is IBasisGmxV2Factory, BasisGmxV2FactoryStorage, Owna
 
     function _authorizeUpgrade(address) internal virtual override onlyOwner {}
 
-    /// @inheritdoc IBasisGmxV2Factory
+    /// @inheritdoc IBasisGmxFactory
     function apiVersion() external pure override returns (string memory) {
         return API_VERSION;
     }

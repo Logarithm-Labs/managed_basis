@@ -3,13 +3,20 @@ pragma solidity ^0.8.0;
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
+import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
+
+import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
+import {MarketUtils} from "src/externals/gmx-v2/libraries/MarketUtils.sol";
+
+import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
+import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 import {IGmxV2PositionManager} from "src/interfaces/IGmxV2PositionManager.sol";
 
 import {Errors} from "./Errors.sol";
 
 /// @title A gmx position manager
 /// @author Logarithm Labs
-/// @dev this contract should be deployed only by the factory
+/// @dev this contract must be deployed only by the factory
 contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
     string constant API_VERSION = "0.0.1";
     uint256 constant PRECISION = 1e18;
@@ -17,44 +24,55 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
     /// @notice used for processing status
     enum Stages {
         Idle,
-        Increase,
-        Decrease
+        Pending
     }
 
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
 
-    /// @custom:storage-location erc7201:logarithm.storage.GmxV2PositionManager
-    struct GmxV2PositionManagerStorage {
-        Stages _stage;
+    /// @custom:storage-location erc7201:logarithm.storage.GmxV2PositionManager.Config
+    struct ConfigStorage {
         address _factory;
         address _strategy;
-
         address _shortToken;
         address _longToken;
         address _indexToken;
         address _marketToken;
         bytes32 _positionKey;
-
-        uint256 _pendingAssets;
-
-        // uint256 totalClaimedFundingShortToken;
-        // uint256 totalClaimedFundingLongToken;
-        // uint256 accumulatedPositionFees;
-
-        // uint256 accumulatedBorrowingFees;
-        // uint256 accumulatedFundingFees;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant GmxV2PositionManagerStorageLocation = 0xeef3dac4538c82c8ace4063ab0acd2d15cdb5883aa1dff7c2673abb3d8698400;
+    /// @custom:storage-location erc7201:logarithm.storage.GmxV2PositionManager.State
+    struct StateStorage {
+        Stages _stage;
+        uint256 _pendingAssets;
+    }
 
-    function _getGmxV2PositionManagerStorage() private pure returns (GmxV2PositionManagerStorage storage $) {
+    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager.Config")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant ConfigStorageLocation = 0x51e553f1ed05f39323723017580800f12e204b6a09a61aeb584366ce03172f00;
+
+    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager.State")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant StateStorageLocation = 0x9a05e65897e43e5729051b7a8b9a904f0ad0efe51cf504c7b850ba952775e500;
+
+    function _getConfigStorage() private pure returns (ConfigStorage storage $) {
         assembly {
-            $.slot := GmxV2PositionManagerStorageLocation
+            $.slot := ConfigStorageLocation
         }
     }
+
+    function _getStateStorage() private pure returns (StateStorage storage $) {
+        assembly {
+            $.slot := StateStorageLocation
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    /*//////////////////////////////////////////////////////////////
+                                MODIFIERS
+    //////////////////////////////////////////////////////////////*/
 
     modifier onlyStrategy() {
         _onlyStrategy();
@@ -62,12 +80,37 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
     }
 
     function initialize(address _strategy) external initializer {
+        address _factory = msg.sender;
+        address _asset = address(IBasisStrategy(_strategy).asset());
+        address _product = address(IBasisStrategy(_strategy).product());
+        address _marketKey = IBasisGmxFactory(_factory).marketKey(_asset, _product);
+        if (_marketKey == address(0)) {
+            revert Errors.InvalidMarket();
+        }
+        IDataStore _dataStore = IDataStore(IBasisGmxFactory(_factory).dataStore());
+        Market.Props memory _market = MarketStoreUtils.get(_dataStore, _marketKey);
+        if (_market.shortToken != _asset || _market.longToken != _product) {
+            revert Errors.InvalidInitializationAssets();
+        }
 
+        // always short position
+        bytes32 _positionKey = keccak256(abi.encode(address(this), _market.marketToken, _market.shortToken, false));
+
+        ConfigStorage storage $ = _getConfigStorage();
+        $ = ConfigStorage({
+            _factory: _factory,
+            _strategy: _strategy,
+            _marketToken: _market.marketToken,
+            _indexToken: _market.indexToken,
+            longToken: _market.longToken,
+            shortToken: _market.shortToken,
+            _positionKey: _positionKey
+        });
     }
 
     function _authorizeUpgrade(address) internal virtual override {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        if(msg.sender != $._factory) {
+        ConfigStorage storage $ = _getConfigStorage();
+        if (msg.sender != $._factory) {
             revert Errors.UnauthoirzedUpgrade();
         }
     }
@@ -104,11 +147,10 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable {
     /// @inheritdoc IGmxV2PositionManager
     function getExecutionFee() external view override returns (uint256 feeIncrease, uint256 feeDecrease) {}
 
-
     // this is used in modifier which reduces the code size
     function _onlyStrategy() private view {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        if(msg.sender != $._strategy) {
+        ConfigStorage storage $ = _getConfigStorage();
+        if (msg.sender != $._strategy) {
             revert Errors.CallerNotStrategy();
         }
     }

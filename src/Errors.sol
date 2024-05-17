@@ -14,7 +14,12 @@ library Errors {
     error IncosistentParamsLength();
 
     error OracleInvalidPrice();
-
+    /// @notice try upgrading with unauthorized acc
     error UnauthoirzedUpgrade();
+    /// @notice only callable by strategy
     error CallerNotStrategy();
+    /// @notice invalid maket config when deploying pos manager
+    error InvalidMarket();
+    /// @notice asset and product are not matched with short and long tokens
+    error InvalidInitializationAssets();
 }
