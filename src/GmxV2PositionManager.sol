@@ -5,13 +5,16 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
+import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
+import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
 import {IOrderCallbackReceiver} from "src/externals/gmx-v2/interfaces/IOrderCallbackReceiver.sol";
 import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
-import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
-
+import {ArbGasInfo} from "src/externals/arbitrum/ArbGasInfo.sol";
 import {EventUtils} from "src/externals/gmx-v2/libraries/EventUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
-import {Order} from "src/externals/gmx-v2//libraries/Order.sol";
+import {Order} from "src/externals/gmx-v2/libraries/Order.sol";
+import {Precision} from "src/externals/gmx-v2/libraries/Precision.sol";
+import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
 import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
@@ -157,8 +160,28 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
     /// @inheritdoc IGmxV2PositionManager
     function totalAssets() external view override returns (uint256) {}
 
-    /// @inheritdoc IGmxV2PositionManager
-    function getExecutionFee() external view override returns (uint256 feeIncrease, uint256 feeDecrease) {}
+    /// @notice calculate the execution fee that is need from gmx when increase and decrease
+    ///
+    /// @return feeIncrease the execution fee for increase
+    /// @return feeDecrease the execution fee for decrease
+    function getExecutionFee() external view returns (uint256 feeIncrease, uint256 feeDecrease) {
+        IBasisGmxFactory factory = _factory();
+        IDataStore dataStore = IDataStore(factory.dataStore());
+        uint256 callbackGasLimit = factory.callbackGasLimit();
+        uint256 estimatedGasLimitIncrease = dataStore.getUint(Keys.increaseOrderGasLimitKey());
+        uint256 estimatedGasLimitDecrease = dataStore.getUint(Keys.decreaseOrderGasLimitKey());
+        estimatedGasLimitIncrease += callbackGasLimit;
+        estimatedGasLimitDecrease += callbackGasLimit;
+        uint256 baseGasLimit = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT);
+        uint256 multiplierFactor = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR);
+        uint256 gasLimitIncrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitIncrease, multiplierFactor);
+        uint256 gasLimitDecrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitDecrease, multiplierFactor);
+        uint256 gasPrice = tx.gasprice;
+        if (gasPrice == 0) {
+            gasPrice = ArbGasInfo(0x000000000000000000000000000000000000006C).getMinimumGasPrice();
+        }
+        return (gasPrice * gasLimitIncrease, gasPrice * gasLimitDecrease);
+    }
 
     /// @inheritdoc IOrderCallbackReceiver
     function afterOrderExecution(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)

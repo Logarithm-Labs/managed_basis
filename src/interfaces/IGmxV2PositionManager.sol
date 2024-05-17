@@ -43,10 +43,4 @@ interface IGmxV2PositionManager {
     ///
     /// @dev this amount includes the pending asset token amount
     function totalAssets() external view returns (uint256);
-
-    /// @dev calculate the execution fee that is need from gmx when increase and decrease
-    ///
-    /// @return feeIncrease the execution fee for increase
-    /// @return feeDecrease the execution fee for decrease
-    function getExecutionFee() external view returns (uint256 feeIncrease, uint256 feeDecrease);
 }
