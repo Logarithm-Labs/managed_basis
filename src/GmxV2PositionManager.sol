@@ -207,7 +207,6 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
         revert(); // fronzen is not supported for market increase/decrease orders
     }
 
-    
     /*//////////////////////////////////////////////////////////////
                         PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -215,17 +214,21 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
     /// @dev create increase/decrease order
     function _adjust(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private returns (bytes32) {
         uint256 executionFee = msg.value;
-        address orderVault = _factory().orderVault();
-        address exchangeRouter = _factory().exchangeRouter();
-        IExchangeRouter(exchangeRouter).sendWnt{value: executionFee}(orderVault, executionFee);
+        IBasisGmxFactory factory = _factory();
+        address orderVaultAddr = factory.orderVault();
+        address exchangeRouterAddr = factory.exchangeRouter();
+        IERC20 collateralToken = _collateralToken();
 
+        IExchangeRouter(exchangeRouterAddr).sendWnt{value: executionFee}(orderVaultAddr, executionFee);
+        
+        address strategyAddr = _strategyAddr();
         address[] memory swapPath;
         IExchangeRouter.CreateOrderParamsAddresses memory paramsAddresses = IExchangeRouter.CreateOrderParamsAddresses({
-            receiver: _strategyAddr(), // the receiver of reduced collateral
+            receiver: strategyAddr, // the receiver of reduced collateral
             callbackContract: address(this),
             uiFeeReceiver: address(0),
             market: _marketTokenAddr(),
-            initialCollateralToken: address(_collateralToken()),
+            initialCollateralToken: address(collateralToken),
             swapPath: swapPath
         });
 
@@ -233,7 +236,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
         IExchangeRouter.OrderType orderType;
         if (isIncrease) {
             if (collateralDelta > 0) {
-                _collateralToken().safeTransferFrom(_strategyAddr(), orderVault, collateralDelta);
+                collateralToken.safeTransferFrom(strategyAddr, orderVaultAddr, collateralDelta);
             }
             paramsNumbers = IExchangeRouter.CreateOrderParamsNumbers({
                 sizeDeltaUsd: sizeDeltaInUsd,
@@ -241,7 +244,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
                 triggerPrice: 0, // not used for market, swap, liquidation orders
                 acceptablePrice: 0, // acceptable index token price
                 executionFee: executionFee,
-                callbackGasLimit: _factory().callbackGasLimit(),
+                callbackGasLimit: factory.callbackGasLimit(),
                 minOutputAmount: 0
             });
             orderType = IExchangeRouter.OrderType.MarketIncrease;
@@ -252,7 +255,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
                 triggerPrice: 0, // not used for market, swap, liquidation orders
                 acceptablePrice: type(uint256).max, // acceptable index token price
                 executionFee: executionFee,
-                callbackGasLimit: _factory().callbackGasLimit(),
+                callbackGasLimit: factory.callbackGasLimit(),
                 minOutputAmount: 0
             });
             orderType = IExchangeRouter.OrderType.MarketDecrease;
@@ -265,9 +268,9 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
             decreasePositionSwapType: swapType,
             isLong: false,
             shouldUnwrapNativeToken: false,
-            referralCode: _factory().referralCode()
+            referralCode: factory.referralCode()
         });
-        return IExchangeRouter(exchangeRouter).createOrder(orderParams);
+        return IExchangeRouter(exchangeRouterAddr).createOrder(orderParams);
     }
 
     // this is used in modifier which reduces the code size
