@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 interface IGmxV2PositionManager {
+    function initialize(address strategy) external;
     /// @notice Used to track the deployed version of this contract. In practice you
     /// can use this version number to compare with Logarithm's GitHub and
     /// determine which version of the source matches this deployed contract

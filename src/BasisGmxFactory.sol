@@ -4,19 +4,312 @@ pragma solidity ^0.8.0;
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
+import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
+import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
+
 import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
+import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
+import {IGmxV2PositionManager} from "src/interfaces/IGmxV2PositionManager.sol";
+
+import {Errors} from "src/libraries/Errors.sol";
 
 contract BasisGmxFactory is IBasisGmxFactory, OwnableUpgradeable, UUPSUpgradeable {
     string constant API_VERSION = "0.0.1";
 
-    function initialize(address _owner) external initializer {
-        __Ownable_init(_owner);
+    /*//////////////////////////////////////////////////////////////
+                        NAMESPACED STORAGE LAYOUT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @custom:storage-location erc7201:logarithm.storage.BasisGmxFactory
+    struct BasisGmxFactoryStorage {
+        // gmx config
+        address _exchangeRouter;
+        address _dataStore;
+        address _orderHandler;
+        address _orderVault;
+        address _reader;
+        // strategy config
+        uint256 _callbackGasLimit;
+        bytes32 _referralCode;
+        // main storage
+        address _strategyImplementation;
+        address _positionManagerImplementation;
+        address[] _strategies;
+        mapping(address strategy => bool) _activeStrategy;
+        mapping(address asset => mapping(address product => address)) _marketKeys;
+        mapping(address keeper => bool) _isKeeper;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisGmxFactory")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant BasisGmxFactoryStorageLocation =
+        0xe2050cc63af88fdc6b67454ffa45c367fd249ca0e96699fe48dd44ba71f1a600;
+
+    function _getBasisGmxFactoryStorage() private pure returns (BasisGmxFactoryStorage storage $) {
+        assembly {
+            $.slot := BasisGmxFactoryStorageLocation
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event StrategyConfigUpdated(address indexed caller, bytes config);
+
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZE
+    //////////////////////////////////////////////////////////////*/
+
+    function initialize(
+        address owner_,
+        address exchangeRouter_,
+        address reader_,
+        uint256 callbackGasLimit_,
+        bytes32 referralCode_
+    ) external initializer {
+        __Ownable_init(owner_);
+        if (exchangeRouter_ == address(0)) {
+            revert Errors.ZeroAddress();
+        }
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+
+        // initialize gmx config
+        address orderHandler_ = IExchangeRouter(exchangeRouter_).orderHandler();
+        $._exchangeRouter = exchangeRouter_;
+        $._dataStore = IExchangeRouter(exchangeRouter_).dataStore();
+        $._orderHandler = IExchangeRouter(exchangeRouter_).orderHandler();
+        $._orderVault = IOrderHandler(orderHandler_).orderVault();
+        $._reader = reader_;
+
+        // initialze strategy config
+        $._callbackGasLimit = callbackGasLimit_;
+        $._referralCode = referralCode_;
     }
 
     function _authorizeUpgrade(address) internal virtual override onlyOwner {}
 
+    /*//////////////////////////////////////////////////////////////
+                        EXTERNAL SETTER FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function setGmxReferralCode(bytes32 referralCode_) external onlyOwner {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        $._referralCode = referralCode_;
+    }
+
+    function setGmxCallbackGasLimit(uint256 callbackGasLimit_) external onlyOwner {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        $._callbackGasLimit = callbackGasLimit_;
+    }
+
+    function addKeepers(address[] calldata keepers) external virtual onlyOwner {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        uint256 len = keepers.length;
+        for (uint256 i; i < len;) {
+            $._isKeeper[keepers[i]] = true;
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function removeKeepers(address[] calldata keepers) external virtual onlyOwner {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        uint256 len = keepers.length;
+        for (uint256 i; i < len;) {
+            $._isKeeper[keepers[i]] = false;
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function setMarketKeys(address[] calldata assets, address[] calldata products, address[] calldata markets)
+        external
+        virtual
+        onlyOwner
+    {
+        uint256 len = assets.length;
+        if (len != products.length || len != markets.length) {
+            revert Errors.ArrayLengthMissmatch();
+        }
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        for (uint256 i; i < len;) {
+            if (assets[i] == address(0) || products[i] == address(0) || markets[i] == address(0)) {
+                revert Errors.ZeroAddress();
+            }
+            $._marketKeys[assets[i]][products[i]] = markets[i];
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function upgradeStrategyImplementations(address implementation, bytes memory data) external virtual onlyOwner {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        address[] memory strategies = $._strategies;
+        uint256 len = strategies.length;
+        for (uint256 i; i < len;) {
+            UUPSUpgradeable strategy = UUPSUpgradeable(strategies[i]);
+            strategy.upgradeToAndCall(implementation, data);
+            unchecked {
+                ++i;
+            }
+        }
+        $._strategyImplementation = implementation;
+    }
+
+    function upgradePositionManagerImplementations(address implementation, bytes memory data)
+        external
+        virtual
+        onlyOwner
+    {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        address[] memory strategies = $._strategies;
+        uint256 len = strategies.length;
+        for (uint256 i; i < len;) {
+            address positionManagerAddr = IBasisStrategy(strategies[i]).positionManager();
+            UUPSUpgradeable(positionManagerAddr).upgradeToAndCall(implementation, data);
+            unchecked {
+                ++i;
+            }
+        }
+        $._positionManagerImplementation = implementation;
+    }
+
+    function createStrategy(address asset, address product)
+        // uint256 targetLeverage,
+        // uint256 minLeverage,
+        // uint256 maxLeverage
+        external
+        virtual
+        onlyOwner
+        returns (address payable strategy, address positionManager)
+    {
+        string memory assetSymbol = IERC20Metadata(asset).symbol();
+        string memory productSymbol = IERC20Metadata(product).symbol();
+        string memory name = _getStrategyName(assetSymbol, productSymbol);
+        string memory symbol = _getStrategySymbol(assetSymbol, productSymbol);
+        bytes memory initializerData = abi.encodeCall(IBasisStrategy.initialize, (asset, product, name, symbol));
+
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        strategy = payable(address(new ERC1967Proxy($._strategyImplementation, initializerData)));
+
+        // deploy position manager proxy of this strategy
+        bytes memory posMngerInitializerData = abi.encodeCall(IGmxV2PositionManager.initialize, strategy);
+
+        positionManager = address(new ERC1967Proxy($._positionManagerImplementation, posMngerInitializerData));
+        IBasisStrategy(strategy).setPositionManager(positionManager);
+
+        IBasisStrategy(strategy).activateStrategy();
+        $._strategies.push(strategy);
+        $._activeStrategy[strategy] = true;
+    }
+
+    function activateStrategy(address strategy) external virtual onlyOwner {
+        if (IBasisStrategy(strategy).isActive()) {
+            revert();
+        }
+        IBasisStrategy(strategy).activateStrategy();
+    }
+
+    function deactivateStrategy(address strategy) external payable virtual onlyOwner returns (bytes32 key) {
+        if (!IBasisStrategy(strategy).isActive()) {
+            revert();
+        }
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        key = IBasisStrategy(strategy).deactivateStrategy{value: msg.value}();
+        $._activeStrategy[strategy] = false;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        EXTERNAL VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @inheritdoc IBasisGmxFactory
     function apiVersion() external pure override returns (string memory) {
         return API_VERSION;
+    }
+
+    /// @inheritdoc IBasisGmxFactory
+    function marketKey(address asset, address product) external view returns (address) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._marketKeys[asset][product];
+    }
+
+    /// @inheritdoc IBasisGmxFactory
+    function dataStore() external view override returns (address) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._dataStore;
+    }
+
+    /// @inheritdoc IBasisGmxFactory
+    function reader() external view override returns (address) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._dataStore;
+    }
+
+    /// @inheritdoc IBasisGmxFactory
+    function orderVault() external view override returns (address) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._dataStore;
+    }
+
+    /// @inheritdoc IBasisGmxFactory
+    function exchangeRouter() external view override returns (address) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._exchangeRouter;
+    }
+
+    /// @inheritdoc IBasisGmxFactory
+    function callbackGasLimit() external view override returns (uint256) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._callbackGasLimit;
+    }
+
+    /// @inheritdoc IBasisGmxFactory
+    function referralCode() external view override returns (bytes32) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._referralCode;
+    }
+
+    /// @inheritdoc IBasisGmxFactory
+    function orderHandler() external view override returns (address) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._orderHandler;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        PUBLIC VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function isActiveStrategy(address strategy) public view returns (bool) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._activeStrategy[strategy];
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        INTERNAL VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function _getStrategyName(string memory assetSymbol, string memory productSymbol)
+        internal
+        pure
+        virtual
+        returns (string memory)
+    {
+        return string(abi.encodePacked("Logarithm Basis Gmx ", assetSymbol, "-", productSymbol));
+    }
+
+    function _getStrategySymbol(string memory assetSymbol, string memory productSymbol)
+        internal
+        pure
+        virtual
+        returns (string memory)
+    {
+        return string(abi.encodePacked("log-b-gmx-", assetSymbol, "-", productSymbol));
     }
 }
