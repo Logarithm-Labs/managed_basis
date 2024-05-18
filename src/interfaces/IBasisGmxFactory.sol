@@ -12,7 +12,7 @@ interface IBasisGmxFactory {
     function apiVersion() external view returns (string memory);
 
     /// @return the gmx market key
-    function marketKey(address _asset, address _product) external view returns (address);
+    function marketKey(address asset, address product) external view returns (address);
 
     /// @return the gmx data store address
     function dataStore() external view returns (address);
