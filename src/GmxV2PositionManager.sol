@@ -20,7 +20,7 @@ import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 import {IGmxV2PositionManager} from "src/interfaces/IGmxV2PositionManager.sol";
 
-import {Errors} from "./Errors.sol";
+import {Errors} from "src/libraries/Errors.sol";
 
 /// @title A gmx position manager
 /// @author Logarithm Labs

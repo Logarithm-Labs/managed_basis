@@ -18,7 +18,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 
 import {InchAggregatorLogic} from "src/libraries/InchAggregatorLogic.sol";
-import {Errors} from "./Errors.sol";
+import {Errors} from "src/libraries";
 
 contract ManagedBasisStrategy is
     Initializable,
@@ -90,8 +90,8 @@ contract ManagedBasisStrategy is
                         INITIALIZATION LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address _asset, address _owner) public initializer {
-        __LogBaseVault_init(IERC20(_asset));
+    function initialize(address asset, address product, string memory name, string memory symbol) public initializer {
+        __LogBaseVault_init(IERC20(asset));
         __AccessControlDefaultAdminRules_init(1 days, _owner);
     }
 

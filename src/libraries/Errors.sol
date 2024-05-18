@@ -24,4 +24,8 @@ library Errors {
     error InvalidInitializationAssets();
     /// @notice invalid gmx callback function caller
     error CallerNotOrderHandler();
+    /// @notice zero address check
+    error ZeroAddress();
+    /// @notice arrays are expected to have same length
+    error ArrayLengthMissmatch();
 }
