@@ -137,11 +137,6 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IGmxV2PositionManager
-    function apiVersion() external pure override returns (string memory) {
-        return API_VERSION;
-    }
-
-    /// @inheritdoc IGmxV2PositionManager
     function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd)
         external
         payable
@@ -214,6 +209,11 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     /*//////////////////////////////////////////////////////////////
                         PUBLIC VIEWERS
     //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IGmxV2PositionManager
+    function apiVersion() external pure override returns (string memory) {
+        return API_VERSION;
+    }
 
     /// @inheritdoc IGmxV2PositionManager
     function totalAssets() public view override returns (uint256) {}
