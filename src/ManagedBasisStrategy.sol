@@ -8,8 +8,6 @@ import {IOracle} from "src/interfaces/IOracle.sol";
 import {LogBaseVaultUpgradeable} from "src/LogBaseVaultUpgradeable.sol";
 import {AccessControlDefaultAdminRulesUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
@@ -18,11 +16,12 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 
 import {InchAggregatorLogic} from "src/libraries/InchAggregatorLogic.sol";
-import {Errors} from "src/libraries";
+import {Errors} from "src/libraries/Errors.sol";
+
+import {FactoryDeployable} from "./FactoryDeployable.sol";
 
 contract ManagedBasisStrategy is
-    Initializable,
-    UUPSUpgradeable,
+    FactoryDeployable,
     LogBaseVaultUpgradeable,
     AccessControlDefaultAdminRulesUpgradeable
 {
@@ -91,11 +90,12 @@ contract ManagedBasisStrategy is
     //////////////////////////////////////////////////////////////*/
 
     function initialize(address asset, address product, string memory name, string memory symbol) public initializer {
+        __FactoryDeployable_init();
         __LogBaseVault_init(IERC20(asset));
         __AccessControlDefaultAdminRules_init(1 days, _owner);
     }
 
-    function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override {}
+    function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyFactory {}
 
     /*//////////////////////////////////////////////////////////////
                             CONFIGURATION

@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
@@ -22,10 +21,12 @@ import {IGmxV2PositionManager} from "src/interfaces/IGmxV2PositionManager.sol";
 
 import {Errors} from "src/libraries/Errors.sol";
 
+import {FactoryDeployable} from "./FactoryDeployable.sol";
+
 /// @title A gmx position manager
 /// @author Logarithm Labs
 /// @dev this contract must be deployed only by the factory
-contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderCallbackReceiver {
+contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrderCallbackReceiver {
     using SafeERC20 for IERC20;
 
     string constant API_VERSION = "0.0.1";
@@ -52,7 +53,6 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
 
     /// @custom:storage-location erc7201:logarithm.storage.GmxV2PositionManager.Config
     struct ConfigStorage {
-        address _factory;
         address _strategy;
         address _marketToken;
         address _indexToken;
@@ -99,6 +99,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
     }
 
     function initialize(address strategy) external initializer {
+        __FactoryDeployable_init();
         address factory = msg.sender;
         address asset = address(IBasisStrategy(strategy).asset());
         address product = address(IBasisStrategy(strategy).product());
@@ -116,7 +117,6 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
         bytes32 positionKey = keccak256(abi.encode(address(this), market.marketToken, market.shortToken, false));
 
         ConfigStorage storage $ = _getConfigStorage();
-        $._factory = factory;
         $._strategy = strategy;
         $._marketToken = market.marketToken;
         $._indexToken = market.indexToken;
@@ -125,12 +125,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
         $._positionKey = positionKey;
     }
 
-    function _authorizeUpgrade(address) internal virtual override {
-        ConfigStorage storage $ = _getConfigStorage();
-        if (msg.sender != $._factory) {
-            revert Errors.UnauthoirzedUpgrade();
-        }
-    }
+    function _authorizeUpgrade(address) internal virtual override onlyFactory {}
 
     /*//////////////////////////////////////////////////////////////
                         EXTERNAL FUNCTIONS
@@ -165,7 +160,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
 
     /// @inheritdoc IGmxV2PositionManager
     function claim() external override {
-        IBasisGmxFactory factory = _factory();
+        IBasisGmxFactory factory = IBasisGmxFactory(_factory());
         IDataStore dataStore = IDataStore(factory.dataStore());
         IExchangeRouter exchangeRouter = IExchangeRouter(factory.exchangeRouter());
 
@@ -190,7 +185,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
     /// @return feeIncrease the execution fee for increase
     /// @return feeDecrease the execution fee for decrease
     function getExecutionFee() external view returns (uint256 feeIncrease, uint256 feeDecrease) {
-        IBasisGmxFactory factory = _factory();
+        IBasisGmxFactory factory = IBasisGmxFactory(_factory());
         IDataStore dataStore = IDataStore(factory.dataStore());
         uint256 callbackGasLimit = factory.callbackGasLimit();
         uint256 estimatedGasLimitIncrease = dataStore.getUint(Keys.increaseOrderGasLimitKey());
@@ -227,6 +222,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
     /// @inheritdoc IOrderCallbackReceiver
     function afterOrderFrozen(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
         external
+        pure
         override
     {
         revert(); // fronzen is not supported for market increase/decrease orders
@@ -239,7 +235,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
     /// @dev create increase/decrease order
     function _adjust(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private returns (bytes32) {
         uint256 executionFee = msg.value;
-        IBasisGmxFactory factory = _factory();
+        IBasisGmxFactory factory = IBasisGmxFactory(_factory());
         address orderVaultAddr = factory.orderVault();
         address exchangeRouterAddr = factory.exchangeRouter();
         IERC20 collateralToken = _collateralToken();
@@ -334,7 +330,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
 
     /// @dev validate if the caller is OrderHandler of gmx
     function _validateOrderHandler() private view {
-        if (msg.sender != _factory().orderHandler()) {
+        if (msg.sender != IBasisGmxFactory(_factory()).orderHandler()) {
             revert Errors.CallerNotOrderHandler();
         }
     }
@@ -342,11 +338,6 @@ contract GmxV2PositionManager is IGmxV2PositionManager, UUPSUpgradeable, IOrderC
     /*//////////////////////////////////////////////////////////////
                         STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
-
-    function _factory() private view returns (IBasisGmxFactory) {
-        ConfigStorage storage $ = _getConfigStorage();
-        return IBasisGmxFactory($._factory);
-    }
 
     function _collateralToken() private view returns (IERC20) {
         ConfigStorage storage $ = _getConfigStorage();
