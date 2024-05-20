@@ -151,7 +151,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
 
     /// @inheritdoc IGmxV2PositionManager
     function claim() external override {
-        IBasisGmxFactory factory = IBasisGmxFactory(_factory());
+        IBasisGmxFactory factory = IBasisGmxFactory(factory());
         IDataStore dataStore = IDataStore(factory.dataStore());
         IExchangeRouter exchangeRouter = IExchangeRouter(factory.exchangeRouter());
 
@@ -205,7 +205,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     /// @return feeIncrease the execution fee for increase
     /// @return feeDecrease the execution fee for decrease
     function getExecutionFee() public view returns (uint256 feeIncrease, uint256 feeDecrease) {
-        IBasisGmxFactory factory = IBasisGmxFactory(_factory());
+        IBasisGmxFactory factory = IBasisGmxFactory(factory());
         IDataStore dataStore = IDataStore(factory.dataStore());
         uint256 callbackGasLimit = factory.callbackGasLimit();
         uint256 estimatedGasLimitIncrease = dataStore.getUint(Keys.increaseOrderGasLimitKey());
@@ -260,7 +260,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     /// @dev create increase/decrease order
     function _adjust(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private returns (bytes32) {
         uint256 executionFee = msg.value;
-        IBasisGmxFactory factory = IBasisGmxFactory(_factory());
+        IBasisGmxFactory factory = IBasisGmxFactory(factory());
         address orderVaultAddr = factory.orderVault();
         address exchangeRouterAddr = factory.exchangeRouter();
         address collateralTokenAddr = collateralToken();
@@ -355,7 +355,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
 
     /// @dev validate if the caller is OrderHandler of gmx
     function _validateOrderHandler() private view {
-        if (msg.sender != IBasisGmxFactory(_factory()).orderHandler()) {
+        if (msg.sender != IBasisGmxFactory(factory()).orderHandler()) {
             revert Errors.CallerNotOrderHandler();
         }
     }
