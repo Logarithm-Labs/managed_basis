@@ -53,12 +53,15 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
 
     /// @custom:storage-location erc7201:logarithm.storage.GmxV2PositionManager
     struct GmxV2PositionManagerStorage {
+        // configuration
         address _strategy;
         address _marketToken;
         address _indexToken;
         address _longToken;
         address _shortToken;
         bytes32 _positionKey;
+        // state
+        Stages _stage;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager")) - 1)) & ~bytes32(uint256(0xff))
@@ -84,6 +87,17 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         _;
     }
 
+    modifier transitionPending() {
+        _atStage(Stages.Idle);
+        _setStage(Stages.Pending);
+        _;
+    }
+
+    modifier transitionIdle() {
+        _atStage(Stages.Pending);
+        _setStage(Stages.Idle);
+        _;
+    }
 
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
@@ -133,6 +147,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         payable
         override
         onlyStrategy
+        transitionPending
         returns (bytes32)
     {
         return _adjust(collateralDelta, sizeDeltaInUsd, true);
@@ -144,6 +159,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         payable
         override
         onlyStrategy
+        transitionPending
         returns (bytes32)
     {
         return _adjust(collateralDelta, sizeDeltaInUsd, false);
@@ -172,6 +188,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     function afterOrderExecution(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
         external
         override
+        transitionIdle
     {
         _validateOrderHandler();
     }
@@ -180,6 +197,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     function afterOrderCancellation(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
         external
         override
+        transitionIdle
     {
         _validateOrderHandler();
     }
@@ -353,6 +371,12 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         }
     }
 
+    function _atStage(Stages stage_) private view {
+        if (stage_ != stage()) {
+            revert Errors.FunctionInvalidAtThisStage();
+        }
+    }
+
     /// @dev validate if the caller is OrderHandler of gmx
     function _validateOrderHandler() private view {
         if (msg.sender != IBasisGmxFactory(factory()).orderHandler()) {
@@ -361,16 +385,11 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     }
 
     /*//////////////////////////////////////////////////////////////
-                        STORAGE GETTERS
-    //////////////////////////////////////////////////////////////*/
-
-    
-
-    /*//////////////////////////////////////////////////////////////
                         STORAGE SETTERS
     //////////////////////////////////////////////////////////////*/
 
+    function _setStage(Stages stage_) private {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $._shortToken;
+        $._stage = stage_;
     }
 }
