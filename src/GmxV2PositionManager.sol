@@ -62,7 +62,8 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant GmxV2PositionManagerStorageLocation = 0xf08705b56fbd504746312a6db5deff16fc51a9c005f5e6a881519498d59a9600;
+    bytes32 private constant GmxV2PositionManagerStorageLocation =
+        0xf08705b56fbd504746312a6db5deff16fc51a9c005f5e6a881519498d59a9600;
 
     function _getGmxV2PositionManagerStorage() private pure returns (GmxV2PositionManagerStorage storage $) {
         assembly {
@@ -153,10 +154,10 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
             InternalClaimFundingParams({
                 dataStore: dataStore,
                 exchangeRouter: exchangeRouter,
-                marketToken: _marketTokenAddr(),
-                shortToken: _shortTokenAddr(),
-                longToken: _longTokenAddr(),
-                receiver: _strategyAddr()
+                marketToken: _marketToken(),
+                shortToken: _shortToken(),
+                longToken: _longToken(),
+                receiver: _strategy()
             })
         );
         _claimCollateral();
@@ -223,18 +224,18 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         IBasisGmxFactory factory = IBasisGmxFactory(_factory());
         address orderVaultAddr = factory.orderVault();
         address exchangeRouterAddr = factory.exchangeRouter();
-        IERC20 collateralToken = _collateralToken();
+        address collateralTokenAddr = _collateralToken();
 
         IExchangeRouter(exchangeRouterAddr).sendWnt{value: executionFee}(orderVaultAddr, executionFee);
 
-        address strategyAddr = _strategyAddr();
+        address strategyAddr = _strategy();
         address[] memory swapPath;
         IExchangeRouter.CreateOrderParamsAddresses memory paramsAddresses = IExchangeRouter.CreateOrderParamsAddresses({
             receiver: strategyAddr, // the receiver of reduced collateral
             callbackContract: address(this),
             uiFeeReceiver: address(0),
-            market: _marketTokenAddr(),
-            initialCollateralToken: address(collateralToken),
+            market: _marketToken(),
+            initialCollateralToken: collateralTokenAddr,
             swapPath: swapPath
         });
 
@@ -242,7 +243,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         IExchangeRouter.OrderType orderType;
         if (isIncrease) {
             if (collateralDelta > 0) {
-                collateralToken.safeTransferFrom(strategyAddr, orderVaultAddr, collateralDelta);
+                IERC20(collateralTokenAddr).safeTransferFrom(strategyAddr, orderVaultAddr, collateralDelta);
             }
             paramsNumbers = IExchangeRouter.CreateOrderParamsNumbers({
                 sizeDeltaUsd: sizeDeltaInUsd,
@@ -308,7 +309,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
 
     // this is used in modifier which reduces the code size
     function _onlyStrategy() private view {
-        if (msg.sender != _strategyAddr()) {
+        if (msg.sender != _strategy()) {
             revert Errors.CallerNotStrategy();
         }
     }
@@ -324,27 +325,27 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
                         STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function _collateralToken() private view returns (IERC20) {
+    function _collateralToken() private view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return IERC20($._shortToken);
+        return $._shortToken;
     }
 
-    function _strategyAddr() private view returns (address) {
+    function _strategy() private view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._strategy;
     }
 
-    function _marketTokenAddr() private view returns (address) {
+    function _marketToken() private view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._marketToken;
     }
 
-    function _longTokenAddr() private view returns (address) {
+    function _longToken() private view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._longToken;
     }
 
-    function _shortTokenAddr() private view returns (address) {
+    function _shortToken() private view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._shortToken;
     }
