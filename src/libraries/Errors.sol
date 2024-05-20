@@ -12,8 +12,6 @@ library Errors {
     error InchInvalidReceiver();
 
     error IncosistentParamsLength();
-
-    error OracleInvalidPrice();
     /// @notice only callable by factory
     error CallerNotFactory();
     /// @notice only callable by strategy
@@ -30,4 +28,15 @@ library Errors {
     error ArrayLengthMissmatch();
     /// @notice invalid function at this stage
     error FunctionInvalidAtThisStage();
+
+    // errors from gmx oracle
+
+    /// @notice invalid chainlink price feed
+    error InvalidPriceFeed();
+    /// @notice chainlink price feed not updated
+    error PriceFeedNotUpdated();
+    /// @notice price feed was not configured
+    error PriceFeedNotConfigured();
+    /// @notice price feed multiplier not configured
+    error EmptyPriceFeedMultiplier();
 }
