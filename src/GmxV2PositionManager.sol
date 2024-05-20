@@ -207,11 +207,11 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     }
 
     /*//////////////////////////////////////////////////////////////
-                        PUBLIC VIEWERS
+                        EXTERNAL/PUBLIC VIEWERS
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IGmxV2PositionManager
-    function apiVersion() external pure override returns (string memory) {
+    function apiVersion() public pure override returns (string memory) {
         return API_VERSION;
     }
 
@@ -241,32 +241,32 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         return (gasPrice * gasLimitIncrease, gasPrice * gasLimitDecrease);
     }
 
-    function collateralToken() private view returns (address) {
+    function collateralToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._shortToken;
     }
 
-    function strategy() private view returns (address) {
+    function strategy() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._strategy;
     }
 
-    function marketToken() private view returns (address) {
+    function marketToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._marketToken;
     }
 
-    function longToken() private view returns (address) {
+    function longToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._longToken;
     }
 
-    function shortToken() private view returns (address) {
+    function shortToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._shortToken;
     }
 
-    function stage() private view returns (Stages) {
+    function stage() public view returns (Stages) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._stage;
     }
