@@ -161,22 +161,45 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     }
 
     /// @inheritdoc IGmxV2PositionManager
-    function claim() external override {
+    function claimFunding() external override {
+        IBasisGmxFactory factory = IBasisGmxFactory(factory());
+        IDataStore dataStore = IDataStore(factory.dataStore());
+        IExchangeRouter exchangeRouter = IExchangeRouter(factory.exchangeRouter());
+        address marketToken = marketToken();
+        address shortToken = shortToken();
+        address longToken = longToken();
+
+        bytes32 key = Keys.claimableFundingAmountKey(marketToken, shortToken, address(this));
+        uint256 shortTokenAmount = dataStore.getUint(key);
+        key = Keys.claimableFundingAmountKey(marketToken, longToken, address(this));
+        uint256 longTokenAmount = dataStore.getUint(key);
+
+        if (shortTokenAmount > 0 || longTokenAmount > 0) {
+            address[] memory markets = new address[](2);
+            markets[0] = marketToken;
+            markets[1] = marketToken;
+            address[] memory tokens = new address[](2);
+            tokens[0] = shortToken;
+            tokens[1] = longToken;
+            uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, strategy());
+            // TODO emit log
+        }
+    }
+
+    /// @inheritdoc IGmxV2PositionManager
+    function claimCollateral(address token, uint256 timeKey) external override {
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         IDataStore dataStore = IDataStore(factory.dataStore());
         IExchangeRouter exchangeRouter = IExchangeRouter(factory.exchangeRouter());
 
-        _claimFunding(
-            InternalClaimFundingParams({
-                dataStore: dataStore,
-                exchangeRouter: exchangeRouter,
-                marketToken: marketToken(),
-                shortToken: shortToken(),
-                longToken: longToken(),
-                receiver: strategy()
-            })
-        );
-        _claimCollateral();
+        address[] memory markets = new address[](1);
+        markets[0] = marketToken();
+        address[] memory tokens = new address[](1);
+        tokens[0] = token;
+        uint256[] memory timeKeys = new uint256[](1);
+        timeKeys[0] = timeKey;
+        uint256[] memory amounts = exchangeRouter.claimCollateral(markets, tokens, timeKeys, strategy());
+        // TODO emit log
     }
 
     /// @inheritdoc IOrderCallbackReceiver
@@ -336,29 +359,6 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         });
         return IExchangeRouter(exchangeRouterAddr).createOrder(orderParams);
     }
-
-    function _claimFunding(InternalClaimFundingParams memory params) private {
-        bytes32 key = Keys.claimableFundingAmountKey(params.marketToken, params.shortToken, address(this));
-        uint256 shortTokenAmount = params.dataStore.getUint(key);
-        key = Keys.claimableFundingAmountKey(params.marketToken, params.longToken, address(this));
-        uint256 longTokenAmount = params.dataStore.getUint(key);
-
-        if (shortTokenAmount > 0 || longTokenAmount > 0) {
-            address[] memory markets = new address[](2);
-            markets[0] = params.marketToken;
-            markets[1] = params.marketToken;
-            address[] memory tokens = new address[](2);
-            tokens[0] = params.shortToken;
-            tokens[1] = params.longToken;
-
-            uint256[] memory amounts =
-                IExchangeRouter(params.exchangeRouter).claimFundingFees(markets, tokens, params.receiver);
-
-            (uint256 shortTokenClaimed, uint256 longTokenClaimed) = (amounts[0], amounts[1]);
-        }
-    }
-
-    function _claimCollateral() private {}
 
     /*//////////////////////////////////////////////////////////////
                         VALIDATION FUNCTIONS

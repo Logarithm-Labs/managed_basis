@@ -36,9 +36,16 @@ interface IGmxV2PositionManager {
     /// @return the key of position decrease order queued
     function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable returns (bytes32);
 
-    /// @dev claims all the claimable funding fee and claimable collateral
+    /// @dev claims all the claimable funding fee
     /// this is callable by anyone
-    function claim() external;
+    function claimFunding() external;
+
+    /// @dev claims all the claimable callateral amount
+    /// Note: this amount stored by account, token, timeKey
+    /// and there is only event to figure out it
+    /// @param token token address derived from the gmx event: ClaimableCollateralUpdated
+    /// @param timeKey timeKey value derived from the gmx event: ClaimableCollateralUpdated
+    function claimCollateral(address token, uint256 timeKey) external;
 
     /// @notice total asset token amount that can be claimable from gmx position when closing it
     ///
