@@ -226,65 +226,61 @@ contract BasisGmxFactory is IBasisGmxFactory, OwnableUpgradeable, UUPSUpgradeabl
     }
 
     /*//////////////////////////////////////////////////////////////
-                        EXTERNAL VIEW FUNCTIONS
+                          PUBLIC VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IBasisGmxFactory
-    function apiVersion() external pure override returns (string memory) {
+    function apiVersion() public pure override returns (string memory) {
         return API_VERSION;
     }
 
     /// @inheritdoc IBasisGmxFactory
-    function marketKey(address asset, address product) external view returns (address) {
+    function marketKey(address asset, address product) public view returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._marketKeys[asset][product];
     }
 
     /// @inheritdoc IBasisGmxFactory
-    function dataStore() external view override returns (address) {
+    function dataStore() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._dataStore;
     }
 
     /// @inheritdoc IBasisGmxFactory
-    function reader() external view override returns (address) {
+    function reader() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._dataStore;
     }
 
     /// @inheritdoc IBasisGmxFactory
-    function orderVault() external view override returns (address) {
+    function orderVault() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._dataStore;
     }
 
     /// @inheritdoc IBasisGmxFactory
-    function exchangeRouter() external view override returns (address) {
+    function exchangeRouter() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._exchangeRouter;
     }
 
     /// @inheritdoc IBasisGmxFactory
-    function callbackGasLimit() external view override returns (uint256) {
+    function callbackGasLimit() public view override returns (uint256) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._callbackGasLimit;
     }
 
     /// @inheritdoc IBasisGmxFactory
-    function referralCode() external view override returns (bytes32) {
+    function referralCode() public view override returns (bytes32) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._referralCode;
     }
 
     /// @inheritdoc IBasisGmxFactory
-    function orderHandler() external view override returns (address) {
+    function orderHandler() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._orderHandler;
     }
-
-    /*//////////////////////////////////////////////////////////////
-                        PUBLIC VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
 
     function isActiveStrategy(address strategy) public view returns (bool) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
