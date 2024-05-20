@@ -145,7 +145,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         transitionPending
         returns (bytes32)
     {
-        return _adjust(collateralDelta, sizeDeltaInUsd, true);
+        return _createOrder(collateralDelta, sizeDeltaInUsd, true);
     }
 
     /// @inheritdoc IGmxV2PositionManager
@@ -157,7 +157,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         transitionPending
         returns (bytes32)
     {
-        return _adjust(collateralDelta, sizeDeltaInUsd, false);
+        return _createOrder(collateralDelta, sizeDeltaInUsd, false);
     }
 
     /// @inheritdoc IGmxV2PositionManager
@@ -276,7 +276,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     //////////////////////////////////////////////////////////////*/
 
     /// @dev create increase/decrease order
-    function _adjust(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private returns (bytes32) {
+    function _createOrder(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private returns (bytes32) {
         uint256 executionFee = msg.value;
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         address orderVaultAddr = factory.orderVault();
