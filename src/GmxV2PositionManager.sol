@@ -21,7 +21,7 @@ import {IGmxV2PositionManager} from "src/interfaces/IGmxV2PositionManager.sol";
 
 import {Errors} from "src/libraries/Errors.sol";
 
-import {FactoryDeployable} from "./FactoryDeployable.sol";
+import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
 
 /// @title A gmx position manager
 /// @author Logarithm Labs

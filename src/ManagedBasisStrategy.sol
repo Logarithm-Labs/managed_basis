@@ -5,7 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IAggregationRouter} from "src/externals/1inch/interfaces/IAggregationRouter.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 
-import {LogBaseVaultUpgradeable} from "src/LogBaseVaultUpgradeable.sol";
+import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
 import {AccessControlDefaultAdminRulesUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -18,7 +18,7 @@ import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {InchAggregatorLogic} from "src/libraries/InchAggregatorLogic.sol";
 import {Errors} from "src/libraries/Errors.sol";
 
-import {FactoryDeployable} from "./FactoryDeployable.sol";
+import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
 
 contract ManagedBasisStrategy is
     FactoryDeployable,
