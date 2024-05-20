@@ -47,17 +47,13 @@ abstract contract FactoryDeployable is UUPSUpgradeable {
                             VIEWERS
     //////////////////////////////////////////////////////////////*/
 
-    function factory() external view returns (address) {
-        return _factory();
-    }
-
-    function _factory() internal view returns (address) {
+    function factory() public view returns (address) {
         FactoryDeployableStorage storage $ = _getFactoryDeployableStorage();
         return $._factory;
     }
 
     function _checkFactory() internal view {
-        if (msg.sender != _factory()) {
+        if (msg.sender != factory()) {
             revert Errors.CallerNotFactory();
         }
     }

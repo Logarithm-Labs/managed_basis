@@ -84,6 +84,11 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         _;
     }
 
+
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
     function initialize(address strategy) external initializer {
         __FactoryDeployable_init();
         address factory = msg.sender;
@@ -154,39 +159,13 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
             InternalClaimFundingParams({
                 dataStore: dataStore,
                 exchangeRouter: exchangeRouter,
-                marketToken: _marketToken(),
-                shortToken: _shortToken(),
-                longToken: _longToken(),
-                receiver: _strategy()
+                marketToken: marketToken(),
+                shortToken: shortToken(),
+                longToken: longToken(),
+                receiver: strategy()
             })
         );
         _claimCollateral();
-    }
-
-    /// @inheritdoc IGmxV2PositionManager
-    function totalAssets() external view override returns (uint256) {}
-
-    /// @notice calculate the execution fee that is need from gmx when increase and decrease
-    ///
-    /// @return feeIncrease the execution fee for increase
-    /// @return feeDecrease the execution fee for decrease
-    function getExecutionFee() external view returns (uint256 feeIncrease, uint256 feeDecrease) {
-        IBasisGmxFactory factory = IBasisGmxFactory(_factory());
-        IDataStore dataStore = IDataStore(factory.dataStore());
-        uint256 callbackGasLimit = factory.callbackGasLimit();
-        uint256 estimatedGasLimitIncrease = dataStore.getUint(Keys.increaseOrderGasLimitKey());
-        uint256 estimatedGasLimitDecrease = dataStore.getUint(Keys.decreaseOrderGasLimitKey());
-        estimatedGasLimitIncrease += callbackGasLimit;
-        estimatedGasLimitDecrease += callbackGasLimit;
-        uint256 baseGasLimit = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT);
-        uint256 multiplierFactor = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR);
-        uint256 gasLimitIncrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitIncrease, multiplierFactor);
-        uint256 gasLimitDecrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitDecrease, multiplierFactor);
-        uint256 gasPrice = tx.gasprice;
-        if (gasPrice == 0) {
-            gasPrice = ArbGasInfo(0x000000000000000000000000000000000000006C).getMinimumGasPrice();
-        }
-        return (gasPrice * gasLimitIncrease, gasPrice * gasLimitDecrease);
     }
 
     /// @inheritdoc IOrderCallbackReceiver
@@ -215,6 +194,66 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     }
 
     /*//////////////////////////////////////////////////////////////
+                        PUBLIC VIEWERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IGmxV2PositionManager
+    function totalAssets() public view override returns (uint256) {}
+
+    /// @notice calculate the execution fee that is need from gmx when increase and decrease
+    ///
+    /// @return feeIncrease the execution fee for increase
+    /// @return feeDecrease the execution fee for decrease
+    function getExecutionFee() public view returns (uint256 feeIncrease, uint256 feeDecrease) {
+        IBasisGmxFactory factory = IBasisGmxFactory(_factory());
+        IDataStore dataStore = IDataStore(factory.dataStore());
+        uint256 callbackGasLimit = factory.callbackGasLimit();
+        uint256 estimatedGasLimitIncrease = dataStore.getUint(Keys.increaseOrderGasLimitKey());
+        uint256 estimatedGasLimitDecrease = dataStore.getUint(Keys.decreaseOrderGasLimitKey());
+        estimatedGasLimitIncrease += callbackGasLimit;
+        estimatedGasLimitDecrease += callbackGasLimit;
+        uint256 baseGasLimit = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT);
+        uint256 multiplierFactor = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR);
+        uint256 gasLimitIncrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitIncrease, multiplierFactor);
+        uint256 gasLimitDecrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitDecrease, multiplierFactor);
+        uint256 gasPrice = tx.gasprice;
+        if (gasPrice == 0) {
+            gasPrice = ArbGasInfo(0x000000000000000000000000000000000000006C).getMinimumGasPrice();
+        }
+        return (gasPrice * gasLimitIncrease, gasPrice * gasLimitDecrease);
+    }
+
+    function collateralToken() private view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $._shortToken;
+    }
+
+    function strategy() private view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $._strategy;
+    }
+
+    function marketToken() private view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $._marketToken;
+    }
+
+    function longToken() private view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $._longToken;
+    }
+
+    function shortToken() private view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $._shortToken;
+    }
+
+    function stage() private view returns (Stages) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $._stage;
+    }
+
+    /*//////////////////////////////////////////////////////////////
                         PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -224,17 +263,17 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         IBasisGmxFactory factory = IBasisGmxFactory(_factory());
         address orderVaultAddr = factory.orderVault();
         address exchangeRouterAddr = factory.exchangeRouter();
-        address collateralTokenAddr = _collateralToken();
+        address collateralTokenAddr = collateralToken();
 
         IExchangeRouter(exchangeRouterAddr).sendWnt{value: executionFee}(orderVaultAddr, executionFee);
 
-        address strategyAddr = _strategy();
+        address strategyAddr = strategy();
         address[] memory swapPath;
         IExchangeRouter.CreateOrderParamsAddresses memory paramsAddresses = IExchangeRouter.CreateOrderParamsAddresses({
             receiver: strategyAddr, // the receiver of reduced collateral
             callbackContract: address(this),
             uiFeeReceiver: address(0),
-            market: _marketToken(),
+            market: marketToken(),
             initialCollateralToken: collateralTokenAddr,
             swapPath: swapPath
         });
@@ -309,7 +348,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
 
     // this is used in modifier which reduces the code size
     function _onlyStrategy() private view {
-        if (msg.sender != _strategy()) {
+        if (msg.sender != strategy()) {
             revert Errors.CallerNotStrategy();
         }
     }
@@ -325,27 +364,12 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
                         STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function _collateralToken() private view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $._shortToken;
-    }
+    
 
-    function _strategy() private view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $._strategy;
-    }
+    /*//////////////////////////////////////////////////////////////
+                        STORAGE SETTERS
+    //////////////////////////////////////////////////////////////*/
 
-    function _marketToken() private view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $._marketToken;
-    }
-
-    function _longToken() private view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $._longToken;
-    }
-
-    function _shortToken() private view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._shortToken;
     }

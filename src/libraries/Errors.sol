@@ -28,4 +28,6 @@ library Errors {
     error ZeroAddress();
     /// @notice arrays are expected to have same length
     error ArrayLengthMissmatch();
+    /// @notice invalid function at this stage
+    error FunctionInvalidAtThisStage();
 }
