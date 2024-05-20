@@ -51,8 +51,8 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
 
-    /// @custom:storage-location erc7201:logarithm.storage.GmxV2PositionManager.Config
-    struct ConfigStorage {
+    /// @custom:storage-location erc7201:logarithm.storage.GmxV2PositionManager
+    struct GmxV2PositionManagerStorage {
         address _strategy;
         address _marketToken;
         address _indexToken;
@@ -61,27 +61,12 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         bytes32 _positionKey;
     }
 
-    /// @custom:storage-location erc7201:logarithm.storage.GmxV2PositionManager.State
-    struct StateStorage {
-        Stages _stage;
-        uint256 _pendingAssets;
-    }
+    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant GmxV2PositionManagerStorageLocation = 0xf08705b56fbd504746312a6db5deff16fc51a9c005f5e6a881519498d59a9600;
 
-    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager.Config")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ConfigStorageLocation = 0x51e553f1ed05f39323723017580800f12e204b6a09a61aeb584366ce03172f00;
-
-    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager.State")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant StateStorageLocation = 0x9a05e65897e43e5729051b7a8b9a904f0ad0efe51cf504c7b850ba952775e500;
-
-    function _getConfigStorage() private pure returns (ConfigStorage storage $) {
+    function _getGmxV2PositionManagerStorage() private pure returns (GmxV2PositionManagerStorage storage $) {
         assembly {
-            $.slot := ConfigStorageLocation
-        }
-    }
-
-    function _getStateStorage() private pure returns (StateStorage storage $) {
-        assembly {
-            $.slot := StateStorageLocation
+            $.slot := GmxV2PositionManagerStorageLocation
         }
     }
 
@@ -116,7 +101,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         // always short position
         bytes32 positionKey = keccak256(abi.encode(address(this), market.marketToken, market.shortToken, false));
 
-        ConfigStorage storage $ = _getConfigStorage();
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         $._strategy = strategy;
         $._marketToken = market.marketToken;
         $._indexToken = market.indexToken;
@@ -340,27 +325,27 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     //////////////////////////////////////////////////////////////*/
 
     function _collateralToken() private view returns (IERC20) {
-        ConfigStorage storage $ = _getConfigStorage();
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return IERC20($._shortToken);
     }
 
     function _strategyAddr() private view returns (address) {
-        ConfigStorage storage $ = _getConfigStorage();
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._strategy;
     }
 
     function _marketTokenAddr() private view returns (address) {
-        ConfigStorage storage $ = _getConfigStorage();
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._marketToken;
     }
 
     function _longTokenAddr() private view returns (address) {
-        ConfigStorage storage $ = _getConfigStorage();
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._longToken;
     }
 
     function _shortTokenAddr() private view returns (address) {
-        ConfigStorage storage $ = _getConfigStorage();
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._shortToken;
     }
 }
