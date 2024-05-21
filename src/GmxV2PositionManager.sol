@@ -69,6 +69,9 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
+    event FundingClaimed(address indexed token, uint256 indexed amount);
+    event CollateralClaimed(address indexed token, uint256 indexed amount);
+
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -171,7 +174,8 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
             tokens[0] = shortTokenAddr;
             tokens[1] = longTokenAddr;
             uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, strategy());
-            // TODO emit log
+            emit FundingClaimed(shortTokenAddr, amounts[0]);
+            emit FundingClaimed(longTokenAddr, amounts[1]);
         }
     }
 
@@ -187,7 +191,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         uint256[] memory timeKeys = new uint256[](1);
         timeKeys[0] = timeKey;
         uint256[] memory amounts = exchangeRouter.claimCollateral(markets, tokens, timeKeys, strategy());
-        // TODO emit log
+        emit CollateralClaimed(token, amounts[0]);
     }
 
     /// @inheritdoc IOrderCallbackReceiver
