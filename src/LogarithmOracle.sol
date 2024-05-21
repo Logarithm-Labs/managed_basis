@@ -1,20 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-import { IPriceFeed } from "src/interfaces/IPriceFeed.sol";
+import {IPriceFeed} from "src/interfaces/IPriceFeed.sol";
 
-import { Errors } from "src/Errors.sol";
+import {Errors} from "src/Errors.sol";
 
 contract LogarithmOracle {
-
     mapping(address => IPriceFeed) public priceFeeds;
 
     event PriceFeedUpdated(address asset, address feed);
 
-    function setPriceFeeds(
-        address[] calldata assets,
-        address[] calldata feeds
-    ) external {
+    function setPriceFeeds(address[] calldata assets, address[] calldata feeds) external {
         if (assets.length != feeds.length) {
             revert Errors.IncosistentParamsLength();
         }
@@ -32,7 +28,5 @@ contract LogarithmOracle {
         } else {
             revert Errors.OracleInvalidPrice();
         }
-
     }
-    
 }
