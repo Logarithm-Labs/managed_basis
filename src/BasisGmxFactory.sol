@@ -97,6 +97,10 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
                         EXTERNAL SETTER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev disable renouncing of ownership for security
+    function renounceOwnership() public override pure {
+        revert();
+    }
 
     function setGmxReferralCode(bytes32 referralCode_) external onlyOwner {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
