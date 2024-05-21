@@ -58,7 +58,7 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
                             EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event StrategyConfigUpdated(address indexed caller, bytes config);
+    event StrategyCreated(address indexed strategy, address indexed positionManager, string indexed symbol, string name);
 
     /*//////////////////////////////////////////////////////////////
                             INITIALIZE
@@ -214,6 +214,8 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
         IBasisStrategy(strategy).activateStrategy();
         $._strategies.push(strategy);
         $._activeStrategy[strategy] = true;
+
+        emit StrategyCreated(strategy, positionManager, symbol, name);
     }
 
     function activateStrategy(address strategy) external virtual onlyOwner {
