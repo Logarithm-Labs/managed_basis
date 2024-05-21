@@ -30,21 +30,11 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     using SafeERC20 for IERC20;
 
     string constant API_VERSION = "0.0.1";
-    uint256 constant PRECISION = 1e18;
 
     /// @notice used for processing status
     enum Stages {
         Idle,
         Pending
-    }
-
-    struct InternalClaimFundingParams {
-        IDataStore dataStore;
-        IExchangeRouter exchangeRouter;
-        address marketToken;
-        address longToken;
-        address shortToken;
-        address receiver;
     }
 
     /*//////////////////////////////////////////////////////////////
