@@ -41,7 +41,7 @@ contract BasisGmxFactory is IBasisGmxFactory, OwnableUpgradeable, UUPSUpgradeabl
         address[] _strategies;
         mapping(address strategy => bool) _activeStrategy;
         mapping(address asset => mapping(address product => address)) _marketKeys;
-        mapping(address keeper => bool) _isKeeper;
+        mapping(address operator => bool) _isOperator;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisGmxFactory")) - 1)) & ~bytes32(uint256(0xff))
@@ -107,22 +107,22 @@ contract BasisGmxFactory is IBasisGmxFactory, OwnableUpgradeable, UUPSUpgradeabl
         $._callbackGasLimit = callbackGasLimit_;
     }
 
-    function addKeepers(address[] calldata keepers) external virtual onlyOwner {
+    function addOperators(address[] calldata operators) external virtual onlyOwner {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        uint256 len = keepers.length;
+        uint256 len = operators.length;
         for (uint256 i; i < len;) {
-            $._isKeeper[keepers[i]] = true;
+            $._isOperator[operators[i]] = true;
             unchecked {
                 ++i;
             }
         }
     }
 
-    function removeKeepers(address[] calldata keepers) external virtual onlyOwner {
+    function removeOperators(address[] calldata operators) external virtual onlyOwner {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        uint256 len = keepers.length;
+        uint256 len = operators.length;
         for (uint256 i; i < len;) {
-            $._isKeeper[keepers[i]] = false;
+            $._isOperator[operators[i]] = false;
             unchecked {
                 ++i;
             }
@@ -288,6 +288,11 @@ contract BasisGmxFactory is IBasisGmxFactory, OwnableUpgradeable, UUPSUpgradeabl
     function referralStorage() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._referralStorage;
+    }
+
+    function isOperator(address account) public view override returns (bool) {
+         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._isOperator[account];
     }
 
     function isActiveStrategy(address strategy) public view returns (bool) {
