@@ -58,7 +58,9 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
                             EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event StrategyCreated(address indexed strategy, address indexed positionManager, string indexed symbol, string name);
+    event StrategyCreated(
+        address indexed strategy, address indexed positionManager, string indexed symbol, string name
+    );
 
     /*//////////////////////////////////////////////////////////////
                             INITIALIZE
@@ -98,7 +100,7 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
     //////////////////////////////////////////////////////////////*/
 
     /// @dev disable renouncing of ownership for security
-    function renounceOwnership() public override pure {
+    function renounceOwnership() public pure override {
         revert();
     }
 
@@ -298,7 +300,7 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
     }
 
     function isOperator(address account) public view override returns (bool) {
-         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._isOperator[account];
     }
 

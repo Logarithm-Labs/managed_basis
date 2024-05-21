@@ -128,6 +128,8 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    receive() external payable {}
+
     /// @inheritdoc IGmxV2PositionManager
     function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd)
         external
@@ -263,7 +265,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     /// @return feeDecrease the execution fee for decrease
     function getExecutionFee() public view returns (uint256 feeIncrease, uint256 feeDecrease) {
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
-        return GmxV2Lib.getExecutionFee(IDataStore(factory.dataStore()), factory.callbackGasLimit());  
+        return GmxV2Lib.getExecutionFee(IDataStore(factory.dataStore()), factory.callbackGasLimit());
     }
 
     function collateralToken() public view returns (address) {
