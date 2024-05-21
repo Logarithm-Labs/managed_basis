@@ -30,10 +30,10 @@ library GmxV2Lib {
         address referralStorage;
         bytes32 positionKey;
     }
+
     /// @dev returns token price in (30 - decimal of token)
     /// so that the usd value of token has 30 decimals
     /// for example, if usdc has 6 decimals, then this returns its price in 30 - 6 = 24 decimals
-
     function getPriceFeedPrice(IDataStore dataStore, address token) internal view returns (uint256) {
         address priceFeedAddress = dataStore.getAddress(Keys.priceFeedKey(token));
         if (priceFeedAddress == address(0)) {
@@ -91,10 +91,10 @@ library GmxV2Lib {
         prices.longTokenPrice = Price.Props(longTokenPrice, longTokenPrice);
         prices.shortTokenPrice = Price.Props(shortTokenPrice, shortTokenPrice);
     }
+
     /// @dev calculate the total claimable amount in collateral token when closing the whole
     /// Note: collateral + pnlAfterPriceImpactUsd (pnl + price impact) -
     /// total fee costs (funding fee + borrowing fee + position fee) + claimable fundings
-
     function getPositionNetAmount(GetPositionNetAmount memory params) internal view returns (uint256) {
         MarketUtils.MarketPrices memory prices = getPrices(IDataStore(params.dataStore), params.market);
         ReaderUtils.PositionInfo memory positionInfo = IReader(params.reader).getPositionInfo(
