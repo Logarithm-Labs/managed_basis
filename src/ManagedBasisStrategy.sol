@@ -323,6 +323,12 @@ contract ManagedBasisStrategy is
         reportExecutedWithdrawal(withdrawal, amountExecuted);
     }
 
+    /// @dev forward value to the position manager
+    receive() external payable {
+        (bool success,) = positionManager.call{value: msg.value}("");
+        require(success);
+    }
+
     function _getVirtualPnl() internal view virtual returns (int256 pnl) {
         PositionState memory state = positionStates[currentRound];
         uint256 price = oracle.getAssetPrice(product());

@@ -159,10 +159,10 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
 
     function upgradeStrategyImplementations(address implementation, bytes memory data) external virtual onlyOwner {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        address[] memory strategies = $._strategies;
-        uint256 len = strategies.length;
+        address[] memory _strategies = $._strategies;
+        uint256 len = _strategies.length;
         for (uint256 i; i < len;) {
-            UUPSUpgradeable strategy = UUPSUpgradeable(strategies[i]);
+            UUPSUpgradeable strategy = UUPSUpgradeable(_strategies[i]);
             strategy.upgradeToAndCall(implementation, data);
             unchecked {
                 ++i;
@@ -177,10 +177,10 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
         onlyOwner
     {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        address[] memory strategies = $._strategies;
-        uint256 len = strategies.length;
+        address[] memory _strategies = $._strategies;
+        uint256 len = _strategies.length;
         for (uint256 i; i < len;) {
-            address positionManagerAddr = IBasisStrategy(strategies[i]).positionManager();
+            address positionManagerAddr = IBasisStrategy(_strategies[i]).positionManager();
             UUPSUpgradeable(positionManagerAddr).upgradeToAndCall(implementation, data);
             unchecked {
                 ++i;
@@ -234,6 +234,26 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         key = IBasisStrategy(strategy).deactivateStrategy{value: msg.value}();
         $._activeStrategy[strategy] = false;
+    }
+
+    function topUpStrategies(address[] calldata _strategies, uint256[] calldata _amounts) external payable {
+        uint256 len = _strategies.length;
+        if (_amounts.length != len) {
+            revert();
+        }
+
+        uint256 totalValueSent;
+        bool success;
+        for (uint256 i; i < len;) {
+            if (isActiveStrategy(_strategies[i])) {
+                (success,) = _strategies[i].call{value: _amounts[i]}("");
+                require(success);
+                totalValueSent += _amounts[i];
+            }
+        }
+
+        (success,) = msg.sender.call{value: msg.value - totalValueSent}("");
+        require(success);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -302,6 +322,11 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
     function isOperator(address account) public view override returns (bool) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._isOperator[account];
+    }
+
+    function strategies() public view returns (address[] memory) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._strategies;
     }
 
     function isActiveStrategy(address strategy) public view returns (bool) {
