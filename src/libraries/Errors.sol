@@ -32,11 +32,11 @@ library Errors {
     // errors from gmx oracle
 
     /// @notice invalid chainlink price feed
-    error InvalidPriceFeed();
+    error InvalidFeedPrice(address token, int256 price);
     /// @notice chainlink price feed not updated
-    error PriceFeedNotUpdated();
+    error PriceFeedNotUpdated(address token, uint256 timestamp, uint256 heartbeatDuration);
     /// @notice price feed was not configured
     error PriceFeedNotConfigured();
     /// @notice price feed multiplier not configured
-    error EmptyPriceFeedMultiplier();
+    error EmptyPriceFeedMultiplier(address token);
 }
