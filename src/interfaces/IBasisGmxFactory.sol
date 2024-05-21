@@ -23,6 +23,9 @@ interface IBasisGmxFactory {
     /// @return the gmx order vault address
     function orderVault() external view returns (address);
 
+    /// @return the gmx referral storage address
+    function referralStorage() external view returns (address);
+
     /// @return the gmx exchange router address
     function exchangeRouter() external view returns (address);
 

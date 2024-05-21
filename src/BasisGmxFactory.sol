@@ -30,6 +30,7 @@ contract BasisGmxFactory is IBasisGmxFactory, OwnableUpgradeable, UUPSUpgradeabl
         address _dataStore;
         address _orderHandler;
         address _orderVault;
+        address _referralStorage;
         address _reader;
         // strategy config
         uint256 _callbackGasLimit;
@@ -82,6 +83,7 @@ contract BasisGmxFactory is IBasisGmxFactory, OwnableUpgradeable, UUPSUpgradeabl
         $._dataStore = IExchangeRouter(exchangeRouter_).dataStore();
         $._orderHandler = IExchangeRouter(exchangeRouter_).orderHandler();
         $._orderVault = IOrderHandler(orderHandler_).orderVault();
+        $._referralStorage = IOrderHandler(orderHandler_).referralStorage();
         $._reader = reader_;
 
         // initialze strategy config
@@ -249,13 +251,13 @@ contract BasisGmxFactory is IBasisGmxFactory, OwnableUpgradeable, UUPSUpgradeabl
     /// @inheritdoc IBasisGmxFactory
     function reader() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._dataStore;
+        return $._reader;
     }
 
     /// @inheritdoc IBasisGmxFactory
     function orderVault() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._dataStore;
+        return $._orderVault;
     }
 
     /// @inheritdoc IBasisGmxFactory
@@ -280,6 +282,12 @@ contract BasisGmxFactory is IBasisGmxFactory, OwnableUpgradeable, UUPSUpgradeabl
     function orderHandler() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._orderHandler;
+    }
+
+    /// @inheritdoc IBasisGmxFactory
+    function referralStorage() public view override returns (address) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._referralStorage;
     }
 
     function isActiveStrategy(address strategy) public view returns (bool) {

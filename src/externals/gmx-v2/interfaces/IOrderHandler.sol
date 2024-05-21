@@ -21,4 +21,5 @@ interface IOrderHandler {
 
     function orderVault() external view returns (address);
     function executeOrder(bytes32 key, SetPricesParams calldata oracleParams) external;
+    function referralStorage() external view returns (address);
 }
