@@ -3,10 +3,13 @@ pragma solidity ^0.8.0;
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
+import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
+
+import {ArbGasInfo} from "src/externals/arbitrum/ArbGasInfo.sol";
+
 import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
 import {IReferralStorage} from "src/externals/gmx-v2/interfaces/IReferralStorage.sol";
-import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 
 import {Chain} from "src/externals/gmx-v2/libraries/Chain.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
@@ -125,5 +128,21 @@ library GmxV2Lib {
         returns (bytes32)
     {
         return keccak256(abi.encode(account, marketToken, collateralToken, isLong));
+    }
+
+    function getExecutionFee(IDataStore dataStore, uint256 callbackGasLimit) internal view returns (uint256, uint256) {
+        uint256 estimatedGasLimitIncrease = dataStore.getUint(Keys.increaseOrderGasLimitKey());
+        uint256 estimatedGasLimitDecrease = dataStore.getUint(Keys.decreaseOrderGasLimitKey());
+        estimatedGasLimitIncrease += callbackGasLimit;
+        estimatedGasLimitDecrease += callbackGasLimit;
+        uint256 baseGasLimit = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT);
+        uint256 multiplierFactor = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR);
+        uint256 gasLimitIncrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitIncrease, multiplierFactor);
+        uint256 gasLimitDecrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitDecrease, multiplierFactor);
+        uint256 gasPrice = tx.gasprice;
+        if (gasPrice == 0) {
+            gasPrice = ArbGasInfo(0x000000000000000000000000000000000000006C).getMinimumGasPrice();
+        }
+        return (gasPrice * gasLimitIncrease, gasPrice * gasLimitDecrease);
     }
 }
