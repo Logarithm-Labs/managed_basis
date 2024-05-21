@@ -6,6 +6,7 @@ import { IAggregationRouter } from "src/interfaces/IAggregationRouter.sol";
 import { IOracle } from "src/interfaces/IOracle.sol";
 
 import { LogBaseVaultUpgradeable } from "src/LogBaseVaultUpgradeable.sol";
+import { FactoryStorage } from "src/FactoryStorage.sol";
 import { AccessControlDefaultAdminRulesUpgradeable } from "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -19,7 +20,7 @@ import { LogarithmOracle } from "src/LogarithmOracle.sol";
 import { InchAggregatorLogic } from "src/libraries/InchAggregatorLogic.sol";
 import { Errors } from "./Errors.sol";
 
-contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpgradeable, AccessControlDefaultAdminRulesUpgradeable {
+contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpgradeable, FactoryStorage, AccessControlDefaultAdminRulesUpgradeable {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using Math for uint256;
@@ -82,6 +83,7 @@ contract ManagedBasisStrategy is Initializable, UUPSUpgradeable, LogBaseVaultUpg
 
     function initialize(address _asset, address _owner) public initializer {
         __LogBaseVault_init(IERC20(_asset));
+        __FactoryStorage_init(msg.sender);
         __AccessControlDefaultAdminRules_init(1 days, _owner);
     }
 
