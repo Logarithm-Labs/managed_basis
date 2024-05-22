@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-interface IAggregationRouter {
+interface IAggregationRouterV6 {
     type Address is uint256;
 
     struct SwapDescription {

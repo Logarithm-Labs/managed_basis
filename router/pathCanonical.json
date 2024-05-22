@@ -1,0 +1,7 @@
+{
+    "src": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "dst": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    "amount": "100000000",
+    "from": "0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0",
+    "slippage": "1"
+}
