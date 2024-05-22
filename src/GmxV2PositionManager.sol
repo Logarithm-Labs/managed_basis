@@ -31,12 +31,6 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
 
     string constant API_VERSION = "0.0.1";
 
-    /// @notice used for processing status
-    enum Stages {
-        Idle,
-        Pending
-    }
-
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -49,9 +43,10 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         address _indexToken;
         address _longToken;
         address _shortToken;
-        bytes32 _positionKey;
+        address _collateralToken;
+        bool _isLong;
         // state
-        Stages _stage;
+        bytes32 _pendingOrderKey;
         uint256 _pendingAssets;
     }
 
@@ -86,18 +81,6 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         _;
     }
 
-    modifier transitionPending() {
-        _atStage(Stages.Idle);
-        _setStage(Stages.Pending);
-        _;
-    }
-
-    modifier transitionIdle() {
-        _atStage(Stages.Pending);
-        _setStage(Stages.Idle);
-        _;
-    }
-
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
     //////////////////////////////////////////////////////////////*/
@@ -114,7 +97,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         address dataStore = IBasisGmxFactory(factory).dataStore();
         address reader = IBasisGmxFactory(factory).reader();
         Market.Props memory market = IReader(reader).getMarket(dataStore, marketKey);
-        if (market.shortToken != asset || market.longToken != product) {
+        if ((market.longToken != asset && market.shortToken != asset) || (market.indexToken != product)) {
             revert Errors.InvalidInitializationAssets();
         }
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
@@ -123,8 +106,8 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         $._indexToken = market.indexToken;
         $._longToken = market.longToken;
         $._shortToken = market.shortToken;
-        // always short position
-        $._positionKey = GmxV2Lib.getPositionKey(address(this), market.marketToken, market.shortToken, false);
+        $._collateralToken = asset;
+        $._isLong = false;
     }
 
     function _authorizeUpgrade(address) internal virtual override onlyFactory {}
@@ -141,10 +124,8 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         payable
         override
         onlyStrategy
-        transitionPending
-        returns (bytes32)
     {
-        return _createOrder(collateralDelta, sizeDeltaInUsd, true);
+        _createOrder(collateralDelta, sizeDeltaInUsd, true);
     }
 
     /// @inheritdoc IGmxV2PositionManager
@@ -153,10 +134,8 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         payable
         override
         onlyStrategy
-        transitionPending
-        returns (bytes32)
     {
-        return _createOrder(collateralDelta, sizeDeltaInUsd, false);
+        _createOrder(collateralDelta, sizeDeltaInUsd, false);
     }
 
     /// @inheritdoc IGmxV2PositionManager
@@ -206,8 +185,9 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         bytes32 key,
         Order.Props memory, /* order */
         EventUtils.EventLogData memory /* eventData */
-    ) external override transitionIdle {
-        _validateOrderHandler();
+    ) external override {
+        _validateOrderHandler(key);
+        _setPendingOrderKey(bytes32(0));
         _setPendingAssets(0);
         emit OrderExecuted(key);
     }
@@ -217,13 +197,14 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         bytes32 key,
         Order.Props memory order,
         EventUtils.EventLogData memory /* eventData */
-    ) external override transitionIdle {
-        _validateOrderHandler();
+    ) external override {
+        _validateOrderHandler(key);
+        _setPendingOrderKey(bytes32(0));
         address collateralTokenAddr = order.addresses.initialCollateralToken;
         uint256 pendingAssetsAmount = pendingAssets();
+        _setPendingAssets(0);
         assert(IERC20(collateralTokenAddr).balanceOf(address(this)) == pendingAssetsAmount);
         IERC20(collateralTokenAddr).safeTransfer(strategy(), pendingAssetsAmount);
-        _setPendingAssets(0);
         emit OrderFailed(key);
     }
 
@@ -248,8 +229,9 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     /// @inheritdoc IGmxV2PositionManager
     function totalAssets() public view override returns (uint256) {
         address factory = factory();
+        address _marketToken = marketToken();
         Market.Props memory market = Market.Props({
-            marketToken: marketToken(),
+            marketToken: _marketToken,
             indexToken: indexToken(),
             longToken: longToken(),
             shortToken: shortToken()
@@ -260,7 +242,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
                 dataStore: IBasisGmxFactory(factory).dataStore(),
                 reader: IBasisGmxFactory(factory).reader(),
                 referralStorage: IBasisGmxFactory(factory).referralStorage(),
-                positionKey: positionKey()
+                positionKey: GmxV2Lib.getPositionKey(address(this), _marketToken, collateralToken(), isLong())
             })
         );
         return positionNetAmount + pendingAssets();
@@ -277,7 +259,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
 
     function collateralToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $._shortToken;
+        return $._collateralToken;
     }
 
     function strategy() public view returns (address) {
@@ -305,14 +287,14 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         return $._shortToken;
     }
 
-    function positionKey() public view returns (bytes32) {
+    function isLong() public view returns (bool) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $._positionKey;
+        return $._isLong;
     }
 
-    function stage() public view returns (Stages) {
+    function pendingOrderKey() public view returns (bytes32) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $._stage;
+        return $._pendingOrderKey;
     }
 
     function pendingAssets() public view returns (uint256) {
@@ -325,7 +307,10 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     //////////////////////////////////////////////////////////////*/
 
     /// @dev create increase/decrease order
-    function _createOrder(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private returns (bytes32) {
+    function _createOrder(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private {
+        if (pendingOrderKey() != bytes32(0)) {
+            revert Errors.AlreadyPending();
+        }
         uint256 executionFee = msg.value;
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         address orderVaultAddr = factory.orderVault();
@@ -345,6 +330,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
             swapPath: swapPath
         });
 
+        bool _isLong = isLong();
         IExchangeRouter.CreateOrderParamsNumbers memory paramsNumbers;
         IExchangeRouter.OrderType orderType;
         if (isIncrease) {
@@ -356,7 +342,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
                 sizeDeltaUsd: sizeDeltaInUsd,
                 initialCollateralDeltaAmount: 0, // The amount of tokens to withdraw for decrease orders
                 triggerPrice: 0, // not used for market, swap, liquidation orders
-                acceptablePrice: 0, // acceptable index token price
+                acceptablePrice: _isLong ? type(uint256).max : 0, // acceptable index token price
                 executionFee: executionFee,
                 callbackGasLimit: factory.callbackGasLimit(),
                 minOutputAmount: 0
@@ -367,7 +353,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
                 sizeDeltaUsd: sizeDeltaInUsd,
                 initialCollateralDeltaAmount: collateralDelta, // The amount of tokens to withdraw for decrease orders
                 triggerPrice: 0, // not used for market, swap, liquidation orders
-                acceptablePrice: type(uint256).max, // acceptable index token price
+                acceptablePrice: _isLong ? 0 : type(uint256).max, // acceptable index token price
                 executionFee: executionFee,
                 callbackGasLimit: factory.callbackGasLimit(),
                 minOutputAmount: 0
@@ -380,16 +366,16 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
             numbers: paramsNumbers,
             orderType: orderType,
             decreasePositionSwapType: swapType,
-            isLong: false,
+            isLong: _isLong,
             shouldUnwrapNativeToken: false,
             referralCode: factory.referralCode()
         });
 
         bytes32 orderKey = IExchangeRouter(exchangeRouterAddr).createOrder(orderParams);
 
-        emit OrderCreated(orderKey, collateralDelta, sizeDeltaInUsd, isIncrease);
+        _setPendingOrderKey(orderKey);
 
-        return orderKey;
+        emit OrderCreated(orderKey, collateralDelta, sizeDeltaInUsd, isIncrease);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -403,16 +389,10 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         }
     }
 
-    function _atStage(Stages stage_) private view {
-        if (stage_ != stage()) {
-            revert Errors.FunctionInvalidAtThisStage();
-        }
-    }
-
     /// @dev validate if the caller is OrderHandler of gmx
-    function _validateOrderHandler() private view {
-        if (msg.sender != IBasisGmxFactory(factory()).orderHandler()) {
-            revert Errors.CallerNotOrderHandler();
+    function _validateOrderHandler(bytes32 orderKey) private view {
+        if (msg.sender != IBasisGmxFactory(factory()).orderHandler() || orderKey != pendingOrderKey()) {
+            revert Errors.CallbackNotAllowed();
         }
     }
 
@@ -420,9 +400,9 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
                         STORAGE SETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function _setStage(Stages stage_) private {
+    function _setPendingOrderKey(bytes32 orderKey) private {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        $._stage = stage_;
+        $._pendingOrderKey = orderKey;
     }
 
     function _setPendingAssets(uint256 assets) private {

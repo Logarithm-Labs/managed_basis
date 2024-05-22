@@ -21,13 +21,13 @@ library Errors {
     /// @notice asset and product are not matched with short and long tokens
     error InvalidInitializationAssets();
     /// @notice invalid gmx callback function caller
-    error CallerNotOrderHandler();
+    error CallbackNotAllowed();
     /// @notice zero address check
     error ZeroAddress();
     /// @notice arrays are expected to have same length
     error ArrayLengthMissmatch();
-    /// @notice invalid function at this stage
-    error FunctionInvalidAtThisStage();
+    /// @notice only one gmx order pending allowed
+    error AlreadyPending();
 
     // errors from gmx oracle
 
