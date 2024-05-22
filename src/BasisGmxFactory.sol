@@ -213,7 +213,6 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
         positionManager = address(new ERC1967Proxy($._positionManagerImplementation, posMngerInitializerData));
         IBasisStrategy(strategy).setPositionManager(positionManager);
 
-        IBasisStrategy(strategy).activateStrategy();
         $._strategies.push(strategy);
         $._activeStrategy[strategy] = true;
 
@@ -221,21 +220,22 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
     }
 
     function activateStrategy(address strategy) external virtual onlyOwner {
-        if (IBasisStrategy(strategy).isActive()) {
-            revert();
-        }
-        IBasisStrategy(strategy).activateStrategy();
-    }
-
-    function deactivateStrategy(address strategy) external payable virtual onlyOwner returns (bytes32 key) {
-        if (!IBasisStrategy(strategy).isActive()) {
+        if (isActiveStrategy(strategy)) {
             revert();
         }
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        key = IBasisStrategy(strategy).deactivateStrategy{value: msg.value}();
+        $._activeStrategy[strategy] = true;
+    }
+
+    function deactivateStrategy(address strategy) external payable virtual onlyOwner returns (bytes32 key) {
+        if (!isActiveStrategy(strategy)) {
+            revert();
+        }
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         $._activeStrategy[strategy] = false;
     }
 
+    /// @dev anybody can call this function
     function topUpStrategies(address[] calldata _strategies, uint256[] calldata _amounts) external payable {
         uint256 len = _strategies.length;
         if (_amounts.length != len) {
