@@ -227,7 +227,7 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
         $._activeStrategy[strategy] = true;
     }
 
-    function deactivateStrategy(address strategy) external payable virtual onlyOwner returns (bytes32 key) {
+    function deactivateStrategy(address strategy) external payable virtual onlyOwner {
         if (!isActiveStrategy(strategy)) {
             revert();
         }

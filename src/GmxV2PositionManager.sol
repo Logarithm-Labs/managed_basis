@@ -202,7 +202,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     }
 
     /// @inheritdoc IOrderCallbackReceiver
-    function afterOrderExecution(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
+    function afterOrderExecution(bytes32 key, Order.Props memory /* order */, EventUtils.EventLogData memory /* eventData */)
         external
         override
         transitionIdle
@@ -213,7 +213,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     }
 
     /// @inheritdoc IOrderCallbackReceiver
-    function afterOrderCancellation(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
+    function afterOrderCancellation(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory /* eventData */)
         external
         override
         transitionIdle
@@ -228,7 +228,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     }
 
     /// @inheritdoc IOrderCallbackReceiver
-    function afterOrderFrozen(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
+    function afterOrderFrozen(bytes32 /* key */, Order.Props memory /* order */, EventUtils.EventLogData memory /* eventData */)
         external
         pure
         override
