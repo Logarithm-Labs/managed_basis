@@ -202,22 +202,22 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     }
 
     /// @inheritdoc IOrderCallbackReceiver
-    function afterOrderExecution(bytes32 key, Order.Props memory /* order */, EventUtils.EventLogData memory /* eventData */)
-        external
-        override
-        transitionIdle
-    {
+    function afterOrderExecution(
+        bytes32 key,
+        Order.Props memory, /* order */
+        EventUtils.EventLogData memory /* eventData */
+    ) external override transitionIdle {
         _validateOrderHandler();
         _setPendingAssets(0);
         emit OrderExecuted(key);
     }
 
     /// @inheritdoc IOrderCallbackReceiver
-    function afterOrderCancellation(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory /* eventData */)
-        external
-        override
-        transitionIdle
-    {
+    function afterOrderCancellation(
+        bytes32 key,
+        Order.Props memory order,
+        EventUtils.EventLogData memory /* eventData */
+    ) external override transitionIdle {
         _validateOrderHandler();
         address collateralTokenAddr = order.addresses.initialCollateralToken;
         uint256 pendingAssetsAmount = pendingAssets();
@@ -228,11 +228,11 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     }
 
     /// @inheritdoc IOrderCallbackReceiver
-    function afterOrderFrozen(bytes32 /* key */, Order.Props memory /* order */, EventUtils.EventLogData memory /* eventData */)
-        external
-        pure
-        override
-    {
+    function afterOrderFrozen(
+        bytes32, /* key */
+        Order.Props memory, /* order */
+        EventUtils.EventLogData memory /* eventData */
+    ) external pure override {
         revert(); // fronzen is not supported for market increase/decrease orders
     }
 
