@@ -71,6 +71,11 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
 
     event FundingClaimed(address indexed token, uint256 indexed amount);
     event CollateralClaimed(address indexed token, uint256 indexed amount);
+    event OrderCreated(
+        bytes32 indexed orderKey, uint256 indexed collateralDelta, uint256 indexed sizeDeltaInUsd, bool isIncrease
+    );
+    event OrderExecuted(bytes32 indexed orderKey);
+    event OrderFailed(bytes32 indexed orderKey);
 
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
@@ -204,6 +209,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     {
         _validateOrderHandler();
         _setPendingAssets(0);
+        emit OrderExecuted(key);
     }
 
     /// @inheritdoc IOrderCallbackReceiver
@@ -218,6 +224,7 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
         assert(IERC20(collateralTokenAddr).balanceOf(address(this)) == pendingAssetsAmount);
         IERC20(collateralTokenAddr).safeTransfer(strategy(), pendingAssetsAmount);
         _setPendingAssets(0);
+        emit OrderFailed(key);
     }
 
     /// @inheritdoc IOrderCallbackReceiver
@@ -377,7 +384,12 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
             shouldUnwrapNativeToken: false,
             referralCode: factory.referralCode()
         });
-        return IExchangeRouter(exchangeRouterAddr).createOrder(orderParams);
+
+        bytes32 orderKey = IExchangeRouter(exchangeRouterAddr).createOrder(orderParams);
+
+        emit OrderCreated(orderKey, collateralDelta, sizeDeltaInUsd, isIncrease);
+
+        return orderKey;
     }
 
     /*//////////////////////////////////////////////////////////////
