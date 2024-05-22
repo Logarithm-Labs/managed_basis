@@ -47,7 +47,7 @@ contract ManagedBasisStrategy is
         address receiver;
         bool isExecuted;
         bool isClaimed;
-    }   
+    }
 
     struct PositionState {
         uint256 netBalance;
@@ -74,7 +74,8 @@ contract ManagedBasisStrategy is
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedBasisStrategyStorage")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ManagedBasisStrategyStorageLocation = 0xf5ffd60679e080b7c4e308f2409616890be7bc10ba607661a7e13210852af100;
+    bytes32 private constant ManagedBasisStrategyStorageLocation =
+        0xf5ffd60679e080b7c4e308f2409616890be7bc10ba607661a7e13210852af100;
 
     function _getManagedBasisStrategyStorage() private pure returns (ManagedBasisStrategyStorage storage $) {
         assembly {
@@ -110,7 +111,15 @@ contract ManagedBasisStrategy is
                         INITIALIZATION / CONFIGURATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address _asset, address _product, address _owner, address _oracle, uint256 _entryCost, uint256 _exitCost, bool _isLong) external initializer {
+    function initialize(
+        address _asset,
+        address _product,
+        address _owner,
+        address _oracle,
+        uint256 _entryCost,
+        uint256 _exitCost,
+        bool _isLong
+    ) external initializer {
         __FactoryDeployable_init();
         __ERC4626_init(IERC20(_asset));
         __LogBaseVault_init(IERC20(_product));
@@ -118,7 +127,10 @@ contract ManagedBasisStrategy is
         __ManagedBasisStrategy_init(_oracle, _entryCost, _exitCost, _isLong);
     }
 
-    function __ManagedBasisStrategy_init(address _oracle, uint256 _entryCost, uint256 _exitCost, bool _isLong) public initializer {
+    function __ManagedBasisStrategy_init(address _oracle, uint256 _entryCost, uint256 _exitCost, bool _isLong)
+        public
+        initializer
+    {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         $.oracle = IOracle(_oracle);
         $.entryCost = _entryCost;
@@ -128,13 +140,19 @@ contract ManagedBasisStrategy is
         $.strategyDepostLimit = type(uint256).max;
     }
 
+    function setEntyExitCosts(uint256 _entryCost, uint256 _exitCost) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        $.entryCost = _entryCost;
+        $.exitCost = _exitCost;
+    }
+
     function setDepositLimits(uint256 userLimit, uint256 strategyLimit) external onlyRole(OPERATOR_ROLE) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         $.userDepositLimit = userLimit;
         $.strategyDepostLimit = strategyLimit;
     }
 
-    function _authorizeUpgrade(address /*newImplementation*/) internal virtual override onlyFactory {}
+    function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyFactory {}
 
     /*//////////////////////////////////////////////////////////////
                         DEPOSIT/WITHDRAWAL LOGIC
@@ -142,15 +160,24 @@ contract ManagedBasisStrategy is
 
     function maxDeposit(address receiver) public view virtual override returns (uint256 allowed) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 sharesBalance = balanceOf(receiver);
-        uint256 sharesValue = convertToAssets(sharesBalance);
-        uint256 availableDepositorLimit =
-            $.userDepositLimit == type(uint256).max ? type(uint256).max : $.userDepositLimit - sharesValue;
-        uint256 availableStrategyLimit =
-            $.strategyDepostLimit == type(uint256).max ? type(uint256).max : $.strategyDepostLimit - totalAssets();
-        uint256 userBalance = IERC20(asset()).balanceOf(address(receiver));
-        allowed = availableDepositorLimit < availableStrategyLimit ? availableDepositorLimit : availableStrategyLimit;
-        allowed = userBalance < allowed ? userBalance : allowed;
+        if ($.userDepositLimit == type(uint256).max && $.strategyDepostLimit == type(uint256).max) {
+            return type(uint256).max;
+        } else {
+            uint256 sharesBalance = balanceOf(receiver);
+            uint256 sharesValue = convertToAssets(sharesBalance);
+            uint256 availableDepositorLimit =
+                $.userDepositLimit == type(uint256).max ? type(uint256).max : $.userDepositLimit - sharesValue;
+            uint256 availableStrategyLimit =
+                $.strategyDepostLimit == type(uint256).max ? type(uint256).max : $.strategyDepostLimit - totalAssets();
+            uint256 userBalance = IERC20(asset()).balanceOf(address(receiver));
+            allowed = availableDepositorLimit < availableStrategyLimit ? availableDepositorLimit : availableStrategyLimit;
+            allowed = userBalance < allowed ? userBalance : allowed;
+        }
+    }
+
+    function maxMint(address receiver) public view virtual override returns (uint256) {
+        uint256 maxAssets = maxDeposit(receiver);
+        return previewDeposit(maxAssets);
     }
 
     /**
@@ -230,7 +257,8 @@ contract ManagedBasisStrategy is
         uint256 productBalance = IERC20(product_).balanceOf(address(this));
         uint256 productValueInAsset = productBalance.mulDiv(productPrice, assetPrice, Math.Rounding.Floor);
         int256 pnl = _getVirtualPnl();
-        total = IERC20(asset_).balanceOf(address(this)) + productValueInAsset + $.positionStates[$.currentRound].netBalance;
+        total =
+            IERC20(asset_).balanceOf(address(this)) + productValueInAsset + $.positionStates[$.currentRound].netBalance;
         if (pnl > 0) {
             total += uint256(pnl);
         } else {
@@ -302,7 +330,11 @@ contract ManagedBasisStrategy is
         emit Utilize(msg.sender, amount, amountOut);
     }
 
-    function receiveAndUtilize(uint256 utilizeAmount, uint256 receiveAmount, SwapType swapType, bytes calldata data) public virtual onlyRole(OPERATOR_ROLE) {
+    function receiveAndUtilize(uint256 utilizeAmount, uint256 receiveAmount, SwapType swapType, bytes calldata data)
+        public
+        virtual
+        onlyRole(OPERATOR_ROLE)
+    {
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), receiveAmount);
         utilize(utilizeAmount, swapType, data);
     }
@@ -384,5 +416,65 @@ contract ManagedBasisStrategy is
         pnl = $.isLong
             ? positionValue.toInt256() - positionSize.toInt256()
             : positionSize.toInt256() - positionValue.toInt256();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        EXTERNAL STORAGE GETTERS
+    //////////////////////////////////////////////////////////////*/
+
+
+    function oracle() external view returns (address) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return address($.oracle);
+    }
+
+    function entryCost() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.entryCost;
+    }
+
+    function exitCost() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.exitCost;
+    }
+
+    function isLong() external view returns (bool) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.isLong;
+    }
+
+    function userDepositLimit() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.userDepositLimit;
+    }
+
+    function strategyDepositLimit() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.strategyDepostLimit;
+    }
+
+    function positionState(uint256 roundId) external view returns (PositionState memory) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.positionStates[roundId];
+    }
+
+    function requestCounter(address owner) external view returns (uint128) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.requestCounter[owner];
+    }
+
+    function withdrawRequest(bytes32 requestId) external view returns (WithdrawalState memory) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.withdrawRequests[requestId];
+    }
+
+    function assetsToClaim() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.assetsToClaim;
+    }
+
+    function currentRound() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.currentRound;
     }
 }

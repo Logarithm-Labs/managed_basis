@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "forge-std/Test.sol";
 import {ManagedBasisStrategy} from "src/ManagedBasisStrategy.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {MockExchange} from "test/mock/MockExchange.sol";ß
+import {MockExchange} from "test/mock/MockExchange.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -48,18 +48,18 @@ contract ManagedBasisStrategyTest is Test {
 
         // deploy oracle
         address oracleImpl = address(new LogarithmOracle());
-        address oracleProxy = address(
-            new ERC1967Proxy(
-                oracleImpl, abi.encodeWithSelector(LogarithmOracle.initialize.selector, owner)
-            )
-        );
+        address oracleProxy =
+            address(new ERC1967Proxy(oracleImpl, abi.encodeWithSelector(LogarithmOracle.initialize.selector, owner)));
         oracle = LogarithmOracle(oracleProxy);
 
         // deploy strategy
         address strategyImpl = address(new ManagedBasisStrategy());
         address strategyProxy = address(
             new ERC1967Proxy(
-                strategyImpl, abi.encodeWithSelector(ManagedBasisStrategy.initialize.selector, asset, product, owner, oracle, entryCost, exitCost, isLong)
+                strategyImpl,
+                abi.encodeWithSelector(
+                    ManagedBasisStrategy.initialize.selector, asset, product, owner, oracle, entryCost, exitCost, isLong
+                )
             )
         );
         strategy = ManagedBasisStrategy(strategyProxy);
@@ -96,7 +96,6 @@ contract ManagedBasisStrategyTest is Test {
         assertEq(strategy.totalAssets(), depositAmount);
         assertEq(strategy.totalAssets(), strategy.idleAssets());
         vm.startPrank(owner);
-
     }
 
     function test_firstDepositAndExecute() public {
@@ -115,7 +114,6 @@ contract ManagedBasisStrategyTest is Test {
         // call utilize
         uint256 amountOut = mockExchange.utilize(amountToUtilize, data);
         assertEq(IERC20(product).balanceOf(address(strategy)), amountOut);
-
     }
 
     function writeTokenBalance(address who, address token, uint256 amt) internal {
@@ -129,7 +127,10 @@ contract ManagedBasisStrategyTest is Test {
         assertEq(IERC20(token).balanceOf(who), amt);
     }
 
-    function generateInchCallData(address tokenIn, address tokenOut, uint256 amount) internal returns (bytes memory data){
+    function generateInchCallData(address tokenIn, address tokenOut, uint256 amount)
+        internal
+        returns (bytes memory data)
+    {
         string memory pathObj = "path_obj";
         vm.serializeAddress(pathObj, "src", tokenIn);
         vm.serializeAddress(pathObj, "dst", tokenOut);
@@ -147,5 +148,4 @@ contract ManagedBasisStrategyTest is Test {
 
         data = vm.ffi(inputs);
     }
-    
 }

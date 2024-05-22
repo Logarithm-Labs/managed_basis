@@ -57,7 +57,7 @@ contract MockExchange {
 
     function reportState() public {
         ManagedBasisStrategy.PositionState memory state0 = positionStates[currentRound];
-        strategy.reportState(state0); 
+        strategy.reportState(state0);
     }
 
     function executeWithdrawal(bytes32 requestId, uint256 amountExecuted) public {
@@ -83,10 +83,11 @@ contract MockExchange {
         strategy.reportStateAndExecuteWithdrawals(state0, requestIds, amountsExecuted);
     }
 
-    function reportStateAndExecuteWithdrawals(bytes32[] calldata requestIds, uint256[] calldata amountsExecuted) external {
+    function reportStateAndExecuteWithdrawals(bytes32[] calldata requestIds, uint256[] calldata amountsExecuted)
+        external
+    {
         ManagedBasisStrategy.PositionState memory state0 = positionStates[currentRound];
         strategy.reportStateAndExecuteWithdrawals(state0, requestIds, amountsExecuted);
-
     }
 
     function _getVirtualPnl() internal view returns (int256 pnl) {
@@ -103,18 +104,11 @@ contract MockExchange {
         strategy.sendToOperator(amount);
     }
 
-    function utilize(uint256 utilizeAmount, bytes calldata data)
-        public
-        returns (uint256)
-    {
+    function utilize(uint256 utilizeAmount, bytes calldata data) public returns (uint256) {
         return strategy.utilize(utilizeAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
     }
 
-    function deutilize(uint256 deutilizeAmount, bytes calldata data)
-        public
-        returns (uint256)
-    {
+    function deutilize(uint256 deutilizeAmount, bytes calldata data) public returns (uint256) {
         return strategy.deutilize(deutilizeAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
     }
-    
 }

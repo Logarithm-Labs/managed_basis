@@ -19,7 +19,8 @@ contract LogarithmOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedBasisStrategyStorage")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant LogarithmOracleStorageLocation = 0xaf7f9ee2bf6df4652c22f2985b1d5158d032a69025fa7f00df5c4473100fe400;
+    bytes32 private constant LogarithmOracleStorageLocation =
+        0xaf7f9ee2bf6df4652c22f2985b1d5158d032a69025fa7f00df5c4473100fe400;
 
     function _getLogarithmOracleStorage() private pure returns (LogarithmOracleStorage storage $) {
         assembly {
@@ -31,7 +32,7 @@ contract LogarithmOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         __Ownable_init(owner);
     }
 
-    function _authorizeUpgrade(address /*newImplementation*/) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
 
     function setPriceFeeds(address[] calldata assets, address[] calldata feeds) external onlyOwner {
         if (assets.length != feeds.length) {

@@ -37,18 +37,18 @@ contract InchTest is Test {
 
         // deploy oracle
         address oracleImpl = address(new LogarithmOracle());
-        address oracleProxy = address(
-            new ERC1967Proxy(
-                oracleImpl, abi.encodeWithSelector(LogarithmOracle.initialize.selector, owner)
-            )
-        );
+        address oracleProxy =
+            address(new ERC1967Proxy(oracleImpl, abi.encodeWithSelector(LogarithmOracle.initialize.selector, owner)));
         oracle = LogarithmOracle(oracleProxy);
 
         // deploy strategy
         address strategyImpl = address(new ManagedBasisStrategy());
         address strategyProxy = address(
             new ERC1967Proxy(
-                strategyImpl, abi.encodeWithSelector(ManagedBasisStrategy.initialize.selector, asset, product, owner, oracle, entryCost, exitCost, isLong)
+                strategyImpl,
+                abi.encodeWithSelector(
+                    ManagedBasisStrategy.initialize.selector, asset, product, owner, oracle, entryCost, exitCost, isLong
+                )
             )
         );
         strategy = ManagedBasisStrategy(strategyProxy);
@@ -69,7 +69,6 @@ contract InchTest is Test {
     }
 
     function test_inchUtilize() public {
-
         uint256 amount = 1000 * 1e6;
         writeTokenBalance(address(strategy), asset, amount);
 
@@ -79,7 +78,6 @@ contract InchTest is Test {
         uint256 amountOut = strategy.utilize(amount, ManagedBasisStrategy.SwapType.INCH_V6, data);
         assertEq(amountOut, IERC20(product).balanceOf(address(strategy)));
         console.log("amountOut: ", amountOut);
-
     }
 
     function test_inchDeutilize() public {
@@ -105,7 +103,10 @@ contract InchTest is Test {
         assertEq(IERC20(token).balanceOf(who), amt);
     }
 
-    function generateInchCallData(address tokenIn, address tokenOut, uint256 amount) internal returns (bytes memory data){
+    function generateInchCallData(address tokenIn, address tokenOut, uint256 amount)
+        internal
+        returns (bytes memory data)
+    {
         string memory pathObj = "path_obj";
         vm.serializeAddress(pathObj, "src", tokenIn);
         vm.serializeAddress(pathObj, "dst", tokenOut);
@@ -123,7 +124,4 @@ contract InchTest is Test {
 
         data = vm.ffi(inputs);
     }
-
-
-    
 }
