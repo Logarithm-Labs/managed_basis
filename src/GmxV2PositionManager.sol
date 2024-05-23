@@ -4,6 +4,8 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
 import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
 import {IOrderCallbackReceiver} from "src/externals/gmx-v2/interfaces/IOrderCallbackReceiver.sol";
@@ -24,7 +26,7 @@ import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
 /// @title A gmx position manager
 /// @author Logarithm Labs
 /// @dev this contract must be deployed only by the factory
-contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrderCallbackReceiver {
+contract GmxV2PositionManager is UUPSUpgradeable, FactoryDeployable, IGmxV2PositionManager, IOrderCallbackReceiver {
     using SafeERC20 for IERC20;
 
     string constant API_VERSION = "0.0.1";
