@@ -11,8 +11,6 @@ import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
 import {EventUtils} from "src/externals/gmx-v2/libraries/EventUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Order} from "src/externals/gmx-v2/libraries/Order.sol";
-import {Precision} from "src/externals/gmx-v2/libraries/Precision.sol";
-import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
 import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
@@ -119,50 +117,32 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
     receive() external payable {}
 
     /// @inheritdoc IGmxV2PositionManager
-    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd)
-        external
-        payable
-        override
-        onlyStrategy
-    {
+    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable override onlyStrategy {
         _createOrder(collateralDelta, sizeDeltaInUsd, true);
     }
 
     /// @inheritdoc IGmxV2PositionManager
-    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd)
-        external
-        payable
-        override
-        onlyStrategy
-    {
+    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable override onlyStrategy {
         _createOrder(collateralDelta, sizeDeltaInUsd, false);
     }
 
     /// @inheritdoc IGmxV2PositionManager
     function claimFunding() external override {
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
-        IDataStore dataStore = IDataStore(factory.dataStore());
         IExchangeRouter exchangeRouter = IExchangeRouter(factory.exchangeRouter());
         address marketTokenAddr = marketToken();
         address shortTokenAddr = shortToken();
         address longTokenAddr = longToken();
 
-        bytes32 key = Keys.claimableFundingAmountKey(marketTokenAddr, shortTokenAddr, address(this));
-        uint256 shortTokenAmount = dataStore.getUint(key);
-        key = Keys.claimableFundingAmountKey(marketTokenAddr, longTokenAddr, address(this));
-        uint256 longTokenAmount = dataStore.getUint(key);
-
-        if (shortTokenAmount > 0 || longTokenAmount > 0) {
-            address[] memory markets = new address[](2);
-            markets[0] = marketTokenAddr;
-            markets[1] = marketTokenAddr;
-            address[] memory tokens = new address[](2);
-            tokens[0] = shortTokenAddr;
-            tokens[1] = longTokenAddr;
-            uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, strategy());
-            emit FundingClaimed(shortTokenAddr, amounts[0]);
-            emit FundingClaimed(longTokenAddr, amounts[1]);
-        }
+        address[] memory markets = new address[](2);
+        markets[0] = marketTokenAddr;
+        markets[1] = marketTokenAddr;
+        address[] memory tokens = new address[](2);
+        tokens[0] = shortTokenAddr;
+        tokens[1] = longTokenAddr;
+        uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, strategy());
+        emit FundingClaimed(shortTokenAddr, amounts[0]);
+        emit FundingClaimed(longTokenAddr, amounts[1]);
     }
 
     /// @inheritdoc IGmxV2PositionManager
@@ -242,20 +222,21 @@ contract GmxV2PositionManager is FactoryDeployable, IGmxV2PositionManager, IOrde
                 dataStore: IBasisGmxFactory(factory).dataStore(),
                 reader: IBasisGmxFactory(factory).reader(),
                 referralStorage: IBasisGmxFactory(factory).referralStorage(),
-                positionKey: GmxV2Lib.getPositionKey(address(this), _marketToken, collateralToken(), isLong())
+                positionKey: GmxV2Lib.getPositionKey(address(this), _marketToken, collateralToken(), isLong()),
+                oracle: IBasisGmxFactory(factory).oracle()
             })
         );
         return positionNetAmount + pendingAssets();
     }
 
-    /// @notice calculate the execution fee that is need from gmx when increase and decrease
-    ///
-    /// @return feeIncrease the execution fee for increase
-    /// @return feeDecrease the execution fee for decrease
-    function getExecutionFee() public view returns (uint256 feeIncrease, uint256 feeDecrease) {
-        IBasisGmxFactory factory = IBasisGmxFactory(factory());
-        return GmxV2Lib.getExecutionFee(IDataStore(factory.dataStore()), factory.callbackGasLimit());
-    }
+    // /// @notice calculate the execution fee that is need from gmx when increase and decrease
+    // ///
+    // /// @return feeIncrease the execution fee for increase
+    // /// @return feeDecrease the execution fee for decrease
+    // function getExecutionFee() public view returns (uint256 feeIncrease, uint256 feeDecrease) {
+    //     IBasisGmxFactory factory = IBasisGmxFactory(factory());
+    //     return GmxV2Lib.getExecutionFee(IDataStore(factory.dataStore()), factory.callbackGasLimit());
+    // }
 
     function collateralToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();

@@ -38,6 +38,7 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
         // main storage
         address _strategyImplementation;
         address _positionManagerImplementation;
+        address _oracle;
         address[] _strategies;
         mapping(address strategy => bool) _activeStrategy;
         mapping(address asset => mapping(address product => address)) _marketKeys;
@@ -68,16 +69,18 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
 
     function initialize(
         address owner_,
+        address oracle_,
         address exchangeRouter_,
         address reader_,
         uint256 callbackGasLimit_,
         bytes32 referralCode_
     ) external initializer {
         __Ownable_init(owner_);
-        if (exchangeRouter_ == address(0)) {
+        if (exchangeRouter_ == address(0) || oracle_ == address(0) || reader_ == address(0)) {
             revert Errors.ZeroAddress();
         }
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        $._oracle = oracle_;
 
         // initialize gmx config
         address orderHandler_ = IExchangeRouter(exchangeRouter_).orderHandler();
@@ -293,6 +296,12 @@ contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgra
     function exchangeRouter() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         return $._exchangeRouter;
+    }
+
+    /// @inheritdoc IBasisGmxFactory
+    function oracle() public view override returns (address) {
+        BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
+        return $._oracle;
     }
 
     /// @inheritdoc IBasisGmxFactory

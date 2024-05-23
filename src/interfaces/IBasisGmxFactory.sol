@@ -38,6 +38,9 @@ interface IBasisGmxFactory {
     /// @return the address of gmx OrderHandler
     function orderHandler() external view returns (address);
 
+    /// @return address of logarithm oracle
+    function oracle() external view returns (address);
+
     /// @return is operator
     function isOperator(address account) external view returns (bool);
 }
