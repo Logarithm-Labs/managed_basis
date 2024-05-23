@@ -3,9 +3,9 @@ pragma solidity ^0.8.0;
 
 library Errors {
     error ZeroShares();
-    error RequestNotExecuted(uint256 requestAmount, uint256 executedAmount);
+    error RequestNotExecuted();
     error RequestAlreadyClaimed();
-    error UnauthoirzedClaimer(address claimer, address receiver);
+    error UnauthorizedClaimer(address claimer, address receiver);
 
     error InchSwapInvailidTokens();
     error InchSwapAmountExceedsBalance(uint256 swapAmount, uint256 balance);
@@ -39,4 +39,10 @@ library Errors {
     error PriceFeedNotConfigured();
     /// @notice price feed multiplier not configured
     error EmptyPriceFeedMultiplier(address token);
+
+    error OracleInvalidPrice();
+
+    error CallerNotFactory();
+    error InsufficientIdleBalanceForUtilize(uint256 idleBalance, uint256 utilizeAmount);
+    error InsufficientProdcutBalanceForDeutilize(uint256 productBalance, uint256 deutilizeAmount);
 }
