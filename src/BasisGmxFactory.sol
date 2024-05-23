@@ -16,7 +16,7 @@ import {IGmxV2PositionManager} from "src/interfaces/IGmxV2PositionManager.sol";
 
 import {Errors} from "src/libraries/Errors.sol";
 
-contract BasisGmxFactory is IBasisGmxFactory, Ownable2StepUpgradeable, UUPSUpgradeable {
+contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgradeable {
     string constant API_VERSION = "0.0.1";
 
     /*//////////////////////////////////////////////////////////////

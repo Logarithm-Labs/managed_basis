@@ -26,7 +26,7 @@ import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
 /// @title A gmx position manager
 /// @author Logarithm Labs
 /// @dev this contract must be deployed only by the factory
-contract GmxV2PositionManager is UUPSUpgradeable, FactoryDeployable, IGmxV2PositionManager, IOrderCallbackReceiver {
+contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, UUPSUpgradeable, FactoryDeployable {
     using SafeERC20 for IERC20;
 
     string constant API_VERSION = "0.0.1";
