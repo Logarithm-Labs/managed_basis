@@ -2,8 +2,9 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/interfaces/IERC20.sol";
-import "src/interfaces/IAggregationRouterV6.sol";
-import "src/interfaces/IUniswapPool.sol";
+import "src/externals/1inch/interfaces/IAggregationRouterV6.sol";
+import "src/externals/uniswap/interfaces/IUniswapPool.sol";
+
 import "src/libraries/AddressLib.sol";
 import "src/libraries/ProtocolLib.sol";
 
