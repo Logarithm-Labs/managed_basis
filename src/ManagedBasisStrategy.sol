@@ -143,7 +143,7 @@ contract ManagedBasisStrategy is
     }
 
     function setPositionManager(address _positionManager) external onlyFactory {
-        if(_positionManager == address(0)) {
+        if (_positionManager == address(0)) {
             revert Errors.ZeroAddress();
         }
         _getManagedBasisStrategyStorage().positionManager = _positionManager;

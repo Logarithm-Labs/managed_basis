@@ -9,7 +9,6 @@ import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployScript is Script {
-    
     address public owner = 0xd1DD21D53eC43C8FE378E51029Aa3F380b229c98;
     address public keeper = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
     address public asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // USDC
@@ -24,7 +23,7 @@ contract DeployScript is Script {
 
     function run() public {
         vm.startBroadcast();
-        
+
         // deploy oracle
         address oracleImpl = address(new LogarithmOracle());
         address oracleProxy =
