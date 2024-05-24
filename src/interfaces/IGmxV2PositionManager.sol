@@ -12,6 +12,9 @@ interface IGmxV2PositionManager {
     /// `API_VERSION`.
     function apiVersion() external view returns (string memory);
 
+    /// @dev set position manager's operator
+    function setOperator(address operator) external;
+
     /// @dev create an increase order
     /// Note: value should be sent to cover the gmx execution fee
     /// this function is callable only by strategy vault

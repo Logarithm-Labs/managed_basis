@@ -53,6 +53,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
     struct GmxV2PositionManagerStorage {
         // configuration
         address _strategy;
+        address _operator;
         address _marketToken;
         address _indexToken;
         address _longToken;
@@ -90,8 +91,8 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
-    modifier onlyStrategy() {
-        _onlyStrategy();
+    modifier onlyOperator() {
+        _onlyOperator();
         _;
     }
 
@@ -130,10 +131,23 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    receive() external payable {}
+    receive() external payable {
+        (bool success,) = operator().call{value: msg.value}("");
+        if (!success) {
+            revert();
+        }
+    }
 
     /// @inheritdoc IGmxV2PositionManager
-    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable override onlyStrategy {
+    function setOperator(address operator) external override onlyFactory {
+        if (operator == address(0)) {
+            revert Errors.ZeroAddress();
+        }
+        _getGmxV2PositionManagerStorage()._operator = operator;
+    }
+
+    /// @inheritdoc IGmxV2PositionManager
+    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable override onlyOperator {
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         _createOrder(
             InternalCreateOrderParams({
@@ -153,7 +167,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
     }
 
     /// @inheritdoc IGmxV2PositionManager
-    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable override onlyStrategy {
+    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable override onlyOperator {
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         _createOrder(
             InternalCreateOrderParams({
@@ -227,7 +241,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
         _validateOrderHandler(key);
         _setPendingOrderKey(bytes32(0));
         address collateralTokenAddr = order.addresses.initialCollateralToken;
-        uint256 pendingAssetsAmount = pendingAssets();
+        uint256 pendingAssetsAmount = _getGmxV2PositionManagerStorage()._pendingAssets;
         _setPendingAssets(0);
         assert(IERC20(collateralTokenAddr).balanceOf(address(this)) == pendingAssetsAmount);
         IERC20(collateralTokenAddr).safeTransfer(strategy(), pendingAssetsAmount);
@@ -272,7 +286,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
                 oracle: IBasisGmxFactory(factory).oracle()
             })
         );
-        return positionNetAmount + pendingAssets();
+        return positionNetAmount + _getGmxV2PositionManagerStorage()._pendingAssets;
     }
 
     // /// @notice calculate the execution fee that is need from gmx when increase and decrease
@@ -292,6 +306,11 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
     function strategy() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $._strategy;
+    }
+
+    function operator() public view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $._operator;
     }
 
     function marketToken() public view returns (address) {
@@ -319,23 +338,13 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
         return $._isLong;
     }
 
-    function pendingOrderKey() public view returns (bytes32) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $._pendingOrderKey;
-    }
-
-    function pendingAssets() public view returns (uint256) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $._pendingAssets;
-    }
-
     /*//////////////////////////////////////////////////////////////
                         PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @dev create increase/decrease order
     function _createOrder(InternalCreateOrderParams memory params) private {
-        if (pendingOrderKey() != bytes32(0)) {
+        if (_getGmxV2PositionManagerStorage()._pendingOrderKey != bytes32(0)) {
             revert Errors.AlreadyPending();
         }
 
@@ -393,15 +402,15 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
     //////////////////////////////////////////////////////////////*/
 
     // this is used in modifier which reduces the code size
-    function _onlyStrategy() private view {
-        if (msg.sender != strategy()) {
-            revert Errors.CallerNotStrategy();
+    function _onlyOperator() private view {
+        if (msg.sender != _getGmxV2PositionManagerStorage()._operator) {
+            revert Errors.CallerNotOperator();
         }
     }
 
     /// @dev validate if the caller is OrderHandler of gmx
     function _validateOrderHandler(bytes32 orderKey) private view {
-        if (msg.sender != IBasisGmxFactory(factory()).orderHandler() || orderKey != pendingOrderKey()) {
+        if (msg.sender != IBasisGmxFactory(factory()).orderHandler() || orderKey != _getGmxV2PositionManagerStorage()._pendingOrderKey) {
             revert Errors.CallbackNotAllowed();
         }
     }
