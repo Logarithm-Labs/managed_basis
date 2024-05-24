@@ -88,8 +88,8 @@ library GmxV2Lib {
     }
 
     function getExecutionFee(address dataStore, uint256 callbackGasLimit) internal view returns (uint256, uint256) {
-        uint256 estimatedGasLimitIncrease = IDataStore(dataStore).getUint(Keys.increaseOrderGasLimitKey());
-        uint256 estimatedGasLimitDecrease = IDataStore(dataStore).getUint(Keys.decreaseOrderGasLimitKey());
+        uint256 estimatedGasLimitIncrease = IDataStore(dataStore).getUint(Keys.INCREASE_ORDER_GAS_LIMIT);
+        uint256 estimatedGasLimitDecrease = IDataStore(dataStore).getUint(Keys.DECREASE_ORDER_GAS_LIMIT);
         estimatedGasLimitIncrease += callbackGasLimit;
         estimatedGasLimitDecrease += callbackGasLimit;
         uint256 baseGasLimit = IDataStore(dataStore).getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT);
