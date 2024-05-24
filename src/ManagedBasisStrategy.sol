@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IAggregationRouterV6} from "src/externals/1inch/interfaces/IAggregationRouterV6.sol";
-import {IOracle} from "src/interfaces/IOracle.sol";
 
-import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
 import {AccessControlDefaultAdminRulesUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -14,9 +11,15 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
+import {IAggregationRouterV6} from "src/externals/1inch/interfaces/IAggregationRouterV6.sol";
+
 import {InchAggregatorV6Logic} from "src/libraries/InchAggregatorV6Logic.sol";
+
+import {IOracle} from "src/interfaces/IOracle.sol";
+
 import {Errors} from "src/libraries/Errors.sol";
 import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
+import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
 
 contract ManagedBasisStrategy is
     UUPSUpgradeable,
@@ -62,6 +65,7 @@ contract ManagedBasisStrategy is
         uint256 exitCost;
         uint256 userDepositLimit;
         uint256 strategyDepostLimit;
+        address positionManager;
         bool isLong;
         mapping(uint256 => PositionState) positionStates;
         mapping(address => uint128) requestCounter;
@@ -138,6 +142,11 @@ contract ManagedBasisStrategy is
         $.strategyDepostLimit = type(uint256).max;
     }
 
+    function setPositionManager(address _positionManager) external onlyFactory {
+        if(_positionManager == address(0)) {
+            revert Errors.ZeroAddress();
+        }
+        _getManagedBasisStrategyStorage().positionManager = _positionManager;
     }
 
     function setEntyExitCosts(uint256 _entryCost, uint256 _exitCost) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -153,6 +162,10 @@ contract ManagedBasisStrategy is
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyFactory {}
+
+    function positionManager() public view returns (address) {
+        return _getManagedBasisStrategyStorage().positionManager;
+    }
 
     /*//////////////////////////////////////////////////////////////
                         DEPOSIT/WITHDRAWAL LOGIC
