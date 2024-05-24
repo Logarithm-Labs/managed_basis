@@ -41,8 +41,6 @@ library Errors {
     error EmptyPriceFeedMultiplier(address token);
 
     error OracleInvalidPrice();
-
-    error CallerNotFactory();
     error InsufficientIdleBalanceForUtilize(uint256 idleBalance, uint256 utilizeAmount);
     error InsufficientProdcutBalanceForDeutilize(uint256 productBalance, uint256 deutilizeAmount);
 }
