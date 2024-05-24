@@ -138,10 +138,6 @@ contract ManagedBasisStrategy is
         $.strategyDepostLimit = type(uint256).max;
     }
 
-    /// @dev forward value to the position manager
-    receive() external payable {
-        (bool success,) = positionManager.call{value: msg.value}("");
-        require(success);
     }
 
     function setEntyExitCosts(uint256 _entryCost, uint256 _exitCost) external onlyRole(DEFAULT_ADMIN_ROLE) {

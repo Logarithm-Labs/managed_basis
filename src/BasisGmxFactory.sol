@@ -199,7 +199,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
         external
         virtual
         onlyOwner
-        returns (address payable strategy, address positionManager)
+        returns (address strategy, address positionManager)
     {
         string memory assetSymbol = IERC20Metadata(asset).symbol();
         string memory productSymbol = IERC20Metadata(product).symbol();
@@ -208,7 +208,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
         bytes memory initializerData = abi.encodeCall(IBasisStrategy.initialize, (asset, product, name, symbol));
 
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        strategy = payable(address(new ERC1967Proxy($._strategyImplementation, initializerData)));
+        strategy = address(new ERC1967Proxy($._strategyImplementation, initializerData));
 
         // deploy position manager proxy of this strategy
         bytes memory posMngerInitializerData = abi.encodeCall(IGmxV2PositionManager.initialize, strategy);
@@ -230,33 +230,12 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
         $._activeStrategy[strategy] = true;
     }
 
-    function deactivateStrategy(address strategy) external payable virtual onlyOwner {
+    function deactivateStrategy(address strategy) external virtual onlyOwner {
         if (!isActiveStrategy(strategy)) {
             revert();
         }
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         $._activeStrategy[strategy] = false;
-    }
-
-    /// @dev anybody can call this function
-    function topUpStrategies(address[] calldata _strategies, uint256[] calldata _amounts) external payable {
-        uint256 len = _strategies.length;
-        if (_amounts.length != len) {
-            revert();
-        }
-
-        uint256 totalValueSent;
-        bool success;
-        for (uint256 i; i < len;) {
-            if (isActiveStrategy(_strategies[i])) {
-                (success,) = _strategies[i].call{value: _amounts[i]}("");
-                require(success);
-                totalValueSent += _amounts[i];
-            }
-        }
-
-        (success,) = msg.sender.call{value: msg.value - totalValueSent}("");
-        require(success);
     }
 
     /*//////////////////////////////////////////////////////////////
