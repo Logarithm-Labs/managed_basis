@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
+// import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
 import {IOrderCallbackReceiver} from "src/externals/gmx-v2/interfaces/IOrderCallbackReceiver.sol";
 import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
@@ -30,6 +30,20 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
     using SafeERC20 for IERC20;
 
     string constant API_VERSION = "0.0.1";
+
+    struct InternalCreateOrderParams {
+        bool isLong;
+        bool isIncrease;
+        address exchangeRouter;
+        address orderVault;
+        address strategy;
+        address collateralToken;
+        uint256 collateralDelta;
+        uint256 sizeDeltaInUsd;
+        uint256 executionFee;
+        uint256 callbackGasLimit;
+        bytes32 referralCode;
+    }
 
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
@@ -120,12 +134,42 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
 
     /// @inheritdoc IGmxV2PositionManager
     function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable override onlyStrategy {
-        _createOrder(collateralDelta, sizeDeltaInUsd, true);
+        IBasisGmxFactory factory = IBasisGmxFactory(factory());
+        _createOrder(
+            InternalCreateOrderParams({
+                isLong: isLong(),
+                isIncrease: true,
+                exchangeRouter: factory.exchangeRouter(),
+                orderVault: factory.orderVault(),
+                strategy: strategy(),
+                collateralToken: collateralToken(),
+                collateralDelta: collateralDelta,
+                sizeDeltaInUsd: sizeDeltaInUsd,
+                executionFee: msg.value,
+                callbackGasLimit: factory.callbackGasLimit(),
+                referralCode: factory.referralCode()
+            })
+        );
     }
 
     /// @inheritdoc IGmxV2PositionManager
     function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable override onlyStrategy {
-        _createOrder(collateralDelta, sizeDeltaInUsd, false);
+        IBasisGmxFactory factory = IBasisGmxFactory(factory());
+        _createOrder(
+            InternalCreateOrderParams({
+                isLong: isLong(),
+                isIncrease: false,
+                exchangeRouter: factory.exchangeRouter(),
+                orderVault: factory.orderVault(),
+                strategy: strategy(),
+                collateralToken: collateralToken(),
+                collateralDelta: collateralDelta,
+                sizeDeltaInUsd: sizeDeltaInUsd,
+                executionFee: msg.value,
+                callbackGasLimit: factory.callbackGasLimit(),
+                referralCode: factory.referralCode()
+            })
+        );
     }
 
     /// @inheritdoc IGmxV2PositionManager
@@ -290,75 +334,58 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
     //////////////////////////////////////////////////////////////*/
 
     /// @dev create increase/decrease order
-    function _createOrder(uint256 collateralDelta, uint256 sizeDeltaInUsd, bool isIncrease) private {
+    function _createOrder(InternalCreateOrderParams memory params) private {
         if (pendingOrderKey() != bytes32(0)) {
             revert Errors.AlreadyPending();
         }
-        uint256 executionFee = msg.value;
-        IBasisGmxFactory factory = IBasisGmxFactory(factory());
-        address orderVaultAddr = factory.orderVault();
-        address exchangeRouterAddr = factory.exchangeRouter();
-        address collateralTokenAddr = collateralToken();
 
-        IExchangeRouter(exchangeRouterAddr).sendWnt{value: executionFee}(orderVaultAddr, executionFee);
+        IExchangeRouter(params.exchangeRouter).sendWnt{value: params.executionFee}(
+            params.orderVault, params.executionFee
+        );
 
-        address strategyAddr = strategy();
         address[] memory swapPath;
-        IExchangeRouter.CreateOrderParamsAddresses memory paramsAddresses = IExchangeRouter.CreateOrderParamsAddresses({
-            receiver: strategyAddr, // the receiver of reduced collateral
-            callbackContract: address(this),
-            uiFeeReceiver: address(0),
-            market: marketToken(),
-            initialCollateralToken: collateralTokenAddr,
-            swapPath: swapPath
-        });
 
-        bool _isLong = isLong();
-        IExchangeRouter.CreateOrderParamsNumbers memory paramsNumbers;
-        IExchangeRouter.OrderType orderType;
-        if (isIncrease) {
-            if (collateralDelta > 0) {
-                IERC20(collateralTokenAddr).safeTransferFrom(strategyAddr, orderVaultAddr, collateralDelta);
-                _setPendingAssets(collateralDelta);
+        if (params.isIncrease) {
+            if (params.collateralDelta > 0) {
+                IERC20(params.collateralToken).safeTransferFrom(
+                    params.strategy, params.orderVault, params.collateralDelta
+                );
+                _setPendingAssets(params.collateralDelta);
             }
-            paramsNumbers = IExchangeRouter.CreateOrderParamsNumbers({
-                sizeDeltaUsd: sizeDeltaInUsd,
-                initialCollateralDeltaAmount: 0, // The amount of tokens to withdraw for decrease orders
-                triggerPrice: 0, // not used for market, swap, liquidation orders
-                acceptablePrice: _isLong ? type(uint256).max : 0, // acceptable index token price
-                executionFee: executionFee,
-                callbackGasLimit: factory.callbackGasLimit(),
-                minOutputAmount: 0
-            });
-            orderType = IExchangeRouter.OrderType.MarketIncrease;
-        } else {
-            paramsNumbers = IExchangeRouter.CreateOrderParamsNumbers({
-                sizeDeltaUsd: sizeDeltaInUsd,
-                initialCollateralDeltaAmount: collateralDelta, // The amount of tokens to withdraw for decrease orders
-                triggerPrice: 0, // not used for market, swap, liquidation orders
-                acceptablePrice: _isLong ? 0 : type(uint256).max, // acceptable index token price
-                executionFee: executionFee,
-                callbackGasLimit: factory.callbackGasLimit(),
-                minOutputAmount: 0
-            });
-            orderType = IExchangeRouter.OrderType.MarketDecrease;
         }
-        IExchangeRouter.DecreasePositionSwapType swapType = IExchangeRouter.DecreasePositionSwapType.NoSwap;
-        IExchangeRouter.CreateOrderParams memory orderParams = IExchangeRouter.CreateOrderParams({
-            addresses: paramsAddresses,
-            numbers: paramsNumbers,
-            orderType: orderType,
-            decreasePositionSwapType: swapType,
-            isLong: _isLong,
-            shouldUnwrapNativeToken: false,
-            referralCode: factory.referralCode()
-        });
 
-        bytes32 orderKey = IExchangeRouter(exchangeRouterAddr).createOrder(orderParams);
+        bytes32 orderKey = IExchangeRouter(params.exchangeRouter).createOrder(
+            IExchangeRouter.CreateOrderParams({
+                addresses: IExchangeRouter.CreateOrderParamsAddresses({
+                    receiver: params.strategy, // the receiver of reduced collateral
+                    callbackContract: address(this),
+                    uiFeeReceiver: address(0),
+                    market: marketToken(),
+                    initialCollateralToken: params.collateralToken,
+                    swapPath: swapPath
+                }),
+                numbers: IExchangeRouter.CreateOrderParamsNumbers({
+                    sizeDeltaUsd: params.sizeDeltaInUsd,
+                    initialCollateralDeltaAmount: params.collateralDelta, // The amount of tokens to withdraw for decrease orders
+                    triggerPrice: 0, // not used for market, swap, liquidation orders
+                    acceptablePrice: params.isLong == params.isIncrease ? type(uint256).max : 0, // acceptable index token price
+                    executionFee: params.executionFee,
+                    callbackGasLimit: params.callbackGasLimit,
+                    minOutputAmount: 0
+                }),
+                orderType: params.isIncrease
+                    ? IExchangeRouter.OrderType.MarketIncrease
+                    : IExchangeRouter.OrderType.MarketDecrease,
+                decreasePositionSwapType: IExchangeRouter.DecreasePositionSwapType.NoSwap,
+                isLong: params.isLong,
+                shouldUnwrapNativeToken: false,
+                referralCode: params.referralCode
+            })
+        );
 
         _setPendingOrderKey(orderKey);
 
-        emit OrderCreated(orderKey, collateralDelta, sizeDeltaInUsd, isIncrease);
+        emit OrderCreated(orderKey, params.collateralDelta, params.sizeDeltaInUsd, params.isIncrease);
     }
 
     /*//////////////////////////////////////////////////////////////

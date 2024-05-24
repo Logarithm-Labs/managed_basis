@@ -6,10 +6,9 @@ eth-rpc-url = "https://arb-mainnet.g.alchemy.com/v2/PeyMa7ljzBjqJxkH6AnLfVH8zRWO
 # block_number = 207092188
 # fork_block_number = 207092188
 solc = '0.8.25'
-optimizer_runs = 0
 ffi = true
-yul = true
-via_ir = true
+#yul = true
+#via_ir = true
 fs_permissions = [{ access = "write", path = "./"}]
 evm_version = 'shanghai'
 
