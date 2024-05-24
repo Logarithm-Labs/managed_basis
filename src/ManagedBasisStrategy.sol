@@ -2,26 +2,24 @@
 pragma solidity ^0.8.25;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IAggregationRouterV6} from "src/interfaces/IAggregationRouterV6.sol";
+import {IAggregationRouterV6} from "src/externals/1inch/interfaces/IAggregationRouterV6.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 
 import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
 import {AccessControlDefaultAdminRulesUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
 
 import {InchAggregatorV6Logic} from "src/libraries/InchAggregatorV6Logic.sol";
 import {Errors} from "src/libraries/Errors.sol";
 import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
 
 contract ManagedBasisStrategy is
+    UUPSUpgradeable,
     FactoryDeployable,
     LogBaseVaultUpgradeable,
     AccessControlDefaultAdminRulesUpgradeable
@@ -140,6 +138,12 @@ contract ManagedBasisStrategy is
         $.strategyDepostLimit = type(uint256).max;
     }
 
+    /// @dev forward value to the position manager
+    receive() external payable {
+        (bool success,) = positionManager.call{value: msg.value}("");
+        require(success);
+    }
+
     function setEntyExitCosts(uint256 _entryCost, uint256 _exitCost) external onlyRole(DEFAULT_ADMIN_ROLE) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         $.entryCost = _entryCost;
@@ -170,7 +174,8 @@ contract ManagedBasisStrategy is
             uint256 availableStrategyLimit =
                 $.strategyDepostLimit == type(uint256).max ? type(uint256).max : $.strategyDepostLimit - totalAssets();
             uint256 userBalance = IERC20(asset()).balanceOf(address(receiver));
-            allowed = availableDepositorLimit < availableStrategyLimit ? availableDepositorLimit : availableStrategyLimit;
+            allowed =
+                availableDepositorLimit < availableStrategyLimit ? availableDepositorLimit : availableStrategyLimit;
             allowed = userBalance < allowed ? userBalance : allowed;
         }
     }
@@ -407,12 +412,6 @@ contract ManagedBasisStrategy is
         executeWithdrawals(requestIds, amountsExecuted);
     }
 
-    /// @dev forward value to the position manager
-    receive() external payable {
-        (bool success,) = positionManager.call{value: msg.value}("");
-        require(success);
-    }
-
     function _getVirtualPnl() internal view virtual returns (int256 pnl) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         PositionState memory state = $.positionStates[$.currentRound];
@@ -427,7 +426,6 @@ contract ManagedBasisStrategy is
     /*//////////////////////////////////////////////////////////////
                         EXTERNAL STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
-
 
     function oracle() external view returns (address) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
