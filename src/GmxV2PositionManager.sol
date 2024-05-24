@@ -139,11 +139,11 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     }
 
     /// @inheritdoc IPositionManager
-    function setOperator(address operator) external override onlyFactory {
-        if (operator == address(0)) {
+    function setOperator(address _operator) external override onlyFactory {
+        if (_operator == address(0)) {
             revert Errors.ZeroAddress();
         }
-        _getGmxV2PositionManagerStorage()._operator = operator;
+        _getGmxV2PositionManagerStorage()._operator = _operator;
     }
 
     /// @dev create an increase order
