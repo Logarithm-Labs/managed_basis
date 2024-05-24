@@ -5,7 +5,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 
-// import {ArbGasInfo} from "src/externals/arbitrum/ArbGasInfo.sol";
+import {ArbGasInfo} from "src/externals/arbitrum/ArbGasInfo.sol";
 
 import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
@@ -14,7 +14,9 @@ import {IReferralStorage} from "src/externals/gmx-v2/interfaces/IReferralStorage
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {MarketUtils} from "src/externals/gmx-v2/libraries/MarketUtils.sol";
 import {Price} from "src/externals/gmx-v2/libraries/Price.sol";
+import {Precision} from "src/externals/gmx-v2/libraries/Precision.sol";
 import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
+import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
 import {IOracle} from "src/interfaces/IOracle.sol";
 
@@ -85,19 +87,19 @@ library GmxV2Lib {
         return keccak256(abi.encode(account, marketToken, collateralToken, isLong));
     }
 
-    // function getExecutionFee(IDataStore dataStore, uint256 callbackGasLimit) internal view returns (uint256, uint256) {
-    //     uint256 estimatedGasLimitIncrease = dataStore.getUint(Keys.increaseOrderGasLimitKey());
-    //     uint256 estimatedGasLimitDecrease = dataStore.getUint(Keys.decreaseOrderGasLimitKey());
-    //     estimatedGasLimitIncrease += callbackGasLimit;
-    //     estimatedGasLimitDecrease += callbackGasLimit;
-    //     uint256 baseGasLimit = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT);
-    //     uint256 multiplierFactor = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR);
-    //     uint256 gasLimitIncrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitIncrease, multiplierFactor);
-    //     uint256 gasLimitDecrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitDecrease, multiplierFactor);
-    //     uint256 gasPrice = tx.gasprice;
-    //     if (gasPrice == 0) {
-    //         gasPrice = ArbGasInfo(0x000000000000000000000000000000000000006C).getMinimumGasPrice();
-    //     }
-    //     return (gasPrice * gasLimitIncrease, gasPrice * gasLimitDecrease);
-    // }
+    function getExecutionFee(address dataStore, uint256 callbackGasLimit) internal view returns (uint256, uint256) {
+        uint256 estimatedGasLimitIncrease = IDataStore(dataStore).getUint(Keys.increaseOrderGasLimitKey());
+        uint256 estimatedGasLimitDecrease = IDataStore(dataStore).getUint(Keys.decreaseOrderGasLimitKey());
+        estimatedGasLimitIncrease += callbackGasLimit;
+        estimatedGasLimitDecrease += callbackGasLimit;
+        uint256 baseGasLimit = IDataStore(dataStore).getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT);
+        uint256 multiplierFactor = IDataStore(dataStore).getUint(Keys.ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR);
+        uint256 gasLimitIncrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitIncrease, multiplierFactor);
+        uint256 gasLimitDecrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitDecrease, multiplierFactor);
+        uint256 gasPrice = tx.gasprice;
+        if (gasPrice == 0) {
+            gasPrice = ArbGasInfo(0x000000000000000000000000000000000000006C).getMinimumGasPrice();
+        }
+        return (gasPrice * gasLimitIncrease, gasPrice * gasLimitDecrease);
+    }
 }

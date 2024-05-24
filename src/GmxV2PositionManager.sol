@@ -6,7 +6,6 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-// import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
 import {IOrderCallbackReceiver} from "src/externals/gmx-v2/interfaces/IOrderCallbackReceiver.sol";
 import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
@@ -155,6 +154,12 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @param collateralDelta collateral delta amount in collateral token to increase
     /// @param sizeDeltaInUsd position delta size in usd to increase
     function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyOperator {
+        (uint256 feeIncrease,) = getExecutionFee();
+        uint256 executionFee = msg.value;
+        if (executionFee < feeIncrease) {
+            revert Errors.InsufficientExecutionFee(feeIncrease, executionFee);
+        }
+
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         _createOrder(
             InternalCreateOrderParams({
@@ -166,7 +171,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                 collateralToken: collateralToken(),
                 collateralDelta: collateralDelta,
                 sizeDeltaInUsd: sizeDeltaInUsd,
-                executionFee: msg.value,
+                executionFee: executionFee,
                 callbackGasLimit: factory.callbackGasLimit(),
                 referralCode: factory.referralCode()
             })
@@ -182,6 +187,12 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @param collateralDelta collateral delta amount in collateral token to decrease
     /// @param sizeDeltaInUsd position delta size in usd to decrease
     function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyOperator {
+        (, uint256 feeDecrease) = getExecutionFee();
+        uint256 executionFee = msg.value;
+        if (executionFee < feeDecrease) {
+            revert Errors.InsufficientExecutionFee(feeDecrease, executionFee);
+        }
+
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         _createOrder(
             InternalCreateOrderParams({
@@ -193,7 +204,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                 collateralToken: collateralToken(),
                 collateralDelta: collateralDelta,
                 sizeDeltaInUsd: sizeDeltaInUsd,
-                executionFee: msg.value,
+                executionFee: executionFee,
                 callbackGasLimit: factory.callbackGasLimit(),
                 referralCode: factory.referralCode()
             })
@@ -308,14 +319,14 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         return positionNetAmount + _getGmxV2PositionManagerStorage()._pendingAssets;
     }
 
-    // /// @notice calculate the execution fee that is need from gmx when increase and decrease
-    // ///
-    // /// @return feeIncrease the execution fee for increase
-    // /// @return feeDecrease the execution fee for decrease
-    // function getExecutionFee() public view returns (uint256 feeIncrease, uint256 feeDecrease) {
-    //     IBasisGmxFactory factory = IBasisGmxFactory(factory());
-    //     return GmxV2Lib.getExecutionFee(IDataStore(factory.dataStore()), factory.callbackGasLimit());
-    // }
+    /// @notice calculate the execution fee that is need from gmx when increase and decrease
+    ///
+    /// @return feeIncrease the execution fee for increase
+    /// @return feeDecrease the execution fee for decrease
+    function getExecutionFee() public view returns (uint256 feeIncrease, uint256 feeDecrease) {
+        IBasisGmxFactory factory = IBasisGmxFactory(factory());
+        return GmxV2Lib.getExecutionFee(factory.dataStore(), factory.callbackGasLimit());
+    }
 
     function collateralToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
@@ -429,7 +440,10 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
 
     /// @dev validate if the caller is OrderHandler of gmx
     function _validateOrderHandler(bytes32 orderKey) private view {
-        if (msg.sender != IBasisGmxFactory(factory()).orderHandler() || orderKey != _getGmxV2PositionManagerStorage()._pendingOrderKey) {
+        if (
+            msg.sender != IBasisGmxFactory(factory()).orderHandler()
+                || orderKey != _getGmxV2PositionManagerStorage()._pendingOrderKey
+        ) {
             revert Errors.CallbackNotAllowed();
         }
     }

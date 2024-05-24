@@ -41,6 +41,8 @@ library Errors {
     error PriceFeedNotConfigured();
     /// @notice price feed multiplier not configured
     error EmptyPriceFeedMultiplier(address token);
+    /// @notice provided execution fee is not enough
+    error InsufficientExecutionFee(uint256 expectedExecutionFee, uint256 executionFee);
 
     error OracleInvalidPrice();
     error InsufficientIdleBalanceForUtilize(uint256 idleBalance, uint256 utilizeAmount);
