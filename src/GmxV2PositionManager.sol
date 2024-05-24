@@ -16,7 +16,7 @@ import {Order} from "src/externals/gmx-v2/libraries/Order.sol";
 
 import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {IGmxV2PositionManager} from "src/interfaces/IGmxV2PositionManager.sol";
+import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 import {Errors} from "src/libraries/Errors.sol";
 import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
@@ -26,7 +26,7 @@ import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
 /// @title A gmx position manager
 /// @author Logarithm Labs
 /// @dev this contract must be deployed only by the factory
-contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, UUPSUpgradeable, FactoryDeployable {
+contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSUpgradeable, FactoryDeployable {
     using SafeERC20 for IERC20;
 
     string constant API_VERSION = "0.0.1";
@@ -138,7 +138,7 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
         }
     }
 
-    /// @inheritdoc IGmxV2PositionManager
+    /// @inheritdoc IPositionManager
     function setOperator(address operator) external override onlyFactory {
         if (operator == address(0)) {
             revert Errors.ZeroAddress();
@@ -146,8 +146,15 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
         _getGmxV2PositionManagerStorage()._operator = operator;
     }
 
-    /// @inheritdoc IGmxV2PositionManager
-    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable override onlyOperator {
+    /// @dev create an increase order
+    /// Note: value should be sent to cover the gmx execution fee
+    /// this function is callable only by strategy vault
+    /// gmx uses offchain prices so it is much more accurate to use usd value for position size
+    /// instead of token value
+    ///
+    /// @param collateralDelta collateral delta amount in collateral token to increase
+    /// @param sizeDeltaInUsd position delta size in usd to increase
+    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyOperator {
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         _createOrder(
             InternalCreateOrderParams({
@@ -166,8 +173,15 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
         );
     }
 
-    /// @inheritdoc IGmxV2PositionManager
-    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable override onlyOperator {
+    /// @dev create a decrease order
+    /// Note: value should be sent to cover the gmx execution fee
+    /// this function is callable only by strategy vault
+    /// gmx uses offchain prices so it is much more accurate to use usd value for position size
+    /// instead of token value
+    ///
+    /// @param collateralDelta collateral delta amount in collateral token to decrease
+    /// @param sizeDeltaInUsd position delta size in usd to decrease
+    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyOperator {
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         _createOrder(
             InternalCreateOrderParams({
@@ -186,8 +200,9 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
         );
     }
 
-    /// @inheritdoc IGmxV2PositionManager
-    function claimFunding() external override {
+    /// @dev claims all the claimable funding fee
+    /// this is callable by anyone
+    function claimFunding() external {
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         IExchangeRouter exchangeRouter = IExchangeRouter(factory.exchangeRouter());
         address marketTokenAddr = marketToken();
@@ -205,8 +220,12 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
         emit FundingClaimed(longTokenAddr, amounts[1]);
     }
 
-    /// @inheritdoc IGmxV2PositionManager
-    function claimCollateral(address token, uint256 timeKey) external override {
+    /// @dev claims all the claimable callateral amount
+    /// Note: this amount stored by account, token, timeKey
+    /// and there is only event to figure out it
+    /// @param token token address derived from the gmx event: ClaimableCollateralUpdated
+    /// @param timeKey timeKey value derived from the gmx event: ClaimableCollateralUpdated
+    function claimCollateral(address token, uint256 timeKey) external {
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         IExchangeRouter exchangeRouter = IExchangeRouter(factory.exchangeRouter());
 
@@ -261,12 +280,12 @@ contract GmxV2PositionManager is IGmxV2PositionManager, IOrderCallbackReceiver, 
                         EXTERNAL/PUBLIC VIEWERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IGmxV2PositionManager
+    /// @inheritdoc IPositionManager
     function apiVersion() public pure override returns (string memory) {
         return API_VERSION;
     }
 
-    /// @inheritdoc IGmxV2PositionManager
+    /// @inheritdoc IPositionManager
     function totalAssets() public view override returns (uint256) {
         address factory = factory();
         address _marketToken = marketToken();
