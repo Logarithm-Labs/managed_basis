@@ -130,6 +130,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev send back eth to the operator
     receive() external payable {
         (bool success,) = operator().call{value: msg.value}("");
         if (!success) {
