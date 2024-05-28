@@ -77,7 +77,7 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
             for (uint256 i; i < len;) {
                 bool needSettle = IGmxV2PositionManager(positionManagers[i]).needSettle();
                 if (needSettle) {
-                    (,uint256 feeDecrease) = IGmxV2PositionManager(positionManagers[i]).getExecutionFee();
+                    (, uint256 feeDecrease) = IGmxV2PositionManager(positionManagers[i]).getExecutionFee();
                     neededPositionManagers[indexCounter] = positionManagers[i];
                     neededTypes[indexCounter] = PERFORM_SETTLE_GMX_POSITION_MANAGER;
                     neededFees[indexCounter] = feeDecrease;
@@ -88,7 +88,8 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
                     (bool needAdjust, int256 deltaSizeInTokens) =
                         IGmxV2PositionManager(positionManagers[i]).needAdjustPositionSize();
                     if (needAdjust) {
-                        (uint256 feeIncrease, uint256 feeDecrease) = IGmxV2PositionManager(positionManagers[i]).getExecutionFee();
+                        (uint256 feeIncrease, uint256 feeDecrease) =
+                            IGmxV2PositionManager(positionManagers[i]).getExecutionFee();
                         neededPositionManagers[indexCounter] = positionManagers[i];
                         neededTypes[indexCounter] = PERFORM_SETTLE_GMX_POSITION_MANAGER;
                         neededFees[indexCounter] = deltaSizeInTokens > 0 ? feeIncrease : feeDecrease;
@@ -100,7 +101,10 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
                 }
             }
 
-            performData = abi.encode(neededPositionManagers, neededTypes, neededFees, deltaSizes);
+            performData = abi.encodePacked(
+                CHECK_UPKEEP_GMX_POSITION_MANAGER,
+                abi.encode(neededPositionManagers, neededTypes, neededFees, deltaSizes)
+            );
 
             return (upkeepNeeded, performData);
         }
@@ -113,22 +117,29 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
         if (msg.sender != forwarderAddress()) {
             revert Errors.UnAuthorizedForwarder(msg.sender);
         }
-        (address[] memory positionManagers, bytes32[] memory types, uint256[] memory fees, int256[] memory sizes) =
-            abi.decode(performData, (address[], bytes32[], uint256[], int256[]));
-        uint256 len = positionManagers.length;
-        for (uint256 i; i < len;) {
-            if (types[i] == PERFORM_SETTLE_GMX_POSITION_MANAGER) {
-                IGmxV2PositionManager(positionManagers[i]).decreasePosition{value: fees[i]}(1, 0);
-            }
-            if (types[i] == PERFORM_ADJUST_GMX_POSITION_MANAGER) {
-                if (sizes[i] < 0) {
-                    IGmxV2PositionManager(positionManagers[i]).decreasePosition{value: fees[i]}(0, uint256(-sizes[i]));
-                } else {
-                    IGmxV2PositionManager(positionManagers[i]).increasePosition{value: fees[i]}(0, uint256(sizes[i]));
+        bytes32 checkType = bytes32(performData[:32]);
+        if (checkType == CHECK_UPKEEP_GMX_POSITION_MANAGER) {
+            (address[] memory positionManagers, bytes32[] memory types, uint256[] memory fees, int256[] memory sizes) =
+                abi.decode(performData[32:], (address[], bytes32[], uint256[], int256[]));
+            uint256 len = positionManagers.length;
+            for (uint256 i; i < len;) {
+                if (types[i] == PERFORM_SETTLE_GMX_POSITION_MANAGER) {
+                    IGmxV2PositionManager(positionManagers[i]).decreasePosition{value: fees[i]}(1, 0);
                 }
-            }
-            unchecked {
-                ++i;
+                if (types[i] == PERFORM_ADJUST_GMX_POSITION_MANAGER) {
+                    if (sizes[i] < 0) {
+                        IGmxV2PositionManager(positionManagers[i]).decreasePosition{value: fees[i]}(
+                            0, uint256(-sizes[i])
+                        );
+                    } else {
+                        IGmxV2PositionManager(positionManagers[i]).increasePosition{value: fees[i]}(
+                            0, uint256(sizes[i])
+                        );
+                    }
+                }
+                unchecked {
+                    ++i;
+                }
             }
         }
     }
