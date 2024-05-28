@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
@@ -23,7 +24,11 @@ import {IOracle} from "src/interfaces/IOracle.sol";
 import {Errors} from "./Errors.sol";
 
 library GmxV2Lib {
-    struct GetPositionNetAmount {
+    using Math for uint256;
+    using SafeCast for uint256;
+    using SafeCast for int256;
+
+    struct GetPositionInfo {
         Market.Props market;
         address dataStore;
         address reader;
@@ -52,7 +57,35 @@ library GmxV2Lib {
     /// @dev calculate the total claimable amount in collateral token when closing the whole
     /// Note: collateral + pnlAfterPriceImpactUsd (pnl + price impact) -
     /// total fee costs (funding fee + borrowing fee + position fee) + claimable fundings
-    function getPositionNetAmount(GetPositionNetAmount memory params) internal view returns (uint256) {
+    function getPositionNetAmount(GetPositionInfo memory params) internal view returns (uint256) {
+        (uint256 remainingCollateral, uint256 claimableTokenAmount) =
+            getRemainingCollateralAndClaimableFundingAmount(params);
+        return remainingCollateral + claimableTokenAmount;
+    }
+
+    /// @dev check if the claimable amount is bigger than limit share based on the remaining collateral
+    function isFundingClaimable(GetPositionInfo memory params, uint256 maxClaimableFundingShare, uint256 precision)
+        internal
+        view
+        returns (bool)
+    {
+        (uint256 remainingCollateral, uint256 claimableTokenAmount) =
+            getRemainingCollateralAndClaimableFundingAmount(params);
+        uint256 netAmount = remainingCollateral + claimableTokenAmount;
+
+        if (netAmount > 0) {
+            return claimableTokenAmount.mulDiv(precision, netAmount) > maxClaimableFundingShare;
+        } else {
+            return false;
+        }
+    }
+
+    /// @dev returns remainingCollateral and claimable funding amount in collateral token
+    function getRemainingCollateralAndClaimableFundingAmount(GetPositionInfo memory params)
+        internal
+        view
+        returns (uint256, uint256)
+    {
         MarketUtils.MarketPrices memory prices = getPrices(params.oracle, params.market);
         ReaderUtils.PositionInfo memory positionInfo = IReader(params.reader).getPositionInfo(
             IDataStore(params.dataStore),
@@ -69,14 +102,30 @@ library GmxV2Lib {
             + positionInfo.fees.funding.claimableShortTokenAmount * prices.shortTokenPrice.min;
         uint256 claimableTokenAmount = claimableUsd / collateralTokenPrice;
 
-        if (positionInfo.pnlAfterPriceImpactUsd < 0) {
-            return positionInfo.position.numbers.collateralAmount - positionInfo.fees.totalCostAmount
-                - SafeCast.toUint256(-positionInfo.pnlAfterPriceImpactUsd) / collateralTokenPrice + claimableTokenAmount;
-        } else {
-            return positionInfo.position.numbers.collateralAmount
-                + SafeCast.toUint256(positionInfo.pnlAfterPriceImpactUsd) / collateralTokenPrice
-                - positionInfo.fees.totalCostAmount + claimableTokenAmount;
-        }
+        int256 remainingCollateral = positionInfo.position.numbers.collateralAmount.toInt256()
+            + positionInfo.pnlAfterPriceImpactUsd / collateralTokenPrice.toInt256()
+            - positionInfo.fees.totalCostAmount.toInt256();
+
+        return (remainingCollateral > 0 ? remainingCollateral.toUint256() : 0, claimableTokenAmount);
+    }
+
+    function getPositionSizeInTokens(GetPositionInfo memory params) internal view returns (uint256) {
+        ReaderUtils.PositionInfo memory positionInfo = getPositionInfo(params);
+        return positionInfo.position.numbers.sizeInTokens;
+    }
+
+    function getPositionInfo(GetPositionInfo memory params) internal view returns (ReaderUtils.PositionInfo memory) {
+        MarketUtils.MarketPrices memory prices = getPrices(params.oracle, params.market);
+        ReaderUtils.PositionInfo memory positionInfo = IReader(params.reader).getPositionInfo(
+            IDataStore(params.dataStore),
+            IReferralStorage(params.referralStorage),
+            params.positionKey,
+            prices,
+            0,
+            address(0),
+            true // usePositionSizeAsSizeDeltaUsd meaning when closing fully
+        );
+        return positionInfo;
     }
 
     function getPositionKey(address account, address marketToken, address collateralToken, bool isLong)
