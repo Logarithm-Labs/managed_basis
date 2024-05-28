@@ -12,7 +12,7 @@ import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 
 import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {IGmxV2PositionManager} from "src/interfaces/IGmxV2PositionManager.sol";
+import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 import {Errors} from "src/libraries/Errors.sol";
 
@@ -211,7 +211,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
         strategy = address(new ERC1967Proxy($._strategyImplementation, initializerData));
 
         // deploy position manager proxy of this strategy
-        bytes memory posMngerInitializerData = abi.encodeCall(IGmxV2PositionManager.initialize, strategy);
+        bytes memory posMngerInitializerData = abi.encodeCall(IPositionManager.initialize, strategy);
 
         positionManager = address(new ERC1967Proxy($._positionManagerImplementation, posMngerInitializerData));
         IBasisStrategy(strategy).setPositionManager(positionManager);

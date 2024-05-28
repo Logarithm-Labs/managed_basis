@@ -135,9 +135,9 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
 
     /// @notice Set the address that `performUpkeep` is called from
     /// @dev Only callable by the owner
-    /// @param forwarderAddress the address to set
-    function setForwarderAddress(address forwarderAddress) external onlyOwner {
-        _getKeeperStorage()._forwarderAddress = forwarderAddress;
+    /// @param _forwarderAddress the address to set
+    function setForwarderAddress(address _forwarderAddress) external onlyOwner {
+        _getKeeperStorage()._forwarderAddress = _forwarderAddress;
     }
 
     function forwarderAddress() public view returns (address) {
