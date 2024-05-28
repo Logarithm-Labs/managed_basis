@@ -57,7 +57,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     struct GmxV2PositionManagerStorage {
         // configuration
         address _strategy;
-        address _operator;
+        address _keeper;
         address _marketToken;
         address _indexToken;
         address _longToken;
@@ -97,8 +97,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
-    modifier onlyOperator() {
-        _onlyOperator();
+    modifier onlyStrategyOrKeeper() {
+        _onlyStrategyOrKeeper();
         _;
     }
 
@@ -143,26 +143,26 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
 
     /// @dev send back eth to the operator
     receive() external payable {
-        (bool success,) = operator().call{value: msg.value}("");
+        (bool success,) = keeper().call{value: msg.value}("");
         if (!success) {
             revert();
         }
     }
 
     /// @inheritdoc IPositionManager
-    function setOperator(address _operator) external override onlyFactory {
-        if (_operator == address(0)) {
+    function setOperator(address _keeper) external override onlyFactory {
+        if (_keeper == address(0)) {
             revert Errors.ZeroAddress();
         }
-        _getGmxV2PositionManagerStorage()._operator = _operator;
+        _getGmxV2PositionManagerStorage()._keeper = _keeper;
     }
 
-    function setMaxClaimableFundingShare(uint256 _maxClaimableFundingShare) external onlyOperator {
+    function setMaxClaimableFundingShare(uint256 _maxClaimableFundingShare) external onlyFactory {
         require(_maxClaimableFundingShare < 1 ether);
         _getGmxV2PositionManagerStorage()._maxClaimableFundingShare = _maxClaimableFundingShare;
     }
 
-    function setMaxHedgeDeviation(uint256 _maxDeviation) external onlyOperator {
+    function setMaxHedgeDeviation(uint256 _maxDeviation) external onlyFactory {
         require(_maxDeviation < 1 ether);
         _getGmxV2PositionManagerStorage()._maxHedgeDeviation = _maxDeviation;
     }
@@ -175,7 +175,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     ///
     /// @param collateralDelta collateral delta amount in collateral token to increase
     /// @param sizeDeltaInUsd position delta size in usd to increase
-    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyOperator {
+    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyStrategyOrKeeper {
         (uint256 feeIncrease,) = getExecutionFee();
         uint256 executionFee = msg.value;
         if (executionFee < feeIncrease) {
@@ -208,7 +208,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     ///
     /// @param collateralDelta collateral delta amount in collateral token to decrease
     /// @param sizeDeltaInUsd position delta size in usd to decrease
-    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyOperator {
+    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyStrategyOrKeeper {
         (, uint256 feeDecrease) = getExecutionFee();
         uint256 executionFee = msg.value;
         if (executionFee < feeDecrease) {
@@ -419,9 +419,9 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         return $._strategy;
     }
 
-    function operator() public view returns (address) {
+    function keeper() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $._operator;
+        return $._keeper;
     }
 
     function marketToken() public view returns (address) {
@@ -517,9 +517,9 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     //////////////////////////////////////////////////////////////*/
 
     // this is used in modifier which reduces the code size
-    function _onlyOperator() private view {
-        if (msg.sender != _getGmxV2PositionManagerStorage()._operator) {
-            revert Errors.CallerNotOperator();
+    function _onlyStrategyOrKeeper() private view {
+        if (msg.sender != strategy() && msg.sender != keeper()) {
+            revert Errors.CallerNotStrategyOrKeeper();
         }
     }
 
