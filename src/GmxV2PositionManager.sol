@@ -97,8 +97,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
-    modifier onlyStrategyOrKeeper() {
-        _onlyStrategyOrKeeper();
+    modifier onlyStrategy() {
+        _onlyStrategy();
         _;
     }
 
@@ -173,7 +173,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     ///
     /// @param collateralDelta collateral delta amount in collateral token to increase
     /// @param sizeDeltaInUsd position delta size in usd to increase
-    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyStrategyOrKeeper {
+    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyStrategy {
         uint256 executionFee = msg.value;
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         _createOrder(
@@ -201,7 +201,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     ///
     /// @param collateralDelta collateral delta amount in collateral token to decrease
     /// @param sizeDeltaInUsd position delta size in usd to decrease
-    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyStrategyOrKeeper {
+    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyStrategy {
         uint256 executionFee = msg.value;
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         _createOrder(
@@ -569,8 +569,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     //////////////////////////////////////////////////////////////*/
 
     // this is used in modifier which reduces the code size
-    function _onlyStrategyOrKeeper() private view {
-        if (msg.sender != strategy() && msg.sender != keeper()) {
+    function _onlyStrategy() private view {
+        if (msg.sender != strategy()) {
             revert Errors.CallerNotStrategyOrKeeper();
         }
     }
