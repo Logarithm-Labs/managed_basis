@@ -173,10 +173,15 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     ///
     /// @param collateralDelta collateral delta amount in collateral token to increase
     /// @param sizeDeltaInUsd position delta size in usd to increase
-    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyStrategy {
+    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd)
+        external
+        payable
+        onlyStrategy
+        returns (bytes32)
+    {
         uint256 executionFee = msg.value;
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
-        _createOrder(
+        return _createOrder(
             InternalCreateOrderParams({
                 isLong: isLong(),
                 isIncrease: true,
@@ -201,10 +206,15 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     ///
     /// @param collateralDelta collateral delta amount in collateral token to decrease
     /// @param sizeDeltaInUsd position delta size in usd to decrease
-    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyStrategy {
+    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd)
+        external
+        payable
+        onlyStrategy
+        returns (bytes32)
+    {
         uint256 executionFee = msg.value;
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
-        _createOrder(
+        return _createOrder(
             InternalCreateOrderParams({
                 isLong: isLong(),
                 isIncrease: false,
@@ -299,7 +309,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     }
 
     /// @notice claim funding or adjust size as needed
-    function performUpkeep(bytes calldata performData) external payable {
+    function performUpkeep(bytes calldata performData) external payable returns (bytes32) {
         (bool settleNeeded, bool adjustNeeded) = abi.decode(performData, (bool, bool));
         uint256 executionFee = msg.value;
         if (settleNeeded) {
@@ -309,7 +319,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
             (, int256 deltaSizeInTokens) = _checkAdjustPositionSize();
             IBasisGmxFactory factory = IBasisGmxFactory(factory());
             if (deltaSizeInTokens < 0) {
-                _createOrder(
+                return _createOrder(
                     InternalCreateOrderParams({
                         isLong: isLong(),
                         isIncrease: false,
@@ -325,7 +335,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                     })
                 );
             } else {
-                _createOrder(
+                return _createOrder(
                     InternalCreateOrderParams({
                         isLong: isLong(),
                         isIncrease: true,
@@ -346,6 +356,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
             (bool success,) = msg.sender.call{value: executionFee}("");
             assert(success);
         }
+        return bytes32(0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -447,7 +458,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     //////////////////////////////////////////////////////////////*/
 
     /// @dev create increase/decrease order
-    function _createOrder(InternalCreateOrderParams memory params) private {
+    function _createOrder(InternalCreateOrderParams memory params) private returns (bytes32) {
         if (_getGmxV2PositionManagerStorage()._pendingOrderKey != bytes32(0)) {
             revert Errors.AlreadyPending();
         }
@@ -499,6 +510,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         _setPendingOrderKey(orderKey);
 
         emit OrderCreated(orderKey, params.collateralDelta, params.sizeDeltaInUsd, params.isIncrease);
+
+        return orderKey;
     }
 
     /// @dev check if the claimable funding fee amount is over than max share

@@ -56,24 +56,24 @@ contract LogarithmOracle is IOracle, UUPSUpgradeable, Ownable2StepUpgradeable {
         }
         for (uint256 i; i < len;) {
             _getLogarithmOracleStorage().priceFeeds[assets[i]] = IPriceFeed(feeds[i]);
+            emit PriceFeedUpdated(assets[i], feeds[i]);
             unchecked {
                 ++i;
             }
-            emit PriceFeedUpdated(assets[i], feeds[i]);
         }
     }
 
-    function setHeartbeats(address[] calldata assets, uint256[] calldata heartbeats) external onlyOwner {
-        uint256 len = assets.length;
+    function setHeartbeats(address[] calldata feeds, uint256[] calldata heartbeats) external onlyOwner {
+        uint256 len = feeds.length;
         if (len != heartbeats.length) {
             revert Errors.IncosistentParamsLength();
         }
         for (uint256 i; i < len;) {
             _getLogarithmOracleStorage().heartbeatDurations[feeds[i]] = heartbeats[i];
+            emit HeartBeatUpdated(feeds[i], heartbeats[i]);
             unchecked {
                 ++i;
             }
-            emit HeartBeatUpdated(assets[i], heartbeats[i]);
         }
     }
 

@@ -147,6 +147,7 @@ contract ManagedBasisStrategy is
             revert Errors.ZeroAddress();
         }
         _getManagedBasisStrategyStorage().positionManager = _positionManager;
+        IERC20(asset()).approve(_positionManager, type(uint256).max);
     }
 
     function setEntyExitCosts(uint256 _entryCost, uint256 _exitCost) external onlyRole(DEFAULT_ADMIN_ROLE) {
