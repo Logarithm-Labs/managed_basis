@@ -6,6 +6,6 @@ interface IGmxV2PositionManager {
     function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable;
     function claimFunding() external;
     function getExecutionFee() external view returns (uint256 feeIncrease, uint256 feeDecrease);
-    function needSettle() external view returns (bool);
-    function needAdjustPositionSize() external view returns (bool isNeed, int256 deltaSizeInTokens);
+    function checkUpkeep() external view returns (bool upkeepNeeded, bytes memory performData);
+    function performUpkeep(bytes calldata performData) external payable;
 }
