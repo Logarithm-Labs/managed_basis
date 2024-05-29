@@ -176,12 +176,6 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @param collateralDelta collateral delta amount in collateral token to increase
     /// @param sizeDeltaInUsd position delta size in usd to increase
     function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyStrategyOrKeeper {
-        (uint256 feeIncrease,) = getExecutionFee();
-        uint256 executionFee = msg.value;
-        if (executionFee < feeIncrease) {
-            revert Errors.InsufficientExecutionFee(feeIncrease, executionFee);
-        }
-
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         _createOrder(
             InternalCreateOrderParams({
@@ -209,12 +203,6 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @param collateralDelta collateral delta amount in collateral token to decrease
     /// @param sizeDeltaInUsd position delta size in usd to decrease
     function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable onlyStrategyOrKeeper {
-        (, uint256 feeDecrease) = getExecutionFee();
-        uint256 executionFee = msg.value;
-        if (executionFee < feeDecrease) {
-            revert Errors.InsufficientExecutionFee(feeDecrease, executionFee);
-        }
-
         IBasisGmxFactory factory = IBasisGmxFactory(factory());
         _createOrder(
             InternalCreateOrderParams({
