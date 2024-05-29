@@ -64,14 +64,16 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
     }
 
     /// @inheritdoc AutomationCompatibleInterface
-    function performUpkeep(bytes memory performData) external override {
+    function performUpkeep(bytes calldata performData) external override {
         if (msg.sender != forwarderAddress()) {
             revert Errors.UnAuthorizedForwarder(msg.sender);
         }
-        address positioinManager;
-        uint256 executionFee;
-        (positioinManager, executionFee, performData) = abi.decode(performData, (address, uint256, bytes));
-        IGmxV2PositionManager(positioinManager).performUpkeep{value: executionFee}(performData);
+        _performUpkeep(performData);
+    }
+
+    /// @dev used when chainlink is down
+    function manualUpkeep(bytes calldata performData) external onlyOwner {
+        _performUpkeep(performData);
     }
 
     /// @notice Set the address that `performUpkeep` is called from
@@ -83,5 +85,12 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
 
     function forwarderAddress() public view returns (address) {
         return _getKeeperStorage()._forwarderAddress;
+    }
+
+    function _performUpkeep(bytes memory performData) private {
+        address positionManager;
+        uint256 executionFee;
+        (positionManager, executionFee, performData) = abi.decode(performData, (address, uint256, bytes));
+        IGmxV2PositionManager(positionManager).performUpkeep{value: executionFee}(performData);
     }
 }

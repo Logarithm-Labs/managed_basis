@@ -102,6 +102,11 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         _;
     }
 
+    modifier onlyKeeper() {
+        _onlyKeeper();
+        _;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
     //////////////////////////////////////////////////////////////*/
@@ -309,7 +314,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     }
 
     /// @notice claim funding or adjust size as needed
-    function performUpkeep(bytes calldata performData) external payable returns (bytes32) {
+    function performUpkeep(bytes calldata performData) external payable onlyKeeper returns (bytes32) {
         (bool settleNeeded, bool adjustNeeded) = abi.decode(performData, (bool, bool));
         uint256 executionFee = msg.value;
         if (settleNeeded) {
@@ -581,10 +586,17 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                         VALIDATION FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    // this is used in modifier which reduces the code size
+    // @dev used in modifier which reduces the code size
     function _onlyStrategy() private view {
         if (msg.sender != strategy()) {
-            revert Errors.CallerNotStrategyOrKeeper();
+            revert Errors.CallerNotStrategy();
+        }
+    }
+
+    // @dev used in modifier which reduces the code size
+    function _onlyKeeper() private view {
+        if (msg.sender != keeper()) {
+            revert Errors.CallerNotKeeper();
         }
     }
 
