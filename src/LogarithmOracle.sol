@@ -63,10 +63,7 @@ contract LogarithmOracle is IOracle, UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
-    function setHeartbeats(address[] calldata assets, address[] calldata feeds, uint256[] calldata heartbeats)
-        external
-        onlyOwner
-    {
+    function setHeartbeats(address[] calldata assets, uint256[] calldata heartbeats) external onlyOwner {
         uint256 len = assets.length;
         if (len != heartbeats.length) {
             revert Errors.IncosistentParamsLength();
