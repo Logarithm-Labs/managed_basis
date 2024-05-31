@@ -9,6 +9,7 @@ import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
+import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
@@ -16,6 +17,7 @@ import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {ArbGasInfoMock} from "./mock/ArbGasInfoMock.sol";
 import {ArbSysMock} from "./mock/ArbSysMock.sol";
 import {MockFactory} from "./mock/MockFactory.sol";
+import {MockPriceFeed} from "./mock/MockPriceFeed.sol";
 
 import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
@@ -75,6 +77,8 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         heartbeats[1] = 24 * 3600;
         oracle.setPriceFeeds(assets, feeds);
         oracle.setHeartbeats(feeds, heartbeats);
+        _mockChainlinkPriceFeed(assetPriceFeed);
+        _mockChainlinkPriceFeed(productPriceFeed);
 
         factory = address(new MockFactory(oracleProxy));
         vm.stopPrank();
@@ -211,7 +215,17 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertTrue(orderKey != bytes32(0));
     }
 
+    function test_decreasePosition_revert_creatOrder() public afterHavingPosition {
+        vm.startPrank(address(strategy));
+        bytes32 orderKey =
+            positionManager.decreasePosition{value: decreaseFee}(100 * USDC_PRECISION, 2000 * USD_PRECISION);
+        assertTrue(orderKey != bytes32(0));
+        vm.expectRevert(Errors.AlreadyPending.selector);
+        positionManager.decreasePosition{value: decreaseFee}(100 * USDC_PRECISION, 2000 * USD_PRECISION);
+    }
+
     function test_decreasePosition_executeOrder() public afterHavingPosition {
+        uint256 usdcBalanceOfStartegyBefore = IERC20(USDC).balanceOf(address(strategy));
         vm.startPrank(address(strategy));
         bytes32 orderKey =
             positionManager.decreasePosition{value: decreaseFee}(100 * USDC_PRECISION, 2000 * USD_PRECISION);
@@ -219,6 +233,8 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
         assertEq(positionInfo.position.numbers.sizeInUsd, 1000 * USD_PRECISION);
         assertEq(positionInfo.position.numbers.collateralAmount, 196076830);
+        uint256 usdcBalanceOfStartegyAfter = IERC20(USDC).balanceOf(address(strategy));
+        assertEq(usdcBalanceOfStartegyBefore + 100 * USDC_PRECISION, usdcBalanceOfStartegyAfter);
     }
 
     function test_totalAssets() public afterHavingPosition {
@@ -253,6 +269,19 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         address _arbgasinfo = address(new ArbGasInfoMock());
         vm.etch(address(100), _arbsys.code);
         vm.etch(address(108), _arbgasinfo.code);
+    }
+
+    function _mockChainlinkPriceFeed(address priceFeed) internal {
+        (uint80 roundID, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound) =
+            IPriceFeed(priceFeed).latestRoundData();
+        uint8 decimals = IPriceFeed(priceFeed).decimals();
+        address mockPriceFeed = address(new MockPriceFeed());
+        vm.etch(priceFeed, mockPriceFeed.code);
+        MockPriceFeed(priceFeed).setOracleData(roundID, answer, startedAt, updatedAt, answeredInRound, decimals);
+    }
+
+    function _mockChainlinkPriceFeedAnswer(address priceFeed, int256 answer) internal {
+        MockPriceFeed(priceFeed).updatePrice(answer);
     }
 
     function _executeOrder(bytes32 key) internal {
