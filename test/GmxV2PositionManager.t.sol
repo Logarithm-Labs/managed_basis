@@ -257,6 +257,45 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertEq(positionManager.totalAssets(), 590329164);
     }
 
+    function test_reduceCollateral_createOrders() public afterHavingPosition {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
+        vm.startPrank(address(strategy));
+        positionManager.reduceCollateral{value: increaseFee + decreaseFee}(200 * USDC_PRECISION, 3000 * USD_PRECISION);
+    }
+
+    function test_reduceCollateral_executeOrders() public afterHavingPosition {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        uint256 totalAssetsBefore = positionManager.totalAssets();
+        uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
+        console.log("-------before-------");
+        console.log("size in usd", positionInfoBefore.position.numbers.sizeInUsd);
+        console.log("size in token", positionInfoBefore.position.numbers.sizeInTokens);
+        console.log("collateral", positionInfoBefore.position.numbers.collateralAmount);
+        console.log("pnl", uint256(positionInfoBefore.pnlAfterPriceImpactUsd));
+        console.log("total asssets", totalAssetsBefore);
+        console.log("balance", strategyBalanceBefore);
+        assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
+        vm.startPrank(address(strategy));
+        (bytes32 increaseKey, bytes32 decreaseKey) = positionManager.reduceCollateral{value: increaseFee + decreaseFee}(
+            200 * USDC_PRECISION, 3000 * USD_PRECISION
+        );
+        _executeOrder(increaseKey);
+        _executeOrder(decreaseKey);
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        uint256 totalAssetsAfter = positionManager.totalAssets();
+        uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
+        console.log("-------after-------");
+        console.log("size in usd", positionInfoAfter.position.numbers.sizeInUsd);
+        console.log("size in token", positionInfoAfter.position.numbers.sizeInTokens);
+        console.log("collateral", positionInfoAfter.position.numbers.collateralAmount);
+        console.log("pnl", uint256(positionInfoAfter.pnlAfterPriceImpactUsd));
+        console.log("total asssets", totalAssetsAfter);
+        console.log("balance", strategyBalanceAfter);
+    }
+
     function _forkArbitrum() internal {
         uint256 arbitrumFork = vm.createFork(vm.rpcUrl("arbitrum_one"));
         vm.selectFork(arbitrumFork);

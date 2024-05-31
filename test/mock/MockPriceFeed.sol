@@ -36,4 +36,8 @@ contract MockPriceFeed {
     {
         return (roundId, answer, startedAt, updatedAt, answeredInRound);
     }
+
+    function latestAnswer() external view returns (int256) {
+        return answer;
+    }
 }
