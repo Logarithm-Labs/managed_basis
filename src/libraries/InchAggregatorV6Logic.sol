@@ -7,6 +7,8 @@ import "src/interfaces/IUniswapPool.sol";
 import "src/libraries/AddressLib.sol";
 import "src/libraries/ProtocolLib.sol";
 
+import "forge-std/console.sol";
+
 library InchAggregatorV6Logic {
     using AddressLib for Address;
     using ProtocolLib for Address;
