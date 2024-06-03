@@ -46,102 +46,34 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
         revert();
     }
 
+    receive() external payable {}
+
     /// @inheritdoc AutomationCompatibleInterface
-    function checkUpkeep(bytes calldata checkData) external returns (bool upkeepNeeded, bytes memory performData) {
-        (bytes32 checkType, address[] memory positionManagers) = abi.decode(checkData, (bytes32, address[]));
-        if (checkType == CHECK_UPKEEP_GMX_POSITION_MANAGER) {
-            uint256 counter;
-            uint256 len = positionManagers.length;
-            for (uint256 i; i < len;) {
-                bool needSettle = IGmxV2PositionManager(positionManagers[i]).needSettle();
-                (bool needAdjust, int256 deltaSizeInTokens) =
-                    IGmxV2PositionManager(positionManagers[i]).needAdjustPositionSize();
-                if (needSettle || needAdjust) {
-                    unchecked {
-                        ++counter;
-                    }
-                }
-                unchecked {
-                    ++i;
-                }
-            }
-
-            if (counter == 0) return (false, "");
-            upkeepNeeded = true;
-            address[] memory neededPositionManagers = new address[](counter);
-            bytes32[] memory neededTypes = new bytes32[](counter);
-            uint256[] memory neededFees = new uint256[](counter);
-            int256[] memory deltaSizes = new int256[](counter);
-
-            uint256 indexCounter;
-            for (uint256 i; i < len;) {
-                bool needSettle = IGmxV2PositionManager(positionManagers[i]).needSettle();
-                if (needSettle) {
-                    (, uint256 feeDecrease) = IGmxV2PositionManager(positionManagers[i]).getExecutionFee();
-                    neededPositionManagers[indexCounter] = positionManagers[i];
-                    neededTypes[indexCounter] = PERFORM_SETTLE_GMX_POSITION_MANAGER;
-                    neededFees[indexCounter] = feeDecrease;
-                    unchecked {
-                        ++indexCounter;
-                    }
-                } else {
-                    (bool needAdjust, int256 deltaSizeInTokens) =
-                        IGmxV2PositionManager(positionManagers[i]).needAdjustPositionSize();
-                    if (needAdjust) {
-                        (uint256 feeIncrease, uint256 feeDecrease) =
-                            IGmxV2PositionManager(positionManagers[i]).getExecutionFee();
-                        neededPositionManagers[indexCounter] = positionManagers[i];
-                        neededTypes[indexCounter] = PERFORM_SETTLE_GMX_POSITION_MANAGER;
-                        neededFees[indexCounter] = deltaSizeInTokens > 0 ? feeIncrease : feeDecrease;
-                        deltaSizes[indexCounter] = deltaSizeInTokens;
-                        unchecked {
-                            ++indexCounter;
-                        }
-                    }
-                }
-            }
-
-            performData = abi.encodePacked(
-                CHECK_UPKEEP_GMX_POSITION_MANAGER,
-                abi.encode(neededPositionManagers, neededTypes, neededFees, deltaSizes)
-            );
-
-            return (upkeepNeeded, performData);
-        }
-
-        return (false, "");
+    function checkUpkeep(bytes calldata checkData)
+        external
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
+        address positionManager = abi.decode(checkData, (address));
+        (upkeepNeeded, performData) = IGmxV2PositionManager(positionManager).checkUpkeep();
+        (uint256 feeIncrease, uint256 feeDecrease) = IGmxV2PositionManager(positionManager).getExecutionFee();
+        uint256 maxGasFee = feeIncrease > feeDecrease ? feeIncrease : feeDecrease;
+        performData = abi.encode(positionManager, maxGasFee, performData);
+        return (upkeepNeeded, performData);
     }
 
     /// @inheritdoc AutomationCompatibleInterface
-    function performUpkeep(bytes calldata performData) external {
+    function performUpkeep(bytes calldata performData) external override {
         if (msg.sender != forwarderAddress()) {
             revert Errors.UnAuthorizedForwarder(msg.sender);
         }
-        bytes32 checkType = bytes32(performData[:32]);
-        if (checkType == CHECK_UPKEEP_GMX_POSITION_MANAGER) {
-            (address[] memory positionManagers, bytes32[] memory types, uint256[] memory fees, int256[] memory sizes) =
-                abi.decode(performData[32:], (address[], bytes32[], uint256[], int256[]));
-            uint256 len = positionManagers.length;
-            for (uint256 i; i < len;) {
-                if (types[i] == PERFORM_SETTLE_GMX_POSITION_MANAGER) {
-                    IGmxV2PositionManager(positionManagers[i]).decreasePosition{value: fees[i]}(1, 0);
-                }
-                if (types[i] == PERFORM_ADJUST_GMX_POSITION_MANAGER) {
-                    if (sizes[i] < 0) {
-                        IGmxV2PositionManager(positionManagers[i]).decreasePosition{value: fees[i]}(
-                            0, uint256(-sizes[i])
-                        );
-                    } else {
-                        IGmxV2PositionManager(positionManagers[i]).increasePosition{value: fees[i]}(
-                            0, uint256(sizes[i])
-                        );
-                    }
-                }
-                unchecked {
-                    ++i;
-                }
-            }
-        }
+        _performUpkeep(performData);
+    }
+
+    /// @dev used when chainlink is down
+    function manualUpkeep(bytes calldata performData) external onlyOwner {
+        _performUpkeep(performData);
     }
 
     /// @notice Set the address that `performUpkeep` is called from
@@ -153,5 +85,12 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
 
     function forwarderAddress() public view returns (address) {
         return _getKeeperStorage()._forwarderAddress;
+    }
+
+    function _performUpkeep(bytes memory performData) private {
+        address positionManager;
+        uint256 executionFee;
+        (positionManager, executionFee, performData) = abi.decode(performData, (address, uint256, bytes));
+        IGmxV2PositionManager(positionManager).performUpkeep{value: executionFee}(performData);
     }
 }

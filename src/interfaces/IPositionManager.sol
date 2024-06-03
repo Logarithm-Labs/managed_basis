@@ -12,8 +12,8 @@ interface IPositionManager {
     /// `API_VERSION`.
     function apiVersion() external view returns (string memory);
 
-    /// @dev set position manager's operator
-    function setOperator(address operator) external;
+    /// @dev set position manager's keeper
+    function setKeeper(address keeper) external;
 
     /// @notice total asset token amount that can be claimable from gmx position when closing it
     ///
