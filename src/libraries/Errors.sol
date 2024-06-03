@@ -50,4 +50,7 @@ library Errors {
 
     // @notice upkeep validation
     error UnAuthorizedForwarder(address fowarder);
+
+    // @notice there is no positive when decrease collateral
+    error NotPositivePnl();
 }
