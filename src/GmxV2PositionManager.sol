@@ -438,6 +438,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                 // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
                 int256 executionCostInUsd =
                     (spotExecutionPrice * sizeDeltaInTokens).toInt256() - order.numbers.sizeDeltaUsd.toInt256();
+                // TODO
+                // report executionCostInUsd to strategy
             } else {
                 uint256 sizeDeltaInTokens = _sizeInTokensBefore - _sizeInTokensAfter;
                 // executionCostInUsd = (hedgeExectuionPrice - spotExecutionPrice) * sizeDelta
@@ -448,8 +450,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                 uint256 amountExecutedHedgeInUsd = order.numbers.sizeDeltaUsd.mulDiv(
                     PRECISION, IBasisStrategy(order.addresses.receiver).targetLeverage()
                 );
-
-                // assert(eventData.uintItems.items[0].key == string("outputAmount"));
+                // TODO
+                // report executionCostInUsd and amountExecutedHedgeInUsd to strategy
                 assert(eventData.addressItems.items[0].value == collateralToken());
                 _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing +=
                     eventData.uintItems.items[0].value;
