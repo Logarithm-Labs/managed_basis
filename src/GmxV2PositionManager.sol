@@ -74,6 +74,9 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         // state for calcuating execution cost
         uint256 _spotExecutionPrice;
         uint256 _sizeInTokensBefore;
+        // state for handling realized pnl when decreasing
+        uint256 _realizedPnlInCollateralTokenWhenDecreasing;
+        bool _isDecreasingCollateral;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager")) - 1)) & ~bytes32(uint256(0xff))
@@ -94,6 +97,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     event CollateralClaimed(address indexed token, uint256 indexed amount);
     event OrderExecuted(bytes32 indexed orderKey);
     event OrderFailed(bytes32 indexed orderKey);
+    event PositionSizeIncreased(uint256 indexed sizeDeltaInTokens);
 
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
@@ -269,7 +273,50 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     {
         uint256 totalExecutionFee = msg.value;
         address _factory = factory();
-        (, uint256 decreaseExecutionFee) = getExecutionFee();
+        (uint256 increaseExecutionFee, uint256 decreaseExecutionFee) = getExecutionFee();
+        uint256 realizedPnlInCollateralTokenWhenDecreasing =
+            _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing;
+        if (collateralDelta < realizedPnlInCollateralTokenWhenDecreasing) {
+            // realizedPnl already transferred to strategy is bigger than the expected collateralDelta to claim
+            // hence increase the shortfall collateral instead of decreasing
+            uint256 shortfallCollateral = realizedPnlInCollateralTokenWhenDecreasing - collateralDelta;
+            // realizedPnlInCollateralTokenWhenDecreasing was transferred to
+            IERC20(collateralToken()).safeTransferFrom(
+                strategy(), IBasisGmxFactory(_factory).orderVault(), shortfallCollateral
+            );
+            increaseOrderKey = _createOrder(
+                InternalCreateOrderParams({
+                    isLong: isLong(),
+                    isIncrease: true,
+                    exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                    orderVault: IBasisGmxFactory(_factory).orderVault(),
+                    strategy: strategy(),
+                    collateralToken: collateralToken(),
+                    collateralDelta: shortfallCollateral,
+                    sizeDeltaInUsd: 0,
+                    executionFee: increaseExecutionFee,
+                    callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                    referralCode: IBasisGmxFactory(_factory).referralCode()
+                })
+            );
+            // refund fee
+            (bool success,) = keeper().call{value: totalExecutionFee - increaseExecutionFee}("");
+            assert(success);
+
+            // set _isDecreasingCollateral as true
+            // so that wipe the realizedPnlInCollateralTokenWhenDecreasing value after successfull execution
+            _getGmxV2PositionManagerStorage()._isDecreasingCollateral = true;
+            return (decreaseOrderKey, increaseOrderKey);
+        } else if (collateralDelta == realizedPnlInCollateralTokenWhenDecreasing) {
+            _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing = 0;
+            // refund fee
+            (bool success,) = keeper().call{value: totalExecutionFee}("");
+            return (decreaseOrderKey, increaseOrderKey);
+        }
+
+        // treat realizedPnl already transferred to strategy as reduced collateral
+        collateralDelta -= realizedPnlInCollateralTokenWhenDecreasing;
+
         GmxV2Lib.GetPosition memory positionParams = _getPositionParams(_factory);
         GmxV2Lib.GetPrices memory pricesParams = _getPricesParams(_factory);
         (uint256 initialCollateralDelta, uint256 sizeDeltaInTokens) =
@@ -316,6 +363,11 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
             (bool success,) = keeper().call{value: totalExecutionFee - decreaseExecutionFee}("");
             assert(success);
         }
+
+        // set _isDecreasingCollateral as true
+        // so that wipe the realizedPnlInCollateralTokenWhenDecreasing value after successfull execution
+        _getGmxV2PositionManagerStorage()._isDecreasingCollateral = true;
+
         return (decreaseOrderKey, increaseOrderKey);
     }
 
@@ -356,7 +408,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     }
 
     /// @inheritdoc IOrderCallbackReceiver
-    function afterOrderExecution(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory /* eventData */ )
+    function afterOrderExecution(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
         external
         override
     {
@@ -364,25 +416,42 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         _setPendingOrderKey(bytes32(0), order.numbers.orderType == Order.OrderType.MarketIncrease);
         _getGmxV2PositionManagerStorage()._pendingCollateralAmount = 0;
         uint256 spotExecutionPrice = _getGmxV2PositionManagerStorage()._spotExecutionPrice;
+
+        // spotExecutionPrice > 0 means adjust sizes that needs the execution cost calc
         if (spotExecutionPrice > 0) {
             uint256 _sizeInTokensBefore = _getGmxV2PositionManagerStorage()._sizeInTokensBefore;
             uint256 _sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
-            int256 executionCostInUsd;
             if (order.numbers.orderType == Order.OrderType.MarketIncrease) {
                 uint256 sizeDeltaInTokens = _sizeInTokensAfter - _sizeInTokensBefore;
                 // executionCostInUsd = (spotExecutionPrice - hedgeExectuionPrice) * sizeDelta
                 // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
-                executionCostInUsd =
+                int256 executionCostInUsd =
                     (spotExecutionPrice * sizeDeltaInTokens).toInt256() - order.numbers.sizeDeltaUsd.toInt256();
             } else {
                 uint256 sizeDeltaInTokens = _sizeInTokensBefore - _sizeInTokensAfter;
                 // executionCostInUsd = (hedgeExectuionPrice - spotExecutionPrice) * sizeDelta
                 // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
-                executionCostInUsd =
+                int256 executionCostInUsd =
                     order.numbers.sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256();
+                // receiver is always strategy
+                uint256 amountExecutedHedgeInUsd = order.numbers.sizeDeltaUsd.mulDiv(
+                    PRECISION, IBasisStrategy(order.addresses.receiver).targetLeverage()
+                );
+
+                // assert(eventData.uintItems.items[0].key == string("outputAmount"));
+                assert(eventData.addressItems.items[0].value == collateralToken());
+                _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing +=
+                    eventData.uintItems.items[0].value;
             }
             _wipeExecutionCostCalcInfo();
         }
+
+        // wipe the realizedPnl info
+        if (_getGmxV2PositionManagerStorage()._isDecreasingCollateral) {
+            _getGmxV2PositionManagerStorage()._isDecreasingCollateral = false;
+            _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing = 0;
+        }
+
         emit OrderExecuted(key);
     }
 
@@ -700,6 +769,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         }
     }
 
+    /// @dev called only when increasing and decreasing sizes
     function _recordExecutionCostCalcInfo(GmxV2Lib.GetPosition memory positionParams, uint256 spotExecutionPrice)
         private
     {
