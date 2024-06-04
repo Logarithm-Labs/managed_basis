@@ -183,6 +183,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
 
     /// @dev transfer assetsToPositionManager into position manger from strategy
     /// Note: this function is called whenever users deposit tokens, so not create order
+    ///
+    /// @param assetsToPositionManager is the amount to trnasfer to position manager
     function increaseCollateral(uint256 assetsToPositionManager) external onlyStrategy {
         _getGmxV2PositionManagerStorage()._idleCollateralAmount += assetsToPositionManager;
         IERC20(collateralToken()).safeTransferFrom(strategy(), address(this), assetsToPositionManager);
@@ -190,6 +192,9 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
 
     /// @dev increase position size
     /// Note: if there is idle collateral, then increase the collateral with it
+    ///
+    /// @param sizeDeltaInTokens is the delta amount in index token to increase
+    /// @param spotExecutionPrice is the spot execution price in usd/product
     ///
     /// @return orderKey
     function increaseSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice)
@@ -229,6 +234,12 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         );
     }
 
+    /// @dev decreases the position size
+    ///
+    /// @param sizeDeltaInTokens is the delta amount in index token to decrease
+    /// @param spotExecutionPrice is the spot execution price in usd/product
+    ///
+    /// @returns orderKey
     function decreaseSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice)
         external
         payable
