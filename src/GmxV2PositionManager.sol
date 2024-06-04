@@ -73,7 +73,6 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         uint256 _idleCollateralAmount;
         // state for calcuating execution cost
         uint256 _spotExecutionPrice;
-        uint256 _sizeDeltaInUsd;
         uint256 _sizeInTokensBefore;
     }
 
@@ -711,6 +710,5 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     function _wipeExecutionCostCalcInfo() private {
         _getGmxV2PositionManagerStorage()._spotExecutionPrice = 0;
         _getGmxV2PositionManagerStorage()._sizeInTokensBefore = 0;
-        _getGmxV2PositionManagerStorage()._sizeDeltaInUsd = 0;
     }
 }
