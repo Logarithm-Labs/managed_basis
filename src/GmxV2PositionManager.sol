@@ -363,18 +363,18 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         if (spotExecutionPrice > 0) {
             uint256 _sizeInTokensBefore = _getGmxV2PositionManagerStorage()._sizeInTokensBefore;
             uint256 _sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
-            int256 executionCost;
+            int256 executionCostInUsd;
             if (order.numbers.orderType == Order.OrderType.MarketIncrease) {
                 uint256 sizeDeltaInTokens = _sizeInTokensAfter - _sizeInTokensBefore;
-                // executionCost = (spotExecutionPrice - hedgeExectuionPrice) * sizeDelta
+                // executionCostInUsd = (spotExecutionPrice - hedgeExectuionPrice) * sizeDelta
                 // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
-                executionCost =
+                executionCostInUsd =
                     (spotExecutionPrice * sizeDeltaInTokens).toInt256() - order.numbers.sizeDeltaUsd.toInt256();
             } else {
                 uint256 sizeDeltaInTokens = _sizeInTokensBefore - _sizeInTokensAfter;
-                // executionCost = (hedgeExectuionPrice - spotExecutionPrice) * sizeDelta
+                // executionCostInUsd = (hedgeExectuionPrice - spotExecutionPrice) * sizeDelta
                 // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
-                executionCost =
+                executionCostInUsd =
                     order.numbers.sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256();
             }
             _wipeExecutionCostCalcInfo();
