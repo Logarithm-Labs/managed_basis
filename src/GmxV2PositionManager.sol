@@ -39,6 +39,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         bool isLong;
         bool isIncrease;
         address exchangeRouter;
+        address orderVault;
         address strategy;
         address collateralToken;
         uint256 collateralDelta;
@@ -195,10 +196,10 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         whenNotPending
         returns (bytes32)
     {
+        address _factory = factory();
         GmxV2Lib.GetPosition memory positionParams = _getPositionParams(_factory);
         _recordExecutionCostCalcInfo(positionParams, spotExecutionPrice);
         uint256 executionFee = msg.value;
-        address _factory = factory();
         uint256 sizeDeltaInUsd =
             GmxV2Lib.getSizeDeltaInUsdForIncrease(positionParams, _getPricesParams(_factory), sizeDeltaInTokens);
         uint256 idleCollateralAmount = _getGmxV2PositionManagerStorage()._idleCollateralAmount;
@@ -213,6 +214,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                 isLong: isLong(),
                 isIncrease: true,
                 exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                orderVault: IBasisGmxFactory(_factory).orderVault(),
                 strategy: strategy(),
                 collateralToken: collateralToken(),
                 collateralDelta: idleCollateralAmount,
@@ -231,16 +233,17 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         whenNotPending
         returns (bytes32)
     {
+        address _factory = factory();
         GmxV2Lib.GetPosition memory positionParams = _getPositionParams(_factory);
         _recordExecutionCostCalcInfo(positionParams, spotExecutionPrice);
         uint256 executionFee = msg.value;
-        address _factory = factory();
         uint256 sizeDeltaInUsd = GmxV2Lib.getSizeDeltaInUsdForDecrease(positionParams, sizeDeltaInTokens);
         return _createOrder(
             InternalCreateOrderParams({
                 isLong: isLong(),
                 isIncrease: false,
                 exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                orderVault: IBasisGmxFactory(_factory).orderVault(),
                 strategy: strategy(),
                 collateralToken: collateralToken(),
                 collateralDelta: 0,
@@ -426,6 +429,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                         isLong: isLong(),
                         isIncrease: false,
                         exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                        orderVault: IBasisGmxFactory(_factory).orderVault(),
                         strategy: strategy(),
                         collateralToken: collateralToken(),
                         collateralDelta: 0,
@@ -444,6 +448,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                         isLong: isLong(),
                         isIncrease: true,
                         exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                        orderVault: IBasisGmxFactory(_factory).orderVault(),
                         strategy: strategy(),
                         collateralToken: collateralToken(),
                         collateralDelta: 0,
