@@ -25,6 +25,8 @@ import {IOracle} from "src/interfaces/IOracle.sol";
 
 import {Errors} from "./Errors.sol";
 
+import {console} from "forge-std/console.sol";
+
 library GmxV2Lib {
     using Math for uint256;
     using SafeCast for uint256;
@@ -114,6 +116,32 @@ library GmxV2Lib {
             uint256 uncappedPositionPnlAmountInCollateral = uncappedPositionPnlUsd.toUint256() / collateralTokenPrice;
             sizeDeltaInTokens =
                 collateralDelta.mulDiv(position.numbers.sizeInTokens, uncappedPositionPnlAmountInCollateral);
+
+            uint256 sizeDeltaUsd =
+                collateralDelta.mulDiv(position.numbers.sizeInUsd, uncappedPositionPnlAmountInCollateral);
+
+            // the min collateral factor will increase as the open interest for a market increases
+            // this may lead to previously created limit increase orders not being executable
+            //
+            // the position's pnl is not factored into the remainingCollateralUsd value, since
+            // factoring in a positive pnl may allow the user to manipulate price and bypass this check
+            // it may be useful to factor in a negative pnl for this check, this can be added if required
+            uint256 minCollateralFactor = MarketUtils.getMinCollateralFactorForOpenInterest(
+                IDataStore(positionParams.dataStore), pricesParams.market, -int256(sizeDeltaUsd), positionParams.isLong
+            );
+
+            uint256 minCollateralFactorForMarket = MarketUtils.getMinCollateralFactor(
+                IDataStore(positionParams.dataStore), pricesParams.market.marketToken
+            );
+            // use the minCollateralFactor for the market if it is larger
+            if (minCollateralFactorForMarket > minCollateralFactor) {
+                minCollateralFactor = minCollateralFactorForMarket;
+            }
+
+            int256 minCollateralUsdForLeverage =
+                Precision.applyFactor(position.numbers.sizeInUsd - sizeDeltaUsd, minCollateralFactor).toInt256();
+
+            console.log("minCollateralForLeverage", uint256(minCollateralUsdForLeverage) / collateralTokenPrice);
         } else {
             initialCollateralDelta = collateralDelta;
         }
