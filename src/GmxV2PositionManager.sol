@@ -69,7 +69,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         // state
         bytes32 _pendingIncreaseOrderKey;
         bytes32 _pendingDecreaseOrderKey;
-        uint256 _pendingAssets;
+        uint256 _pendingCollateral;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager")) - 1)) & ~bytes32(uint256(0xff))
@@ -192,39 +192,23 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         returns (bytes32)
     {
         uint256 executionFee = msg.value;
-        IBasisGmxFactory factory = IBasisGmxFactory(factory());
-        address _marketToken = marketToken();
-        Market.Props memory market = Market.Props({
-            marketToken: _marketToken,
-            indexToken: indexToken(),
-            longToken: longToken(),
-            shortToken: shortToken()
-        });
+        address _factory = factory();
         uint256 sizeDeltaInUsd = GmxV2Lib.getSizeDeltaInUsdForIncrease(
-            GmxV2Lib.GetPosition({
-                dataStore: factory.dataStore(),
-                reader: factory.reader(),
-                marketToken: _marketToken,
-                account: address(this),
-                collateralToken: collateralToken(),
-                isLong: isLong()
-            }),
-            GmxV2Lib.GetPrices({market: market, oracle: factory.oracle()}),
-            sizeDeltaInTokens
+            _getPositionParams(_factory), _getPricesParams(_factory), sizeDeltaInTokens
         );
         return _createOrder(
             InternalCreateOrderParams({
                 isLong: isLong(),
                 isIncrease: true,
-                exchangeRouter: factory.exchangeRouter(),
-                orderVault: factory.orderVault(),
+                exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                orderVault: IBasisGmxFactory(_factory).orderVault(),
                 strategy: strategy(),
                 collateralToken: collateralToken(),
                 collateralDelta: collateralDelta,
                 sizeDeltaInUsd: sizeDeltaInUsd,
                 executionFee: executionFee,
-                callbackGasLimit: factory.callbackGasLimit(),
-                referralCode: factory.referralCode()
+                callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                referralCode: IBasisGmxFactory(_factory).referralCode()
             })
         );
     }
@@ -245,31 +229,21 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         returns (bytes32)
     {
         uint256 executionFee = msg.value;
-        IBasisGmxFactory factory = IBasisGmxFactory(factory());
-        uint256 sizeDeltaInUsd = GmxV2Lib.getSizeDeltaInUsdForDecrease(
-            GmxV2Lib.GetPosition({
-                dataStore: factory.dataStore(),
-                reader: factory.reader(),
-                marketToken: marketToken(),
-                account: address(this),
-                collateralToken: collateralToken(),
-                isLong: isLong()
-            }),
-            sizeDeltaInTokens
-        );
+        address _factory = factory();
+        uint256 sizeDeltaInUsd = GmxV2Lib.getSizeDeltaInUsdForDecrease(_getPositionParams(_factory), sizeDeltaInTokens);
         return _createOrder(
             InternalCreateOrderParams({
                 isLong: isLong(),
                 isIncrease: false,
-                exchangeRouter: factory.exchangeRouter(),
-                orderVault: factory.orderVault(),
+                exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                orderVault: IBasisGmxFactory(_factory).orderVault(),
                 strategy: strategy(),
                 collateralToken: collateralToken(),
                 collateralDelta: collateralDelta,
                 sizeDeltaInUsd: sizeDeltaInUsd,
                 executionFee: executionFee,
-                callbackGasLimit: factory.callbackGasLimit(),
-                referralCode: factory.referralCode()
+                callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                referralCode: IBasisGmxFactory(_factory).referralCode()
             })
         );
     }
@@ -288,24 +262,10 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         returns (bytes32 decreaseOrderKey, bytes32 increaseOrderKey)
     {
         uint256 totalExecutionFee = msg.value;
-        IBasisGmxFactory factory = IBasisGmxFactory(factory());
+        address _factory = factory();
         (, uint256 decreaseExecutionFee) = getExecutionFee();
-        address _marketToken = marketToken();
-        Market.Props memory market = Market.Props({
-            marketToken: _marketToken,
-            indexToken: indexToken(),
-            longToken: longToken(),
-            shortToken: shortToken()
-        });
-        GmxV2Lib.GetPosition memory positionParams = GmxV2Lib.GetPosition({
-            dataStore: (factory).dataStore(),
-            reader: (factory).reader(),
-            marketToken: _marketToken,
-            account: address(this),
-            collateralToken: collateralToken(),
-            isLong: isLong()
-        });
-        GmxV2Lib.GetPrices memory pricesParams = GmxV2Lib.GetPrices({market: market, oracle: (factory).oracle()});
+        GmxV2Lib.GetPosition memory positionParams = _getPositionParams(_factory);
+        GmxV2Lib.GetPrices memory pricesParams = _getPricesParams(_factory);
         (uint256 initialCollateralDelta, uint256 sizeDeltaInTokens) =
             GmxV2Lib.getDecreaseCollateralResult(positionParams, pricesParams, collateralDelta);
 
@@ -315,15 +275,15 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
             InternalCreateOrderParams({
                 isLong: isLong(),
                 isIncrease: false,
-                exchangeRouter: factory.exchangeRouter(),
-                orderVault: factory.orderVault(),
+                exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                orderVault: IBasisGmxFactory(_factory).orderVault(),
                 strategy: strategy(),
                 collateralToken: collateralToken(),
                 collateralDelta: initialCollateralDelta,
                 sizeDeltaInUsd: sizeDeltaInUsdForDecrease,
                 executionFee: decreaseExecutionFee,
-                callbackGasLimit: factory.callbackGasLimit(),
-                referralCode: factory.referralCode()
+                callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                referralCode: IBasisGmxFactory(_factory).referralCode()
             })
         );
 
@@ -334,15 +294,15 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                 InternalCreateOrderParams({
                     isLong: isLong(),
                     isIncrease: true,
-                    exchangeRouter: factory.exchangeRouter(),
-                    orderVault: factory.orderVault(),
+                    exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                    orderVault: IBasisGmxFactory(_factory).orderVault(),
                     strategy: strategy(),
                     collateralToken: collateralToken(),
                     collateralDelta: 0,
                     sizeDeltaInUsd: sizeDeltaInUsdForIncrease,
                     executionFee: totalExecutionFee - decreaseExecutionFee,
-                    callbackGasLimit: factory.callbackGasLimit(),
-                    referralCode: factory.referralCode()
+                    callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                    referralCode: IBasisGmxFactory(_factory).referralCode()
                 })
             );
         } else {
@@ -399,7 +359,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     {
         _validateOrderHandler(key);
         _setPendingOrderKey(bytes32(0), order.numbers.orderType == Order.OrderType.MarketIncrease);
-        _setPendingAssets(0);
+        _setPendingCollateral(0);
         // claimFunding();
         emit OrderExecuted(key);
     }
@@ -412,10 +372,10 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     ) external override {
         _validateOrderHandler(key);
         _setPendingOrderKey(bytes32(0), order.numbers.orderType == Order.OrderType.MarketIncrease);
-        uint256 pendingAssetsAmount = _getGmxV2PositionManagerStorage()._pendingAssets;
+        uint256 pendingAssetsAmount = _getGmxV2PositionManagerStorage()._pendingCollateral;
         if (pendingAssetsAmount > 0) {
             address collateralTokenAddr = order.addresses.initialCollateralToken;
-            _setPendingAssets(0);
+            _setPendingCollateral(0);
             assert(IERC20(collateralTokenAddr).balanceOf(address(this)) == pendingAssetsAmount);
             IERC20(collateralTokenAddr).safeTransfer(strategy(), pendingAssetsAmount);
         }
@@ -440,21 +400,21 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         }
         if (adjustNeeded) {
             (, int256 deltaSizeInTokens) = _checkAdjustPositionSize();
-            IBasisGmxFactory factory = IBasisGmxFactory(factory());
+            address _factory = factory();
             if (deltaSizeInTokens < 0) {
                 return _createOrder(
                     InternalCreateOrderParams({
                         isLong: isLong(),
                         isIncrease: false,
-                        exchangeRouter: factory.exchangeRouter(),
-                        orderVault: factory.orderVault(),
+                        exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                        orderVault: IBasisGmxFactory(_factory).orderVault(),
                         strategy: strategy(),
                         collateralToken: collateralToken(),
                         collateralDelta: 0,
                         sizeDeltaInUsd: uint256(-deltaSizeInTokens),
                         executionFee: executionFee,
-                        callbackGasLimit: factory.callbackGasLimit(),
-                        referralCode: factory.referralCode()
+                        callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                        referralCode: IBasisGmxFactory(_factory).referralCode()
                     })
                 );
             } else {
@@ -462,15 +422,15 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                     InternalCreateOrderParams({
                         isLong: isLong(),
                         isIncrease: true,
-                        exchangeRouter: factory.exchangeRouter(),
-                        orderVault: factory.orderVault(),
+                        exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                        orderVault: IBasisGmxFactory(_factory).orderVault(),
                         strategy: strategy(),
                         collateralToken: collateralToken(),
                         collateralDelta: 0,
                         sizeDeltaInUsd: uint256(deltaSizeInTokens),
                         executionFee: executionFee,
-                        callbackGasLimit: factory.callbackGasLimit(),
-                        referralCode: factory.referralCode()
+                        callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                        referralCode: IBasisGmxFactory(_factory).referralCode()
                     })
                 );
             }
@@ -493,27 +453,11 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
 
     /// @inheritdoc IPositionManager
     function totalAssets() public view override returns (uint256) {
-        address factory = factory();
-        address _marketToken = marketToken();
-        Market.Props memory market = Market.Props({
-            marketToken: _marketToken,
-            indexToken: indexToken(),
-            longToken: longToken(),
-            shortToken: shortToken()
-        });
+        address _factory = factory();
         uint256 positionNetAmount = GmxV2Lib.getPositionNetAmount(
-            GmxV2Lib.GetPosition({
-                dataStore: IBasisGmxFactory(factory).dataStore(),
-                reader: IBasisGmxFactory(factory).reader(),
-                marketToken: _marketToken,
-                account: address(this),
-                collateralToken: collateralToken(),
-                isLong: isLong()
-            }),
-            GmxV2Lib.GetPrices({market: market, oracle: IBasisGmxFactory(factory).oracle()}),
-            IBasisGmxFactory(factory).referralStorage()
+            _getPositionParams(_factory), _getPricesParams(_factory), IBasisGmxFactory(_factory).referralStorage()
         );
-        return positionNetAmount + _getGmxV2PositionManagerStorage()._pendingAssets;
+        return positionNetAmount + _getGmxV2PositionManagerStorage()._pendingCollateral;
     }
 
     /// @notice calculate the execution fee that is need from gmx when increase and decrease
@@ -521,8 +465,10 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @return feeIncrease the execution fee for increase
     /// @return feeDecrease the execution fee for decrease
     function getExecutionFee() public view returns (uint256 feeIncrease, uint256 feeDecrease) {
-        IBasisGmxFactory factory = IBasisGmxFactory(factory());
-        return GmxV2Lib.getExecutionFee(factory.dataStore(), factory.callbackGasLimit());
+        address _factory = factory();
+        return GmxV2Lib.getExecutionFee(
+            IBasisGmxFactory(_factory).dataStore(), IBasisGmxFactory(_factory).callbackGasLimit()
+        );
     }
 
     /// @notice check if position is need to be kept by claiming funding or adjusting size
@@ -593,7 +539,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                 IERC20(params.collateralToken).safeTransferFrom(
                     params.strategy, params.orderVault, params.collateralDelta
                 );
-                _setPendingAssets(params.collateralDelta);
+                _setPendingCollateral(params.collateralDelta);
             }
         }
 
@@ -635,25 +581,11 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
 
     /// @dev check if the claimable funding fee amount is over than max share
     function _checkSettle() private view returns (bool) {
-        address factory = factory();
-        address _marketToken = marketToken();
-        Market.Props memory market = Market.Props({
-            marketToken: _marketToken,
-            indexToken: indexToken(),
-            longToken: longToken(),
-            shortToken: shortToken()
-        });
+        address _factory = factory();
         bool isFundingClaimable = GmxV2Lib.isFundingClaimable(
-            GmxV2Lib.GetPosition({
-                dataStore: IBasisGmxFactory(factory).dataStore(),
-                reader: IBasisGmxFactory(factory).reader(),
-                marketToken: _marketToken,
-                account: address(this),
-                collateralToken: collateralToken(),
-                isLong: isLong()
-            }),
-            GmxV2Lib.GetPrices({market: market, oracle: IBasisGmxFactory(factory).oracle()}),
-            IBasisGmxFactory(factory).referralStorage(),
+            _getPositionParams(_factory),
+            _getPricesParams(_factory),
+            IBasisGmxFactory(_factory).referralStorage(),
             maxClaimableFundingShare(),
             PRECISION
         );
@@ -664,18 +596,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @return isNeed is for deciding to adjust perp position
     /// @return deltaSizeInTokens is delta size of perp position to be adjusted
     function _checkAdjustPositionSize() private view returns (bool isNeed, int256 deltaSizeInTokens) {
-        address factory = factory();
         uint256 productBalance = IERC20(indexToken()).balanceOf(strategy());
-        uint256 positionSizeInTokens = GmxV2Lib.getPositionSizeInTokens(
-            GmxV2Lib.GetPosition({
-                dataStore: IBasisGmxFactory(factory).dataStore(),
-                reader: IBasisGmxFactory(factory).reader(),
-                marketToken: marketToken(),
-                account: address(this),
-                collateralToken: collateralToken(),
-                isLong: isLong()
-            })
-        );
+        uint256 positionSizeInTokens = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
         deltaSizeInTokens = productBalance.toInt256() - positionSizeInTokens.toInt256();
         uint256 deviation;
         if (deltaSizeInTokens < 0) {
@@ -685,6 +607,27 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         }
         isNeed = deviation > _getGmxV2PositionManagerStorage()._maxHedgeDeviation;
         return (isNeed, deltaSizeInTokens);
+    }
+
+    function _getPositionParams(address _factory) private view returns (GmxV2Lib.GetPosition memory) {
+        return GmxV2Lib.GetPosition({
+            dataStore: IBasisGmxFactory(_factory).dataStore(),
+            reader: IBasisGmxFactory(_factory).reader(),
+            marketToken: marketToken(),
+            account: address(this),
+            collateralToken: collateralToken(),
+            isLong: isLong()
+        });
+    }
+
+    function _getPricesParams(address _factory) private view returns (GmxV2Lib.GetPrices memory) {
+        Market.Props memory market = Market.Props({
+            marketToken: marketToken(),
+            indexToken: indexToken(),
+            longToken: longToken(),
+            shortToken: shortToken()
+        });
+        return GmxV2Lib.GetPrices({market: market, oracle: IBasisGmxFactory(_factory).oracle()});
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -743,8 +686,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         }
     }
 
-    function _setPendingAssets(uint256 assets) private {
+    function _setPendingCollateral(uint256 assets) private {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        $._pendingAssets = assets;
+        $._pendingCollateral = assets;
     }
 }
