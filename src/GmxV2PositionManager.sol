@@ -119,15 +119,15 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
 
     function initialize(address strategy_) external initializer {
         __FactoryDeployable_init();
-        address factory = msg.sender;
+        address _factory = msg.sender;
         address asset = address(IBasisStrategy(strategy_).asset());
         address product = address(IBasisStrategy(strategy_).product());
-        address marketKey = IBasisGmxFactory(factory).marketKey(asset, product);
+        address marketKey = IBasisGmxFactory(_factory).marketKey(asset, product);
         if (marketKey == address(0)) {
             revert Errors.InvalidMarket();
         }
-        address dataStore = IBasisGmxFactory(factory).dataStore();
-        address reader = IBasisGmxFactory(factory).reader();
+        address dataStore = IBasisGmxFactory(_factory).dataStore();
+        address reader = IBasisGmxFactory(_factory).reader();
         Market.Props memory market = IReader(reader).getMarket(dataStore, marketKey);
         // assuming short position open
         if ((market.longToken != asset && market.shortToken != asset) || (market.indexToken != product)) {
@@ -316,8 +316,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @dev claims all the claimable funding fee
     /// this is callable by anyone
     function claimFunding() public {
-        IBasisGmxFactory factory = IBasisGmxFactory(factory());
-        IExchangeRouter exchangeRouter = IExchangeRouter(factory.exchangeRouter());
+        IExchangeRouter exchangeRouter = IExchangeRouter(IBasisGmxFactory(factory()).exchangeRouter());
         address marketTokenAddr = marketToken();
         address shortTokenAddr = shortToken();
         address longTokenAddr = longToken();
@@ -339,9 +338,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @param token token address derived from the gmx event: ClaimableCollateralUpdated
     /// @param timeKey timeKey value derived from the gmx event: ClaimableCollateralUpdated
     function claimCollateral(address token, uint256 timeKey) external {
-        IBasisGmxFactory factory = IBasisGmxFactory(factory());
-        IExchangeRouter exchangeRouter = IExchangeRouter(factory.exchangeRouter());
-
+        IExchangeRouter exchangeRouter = IExchangeRouter(IBasisGmxFactory(factory()).exchangeRouter());
         address[] memory markets = new address[](1);
         markets[0] = marketToken();
         address[] memory tokens = new address[](1);
