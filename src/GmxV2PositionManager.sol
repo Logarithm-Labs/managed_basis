@@ -412,11 +412,13 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     ) external override {
         _validateOrderHandler(key);
         _setPendingOrderKey(bytes32(0), order.numbers.orderType == Order.OrderType.MarketIncrease);
-        address collateralTokenAddr = order.addresses.initialCollateralToken;
         uint256 pendingAssetsAmount = _getGmxV2PositionManagerStorage()._pendingAssets;
-        _setPendingAssets(0);
-        assert(IERC20(collateralTokenAddr).balanceOf(address(this)) == pendingAssetsAmount);
-        IERC20(collateralTokenAddr).safeTransfer(strategy(), pendingAssetsAmount);
+        if (pendingAssetsAmount > 0) {
+            address collateralTokenAddr = order.addresses.initialCollateralToken;
+            _setPendingAssets(0);
+            assert(IERC20(collateralTokenAddr).balanceOf(address(this)) == pendingAssetsAmount);
+            IERC20(collateralTokenAddr).safeTransfer(strategy(), pendingAssetsAmount);
+        }
         emit OrderFailed(key);
     }
 
