@@ -396,9 +396,11 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
             claimFunding();
         }
         if (adjustNeeded) {
-            (, int256 deltaSizeInTokens) = _checkAdjustPositionSize();
+            (, int256 sizeDeltaInTokens) = _checkAdjustPositionSize();
             address _factory = factory();
-            if (deltaSizeInTokens < 0) {
+            if (sizeDeltaInTokens < 0) {
+                uint256 sizeDeltaInUsd =
+                    GmxV2Lib.getSizeDeltaInUsdForDecrease(_getPositionParams(_factory), uint256(-sizeDeltaInTokens));
                 return _createOrder(
                     InternalCreateOrderParams({
                         isLong: isLong(),
@@ -408,13 +410,16 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                         strategy: strategy(),
                         collateralToken: collateralToken(),
                         collateralDelta: 0,
-                        sizeDeltaInUsd: uint256(-deltaSizeInTokens),
+                        sizeDeltaInUsd: sizeDeltaInUsd,
                         executionFee: executionFee,
                         callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
                         referralCode: IBasisGmxFactory(_factory).referralCode()
                     })
                 );
             } else {
+                uint256 sizeDeltaInUsd = GmxV2Lib.getSizeDeltaInUsdForIncrease(
+                    _getPositionParams(_factory), _getPricesParams(_factory), uint256(-sizeDeltaInTokens)
+                );
                 return _createOrder(
                     InternalCreateOrderParams({
                         isLong: isLong(),
@@ -424,7 +429,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                         strategy: strategy(),
                         collateralToken: collateralToken(),
                         collateralDelta: 0,
-                        sizeDeltaInUsd: uint256(deltaSizeInTokens),
+                        sizeDeltaInUsd: sizeDeltaInUsd,
                         executionFee: executionFee,
                         callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
                         referralCode: IBasisGmxFactory(_factory).referralCode()
@@ -591,19 +596,19 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
 
     /// @dev check deviation between spot and perp
     /// @return isNeed is for deciding to adjust perp position
-    /// @return deltaSizeInTokens is delta size of perp position to be adjusted
-    function _checkAdjustPositionSize() private view returns (bool isNeed, int256 deltaSizeInTokens) {
+    /// @return sizeDeltaInTokens is delta size of perp position to be adjusted
+    function _checkAdjustPositionSize() private view returns (bool isNeed, int256 sizeDeltaInTokens) {
         uint256 productBalance = IERC20(indexToken()).balanceOf(strategy());
         uint256 positionSizeInTokens = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
-        deltaSizeInTokens = productBalance.toInt256() - positionSizeInTokens.toInt256();
+        sizeDeltaInTokens = productBalance.toInt256() - positionSizeInTokens.toInt256();
         uint256 deviation;
-        if (deltaSizeInTokens < 0) {
-            deviation = uint256(-deltaSizeInTokens).mulDiv(PRECISION, productBalance);
+        if (sizeDeltaInTokens < 0) {
+            deviation = uint256(-sizeDeltaInTokens).mulDiv(PRECISION, productBalance);
         } else {
-            deviation = uint256(deltaSizeInTokens).mulDiv(PRECISION, productBalance);
+            deviation = uint256(sizeDeltaInTokens).mulDiv(PRECISION, productBalance);
         }
         isNeed = deviation > _getGmxV2PositionManagerStorage()._maxHedgeDeviation;
-        return (isNeed, deltaSizeInTokens);
+        return (isNeed, sizeDeltaInTokens);
     }
 
     function _getPositionParams(address _factory) private view returns (GmxV2Lib.GetPosition memory) {
