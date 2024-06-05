@@ -19,4 +19,15 @@ interface IPositionManager {
     ///
     /// @dev this amount includes the pending asset token amount
     function totalAssets() external view returns (uint256);
+
+    function increaseCollateral(uint256 assetsToPositionManager) external;
+
+    function increaseSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice) external payable returns (bytes32);
+
+    function decreaseSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice) external payable returns (bytes32);
+
+    function decreaseCollateral(uint256 collateralDelta)
+        external
+        payable
+        returns (bytes32 decreaseOrderKey, bytes32 increaseOrderKey);
 }

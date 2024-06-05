@@ -8,4 +8,5 @@ interface IBasisStrategy {
     function product() external view returns (address);
     function positionManager() external view returns (address);
     function targetLeverage() external view returns (uint256);
+    function hedgeCallback(bool wasExecuted, int256 executionCostAmount, uint256 executedHedgeAmount) external;
 }
