@@ -84,7 +84,7 @@ contract LogarithmOracle is IOracle, UUPSUpgradeable, Ownable2StepUpgradeable {
     /// @dev returns token price in (30 - decimal of token)
     /// so that the usd value of token has 30 decimals
     /// for example, if usdc has 6 decimals, then this returns its price in 30 - 6 = 24 decimals
-    function getAssetPrice(address asset) external view override returns (uint256) {
+    function getAssetPrice(address asset) public view override returns (uint256) {
         IPriceFeed priceFeed = _getLogarithmOracleStorage().priceFeeds[asset];
 
         if (address(priceFeed) == address(0)) {
@@ -128,5 +128,12 @@ contract LogarithmOracle is IOracle, UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 adjustedPrice = Math.mulDiv(price, precision, FLOAT_PRECISION);
 
         return adjustedPrice;
+    }
+
+    function convertTokenAmount(address from, address to, uint256 amount) external view returns (uint256) {
+        uint256 fromPrice = getAssetPrice(from);
+        uint256 toPrice = getAssetPrice(to);
+
+        return Math.mulDiv(amount, fromPrice, toPrice);
     }
 }

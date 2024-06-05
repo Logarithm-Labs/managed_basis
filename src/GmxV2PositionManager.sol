@@ -17,7 +17,7 @@ import {Order} from "src/externals/gmx-v2/libraries/Order.sol";
 
 import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IPositionManagerOLD as IPositionManager} from "src/interfaces/IPositionManagerOLD.sol";
 
 import {Errors} from "src/libraries/Errors.sol";
 import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
@@ -159,7 +159,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     }
 
     /// @inheritdoc IPositionManager
-    function setKeeper(address _keeper) external override onlyFactory {
+    function setKeeper(address _keeper) external onlyFactory {
         if (_keeper == address(0)) {
             revert Errors.ZeroAddress();
         }
@@ -485,12 +485,12 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IPositionManager
-    function apiVersion() public pure override returns (string memory) {
+    function apiVersion() public pure returns (string memory) {
         return API_VERSION;
     }
 
     /// @inheritdoc IPositionManager
-    function totalAssets() public view override returns (uint256) {
+    function totalAssets() public view returns (uint256) {
         address factory = factory();
         address _marketToken = marketToken();
         Market.Props memory market = Market.Props({
