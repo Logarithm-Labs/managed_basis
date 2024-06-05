@@ -158,9 +158,9 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev send back eth to the operator
+    /// @dev send back eth to the strategy
     receive() external payable {
-        (bool success,) = keeper().call{value: msg.value}("");
+        (bool success,) = strategy().call{value: msg.value}("");
         assert(success);
     }
 
@@ -273,8 +273,9 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     }
 
     /// @dev remove collateral from position to strategy
+    /// Note: the execution fee shoud be sum of decrease and inrease fees
     ///
-    /// @param collateralDelta is the target delta amout to remove
+    /// @param collateralDelta is the target delta amount to remove
     ///
     /// @return decreaseOrderKey is the order key of decreasing
     /// @return increaseOrderKey is the order key of increasing
@@ -315,7 +316,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                 })
             );
             // refund fee
-            (bool success,) = keeper().call{value: totalExecutionFee - increaseExecutionFee}("");
+            (bool success,) = msg.sender.call{value: totalExecutionFee - increaseExecutionFee}("");
             assert(success);
 
             // set _isDecreasingCollateral as true
@@ -325,7 +326,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         } else if (collateralDelta == realizedPnlInCollateralTokenWhenDecreasing) {
             _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing = 0;
             // refund fee
-            (bool success,) = keeper().call{value: totalExecutionFee}("");
+            (bool success,) = msg.sender.call{value: totalExecutionFee}("");
             return (decreaseOrderKey, increaseOrderKey);
         }
 
@@ -375,7 +376,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
             );
         } else {
             // refund fee
-            (bool success,) = keeper().call{value: totalExecutionFee - decreaseExecutionFee}("");
+            (bool success,) = msg.sender.call{value: totalExecutionFee - decreaseExecutionFee}("");
             assert(success);
         }
 
