@@ -119,29 +119,17 @@ library GmxV2Lib {
 
             uint256 sizeDeltaUsd =
                 collateralDelta.mulDiv(position.numbers.sizeInUsd, uncappedPositionPnlAmountInCollateral);
-
-            // the min collateral factor will increase as the open interest for a market increases
-            // this may lead to previously created limit increase orders not being executable
-            //
-            // the position's pnl is not factored into the remainingCollateralUsd value, since
-            // factoring in a positive pnl may allow the user to manipulate price and bypass this check
-            // it may be useful to factor in a negative pnl for this check, this can be added if required
-            uint256 minCollateralFactor = MarketUtils.getMinCollateralFactorForOpenInterest(
-                IDataStore(positionParams.dataStore), pricesParams.market, -int256(sizeDeltaUsd), positionParams.isLong
+            uint256 minCollateralAmount = _getMinCollateralAmount(
+                IDataStore(positionParams.dataStore),
+                pricesParams.market,
+                position.numbers.sizeInUsd,
+                -int256(sizeDeltaUsd),
+                collateralTokenPrice,
+                positionParams.isLong
             );
-
-            uint256 minCollateralFactorForMarket = MarketUtils.getMinCollateralFactor(
-                IDataStore(positionParams.dataStore), pricesParams.market.marketToken
-            );
-            // use the minCollateralFactor for the market if it is larger
-            if (minCollateralFactorForMarket > minCollateralFactor) {
-                minCollateralFactor = minCollateralFactorForMarket;
+            if (minCollateralAmount > position.numbers.collateralAmount - initialCollateralDelta) {
+                initialCollateralDelta = position.numbers.collateralAmount - minCollateralAmount;
             }
-
-            int256 minCollateralUsdForLeverage =
-                Precision.applyFactor(position.numbers.sizeInUsd - sizeDeltaUsd, minCollateralFactor).toInt256();
-
-            console.log("minCollateralForLeverage", uint256(minCollateralUsdForLeverage) / collateralTokenPrice);
         } else {
             initialCollateralDelta = collateralDelta;
         }
@@ -301,5 +289,34 @@ library GmxV2Lib {
         prices.indexTokenPrice = Price.Props(indexTokenPrice, indexTokenPrice);
         prices.longTokenPrice = Price.Props(longTokenPrice, longTokenPrice);
         prices.shortTokenPrice = Price.Props(shortTokenPrice, shortTokenPrice);
+    }
+
+    function _getMinCollateralAmount(
+        IDataStore dataStore,
+        Market.Props calldata market,
+        uint256 sizeInUsd,
+        int256 sizeDeltaUsd,
+        uint256 collateralTokenPrice,
+        bool isLong
+    ) private view returns (uint256) {
+        // the min collateral factor will increase as the open interest for a market increases
+        // this may lead to previously created limit increase orders not being executable
+        //
+        // the position's pnl is not factored into the remainingCollateralUsd value, since
+        // factoring in a positive pnl may allow the user to manipulate price and bypass this check
+        // it may be useful to factor in a negative pnl for this check, this can be added if required
+        uint256 minCollateralFactor =
+            MarketUtils.getMinCollateralFactorForOpenInterest(dataStore, market, sizeDeltaUsd, isLong);
+
+        uint256 minCollateralFactorForMarket = MarketUtils.getMinCollateralFactor(dataStore, market.marketToken);
+        // use the minCollateralFactor for the market if it is larger
+        if (minCollateralFactorForMarket > minCollateralFactor) {
+            minCollateralFactor = minCollateralFactorForMarket;
+        }
+
+        uint256 minCollateralUsdForLeverage =
+            Precision.applyFactor((sizeInUsd.toInt256() + sizeDeltaUsd).toUint256(), minCollateralFactor);
+
+        return minCollateralUsdForLeverage / collateralTokenPrice;
     }
 }
