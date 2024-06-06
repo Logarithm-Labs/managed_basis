@@ -120,27 +120,57 @@ library GmxV2Lib {
         return (initialCollateralDelta, sizeDeltaInTokens);
     }
 
+    /// @dev position info when closing fully
     function getPositionInfo(
         GetPosition calldata positionParams,
         GetPrices calldata pricesParams,
         address referralStorage
-    ) public view returns (ReaderUtils.PositionInfo memory) {
+    ) external view returns (ReaderUtils.PositionInfo memory) {
         MarketUtils.MarketPrices memory prices = _getPrices(pricesParams.oracle, pricesParams.market);
-        bytes32 positionKey = _getPositionKey(
-            positionParams.account, positionParams.marketToken, positionParams.collateralToken, positionParams.isLong
-        );
-        ReaderUtils.PositionInfo memory positionInfo = IReader(positionParams.reader).getPositionInfo(
-            IDataStore(positionParams.dataStore),
-            IReferralStorage(referralStorage),
-            positionKey,
-            prices,
-            0,
-            address(0),
-            true // usePositionSizeAsSizeDeltaUsd meaning when closing fully
-        );
-        return positionInfo;
+        return _getPositionInfo(positionParams, prices, referralStorage);
     }
 
+    /// @dev in gmx v2, sizeDeltaInTokens = sizeInTokens * sizeDeltaInUsd / sizeInUsd
+    /// hence sizeDeltaInUsd = ceil(sizeDeltaInTokens * sizeInUsd / sizeInTokens)
+    function getSizeDeltaInUsdForDecrease(GetPosition calldata params, uint256 sizeDeltaInTokens)
+        external
+        view
+        returns (uint256 sizeDeltaInUsd)
+    {
+        Position.Props memory position = _getPosition(params);
+        sizeDeltaInUsd =
+            sizeDeltaInTokens.mulDiv(position.numbers.sizeInUsd, position.numbers.sizeInTokens, Math.Rounding.Ceil);
+        return sizeDeltaInUsd;
+    }
+
+    /// @dev return position delta size in usd when increasing
+    /// considered the price impact
+    function getSizeDeltaInUsdForIncrease(
+        GetPosition calldata positionParams,
+        GetPrices calldata pricesParams,
+        uint256 sizeDeltaInTokens
+    ) external view returns (uint256 sizeDeltaInUsd) {
+        Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
+        Position.Props memory position = _getPosition(positionParams);
+        int256 baseSizeDeltaInUsd = sizeDeltaInTokens.toInt256() * indexTokenPrice.max.toInt256();
+        int256 priceImpactUsd = _getPriceImpactUsd(position, indexTokenPrice, positionParams, baseSizeDeltaInUsd);
+        // in gmx v2
+        // int256 sizeDeltaInTokens;
+        // if (params.position.isLong()) {
+        //     sizeDeltaInTokens = baseSizeDeltaInTokens.toInt256() + priceImpactAmount;
+        // } else {
+        //     sizeDeltaInTokens = baseSizeDeltaInTokens.toInt256() - priceImpactAmount;
+        // }
+        // the resulted actual size delta will be a little bit different from this estimation
+        if (positionParams.isLong) {
+            sizeDeltaInUsd = (baseSizeDeltaInUsd - priceImpactUsd).toUint256();
+        } else {
+            sizeDeltaInUsd = (baseSizeDeltaInUsd + priceImpactUsd).toUint256();
+        }
+        return sizeDeltaInUsd;
+    }
+
+    /// @dev returns transaction fees needed for gmx keeper
     function getExecutionFee(address dataStore, uint256 callbackGasLimit) external view returns (uint256, uint256) {
         uint256 estimatedGasLimitIncrease = IDataStore(dataStore).getUint(Keys.INCREASE_ORDER_GAS_LIMIT);
         uint256 estimatedGasLimitDecrease = IDataStore(dataStore).getUint(Keys.DECREASE_ORDER_GAS_LIMIT);
@@ -157,61 +187,24 @@ library GmxV2Lib {
         return (gasPrice * gasLimitIncrease, gasPrice * gasLimitDecrease);
     }
 
-    /// @dev in gmx v2, sizeDeltaInTokens = sizeInTokens * sizeDeltaInUsd / sizeInUsd
-    /// hence sizeDeltaInUsd = ceil(sizeDeltaInTokens * sizeInUsd / sizeInTokens)
-    function getSizeDeltaInUsdForDecrease(GetPosition calldata params, uint256 sizeDeltaInTokens)
-        external
-        view
-        returns (uint256 sizeDeltaInUsd)
-    {
-        bytes32 positionKey = _getPositionKey(params.account, params.marketToken, params.collateralToken, params.isLong);
-        Position.Props memory position = IReader(params.reader).getPosition(IDataStore(params.dataStore), positionKey);
-        sizeDeltaInUsd =
-            sizeDeltaInTokens.mulDiv(position.numbers.sizeInUsd, position.numbers.sizeInTokens, Math.Rounding.Ceil);
-        return sizeDeltaInUsd;
-    }
-
-    /// @dev return position delta size in usd when increasing
-    /// considered the price impact
-    function getSizeDeltaInUsdForIncrease(
+    // @dev calculate the position fee in usd when changing position size
+    function getPositionFeeUsd(
         GetPosition calldata positionParams,
-        GetPrices calldata priceParams,
-        uint256 sizeDeltaInTokens
-    ) external view returns (uint256 sizeDeltaInUsd) {
-        MarketUtils.MarketPrices memory prices = _getPrices(priceParams.oracle, priceParams.market);
-        Position.Props memory position = IReader(positionParams.reader).getPosition(
-            IDataStore(positionParams.dataStore),
-            _getPositionKey(
-                positionParams.account,
-                positionParams.marketToken,
-                positionParams.collateralToken,
-                positionParams.isLong
-            )
+        GetPrices calldata pricesParams,
+        uint256 sizeDeltaUsd,
+        bool isIncrease
+    ) external returns (uint256) {
+        Position.Props memory position = _getPosition(positionParams);
+        Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
+        int256 priceImpactUsd = _getPriceImpactUsd(
+            position, indexTokenPrice, positionParams, isIncrease ? int256(sizeDeltaUsd) : -int256(sizeDeltaUsd)
         );
-        int256 baseSizeDeltaInUsd = sizeDeltaInTokens.toInt256() * prices.indexTokenPrice.max.toInt256();
-        ReaderPricingUtils.ExecutionPriceResult memory result = IReader(positionParams.reader).getExecutionPrice(
-            IDataStore(positionParams.dataStore),
-            positionParams.marketToken,
-            prices.indexTokenPrice,
-            position.numbers.sizeInUsd,
-            position.numbers.sizeInTokens,
-            baseSizeDeltaInUsd,
-            positionParams.isLong
+        bool forPositiveImpact = priceImpactUsd > 0;
+        uint256 positionFeeFactor = IDataStore(positionParams.dataStore).getUint(
+            Keys.positionFeeFactorKey(positionParams.marketToken, forPositiveImpact)
         );
-        // in gmx v2
-        // int256 sizeDeltaInTokens;
-        // if (params.position.isLong()) {
-        //     sizeDeltaInTokens = baseSizeDeltaInTokens.toInt256() + priceImpactAmount;
-        // } else {
-        //     sizeDeltaInTokens = baseSizeDeltaInTokens.toInt256() - priceImpactAmount;
-        // }
-        // the resulted actual size delta will be a little bit different from this estimation
-        if (positionParams.isLong) {
-            sizeDeltaInUsd = (baseSizeDeltaInUsd - result.priceImpactUsd).toUint256();
-        } else {
-            sizeDeltaInUsd = (baseSizeDeltaInUsd + result.priceImpactUsd).toUint256();
-        }
-        return sizeDeltaInUsd;
+        uint256 positionFeeUsd = Precision.applyFactor(sizeDeltaUsd, positionFeeFactor);
+        return positionFeeUsd;
     }
 
     /// @dev returns remainingCollateral and claimable funding amount in collateral token
@@ -220,19 +213,8 @@ library GmxV2Lib {
         GetPrices calldata pricesParams,
         address referralStorage
     ) private view returns (uint256, uint256) {
-        bytes32 positionKey = _getPositionKey(
-            positionParams.account, positionParams.marketToken, positionParams.collateralToken, positionParams.isLong
-        );
         MarketUtils.MarketPrices memory prices = _getPrices(pricesParams.oracle, pricesParams.market);
-        ReaderUtils.PositionInfo memory positionInfo = IReader(positionParams.reader).getPositionInfo(
-            IDataStore(positionParams.dataStore),
-            IReferralStorage(referralStorage),
-            positionKey,
-            prices,
-            0,
-            address(0),
-            true // usePositionSizeAsSizeDeltaUsd meaning when closing fully
-        );
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(positionParams, prices, referralStorage);
         uint256 collateralTokenPrice =
             IOracle(pricesParams.oracle).getAssetPrice(positionInfo.position.addresses.collateralToken);
         uint256 claimableUsd = positionInfo.fees.funding.claimableLongTokenAmount * prices.longTokenPrice.min
@@ -254,9 +236,32 @@ library GmxV2Lib {
         return keccak256(abi.encode(account, marketToken, collateralToken, isLong));
     }
 
+    /// @dev get position properties that are invariants
     function _getPosition(GetPosition calldata params) private view returns (Position.Props memory) {
         bytes32 positionKey = _getPositionKey(params.account, params.marketToken, params.collateralToken, params.isLong);
         return IReader(params.reader).getPosition(IDataStore(params.dataStore), positionKey);
+    }
+
+    /// @dev get position info including propeties and realizing pnl and fees and price impact
+    /// Note: providing info when closing the whole position
+    function _getPositionInfo(
+        GetPosition calldata positionParams,
+        MarketUtils.MarketPrices memory prices,
+        address referralStorage
+    ) private view returns (ReaderUtils.PositionInfo memory) {
+        bytes32 positionKey = _getPositionKey(
+            positionParams.account, positionParams.marketToken, positionParams.collateralToken, positionParams.isLong
+        );
+        ReaderUtils.PositionInfo memory positionInfo = IReader(positionParams.reader).getPositionInfo(
+            IDataStore(positionParams.dataStore),
+            IReferralStorage(referralStorage),
+            positionKey,
+            prices,
+            0,
+            address(0),
+            true // usePositionSizeAsSizeDeltaUsd meaning when closing fully
+        );
+        return positionInfo;
     }
 
     /// @dev get all prices of maket tokens including long, short, and index tokens
@@ -273,5 +278,28 @@ library GmxV2Lib {
         prices.indexTokenPrice = Price.Props(indexTokenPrice, indexTokenPrice);
         prices.longTokenPrice = Price.Props(longTokenPrice, longTokenPrice);
         prices.shortTokenPrice = Price.Props(shortTokenPrice, shortTokenPrice);
+    }
+
+    function _getPrice(address oracle, address token) private view returns (Price.Props memory) {
+        uint256 tokenPrice = IOracle(oracle).getAssetPrice(token);
+        return Price.Props(tokenPrice, tokenPrice);
+    }
+
+    function _getPriceImpactUsd(
+        Position.Props memory position,
+        Price.Props memory indexTokenPrice,
+        GetPosition calldata positionParams,
+        int256 sizeDeltaUsd
+    ) private view returns (int256) {
+        ReaderPricingUtils.ExecutionPriceResult memory result = IReader(positionParams.reader).getExecutionPrice(
+            IDataStore(positionParams.dataStore),
+            positionParams.marketToken,
+            indexTokenPrice,
+            position.numbers.sizeInUsd,
+            position.numbers.sizeInTokens,
+            sizeDeltaUsd,
+            positionParams.isLong
+        );
+        return result.priceImpactUsd;
     }
 }
