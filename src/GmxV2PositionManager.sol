@@ -487,6 +487,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                 executionCostAmount = executionCostInUsd / collateralTokenPrice.toInt256();
                 executedHedgeAmount = executedHedgeInUsd / collateralTokenPrice;
                 assert(eventData.addressItems.items[0].value == collateralToken());
+                // increase this value only when decreaseSize function is called
+                // Note: decrease order can be created by decreaseCollateral function
                 _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing +=
                     eventData.uintItems.items[0].value;
             }
