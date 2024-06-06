@@ -22,10 +22,7 @@ import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
 import {IOracle} from "src/interfaces/IOracle.sol";
-
 import {Errors} from "./Errors.sol";
-
-import {console} from "forge-std/console.sol";
 
 library GmxV2Lib {
     using Math for uint256;
@@ -49,6 +46,7 @@ library GmxV2Lib {
     struct InternalGetMinCollateralAmount {
         Market.Props market;
         address dataStore;
+        /// @dev resulted size after execution
         uint256 sizeInUsd;
         int256 sizeDeltaUsd;
         uint256 collateralTokenPrice;
@@ -92,15 +90,43 @@ library GmxV2Lib {
         return position.numbers.sizeInTokens;
     }
 
-    /// @dev if initial collateral * 9 / 10 is enough to cover the delta amount, only reduce the collateral
-    /// otherwise decrease position size at the same time to realize pnl to cover the remain delta collateral
+    /// @dev reduce the collateral including initial collateral and positive pnl
+    /// without changing position size in token
     function getDecreaseCollateralResult(
         GetPosition calldata positionParams,
         GetPrices calldata pricesParams,
         uint256 collateralDelta
     ) external view returns (uint256 initialCollateralDelta, uint256 sizeDeltaInTokens) {
         Position.Props memory position = _getPosition(positionParams);
+        // get the delta amount to reduce initial collateral
         initialCollateralDelta = position.numbers.collateralAmount * 9 / 10;
+        // if 9/10 of init collateral is bigger than the target
+        // then reduce as the target simply
+        if (initialCollateralDelta > collateralDelta) {
+            initialCollateralDelta = collateralDelta;
+        }
+        uint256 collateralTokenPrice = IOracle(pricesParams.oracle).getAssetPrice(position.addresses.collateralToken);
+        uint256 minCollateralAmount = _getMinCollateralAmount(
+            InternalGetMinCollateralAmount({
+                market: pricesParams.market,
+                dataStore: positionParams.dataStore,
+                sizeInUsd: position.numbers.sizeInUsd,
+                sizeDeltaUsd: 0,
+                collateralTokenPrice: collateralTokenPrice,
+                isLong: positionParams.isLong
+            })
+        );
+        // if the remaining collateral is smaller than the minimum requirements by gmx
+        // then modify init collateral delta so that it can satisfy the requirement
+        if (minCollateralAmount > position.numbers.collateralAmount - initialCollateralDelta) {
+            initialCollateralDelta = position.numbers.collateralAmount - minCollateralAmount;
+        }
+
+        // if the target collateral delta is still bigger than the init collateral reduction
+        // then reduce the size to realized positive pnl, this size will be reverted back later
+        // Note: with regard to minimum collateral requirement,
+        //       if the above is satisfied, then all is ok because the reverted sizeUsd will be smaller than original
+        // if negative pnl, then revert
         if (collateralDelta > initialCollateralDelta) {
             // fill the reducing collateral with realized pnl
             collateralDelta -= initialCollateralDelta;
@@ -109,26 +135,8 @@ library GmxV2Lib {
             if (uncappedPositionPnlUsd <= 0) {
                 revert Errors.NotPositivePnl();
             }
-            uint256 collateralTokenPrice =
-                IOracle(pricesParams.oracle).getAssetPrice(position.addresses.collateralToken);
             uint256 uncappedPositionPnlAmount = uncappedPositionPnlUsd.toUint256() / collateralTokenPrice;
             sizeDeltaInTokens = collateralDelta.mulDiv(position.numbers.sizeInTokens, uncappedPositionPnlAmount);
-            uint256 sizeDeltaUsd = collateralDelta.mulDiv(position.numbers.sizeInUsd, uncappedPositionPnlAmount);
-            uint256 minCollateralAmount = _getMinCollateralAmount(
-                InternalGetMinCollateralAmount({
-                    market: pricesParams.market,
-                    dataStore: positionParams.dataStore,
-                    sizeInUsd: position.numbers.sizeInUsd,
-                    sizeDeltaUsd: -int256(sizeDeltaUsd),
-                    collateralTokenPrice: collateralTokenPrice,
-                    isLong: positionParams.isLong
-                })
-            );
-            if (minCollateralAmount > position.numbers.collateralAmount - initialCollateralDelta) {
-                initialCollateralDelta = position.numbers.collateralAmount - minCollateralAmount;
-            }
-        } else {
-            initialCollateralDelta = collateralDelta;
         }
         return (initialCollateralDelta, sizeDeltaInTokens);
     }
@@ -351,9 +359,9 @@ library GmxV2Lib {
             minCollateralFactor = minCollateralFactorForMarket;
         }
 
-        uint256 minCollateralUsdForLeverage =
-            Precision.applyFactor((params.sizeInUsd.toInt256() + params.sizeDeltaUsd).toUint256(), minCollateralFactor);
-
-        return minCollateralUsdForLeverage / params.collateralTokenPrice;
+        uint256 minCollateralUsdForLeverage = Precision.applyFactor(params.sizeInUsd, minCollateralFactor);
+        // the oracle price that gmx uses is a real time, which has a little diviation with the onchain oracle
+        // so make the minimum one bigger by 1%
+        return (minCollateralUsdForLeverage / params.collateralTokenPrice) * 101 / 100;
     }
 }
