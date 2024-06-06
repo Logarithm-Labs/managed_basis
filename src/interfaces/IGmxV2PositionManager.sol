@@ -2,9 +2,9 @@
 pragma solidity ^0.8.0;
 
 interface IGmxV2PositionManager {
-    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable returns (bytes32);
-    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaInUsd) external payable returns (bytes32);
-    function reduceCollateral(uint256 collateralDelta, uint256 sizeDeltaInUsd)
+    function increasePosition(uint256 collateralDelta, uint256 sizeDeltaUsd) external payable returns (bytes32);
+    function decreasePosition(uint256 collateralDelta, uint256 sizeDeltaUsd) external payable returns (bytes32);
+    function reduceCollateral(uint256 collateralDelta, uint256 sizeDeltaUsd)
         external
         payable
         returns (bytes32 increaseOrderKey, bytes32 decreaseOrderKey);

@@ -130,30 +130,30 @@ library GmxV2Lib {
         return _getPositionInfo(positionParams, prices, referralStorage);
     }
 
-    /// @dev in gmx v2, sizeDeltaInTokens = sizeInTokens * sizeDeltaInUsd / sizeInUsd
-    /// hence sizeDeltaInUsd = ceil(sizeDeltaInTokens * sizeInUsd / sizeInTokens)
-    function getSizeDeltaInUsdForDecrease(GetPosition calldata params, uint256 sizeDeltaInTokens)
+    /// @dev in gmx v2, sizeDeltaInTokens = sizeInTokens * sizeDeltaUsd / sizeInUsd
+    /// hence sizeDeltaUsd = ceil(sizeDeltaInTokens * sizeInUsd / sizeInTokens)
+    function getSizeDeltaUsdForDecrease(GetPosition calldata params, uint256 sizeDeltaInTokens)
         external
         view
-        returns (uint256 sizeDeltaInUsd)
+        returns (uint256 sizeDeltaUsd)
     {
         Position.Props memory position = _getPosition(params);
-        sizeDeltaInUsd =
+        sizeDeltaUsd =
             sizeDeltaInTokens.mulDiv(position.numbers.sizeInUsd, position.numbers.sizeInTokens, Math.Rounding.Ceil);
-        return sizeDeltaInUsd;
+        return sizeDeltaUsd;
     }
 
     /// @dev return position delta size in usd when increasing
     /// considered the price impact
-    function getSizeDeltaInUsdForIncrease(
+    function getSizeDeltaUsdForIncrease(
         GetPosition calldata positionParams,
         GetPrices calldata pricesParams,
         uint256 sizeDeltaInTokens
-    ) external view returns (uint256 sizeDeltaInUsd) {
+    ) external view returns (uint256 sizeDeltaUsd) {
         Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
         Position.Props memory position = _getPosition(positionParams);
-        int256 baseSizeDeltaInUsd = sizeDeltaInTokens.toInt256() * indexTokenPrice.max.toInt256();
-        int256 priceImpactUsd = _getPriceImpactUsd(position, indexTokenPrice, positionParams, baseSizeDeltaInUsd);
+        int256 baseSizeDeltaUsd = sizeDeltaInTokens.toInt256() * indexTokenPrice.max.toInt256();
+        int256 priceImpactUsd = _getPriceImpactUsd(position, indexTokenPrice, positionParams, baseSizeDeltaUsd);
         // in gmx v2
         // int256 sizeDeltaInTokens;
         // if (params.position.isLong()) {
@@ -163,11 +163,11 @@ library GmxV2Lib {
         // }
         // the resulted actual size delta will be a little bit different from this estimation
         if (positionParams.isLong) {
-            sizeDeltaInUsd = (baseSizeDeltaInUsd - priceImpactUsd).toUint256();
+            sizeDeltaUsd = (baseSizeDeltaUsd - priceImpactUsd).toUint256();
         } else {
-            sizeDeltaInUsd = (baseSizeDeltaInUsd + priceImpactUsd).toUint256();
+            sizeDeltaUsd = (baseSizeDeltaUsd + priceImpactUsd).toUint256();
         }
-        return sizeDeltaInUsd;
+        return sizeDeltaUsd;
     }
 
     /// @dev returns transaction fees needed for gmx keeper
