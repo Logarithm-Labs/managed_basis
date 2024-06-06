@@ -491,4 +491,6 @@ contract ManagedBasisStrategy is
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         return $.currentRound;
     }
+
+    function hedgeCallback(bool wasExecuted, int256 executionCostAmount, uint256 executedHedgeAmount) external {}
 }
