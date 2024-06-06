@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 library Errors {
     error ZeroShares();
+    error ZeroValue();
     error RequestNotExecuted();
     error RequestAlreadyClaimed();
     error UnauthorizedClaimer(address claimer, address receiver);

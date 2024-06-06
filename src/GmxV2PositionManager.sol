@@ -821,6 +821,9 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     function _recordExecutionCostCalcInfo(GmxV2Lib.GetPosition memory positionParams, uint256 spotExecutionPrice)
         private
     {
+        if (spotExecutionPrice == 0) {
+            revert Errors.ZeroValue();
+        }
         _getGmxV2PositionManagerStorage()._spotExecutionPrice = spotExecutionPrice;
         _getGmxV2PositionManagerStorage()._sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(positionParams);
     }
