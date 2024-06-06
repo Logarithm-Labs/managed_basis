@@ -8,7 +8,7 @@ eth-rpc-url = "https://arb-mainnet.g.alchemy.com/v2/PeyMa7ljzBjqJxkH6AnLfVH8zRWO
 solc = '0.8.25'
 ffi = true
 # yul = true
-via_ir = true
+# via_ir = true
 fs_permissions = [{ access = "write", path = "./"}]
 evm_version = 'shanghai'
 gas_reports = ["GmxV2PositionManager"]
