@@ -25,6 +25,8 @@ import {IOracle} from "src/interfaces/IOracle.sol";
 
 import {Errors} from "./Errors.sol";
 
+import {console} from "forge-std/console.sol";
+
 library GmxV2Lib {
     using Math for uint256;
     using SafeCast for uint256;
@@ -114,6 +116,20 @@ library GmxV2Lib {
             uint256 uncappedPositionPnlAmountInCollateral = uncappedPositionPnlUsd.toUint256() / collateralTokenPrice;
             sizeDeltaInTokens =
                 collateralDelta.mulDiv(position.numbers.sizeInTokens, uncappedPositionPnlAmountInCollateral);
+
+            uint256 sizeDeltaUsd =
+                collateralDelta.mulDiv(position.numbers.sizeInUsd, uncappedPositionPnlAmountInCollateral);
+            uint256 minCollateralAmount = _getMinCollateralAmount(
+                IDataStore(positionParams.dataStore),
+                pricesParams.market,
+                position.numbers.sizeInUsd,
+                -int256(sizeDeltaUsd),
+                collateralTokenPrice,
+                positionParams.isLong
+            );
+            if (minCollateralAmount > position.numbers.collateralAmount - initialCollateralDelta) {
+                initialCollateralDelta = position.numbers.collateralAmount - minCollateralAmount;
+            }
         } else {
             initialCollateralDelta = collateralDelta;
         }
@@ -301,5 +317,34 @@ library GmxV2Lib {
             positionParams.isLong
         );
         return result.priceImpactUsd;
+    }
+
+    function _getMinCollateralAmount(
+        IDataStore dataStore,
+        Market.Props calldata market,
+        uint256 sizeInUsd,
+        int256 sizeDeltaUsd,
+        uint256 collateralTokenPrice,
+        bool isLong
+    ) private view returns (uint256) {
+        // the min collateral factor will increase as the open interest for a market increases
+        // this may lead to previously created limit increase orders not being executable
+        //
+        // the position's pnl is not factored into the remainingCollateralUsd value, since
+        // factoring in a positive pnl may allow the user to manipulate price and bypass this check
+        // it may be useful to factor in a negative pnl for this check, this can be added if required
+        uint256 minCollateralFactor =
+            MarketUtils.getMinCollateralFactorForOpenInterest(dataStore, market, sizeDeltaUsd, isLong);
+
+        uint256 minCollateralFactorForMarket = MarketUtils.getMinCollateralFactor(dataStore, market.marketToken);
+        // use the minCollateralFactor for the market if it is larger
+        if (minCollateralFactorForMarket > minCollateralFactor) {
+            minCollateralFactor = minCollateralFactorForMarket;
+        }
+
+        uint256 minCollateralUsdForLeverage =
+            Precision.applyFactor((sizeInUsd.toInt256() + sizeDeltaUsd).toUint256(), minCollateralFactor);
+
+        return minCollateralUsdForLeverage / collateralTokenPrice;
     }
 }

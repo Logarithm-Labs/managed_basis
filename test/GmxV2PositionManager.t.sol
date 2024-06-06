@@ -295,14 +295,13 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
     }
 
     function test_decreaseCollateral_withDeltaCollateralBiggerThanInitialCollateral() public afterHavingPosition {
-        uint256 collateralDelta = 300 * USDC_PRECISION;
+        uint256 collateralDelta = 280 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
         uint256 totalAssetsBefore = positionManager.totalAssets();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         console.log("-------before-------");
-        console.log("price", uint256(priceBefore));
         console.log("size in usd", positionInfoBefore.position.numbers.sizeInUsd);
         console.log("size in token", positionInfoBefore.position.numbers.sizeInTokens);
         console.log("collateral", positionInfoBefore.position.numbers.collateralAmount);
@@ -315,12 +314,10 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
             positionManager.decreaseCollateral{value: increaseFee + decreaseFee}(collateralDelta);
         _executeOrder(decreaseKey);
         _executeOrder(increaseKey);
-        int256 priceAfter = IPriceFeed(productPriceFeed).latestAnswer();
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
         uint256 totalAssetsAfter = positionManager.totalAssets();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         console.log("-------after-------");
-        console.log("price", uint256(priceAfter));
         console.log("size in usd", positionInfoAfter.position.numbers.sizeInUsd);
         console.log("size in token", positionInfoAfter.position.numbers.sizeInTokens);
         console.log("collateral", positionInfoAfter.position.numbers.collateralAmount);

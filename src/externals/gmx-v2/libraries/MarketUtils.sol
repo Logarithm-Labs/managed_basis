@@ -6,7 +6,9 @@ import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 
 import {Market} from "./Market.sol";
 import {Position} from "./Position.sol";
+import {Precision} from "./Precision.sol";
 import {Price} from "./Price.sol";
+import {Keys} from "./Keys.sol";
 
 // @title MarketUtils
 // @dev Library for market functions
@@ -88,5 +90,103 @@ library MarketUtils {
         uint256 claimableFeeAmount;
         uint256 claimableUiFeeAmount;
         uint256 affiliateRewardAmount;
+    }
+
+    // @dev get the min collateral factor for open interest
+    // @param dataStore DataStore
+    // @param market the market to check
+    // @param longToken the long token of the market
+    // @param shortToken the short token of the market
+    // @param openInterestDelta the change in open interest
+    // @param isLong whether it is for the long or short side
+    function getMinCollateralFactorForOpenInterest(
+        IDataStore dataStore,
+        Market.Props memory market,
+        int256 openInterestDelta,
+        bool isLong
+    ) internal view returns (uint256) {
+        uint256 openInterest = getOpenInterest(dataStore, market, isLong);
+        if (openInterestDelta > 0) {
+            openInterest += uint256(openInterestDelta);
+        } else {
+            openInterest -= uint256(-openInterestDelta);
+        }
+        uint256 multiplierFactor =
+            getMinCollateralFactorForOpenInterestMultiplier(dataStore, market.marketToken, isLong);
+        return Precision.applyFactor(openInterest, multiplierFactor);
+    }
+
+    // @dev get the open interest of a market
+    // @param dataStore DataStore
+    // @param market the market to check
+    // @param longToken the long token of the market
+    // @param shortToken the short token of the market
+    function getOpenInterest(IDataStore dataStore, Market.Props memory market) internal view returns (uint256) {
+        uint256 longOpenInterest = getOpenInterest(dataStore, market, true);
+        uint256 shortOpenInterest = getOpenInterest(dataStore, market, false);
+
+        return longOpenInterest + shortOpenInterest;
+    }
+
+    // @dev get either the long or short open interest for a market
+    // @param dataStore DataStore
+    // @param market the market to check
+    // @param longToken the long token of the market
+    // @param shortToken the short token of the market
+    // @param isLong whether to get the long or short open interest
+    // @return the long or short open interest for a market
+    function getOpenInterest(IDataStore dataStore, Market.Props memory market, bool isLong)
+        internal
+        view
+        returns (uint256)
+    {
+        uint256 divisor = getPoolDivisor(market.longToken, market.shortToken);
+        uint256 openInterestUsingLongTokenAsCollateral =
+            getOpenInterest(dataStore, market.marketToken, market.longToken, isLong, divisor);
+        uint256 openInterestUsingShortTokenAsCollateral =
+            getOpenInterest(dataStore, market.marketToken, market.shortToken, isLong, divisor);
+
+        return openInterestUsingLongTokenAsCollateral + openInterestUsingShortTokenAsCollateral;
+    }
+
+    // @dev the long and short open interest for a market based on the collateral token used
+    // @param dataStore DataStore
+    // @param market the market to check
+    // @param collateralToken the collateral token to check
+    // @param isLong whether to check the long or short side
+    function getOpenInterest(
+        IDataStore dataStore,
+        address market,
+        address collateralToken,
+        bool isLong,
+        uint256 divisor
+    ) internal view returns (uint256) {
+        return dataStore.getUint(Keys.openInterestKey(market, collateralToken, isLong)) / divisor;
+    }
+
+    // this is used to divide the values of getPoolAmount and getOpenInterest
+    // if the longToken and shortToken are the same, then these values have to be divided by two
+    // to avoid double counting
+    function getPoolDivisor(address longToken, address shortToken) internal pure returns (uint256) {
+        return longToken == shortToken ? 2 : 1;
+    }
+
+    // @dev get the min collateral factor
+    // @param dataStore DataStore
+    // @param market the market to check
+    function getMinCollateralFactor(IDataStore dataStore, address market) internal view returns (uint256) {
+        return dataStore.getUint(Keys.minCollateralFactorKey(market));
+    }
+
+    // @dev get the min collateral factor for open interest multiplier
+    // @param dataStore DataStore
+    // @param market the market to check
+    // @param isLong whether it is for the long or short side
+    function getMinCollateralFactorForOpenInterestMultiplier(IDataStore dataStore, address market, bool isLong)
+        internal
+        view
+        returns (uint256)
+    {
+        return dataStore.getUint(Keys.minCollateralFactorForOpenInterestMultiplierKey(market, isLong));
     }
 }
