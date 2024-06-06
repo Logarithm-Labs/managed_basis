@@ -461,7 +461,6 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                 uint256 sizeDeltaInTokens = _sizeInTokensAfter - _sizeInTokensBefore;
                 // executionCostInUsd = (spotExecutionPrice - hedgeExectuionPrice) * sizeDelta
                 // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
-                // TODO add position fee
                 int256 executionCostInUsd =
                     (spotExecutionPrice * sizeDeltaInTokens).toInt256() - order.numbers.sizeDeltaUsd.toInt256();
                 uint256 pendingPositionFeeUsd = _getGmxV2PositionManagerStorage()._pendingPositionFeeUsd;
@@ -473,7 +472,6 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                 uint256 sizeDeltaInTokens = _sizeInTokensBefore - _sizeInTokensAfter;
                 // executionCostInUsd = (hedgeExectuionPrice - spotExecutionPrice) * sizeDelta
                 // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
-                // TODO add position fee
                 int256 executionCostInUsd =
                     order.numbers.sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256();
                 uint256 pendingPositionFeeUsd = _getGmxV2PositionManagerStorage()._pendingPositionFeeUsd;

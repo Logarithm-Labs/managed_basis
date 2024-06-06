@@ -360,7 +360,7 @@ library GmxV2Lib {
         }
 
         uint256 minCollateralUsdForLeverage = Precision.applyFactor(params.sizeInUsd, minCollateralFactor);
-        // the oracle price that gmx uses is a real time, which has a little diviation with the onchain oracle
+        // the oracle price that gmx uses is a real time, which has a little deviation with the onchain oracle
         // so make the minimum one bigger by 5%
         return (minCollateralUsdForLeverage / params.collateralTokenPrice) * 21 / 20;
     }
