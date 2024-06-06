@@ -9,6 +9,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
+import {IBaseOrderUtils} from "src/externals/gmx-v2/interfaces/IBaseOrderUtils.sol";
 import {IOrderCallbackReceiver} from "src/externals/gmx-v2/interfaces/IOrderCallbackReceiver.sol";
 import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
 import {EventUtils} from "src/externals/gmx-v2/libraries/EventUtils.sol";
@@ -679,8 +680,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         );
         address[] memory swapPath;
         bytes32 orderKey = IExchangeRouter(params.exchangeRouter).createOrder(
-            IExchangeRouter.CreateOrderParams({
-                addresses: IExchangeRouter.CreateOrderParamsAddresses({
+            IBaseOrderUtils.CreateOrderParams({
+                addresses: IBaseOrderUtils.CreateOrderParamsAddresses({
                     receiver: params.strategy, // the receiver of reduced collateral
                     callbackContract: address(this),
                     uiFeeReceiver: address(0),
@@ -688,7 +689,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                     initialCollateralToken: params.collateralToken,
                     swapPath: swapPath
                 }),
-                numbers: IExchangeRouter.CreateOrderParamsNumbers({
+                numbers: IBaseOrderUtils.CreateOrderParamsNumbers({
                     sizeDeltaUsd: params.sizeDeltaUsd,
                     initialCollateralDeltaAmount: params.collateralDelta, // The amount of tokens to withdraw for decrease orders
                     triggerPrice: 0, // not used for market, swap, liquidation orders
@@ -697,10 +698,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
                     callbackGasLimit: params.callbackGasLimit,
                     minOutputAmount: 0
                 }),
-                orderType: params.isIncrease
-                    ? IExchangeRouter.OrderType.MarketIncrease
-                    : IExchangeRouter.OrderType.MarketDecrease,
-                decreasePositionSwapType: IExchangeRouter.DecreasePositionSwapType.NoSwap,
+                orderType: params.isIncrease ? Order.OrderType.MarketIncrease : Order.OrderType.MarketDecrease,
+                decreasePositionSwapType: Order.DecreasePositionSwapType.NoSwap,
                 isLong: params.isLong,
                 shouldUnwrapNativeToken: false,
                 referralCode: params.referralCode
