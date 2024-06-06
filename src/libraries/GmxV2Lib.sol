@@ -46,6 +46,15 @@ library GmxV2Lib {
         address oracle;
     }
 
+    struct InternalGetMinCollateralAmount {
+        Market.Props market;
+        address dataStore;
+        uint256 sizeInUsd;
+        int256 sizeDeltaUsd;
+        uint256 collateralTokenPrice;
+        bool isLong;
+    }
+
     /// @dev calculate the total claimable amount in collateral token when closing the whole
     /// Note: collateral + pnlAfterPriceImpactUsd (pnl + price impact) -
     /// total fee costs (funding fee + borrowing fee + position fee) + claimable fundings
@@ -93,39 +102,27 @@ library GmxV2Lib {
         Position.Props memory position = _getPosition(positionParams);
         initialCollateralDelta = position.numbers.collateralAmount * 9 / 10;
         if (collateralDelta > initialCollateralDelta) {
+            // fill the reducing collateral with realized pnl
             collateralDelta -= initialCollateralDelta;
-            bytes32 positionKey = _getPositionKey(
-                positionParams.account,
-                positionParams.marketToken,
-                positionParams.collateralToken,
-                positionParams.isLong
-            );
-            MarketUtils.MarketPrices memory prices = _getPrices(pricesParams.oracle, pricesParams.market);
-            (, int256 uncappedPositionPnlUsd,) = IReader(positionParams.reader).getPositionPnlUsd(
-                IDataStore(positionParams.dataStore),
-                pricesParams.market,
-                prices,
-                positionKey,
-                position.numbers.sizeInUsd
-            );
+            (, int256 uncappedPositionPnlUsd,) =
+                _getPositionPnl(positionParams, pricesParams, position.numbers.sizeInUsd);
             if (uncappedPositionPnlUsd <= 0) {
                 revert Errors.NotPositivePnl();
             }
             uint256 collateralTokenPrice =
                 IOracle(pricesParams.oracle).getAssetPrice(position.addresses.collateralToken);
-            uint256 uncappedPositionPnlAmountInCollateral = uncappedPositionPnlUsd.toUint256() / collateralTokenPrice;
-            sizeDeltaInTokens =
-                collateralDelta.mulDiv(position.numbers.sizeInTokens, uncappedPositionPnlAmountInCollateral);
-
-            uint256 sizeDeltaUsd =
-                collateralDelta.mulDiv(position.numbers.sizeInUsd, uncappedPositionPnlAmountInCollateral);
+            uint256 uncappedPositionPnlAmount = uncappedPositionPnlUsd.toUint256() / collateralTokenPrice;
+            sizeDeltaInTokens = collateralDelta.mulDiv(position.numbers.sizeInTokens, uncappedPositionPnlAmount);
+            uint256 sizeDeltaUsd = collateralDelta.mulDiv(position.numbers.sizeInUsd, uncappedPositionPnlAmount);
             uint256 minCollateralAmount = _getMinCollateralAmount(
-                IDataStore(positionParams.dataStore),
-                pricesParams.market,
-                position.numbers.sizeInUsd,
-                -int256(sizeDeltaUsd),
-                collateralTokenPrice,
-                positionParams.isLong
+                InternalGetMinCollateralAmount({
+                    market: pricesParams.market,
+                    dataStore: positionParams.dataStore,
+                    sizeInUsd: position.numbers.sizeInUsd,
+                    sizeDeltaUsd: -int256(sizeDeltaUsd),
+                    collateralTokenPrice: collateralTokenPrice,
+                    isLong: positionParams.isLong
+                })
             );
             if (minCollateralAmount > position.numbers.collateralAmount - initialCollateralDelta) {
                 initialCollateralDelta = position.numbers.collateralAmount - minCollateralAmount;
@@ -280,6 +277,23 @@ library GmxV2Lib {
         return positionInfo;
     }
 
+    /// @dev returns pnls and token size
+    /// Note: pnl is always is realized when decreasing
+    function _getPositionPnl(GetPosition calldata positionParams, GetPrices calldata pricesParams, uint256 sizeDeltaUsd)
+        private
+        view
+        returns (int256 positionPnlUsd, int256 uncappedPositionPnlUsd, uint256 sizeDeltaInTokens)
+    {
+        MarketUtils.MarketPrices memory prices = _getPrices(pricesParams.oracle, pricesParams.market);
+        bytes32 positionKey = _getPositionKey(
+            positionParams.account, positionParams.marketToken, positionParams.collateralToken, positionParams.isLong
+        );
+        (positionPnlUsd, uncappedPositionPnlUsd, sizeDeltaInTokens) = IReader(positionParams.reader).getPositionPnlUsd(
+            IDataStore(positionParams.dataStore), pricesParams.market, prices, positionKey, sizeDeltaUsd
+        );
+        return (positionPnlUsd, uncappedPositionPnlUsd, sizeDeltaInTokens);
+    }
+
     /// @dev get all prices of maket tokens including long, short, and index tokens
     /// the return type is like the type that is required by gmx
     function _getPrices(address oracle, Market.Props calldata market)
@@ -319,32 +333,27 @@ library GmxV2Lib {
         return result.priceImpactUsd;
     }
 
-    function _getMinCollateralAmount(
-        IDataStore dataStore,
-        Market.Props calldata market,
-        uint256 sizeInUsd,
-        int256 sizeDeltaUsd,
-        uint256 collateralTokenPrice,
-        bool isLong
-    ) private view returns (uint256) {
+    function _getMinCollateralAmount(InternalGetMinCollateralAmount memory params) private view returns (uint256) {
         // the min collateral factor will increase as the open interest for a market increases
         // this may lead to previously created limit increase orders not being executable
         //
         // the position's pnl is not factored into the remainingCollateralUsd value, since
         // factoring in a positive pnl may allow the user to manipulate price and bypass this check
         // it may be useful to factor in a negative pnl for this check, this can be added if required
-        uint256 minCollateralFactor =
-            MarketUtils.getMinCollateralFactorForOpenInterest(dataStore, market, sizeDeltaUsd, isLong);
+        uint256 minCollateralFactor = MarketUtils.getMinCollateralFactorForOpenInterest(
+            IDataStore(params.dataStore), params.market, params.sizeDeltaUsd, params.isLong
+        );
 
-        uint256 minCollateralFactorForMarket = MarketUtils.getMinCollateralFactor(dataStore, market.marketToken);
+        uint256 minCollateralFactorForMarket =
+            MarketUtils.getMinCollateralFactor(IDataStore(params.dataStore), params.market.marketToken);
         // use the minCollateralFactor for the market if it is larger
         if (minCollateralFactorForMarket > minCollateralFactor) {
             minCollateralFactor = minCollateralFactorForMarket;
         }
 
         uint256 minCollateralUsdForLeverage =
-            Precision.applyFactor((sizeInUsd.toInt256() + sizeDeltaUsd).toUint256(), minCollateralFactor);
+            Precision.applyFactor((params.sizeInUsd.toInt256() + params.sizeDeltaUsd).toUint256(), minCollateralFactor);
 
-        return minCollateralUsdForLeverage / collateralTokenPrice;
+        return minCollateralUsdForLeverage / params.collateralTokenPrice;
     }
 }
