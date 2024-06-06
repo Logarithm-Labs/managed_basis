@@ -69,10 +69,11 @@ contract ManagedBasisStrategy is
         uint256 userDepositLimit;
         uint256 strategyDepostLimit;
         // uint256 strategyCapacity;
-        uint256 assetsToClaim;
+        uint256 assetsToClaim; // asset balance that is processed for withdraws
         uint256 pendingUtilization;
         uint256 pendingDeutilization;
-        uint256 pendingAmountToRemoveFromHedge; // accumulated amount to withdraw from hedge
+        uint256 pendingDecreaseCollateral;
+        uint256 totalPendingWithdraw; // total amount of asset that remains to be withdrawn
         uint256 withdrawnFromSpot; // asset amount withdrawn from spot that is not yet processed
         uint256 withdrawnFromIdle; // asset amount withdrawn from idle that is not yet processed
         uint256 idleImbalance; // imbalance in idle assets between spot and hedge due to withdraws from idle
@@ -252,6 +253,7 @@ contract ManagedBasisStrategy is
         if (idle >= assets) {
             IERC20(asset()).safeTransfer(receiver, assets);
             $.idleImbalance += assets.mulDiv(PRECISION, PRECISION + $.targetLeverage);
+            $.pendingUtilization -= assets;
         } else {
             uint128 counter = $.requestCounter[owner];
 
@@ -273,6 +275,7 @@ contract ManagedBasisStrategy is
             uint256 remainingAmountToWithdrawFromSpot =
                 remainingAmountToWithdraw.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
 
+            $.totalPendingWithdraw += remainingAmountToWithdraw;
             $.pendingDeutilization += $.oracle.convertTokenAmount(asset(), product(), remainingAmountToWithdrawFromSpot);
             $.pendingUtilization -= idle;
             $.idleImbalance += idle.mulDiv(PRECISION, PRECISION + $.targetLeverage);
@@ -343,13 +346,13 @@ contract ManagedBasisStrategy is
 
     function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 baseShares = _convertToShares(assets);
+        uint256 baseShares = convertToShares(assets);
         return baseShares.mulDiv(PRECISION - $.entryCost, PRECISION);
     }
 
     function previewMint(uint256 shares) public view virtual override returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 baseAssets = _convertToAssets(shares, Math.Rounding.Ceil);
+        uint256 baseAssets = convertToAssets(shares);
         return baseAssets.mulDiv(PRECISION, PRECISION - $.entryCost);
     }
 
@@ -398,6 +401,8 @@ contract ManagedBasisStrategy is
         uint256 spotExecutionPrice = amount.mulDiv(PRECISION, amountOut, Math.Rounding.Ceil);
         IPositionManager($.positionManager).increasePositionSize(amountOut, spotExecutionPrice);
 
+        $.utilizing = true;
+
         emit Utilize(msg.sender, amount, amountOut);
     }
 
@@ -412,7 +417,7 @@ contract ManagedBasisStrategy is
 
         // actual deutilize amount is min of amount, product balance and pending deutilization
         amount = amount > productBalance ? productBalance : amount;
-        amount = amouunt > $.pendingDeutilization ? $.pendingDeutilization : amount;
+        amount = amount > $.pendingDeutilization ? $.pendingDeutilization : amount;
 
         // can only deutilize when amount is positive
         if (amount == 0) {
@@ -482,100 +487,150 @@ contract ManagedBasisStrategy is
         return $.currentRound;
     }
 
-    function afterExecuteUtilization(bool isUtilize, bool isSuccess, uint256 amountExecuted, uint256 executionCost)
-        external
-    {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+    /*//////////////////////////////////////////////////////////////
+                    POSITION MANAGER CALLBACKS LOGIC
+    //////////////////////////////////////////////////////////////*/
 
+    function afterIncreasePositionSize() external {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         if (msg.sender != $.positionManager) {
-            revert Errors.CallerNotStrategy(msg.sender, $.positionManager);
+            revert Errors.CallerNotPositionManager();
         }
 
         if (!$.utilizing) {
             revert Errors.NotUtilizing();
         }
+
+        // TODO
+    }
+
+    function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bool isSuccess) external {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        if (msg.sender != $.positionManager) {
+            revert Errors.CallerNotPositionManager();
+        }
+
+        if (!$.utilizing) {
+            revert Errors.NotUtilizing();
+        }
+
         if (isSuccess) {
-            if (!$.rebalancing) {
-                if (isUtilize) {
-                    // TODO
-                } else {
-                    // processing withdraw requests
-                    uint256 cacheWithdrawnFromSpot = $.withdrawnFromSpot;
-                    uint256 cacheWithdrawnFromIdle = $.withdrawnFromIdle;
-                    uint256 amountAvailable =
-                        cacheWithdrawnFromSpot + cacheWithdrawnFromIdle + amountExecuted + executionCost;
-                    uint256 pendingDecreaseCollateral;
-                    uint256 index = 0;
-                    while (amountAvailable > 0) {
-                        bytes32 requestId0 = $.activeWithdrawRequests[index];
-                        WithdrawState memory request0 = $.withdrawRequests[requestId0];
-                        uint256 executedAmount = request0.executedFromSpot + request0.executedFromIdle
-                            + request0.executedFromHedge + request0.executionCost;
-                        uint256 remainingAmount = request0.requestedAmount - executedAmount;
-                        if (amountAvailable >= remainingAmount) {
-                            // remaining amount is enough fully cover current request
+            if ($.rebalancing) {
+                // processing rebalance request
+            } else {
+                // processing withdraw requests
+                uint256 cacheWithdrawnFromSpot = $.withdrawnFromSpot;
+                uint256 cacheWithdrawnFromIdle = $.withdrawnFromIdle;
+                uint256 amountAvailable =
+                    cacheWithdrawnFromSpot + cacheWithdrawnFromIdle + amountExecuted + executionCost;
 
-                            // allocation of withdrawn assets rounded to floor
-                            uint256 allocationOfSpot = cacheWithdrawnFromSpot.mulDiv(remainingAmount, amountAvailable);
-                            uint256 allocationOfIdle = cacheWithdrawnFromIdle.mulDiv(remainingAmount, amountAvailable);
-                            uint256 allocationOfHedge = amountExecuted.mulDiv(remainingAmount, amountAvailable);
-                            uint256 allocationOfCost = executionCost.mulDiv(remainingAmount, amountAvailable);
+                // as all amountAvailable will be processed, we can update the totalPendingWithdrawState
+                uint256 totalWithdraw = $.totalPendingWithdraw;
+                (, totalWithdraw) = totalWithdraw.trySub(amountAvailable);
+                $.totalPendingWithdraw = totalWithdraw;
 
-                            // dust goes to costs
-                            uint256 dust = remainingAmount
-                                - (allocationOfSpot + allocationOfIdle + allocationOfHedge + allocationOfCost);
-                            allocationOfCost += dust;
+                // amountExecuted should be recorded is assetsToClaim
+                $.assetsToClaim += amountExecuted;
 
-                            request0.executedFromSpot += allocationOfSpot;
-                            request0.executedFromIdle += allocationOfIdle;
-                            request0.executedFromHedge += allocationOfHedge;
-                            request0.executionCost += allocationOfCost;
+                uint256 cacheDecreaseCollateral = $.pendingDecreaseCollateral;
+                uint256 index;
 
-                            amountAvailable -= remainingAmount;
-                            pendingDecreaseCollateral += allocationOfHedge;
+                while (amountAvailable > 0) {
+                    bytes32 requestId0 = $.activeWithdrawRequests[index];
+                    WithdrawState memory request0 = $.withdrawRequests[requestId0];
+                    uint256 executedAmount = request0.executedFromSpot + request0.executedFromIdle
+                        + request0.executedFromHedge + request0.executionCost;
+                    uint256 remainingAmount = request0.requestedAmount - executedAmount;
+                    if (amountAvailable >= remainingAmount) {
+                        // remaining amount is enough fully cover current request
 
-                            cacheWithdrawnFromSpot -= allocationOfSpot;
-                            cacheWithdrawnFromIdle -= allocationOfIdle;
-                            amountExecuted -= allocationOfHedge;
-                            executionCost -= allocationOfCost;
+                        // allocation of withdrawn assets rounded to floor
+                        uint256 allocationOfSpot = cacheWithdrawnFromSpot.mulDiv(remainingAmount, amountAvailable);
+                        uint256 allocationOfIdle = cacheWithdrawnFromIdle.mulDiv(remainingAmount, amountAvailable);
+                        uint256 allocationOfHedge = amountExecuted.mulDiv(remainingAmount, amountAvailable);
+                        uint256 allocationOfCost = executionCost.mulDiv(remainingAmount, amountAvailable);
 
-                            // if requested amount is fulfilled push to it closed
-                            $.closedWithdrawRequests.push(requestId0);
+                        // dust goes to costs
+                        uint256 dust = remainingAmount
+                            - (allocationOfSpot + allocationOfIdle + allocationOfHedge + allocationOfCost);
 
-                            index++;
-                        } else {
-                            // redistribute remaining allocations, dust goes to costs
-                            uint256 dust = amountAvailable
-                                - (cacheWithdrawnFromSpot + cacheWithdrawnFromIdle + amountExecuted + executionCost);
+                        request0.executedFromSpot += allocationOfSpot;
+                        request0.executedFromIdle += allocationOfIdle;
+                        request0.executedFromHedge += allocationOfHedge;
+                        request0.executionCost += (allocationOfCost + dust);
 
-                            request0.executedFromSpot += cacheWithdrawnFromSpot;
-                            request0.executedFromIdle += cacheWithdrawnFromIdle;
-                            request0.executedFromHedge += amountExecuted;
-                            request0.executionCost += executionCost + dust;
+                        amountAvailable -= (remainingAmount - dust);
+                        cacheDecreaseCollateral += allocationOfHedge;
 
-                            amountAvailable = 0;
-                            pendingDecreaseCollateral += amountExecuted;
-                        }
+                        cacheWithdrawnFromSpot -= allocationOfSpot;
+                        cacheWithdrawnFromIdle -= allocationOfIdle;
+                        amountExecuted -= allocationOfHedge;
+                        executionCost -= allocationOfCost;
 
-                        // update request storage state
-                        $.withdrawRequests[requestId0] = request0;
+                        // if requested amount is fulfilled push to it closed
+                        $.closedWithdrawRequests.push(requestId0);
+
+                        index++;
+                    } else {
+                        // redistribute remaining allocations
+
+                        request0.executedFromSpot += cacheWithdrawnFromSpot;
+                        request0.executedFromIdle += cacheWithdrawnFromIdle;
+                        request0.executedFromHedge += amountExecuted;
+                        request0.executionCost += executionCost;
+
+                        amountAvailable = 0;
                     }
 
-                    // update global state
-                    $.withdrawnFromSpot = 0;
-                    $.withdrawnFromIdle = 0;
+                    // update request storage state
+                    $.withdrawRequests[requestId0] = request0;
+                }
 
-                    // remove fulfilled requests from activeWithdrawRequests based on index
-                    if (index > 0) {
-                        for (uint256 i = 0; i < $.activeWithdrawRequests.length - index; i++) {
-                            $.activeWithdrawRequests[i] = $.activeWithdrawRequests[i + index];
-                        }
-                        for (uint256 j = 0; j < index; j++) {
-                            $.activeWithdrawRequests.pop();
-                        }
+                // update global state
+                $.withdrawnFromSpot = 0;
+                $.withdrawnFromIdle = 0;
+                // recalculate pendingDeutilization based on the new oracle price
+                $.pendingDeutilization =
+                    totalWithdraw > 0 ? $.oracle.convertTokenAmount(asset(), product(), totalWithdraw) : 0;
+                $.pendingDecreaseCollateral = cacheDecreaseCollateral;
+
+                // remove fulfilled requests from activeWithdrawRequests based on index
+                if (index > 0) {
+                    for (uint256 i = 0; i < $.activeWithdrawRequests.length - index; i++) {
+                        $.activeWithdrawRequests[i] = $.activeWithdrawRequests[i + index];
                     }
+                    for (uint256 j = 0; j < index; j++) {
+                        $.activeWithdrawRequests.pop();
+                    }
+
+                    // request decrease collateral from position manager if there are any fulfilled requests
+
+                    IPositionManager($.positionManager).decreasePositionCollateral(cacheDecreaseCollateral);
                 }
             }
+        } else {
+            // processing execution revert
+        }
+    }
+
+    function afterIncreasePositionCollaterla() external {
+        // TODO
+    }
+
+    function afterDecreasePositionCollateral(uint256 amount, bool isSuccess) external {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        if (msg.sender != $.positionManager) {
+            revert Errors.CallerNotPositionManager();
+        }
+
+        if ($.rebalancing) {
+            // processing rebalance request
+        } else {
+            // processing withdraw requests
+
+            IERC20(asset()).safeTransferFrom($.positionManager, address(this), amount);
         }
     }
 }

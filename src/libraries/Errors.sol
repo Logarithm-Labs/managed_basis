@@ -58,8 +58,6 @@ library Errors {
 
     error ActiveRequestIsNotClosed(bytes32 requestId);
 
-    error InvalidRequestId(bytes32 requestId, bytes32 activeRequestId);
-
     error AlreadyUtilizing();
 
     error NotUtilizing();
@@ -68,5 +66,5 @@ library Errors {
 
     error ZeroAmountUtilization();
 
-    error CallerNotPositionManager(address caller, address positionManager);
+    error CallerNotPositionManager();
 }
