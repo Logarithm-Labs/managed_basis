@@ -341,6 +341,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
             _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing = 0;
             // refund fee
             (bool success,) = msg.sender.call{value: totalExecutionFee}("");
+            assert(success);
             return (decreaseOrderKey, increaseOrderKey);
         }
 

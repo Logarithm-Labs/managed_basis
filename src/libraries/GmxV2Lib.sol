@@ -206,7 +206,7 @@ library GmxV2Lib {
         GetPrices calldata pricesParams,
         uint256 sizeDeltaUsd,
         bool isIncrease
-    ) external returns (uint256) {
+    ) external view returns (uint256) {
         Position.Props memory position = _getPosition(positionParams);
         Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
         int256 priceImpactUsd = _getPriceImpactUsd(
