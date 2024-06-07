@@ -130,16 +130,16 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
 
     modifier afterOrderCreated() {
         vm.startPrank(address(strategy));
-        positionManager.increaseCollateral(300 * USDC_PRECISION);
-        positionManager.increaseSize(1 ether, 0);
+        positionManager.increasePositionCollateral(300 * USDC_PRECISION);
+        positionManager.increasePositionSize(1 ether, 0);
         vm.stopPrank();
         _;
     }
 
     modifier afterHavingPosition() {
         vm.startPrank(address(strategy));
-        positionManager.increaseCollateral(300 * USDC_PRECISION);
-        bytes32 orderKey = positionManager.increaseSize(1 ether, 0);
+        positionManager.increasePositionCollateral(300 * USDC_PRECISION);
+        bytes32 orderKey = positionManager.increasePositionSize(1 ether, 0);
         vm.startPrank(gmxKeeper);
         _executeOrder(orderKey);
         _;
@@ -172,24 +172,24 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
 
     function test_increasePosition_creatOrder() public {
         vm.startPrank(address(strategy));
-        positionManager.increaseCollateral(300 * USDC_PRECISION);
-        bytes32 orderKey = positionManager.increaseSize(1 ether, 0);
+        positionManager.increasePositionCollateral(300 * USDC_PRECISION);
+        bytes32 orderKey = positionManager.increasePositionSize(1 ether, 0);
         assertTrue(orderKey != bytes32(0));
     }
 
-    function test_increaseCollateral_revert_whenCallingFromOtherThanStrategy() public {
+    function test_increasePositionCollateral_revert_whenCallingFromOtherThanStrategy() public {
         address anyone = makeAddr("anyone");
         vm.deal(anyone, 1 ether);
         vm.expectRevert(Errors.CallerNotStrategy.selector);
         vm.startPrank(anyone);
-        positionManager.increaseCollateral(300 * USDC_PRECISION);
+        positionManager.increasePositionCollateral(300 * USDC_PRECISION);
     }
 
     function test_increasePosition_executeOrder() public {
         uint256 usdcBalanceOfStartegyBefore = IERC20(USDC).balanceOf(address(strategy));
         vm.startPrank(address(strategy));
-        positionManager.increaseCollateral(300 * USDC_PRECISION);
-        bytes32 orderKey = positionManager.increaseSize(1 ether, 0);
+        positionManager.increasePositionCollateral(300 * USDC_PRECISION);
+        bytes32 orderKey = positionManager.increasePositionSize(1 ether, 0);
         vm.startPrank(gmxKeeper);
         _executeOrder(orderKey);
         ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
@@ -202,8 +202,8 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
     // function test_increasePosition_cancelOrder() public {
     //     uint256 usdcBalanceOfStartegyBefore = IERC20(USDC).balanceOf(address(strategy));
     //     vm.startPrank(address(strategy));
-    //     positionManager.increaseCollateral(300 * USDC_PRECISION);
-    //     bytes32 orderKey = positionManager.increaseSize(1 ether, 0);
+    //     positionManager.increasePositionCollateral(300 * USDC_PRECISION);
+    //     bytes32 orderKey = positionManager.increasePositionSize(1 ether, 0);
     //     assertEq(usdcBalanceOfStartegyBefore - 300 * USDC_PRECISION, IERC20(USDC).balanceOf(address(strategy)));
     //     vm.startPrank(gmxKeeper);
     //     _executeOrder(orderKey);
@@ -214,8 +214,8 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
     // function test_increasePosition_revert_createOrder() public afterOrderCreated {
     //     vm.startPrank(address(strategy));
     //     vm.expectRevert(Errors.AlreadyPending.selector);
-    //     positionManager.increaseCollateral(300 * USDC_PRECISION);
-    //     bytes32 orderKey = positionManager.increaseSize(1 ether, 0);
+    //     positionManager.increasePositionCollateral(300 * USDC_PRECISION);
+    //     bytes32 orderKey = positionManager.increasePositionSize(1 ether, 0);
     // }
 
     // function test_decreasePosition_creatOrder() public afterHavingPosition {
@@ -266,14 +266,14 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
     //     assertEq(positionManager.totalAssets(), 589989774);
     // }
 
-    function test_decreaseCollateral_createOrders() public afterHavingPosition {
+    function test_decreasePositionCollateral_createOrders() public afterHavingPosition {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         vm.startPrank(address(strategy));
-        positionManager.decreaseCollateral(200 * USDC_PRECISION);
+        positionManager.decreasePositionCollateral(200 * USDC_PRECISION);
     }
 
-    function test_decreaseCollateral_whenInitCollateralEngouh() public afterHavingPosition {
+    function test_decreasePositionCollateral_whenInitCollateralEngouh() public afterHavingPosition {
         uint256 collateralDelta = 200 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
@@ -282,7 +282,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
-        (bytes32 increaseKey, bytes32 decreaseKey) = positionManager.decreaseCollateral(collateralDelta);
+        (bytes32 increaseKey, bytes32 decreaseKey) = positionManager.decreasePositionCollateral(collateralDelta);
         _executeOrder(decreaseKey);
         _executeOrder(increaseKey);
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
@@ -299,7 +299,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertEq(strategyBalanceAfter, strategyBalanceBefore + collateralDelta);
     }
 
-    function test_decreaseCollateral_whenInitialCollateralNotSufficient() public afterHavingPosition {
+    function test_decreasePositionCollateral_whenInitialCollateralNotSufficient() public afterHavingPosition {
         uint256 collateralDelta = 300 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
@@ -315,7 +315,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         console.log("balance", strategyBalanceBefore);
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
-        (bytes32 decreaseKey, bytes32 increaseKey) = positionManager.decreaseCollateral(collateralDelta);
+        (bytes32 decreaseKey, bytes32 increaseKey) = positionManager.decreasePositionCollateral(collateralDelta);
         _executeOrder(decreaseKey);
         _executeOrder(increaseKey);
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();

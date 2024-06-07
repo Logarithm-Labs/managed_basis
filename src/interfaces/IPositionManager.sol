@@ -14,9 +14,6 @@ interface IPositionManager {
 
     function setKeeper(address keeper) external;
 
-    /// @notice total asset token amount that can be claimable from gmx position when closing it
-    ///
-    /// @dev this amount includes the pending asset token amount
     function positionNetBalance() external view returns (uint256);
 
     function increasePositionCollateral(uint256 collateralAmount) external;

@@ -187,7 +187,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// Note: this function is called whenever users deposit tokens, so not create order
     ///
     /// @param assetsToPositionManager is the amount to trnasfer to position manager
-    function increaseCollateral(uint256 assetsToPositionManager) external override onlyStrategy {
+    function increasePositionCollateral(uint256 assetsToPositionManager) external override onlyStrategy {
         IERC20(collateralToken()).safeTransferFrom(strategy(), address(this), assetsToPositionManager);
     }
 
@@ -198,7 +198,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @param spotExecutionPrice is the spot execution price in usd/product
     ///
     /// @return orderKey
-    function increaseSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice)
+    function increasePositionSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice)
         external
         override
         onlyStrategy
@@ -238,7 +238,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @param spotExecutionPrice is the spot execution price in usd/product
     ///
     /// @return orderKey
-    function decreaseSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice)
+    function decreasePositionSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice)
         external
         override
         onlyStrategy
@@ -278,7 +278,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     ///
     /// @return decreaseOrderKey is the order key of decreasing
     /// @return increaseOrderKey is the order key of increasing
-    function decreaseCollateral(uint256 collateralDelta)
+    function decreasePositionCollateral(uint256 collateralDelta)
         external
         override
         onlyStrategy
@@ -508,8 +508,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
             uint256 executedHedgeInUsd =
                 order.numbers.sizeDeltaUsd.mulDiv(PRECISION, IBasisStrategy(order.addresses.receiver).targetLeverage());
             executedHedgeAmount = executedHedgeInUsd / collateralTokenPrice;
-            // increase this value only when decreaseSize function is called
-            // Note: decrease order can be created by decreaseCollateral function
+            // increase this value only when decreasePositionSize function is called
+            // Note: decrease order can be created by decreasePositionCollateral function
             _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing +=
                 eventData.uintItems.items[0].value;
         }
@@ -558,7 +558,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @notice total asset token amount that can be claimable from gmx position when closing it
     ///
     /// @dev this amount includes the pending asset token amount and idle assets
-    function totalAssets() public view override returns (uint256) {
+    function positionNetBalance() public view override returns (uint256) {
         address _factory = factory();
         uint256 positionNetAmount = GmxV2Lib.getPositionNetAmount(
             _getPositionParams(_factory), _getPricesParams(_factory), IBasisGmxFactory(_factory).referralStorage()
