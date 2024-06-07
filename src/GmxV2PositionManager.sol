@@ -640,7 +640,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         if (params.isIncrease) {
             uint256 idleCollateralAmount = IERC20(params.collateralToken).balanceOf(address(this));
             if (idleCollateralAmount > 0) {
-                IERC20(params.collateralToken).safeTransfer(params.orderVault, params.collateralDelta);
+                IERC20(params.collateralToken).safeTransfer(params.orderVault, idleCollateralAmount);
                 params.collateralDelta = idleCollateralAmount;
                 _getGmxV2PositionManagerStorage()._pendingCollateralAmount = idleCollateralAmount;
             }
