@@ -12,22 +12,17 @@ interface IPositionManager {
     /// `API_VERSION`.
     function apiVersion() external view returns (string memory);
 
-    /// @dev set position manager's keeper
     function setKeeper(address keeper) external;
 
-    /// @notice total asset token amount that can be claimable from gmx position when closing it
-    ///
-    /// @dev this amount includes the pending asset token amount
     function totalAssets() external view returns (uint256);
 
     function increaseCollateral(uint256 assetsToPositionManager) external;
 
-    function increaseSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice) external payable returns (bytes32);
+    function increaseSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice) external returns (bytes32);
 
-    function decreaseSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice) external payable returns (bytes32);
+    function decreaseSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice) external returns (bytes32);
 
     function decreaseCollateral(uint256 collateralDelta)
         external
-        payable
         returns (bytes32 decreaseOrderKey, bytes32 increaseOrderKey);
 }

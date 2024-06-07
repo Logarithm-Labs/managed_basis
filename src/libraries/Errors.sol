@@ -18,6 +18,8 @@ library Errors {
     error CallerNotStrategy();
     /// @notice only callable by keeper
     error CallerNotKeeper();
+    /// @notice only callable by position managers
+    error CallerNotPositionManager();
     /// @notice invalid maket config when deploying pos manager
     error InvalidMarket();
     /// @notice asset and product are not matched with short and long tokens
