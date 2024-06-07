@@ -439,7 +439,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     }
 
     /// @inheritdoc IOrderCallbackReceiver
-    function afterOrderExecution(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
+    function afterOrderExecution(bytes32 key, Order.Props calldata order, EventUtils.EventLogData calldata eventData)
         external
         override
     {
@@ -451,52 +451,43 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
         uint256 executedHedgeAmount;
 
         uint256 spotExecutionPrice = _getGmxV2PositionManagerStorage()._spotExecutionPrice;
+        uint256 collateralTokenPrice = IOracle(IBasisGmxFactory(factory()).oracle()).getAssetPrice(collateralToken());
+
         // spotExecutionPrice > 0 means adjust sizes that needs the execution cost calc
         if (spotExecutionPrice > 0) {
             uint256 _sizeInTokensBefore = _getGmxV2PositionManagerStorage()._sizeInTokensBefore;
             uint256 _sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
-            uint256 collateralTokenPrice =
-                IOracle(IBasisGmxFactory(factory()).oracle()).getAssetPrice(collateralToken());
-            if (order.numbers.orderType == Order.OrderType.MarketIncrease) {
-                uint256 sizeDeltaInTokens = _sizeInTokensAfter - _sizeInTokensBefore;
-                // executionCostInUsd = (spotExecutionPrice - hedgeExectuionPrice) * sizeDelta
-                // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
-                int256 executionCostInUsd =
-                    (spotExecutionPrice * sizeDeltaInTokens).toInt256() - order.numbers.sizeDeltaUsd.toInt256();
-                uint256 pendingPositionFeeUsd = _getGmxV2PositionManagerStorage()._pendingPositionFeeUsd;
-                _getGmxV2PositionManagerStorage()._pendingPositionFeeUsd = 0;
-                executionCostInUsd += pendingPositionFeeUsd.toInt256();
-
-                executionCostAmount = executionCostInUsd / collateralTokenPrice.toInt256();
-            } else {
-                uint256 sizeDeltaInTokens = _sizeInTokensBefore - _sizeInTokensAfter;
-                // executionCostInUsd = (hedgeExectuionPrice - spotExecutionPrice) * sizeDelta
-                // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
-                int256 executionCostInUsd =
-                    order.numbers.sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256();
-                uint256 pendingPositionFeeUsd = _getGmxV2PositionManagerStorage()._pendingPositionFeeUsd;
-                _getGmxV2PositionManagerStorage()._pendingPositionFeeUsd = 0;
-                executionCostInUsd += pendingPositionFeeUsd.toInt256();
-
-                // receiver is always strategy
-                uint256 executedHedgeInUsd = order.numbers.sizeDeltaUsd.mulDiv(
-                    PRECISION, IBasisStrategy(order.addresses.receiver).targetLeverage()
-                );
-                executionCostAmount = executionCostInUsd / collateralTokenPrice.toInt256();
-                executedHedgeAmount = executedHedgeInUsd / collateralTokenPrice;
-                assert(eventData.addressItems.items[0].value == collateralToken());
-                // increase this value only when decreaseSize function is called
-                // Note: decrease order can be created by decreaseCollateral function
-                _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing +=
-                    eventData.uintItems.items[0].value;
-            }
+            bool isIncrease = order.numbers.orderType == Order.OrderType.MarketIncrease;
+            uint256 sizeDeltaInTokens =
+                isIncrease ? _sizeInTokensAfter - _sizeInTokensBefore : _sizeInTokensBefore - _sizeInTokensAfter;
+            // executionCostInUsd = (spotExecutionPrice - hedgeExectuionPrice) * sizeDelta
+            // or = (hedgeExectuionPrice - spotExecutionPrice) * sizeDelta
+            // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
+            int256 executionCostInUsd = isIncrease
+                ? (spotExecutionPrice * sizeDeltaInTokens).toInt256() - order.numbers.sizeDeltaUsd.toInt256()
+                : order.numbers.sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256();
+            uint256 pendingPositionFeeUsd = _getGmxV2PositionManagerStorage()._pendingPositionFeeUsd;
+            _getGmxV2PositionManagerStorage()._pendingPositionFeeUsd = 0;
+            executionCostInUsd += pendingPositionFeeUsd.toInt256();
+            executionCostAmount = executionCostInUsd / collateralTokenPrice.toInt256();
             _wipeExecutionCostCalcInfo();
         }
 
-        // wipe the realizedPnl info
         if (_getGmxV2PositionManagerStorage()._isDecreasingCollateral) {
+            // when decreasing collateral
+            // wipe the realizedPnl info
             _getGmxV2PositionManagerStorage()._isDecreasingCollateral = false;
             _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing = 0;
+        } else if (order.numbers.orderType == Order.OrderType.MarketDecrease) {
+            // when decreasing size
+            // receiver is always strategy
+            uint256 executedHedgeInUsd =
+                order.numbers.sizeDeltaUsd.mulDiv(PRECISION, IBasisStrategy(order.addresses.receiver).targetLeverage());
+            executedHedgeAmount = executedHedgeInUsd / collateralTokenPrice;
+            // increase this value only when decreaseSize function is called
+            // Note: decrease order can be created by decreaseCollateral function
+            _getGmxV2PositionManagerStorage()._realizedPnlInCollateralTokenWhenDecreasing +=
+                eventData.uintItems.items[0].value;
         }
 
         IBasisStrategy(order.addresses.receiver).hedgeCallback(true, executionCostAmount, executedHedgeAmount);
@@ -507,8 +498,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, UUPSU
     /// @inheritdoc IOrderCallbackReceiver
     function afterOrderCancellation(
         bytes32 key,
-        Order.Props memory order,
-        EventUtils.EventLogData memory /* eventData */
+        Order.Props calldata order,
+        EventUtils.EventLogData calldata /* eventData */
     ) external override {
         _validateOrderHandler(key);
         _setPendingOrderKey(bytes32(0), order.numbers.orderType == Order.OrderType.MarketIncrease);
