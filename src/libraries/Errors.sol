@@ -50,9 +50,23 @@ library Errors {
     error InsufficientIdleBalanceForUtilize(uint256 idleBalance, uint256 utilizeAmount);
     error InsufficientProdcutBalanceForDeutilize(uint256 productBalance, uint256 deutilizeAmount);
 
+    error UnsupportedSwapType();
+
     // @notice upkeep validation
     error UnAuthorizedForwarder(address fowarder);
 
     // @notice there is no positive when decrease collateral
     error NotPositivePnl();
+
+    error ActiveRequestIsNotClosed(bytes32 requestId);
+
+    error AlreadyUtilizing();
+
+    error NotUtilizing();
+
+    error NegativePendingUtilization(uint256 pendingUtilization);
+
+    error ZeroAmountUtilization();
+
+    error CallerNotPositionManager();
 }
