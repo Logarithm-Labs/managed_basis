@@ -42,7 +42,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         bool isIncrease;
         address exchangeRouter;
         address orderVault;
-        address strategy;
         address collateralToken;
         uint256 collateralDelta;
         uint256 sizeDeltaUsd;
@@ -214,7 +213,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 isIncrease: true,
                 exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
                 orderVault: IBasisGmxFactory(_factory).orderVault(),
-                strategy: strategy(),
                 collateralToken: collateralToken(),
                 collateralDelta: 0,
                 sizeDeltaUsd: sizeDeltaUsd,
@@ -252,7 +250,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 isIncrease: false,
                 exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
                 orderVault: IBasisGmxFactory(_factory).orderVault(),
-                strategy: strategy(),
                 collateralToken: collateralToken(),
                 collateralDelta: 0,
                 sizeDeltaUsd: sizeDeltaUsd,
@@ -288,7 +285,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                     isIncrease: true,
                     exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
                     orderVault: IBasisGmxFactory(_factory).orderVault(),
-                    strategy: strategy(),
                     collateralToken: collateralToken(),
                     collateralDelta: shortfallCollateral,
                     sizeDeltaUsd: 0,
@@ -331,7 +327,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 isIncrease: false,
                 exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
                 orderVault: IBasisGmxFactory(_factory).orderVault(),
-                strategy: strategy(),
                 collateralToken: collateralToken(),
                 collateralDelta: initialCollateralDelta,
                 sizeDeltaUsd: sizeDeltaUsdForDecrease,
@@ -349,7 +344,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                     isIncrease: true,
                     exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
                     orderVault: IBasisGmxFactory(_factory).orderVault(),
-                    strategy: strategy(),
                     collateralToken: collateralToken(),
                     collateralDelta: 0,
                     sizeDeltaUsd: sizeDeltaUsdForIncrease,
@@ -383,7 +377,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                         isIncrease: false,
                         exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
                         orderVault: IBasisGmxFactory(_factory).orderVault(),
-                        strategy: strategy(),
                         collateralToken: collateralToken(),
                         collateralDelta: 0,
                         sizeDeltaUsd: sizeDeltaUsd,
@@ -401,7 +394,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                         isIncrease: true,
                         exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
                         orderVault: IBasisGmxFactory(_factory).orderVault(),
-                        strategy: strategy(),
                         collateralToken: collateralToken(),
                         collateralDelta: 0,
                         sizeDeltaUsd: sizeDeltaUsd,
@@ -491,23 +483,22 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
             // wipe the realizedPnl info
             _getGmxV2PositionManagerStorage().isDecreasingCollateral = false;
             _getGmxV2PositionManagerStorage().realizedPnlAmountWhenDecreasing = 0;
-            IBasisStrategy(order.addresses.receiver).afterDecreasePositionCollateral(0, true);
+            IBasisStrategy(strategy()).afterDecreasePositionCollateral(0, true);
         } else if (!isIncrease) {
             // when decreasing size
-            // receiver is always strategy
             uint256 executedHedgeInUsd =
-                order.numbers.sizeDeltaUsd.mulDiv(PRECISION, IBasisStrategy(order.addresses.receiver).targetLeverage());
+                order.numbers.sizeDeltaUsd.mulDiv(PRECISION, IBasisStrategy(strategy()).targetLeverage());
             executedHedgeAmount = executedHedgeInUsd / collateralTokenPrice;
             // increase this value only when decreasePositionSize function is called
             // Note: decrease order can be created by decreasePositionCollateral function
             _getGmxV2PositionManagerStorage().realizedPnlAmountWhenDecreasing += eventData.uintItems.items[0].value;
-            IBasisStrategy(order.addresses.receiver).afterDecreasePositionSize(
+            IBasisStrategy(strategy()).afterDecreasePositionSize(
                 executedHedgeAmount,
                 executionCostAmount > 0 ? uint256(executionCostAmount) : uint256(-executionCostAmount),
                 true
             );
         } else {
-            IBasisStrategy(order.addresses.receiver).afterIncreasePositionSize(
+            IBasisStrategy(strategy()).afterIncreasePositionSize(
                 executedHedgeAmount,
                 executionCostAmount > 0 ? uint256(executionCostAmount) : uint256(-executionCostAmount),
                 true
@@ -530,11 +521,11 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         }
 
         if (_getGmxV2PositionManagerStorage().isDecreasingCollateral) {
-            IBasisStrategy(order.addresses.receiver).afterDecreasePositionCollateral(0, false);
+            IBasisStrategy(strategy()).afterDecreasePositionCollateral(0, false);
         } else if (!isIncrease) {
-            IBasisStrategy(order.addresses.receiver).afterDecreasePositionSize(0, 0, false);
+            IBasisStrategy(strategy()).afterDecreasePositionSize(0, 0, false);
         } else {
-            IBasisStrategy(order.addresses.receiver).afterIncreasePositionSize(0, 0, false);
+            IBasisStrategy(strategy()).afterIncreasePositionSize(0, 0, false);
         }
     }
 
@@ -659,7 +650,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         bytes32 orderKey = IExchangeRouter(params.exchangeRouter).createOrder(
             IBaseOrderUtils.CreateOrderParams({
                 addresses: IBaseOrderUtils.CreateOrderParamsAddresses({
-                    receiver: params.strategy, // the receiver of reduced collateral
+                    receiver: address(this), // the receiver of reduced collateral
                     callbackContract: address(this),
                     uiFeeReceiver: address(0),
                     market: marketToken(),
