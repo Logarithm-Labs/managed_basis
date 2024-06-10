@@ -26,23 +26,24 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
     /// @custom:storage-location erc7201:logarithm.storage.BasisGmxFactory
     struct BasisGmxFactoryStorage {
         // gmx config
-        address _exchangeRouter;
-        address _dataStore;
-        address _orderHandler;
-        address _orderVault;
-        address _referralStorage;
-        address _reader;
+        address exchangeRouter;
+        address dataStore;
+        address orderHandler;
+        address orderVault;
+        address referralStorage;
+        address reader;
         // strategy config
-        uint256 _callbackGasLimit;
-        bytes32 _referralCode;
+        uint256 callbackGasLimit;
+        bytes32 referralCode;
         // main storage
-        address _strategyImplementation;
-        address _positionManagerImplementation;
-        address _oracle;
-        address[] _strategies;
-        mapping(address strategy => bool) _activeStrategy;
-        mapping(address asset => mapping(address product => address)) _marketKeys;
-        mapping(address operator => bool) _isOperator;
+        address strategyImplementation;
+        address positionManagerImplementation;
+        address keeper;
+        address oracle;
+        address[] strategies;
+        mapping(address strategy => bool) activeStrategy;
+        mapping(address asset => mapping(address product => address)) marketKeys;
+        mapping(address operator => bool) isOperator;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisGmxFactory")) - 1)) & ~bytes32(uint256(0xff))
@@ -80,20 +81,20 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
             revert Errors.ZeroAddress();
         }
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        $._oracle = oracle_;
+        $.oracle = oracle_;
 
         // initialize gmx config
         address orderHandler_ = IExchangeRouter(exchangeRouter_).orderHandler();
-        $._exchangeRouter = exchangeRouter_;
-        $._dataStore = IExchangeRouter(exchangeRouter_).dataStore();
-        $._orderHandler = IExchangeRouter(exchangeRouter_).orderHandler();
-        $._orderVault = IOrderHandler(orderHandler_).orderVault();
-        $._referralStorage = IOrderHandler(orderHandler_).referralStorage();
-        $._reader = reader_;
+        $.exchangeRouter = exchangeRouter_;
+        $.dataStore = IExchangeRouter(exchangeRouter_).dataStore();
+        $.orderHandler = IExchangeRouter(exchangeRouter_).orderHandler();
+        $.orderVault = IOrderHandler(orderHandler_).orderVault();
+        $.referralStorage = IOrderHandler(orderHandler_).referralStorage();
+        $.reader = reader_;
 
         // initialze strategy config
-        $._callbackGasLimit = callbackGasLimit_;
-        $._referralCode = referralCode_;
+        $.callbackGasLimit = callbackGasLimit_;
+        $.referralCode = referralCode_;
     }
 
     function _authorizeUpgrade(address) internal virtual override onlyOwner {}
@@ -109,19 +110,19 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
 
     function setGmxReferralCode(bytes32 referralCode_) external onlyOwner {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        $._referralCode = referralCode_;
+        $.referralCode = referralCode_;
     }
 
     function setGmxCallbackGasLimit(uint256 callbackGasLimit_) external onlyOwner {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        $._callbackGasLimit = callbackGasLimit_;
+        $.callbackGasLimit = callbackGasLimit_;
     }
 
     function addOperators(address[] calldata operators) external virtual onlyOwner {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         uint256 len = operators.length;
         for (uint256 i; i < len;) {
-            $._isOperator[operators[i]] = true;
+            $.isOperator[operators[i]] = true;
             unchecked {
                 ++i;
             }
@@ -132,7 +133,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
         uint256 len = operators.length;
         for (uint256 i; i < len;) {
-            $._isOperator[operators[i]] = false;
+            $.isOperator[operators[i]] = false;
             unchecked {
                 ++i;
             }
@@ -153,7 +154,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
             if (assets[i] == address(0) || products[i] == address(0) || markets[i] == address(0)) {
                 revert Errors.ZeroAddress();
             }
-            $._marketKeys[assets[i]][products[i]] = markets[i];
+            $.marketKeys[assets[i]][products[i]] = markets[i];
             unchecked {
                 ++i;
             }
@@ -162,7 +163,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
 
     function upgradeStrategyImplementations(address implementation, bytes memory data) external virtual onlyOwner {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        address[] memory _strategies = $._strategies;
+        address[] memory _strategies = $.strategies;
         uint256 len = _strategies.length;
         for (uint256 i; i < len;) {
             UUPSUpgradeable strategy = UUPSUpgradeable(_strategies[i]);
@@ -171,7 +172,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
                 ++i;
             }
         }
-        $._strategyImplementation = implementation;
+        $.strategyImplementation = implementation;
     }
 
     function upgradePositionManagerImplementations(address implementation, bytes memory data)
@@ -180,7 +181,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
         onlyOwner
     {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        address[] memory _strategies = $._strategies;
+        address[] memory _strategies = $.strategies;
         uint256 len = _strategies.length;
         for (uint256 i; i < len;) {
             address positionManagerAddr = IBasisStrategy(_strategies[i]).positionManager();
@@ -189,7 +190,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
                 ++i;
             }
         }
-        $._positionManagerImplementation = implementation;
+        $.positionManagerImplementation = implementation;
     }
 
     function createStrategy(address asset, address product)
@@ -208,16 +209,16 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
         bytes memory initializerData = abi.encodeCall(IBasisStrategy.initialize, (asset, product, name, symbol));
 
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        strategy = address(new ERC1967Proxy($._strategyImplementation, initializerData));
+        strategy = address(new ERC1967Proxy($.strategyImplementation, initializerData));
 
         // deploy position manager proxy of this strategy
-        bytes memory posMngerInitializerData = abi.encodeCall(IPositionManager.initialize, strategy);
+        bytes memory posMngerInitializerData = abi.encodeCall(IPositionManager.initialize, (strategy, $.keeper));
 
-        positionManager = address(new ERC1967Proxy($._positionManagerImplementation, posMngerInitializerData));
+        positionManager = address(new ERC1967Proxy($.positionManagerImplementation, posMngerInitializerData));
         IBasisStrategy(strategy).setPositionManager(positionManager);
 
-        $._strategies.push(strategy);
-        $._activeStrategy[strategy] = true;
+        $.strategies.push(strategy);
+        $.activeStrategy[strategy] = true;
 
         emit StrategyCreated(strategy, positionManager, symbol, name);
     }
@@ -227,7 +228,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
             revert();
         }
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        $._activeStrategy[strategy] = true;
+        $.activeStrategy[strategy] = true;
     }
 
     function deactivateStrategy(address strategy) external virtual onlyOwner {
@@ -235,7 +236,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
             revert();
         }
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        $._activeStrategy[strategy] = false;
+        $.activeStrategy[strategy] = false;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -250,76 +251,76 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
     /// @inheritdoc IBasisGmxFactory
     function marketKey(address asset, address product) public view returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._marketKeys[asset][product];
+        return $.marketKeys[asset][product];
     }
 
     /// @inheritdoc IBasisGmxFactory
     function dataStore() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._dataStore;
+        return $.dataStore;
     }
 
     /// @inheritdoc IBasisGmxFactory
     function reader() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._reader;
+        return $.reader;
     }
 
     /// @inheritdoc IBasisGmxFactory
     function orderVault() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._orderVault;
+        return $.orderVault;
     }
 
     /// @inheritdoc IBasisGmxFactory
     function exchangeRouter() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._exchangeRouter;
+        return $.exchangeRouter;
     }
 
     /// @inheritdoc IBasisGmxFactory
     function oracle() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._oracle;
+        return $.oracle;
     }
 
     /// @inheritdoc IBasisGmxFactory
     function callbackGasLimit() public view override returns (uint256) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._callbackGasLimit;
+        return $.callbackGasLimit;
     }
 
     /// @inheritdoc IBasisGmxFactory
     function referralCode() public view override returns (bytes32) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._referralCode;
+        return $.referralCode;
     }
 
     /// @inheritdoc IBasisGmxFactory
     function orderHandler() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._orderHandler;
+        return $.orderHandler;
     }
 
     /// @inheritdoc IBasisGmxFactory
     function referralStorage() public view override returns (address) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._referralStorage;
+        return $.referralStorage;
     }
 
     function isOperator(address account) public view override returns (bool) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._isOperator[account];
+        return $.isOperator[account];
     }
 
     function strategies() public view returns (address[] memory) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._strategies;
+        return $.strategies;
     }
 
     function isActiveStrategy(address strategy) public view returns (bool) {
         BasisGmxFactoryStorage storage $ = _getBasisGmxFactoryStorage();
-        return $._activeStrategy[strategy];
+        return $.activeStrategy[strategy];
     }
 
     /*//////////////////////////////////////////////////////////////

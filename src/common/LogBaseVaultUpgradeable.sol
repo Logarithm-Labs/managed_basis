@@ -10,7 +10,7 @@ abstract contract LogBaseVaultUpgradeable is Initializable, ERC4626Upgradeable {
 
     /// @custom:storage-location erc7201:logarithm.storage.BaseVault
     struct BaseVaultStorage {
-        IERC20 _product;
+        IERC20 product;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BaseVault")) - 1)) & ~bytes32(uint256(0xff))
@@ -25,11 +25,11 @@ abstract contract LogBaseVaultUpgradeable is Initializable, ERC4626Upgradeable {
 
     function __LogBaseVault_init(IERC20 product_) internal onlyInitializing {
         BaseVaultStorage storage $ = _getBaseVaultStorage();
-        $._product = product_;
+        $.product = product_;
     }
 
     function product() public view virtual returns (address) {
         BaseVaultStorage storage $ = _getBaseVaultStorage();
-        return address($._product);
+        return address($.product);
     }
 }

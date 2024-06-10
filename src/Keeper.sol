@@ -6,25 +6,21 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 
 import {AutomationCompatibleInterface} from "src/externals/chainlink/interfaces/AutomationCompatibleInterface.sol";
 
+import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
+
 import {IGmxV2PositionManager} from "src/interfaces/IGmxV2PositionManager.sol";
 
 import {Errors} from "src/libraries/Errors.sol";
 
 contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepUpgradeable {
-    bytes32 public constant CHECK_UPKEEP_GMX_POSITION_MANAGER =
-        keccak256(abi.encode("CHECK_UPKEEP_GMX_POSITION_MANAGER"));
-    bytes32 public constant PERFORM_SETTLE_GMX_POSITION_MANAGER =
-        keccak256(abi.encode("PERFORM_SETTLE_GMX_POSITION_MANAGER"));
-    bytes32 public constant PERFORM_ADJUST_GMX_POSITION_MANAGER =
-        keccak256(abi.encode("PERFORM_ADJUST_GMX_POSITION_MANAGER"));
-
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
 
     /// @custom:storage-location erc7201:logarithm.storage.Keeper
     struct KeeperStorage {
-        address _forwarderAddress;
+        address forwarderAddress;
+        mapping(address positionManager => bool) isPositionManager;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.Keeper")) - 1)) & ~bytes32(uint256(0xff))
@@ -34,6 +30,11 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
         assembly {
             $.slot := KeeperStorageLocation
         }
+    }
+
+    modifier onlyPositionManager(address caller) {
+        _onlyPositionManager(caller);
+        _;
     }
 
     function initialize(address owner_) external initializer {
@@ -48,19 +49,16 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
 
     receive() external payable {}
 
-    /// @inheritdoc AutomationCompatibleInterface
-    function checkUpkeep(bytes calldata checkData)
-        external
-        view
-        override
-        returns (bool upkeepNeeded, bytes memory performData)
-    {
-        address positionManager = abi.decode(checkData, (address));
-        (upkeepNeeded, performData) = IGmxV2PositionManager(positionManager).checkUpkeep();
-        (uint256 feeIncrease, uint256 feeDecrease) = IGmxV2PositionManager(positionManager).getExecutionFee();
-        uint256 maxGasFee = feeIncrease > feeDecrease ? feeIncrease : feeDecrease;
-        performData = abi.encode(positionManager, maxGasFee, performData);
-        return (upkeepNeeded, performData);
+    /// @notice Set the address that `performUpkeep` is called from
+    /// @dev Only callable by the owner
+    /// @param _forwarderAddress the address to set
+    function setForwarderAddress(address _forwarderAddress) external onlyOwner {
+        _getKeeperStorage().forwarderAddress = _forwarderAddress;
+    }
+
+    /// @dev register gmx position manager to make them use native ETH
+    function registerPositionManager(address positionManager) external onlyOwner {
+        _getKeeperStorage().isPositionManager[positionManager] = true;
     }
 
     /// @inheritdoc AutomationCompatibleInterface
@@ -76,21 +74,44 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
         _performUpkeep(performData);
     }
 
-    /// @notice Set the address that `performUpkeep` is called from
-    /// @dev Only callable by the owner
-    /// @param _forwarderAddress the address to set
-    function setForwarderAddress(address _forwarderAddress) external onlyOwner {
-        _getKeeperStorage()._forwarderAddress = _forwarderAddress;
+    /// @inheritdoc AutomationCompatibleInterface
+    function checkUpkeep(bytes calldata checkData)
+        external
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
+        address positionManager = abi.decode(checkData, (address));
+        (upkeepNeeded, performData) = IGmxV2PositionManager(positionManager).checkUpkeep();
+        performData = abi.encode(positionManager, performData);
+        return (upkeepNeeded, performData);
+    }
+
+    /// @dev pay execution fee for gmx keepers when creating gmx orders
+    ///
+    /// @param exchangeRouter is the router of gmx
+    /// @param orderVault is the vault of gmx to pay fee
+    /// @param executionFee is fee to pay
+    function payGmxExecutionFee(address exchangeRouter, address orderVault, uint256 executionFee)
+        external
+        onlyPositionManager(msg.sender)
+    {
+        IExchangeRouter(exchangeRouter).sendWnt{value: executionFee}(orderVault, executionFee);
     }
 
     function forwarderAddress() public view returns (address) {
-        return _getKeeperStorage()._forwarderAddress;
+        return _getKeeperStorage().forwarderAddress;
     }
 
     function _performUpkeep(bytes memory performData) private {
         address positionManager;
-        uint256 executionFee;
-        (positionManager, executionFee, performData) = abi.decode(performData, (address, uint256, bytes));
-        IGmxV2PositionManager(positionManager).performUpkeep{value: executionFee}(performData);
+        (positionManager, performData) = abi.decode(performData, (address, bytes));
+        IGmxV2PositionManager(positionManager).performUpkeep(performData);
+    }
+
+    function _onlyPositionManager(address caller) private view {
+        if (!_getKeeperStorage().isPositionManager[caller]) {
+            revert Errors.CallerNotPositionManager();
+        }
     }
 }
