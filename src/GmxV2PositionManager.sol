@@ -525,8 +525,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         _validateOrderHandler(key, isIncrease);
         _setPendingOrderKey(bytes32(0), isIncrease);
         _wipeExecutionCostCalcInfo();
-        uint256 pendingCollateralAmount = _getGmxV2PositionManagerStorage().pendingCollateralAmount;
-        if (isIncrease && pendingCollateralAmount > 0) {
+        if (isIncrease) {
             _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
         }
 
