@@ -38,6 +38,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
         // main storage
         address strategyImplementation;
         address positionManagerImplementation;
+        address keeper;
         address oracle;
         address[] strategies;
         mapping(address strategy => bool) activeStrategy;
@@ -211,7 +212,7 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
         strategy = address(new ERC1967Proxy($.strategyImplementation, initializerData));
 
         // deploy position manager proxy of this strategy
-        bytes memory posMngerInitializerData = abi.encodeCall(IPositionManager.initialize, strategy);
+        bytes memory posMngerInitializerData = abi.encodeCall(IPositionManager.initialize, (strategy, $.keeper));
 
         positionManager = address(new ERC1967Proxy($.positionManagerImplementation, posMngerInitializerData));
         IBasisStrategy(strategy).setPositionManager(positionManager);
