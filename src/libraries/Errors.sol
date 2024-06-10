@@ -62,9 +62,17 @@ library Errors {
 
     error NotUtilizing();
 
-    error NegativePendingUtilization(uint256 pendingUtilization);
+    error ZeroPendingUtilization();
 
     error ZeroAmountUtilization();
 
     error CallerNotPositionManager();
+
+    error CallerNotAgent();
+
+    error InvalidRequestId(bytes32 requestId, bytes32 activeRequestId);
+
+    error InvalidActiveRequestType();
+
+    error InsufficientCollateralBalance(uint256 collateralBalance, uint256 collateralAmount);
 }

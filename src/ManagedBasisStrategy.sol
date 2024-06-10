@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 import {AccessControlDefaultAdminRulesUpgradeable} from
@@ -69,7 +70,8 @@ contract ManagedBasisStrategy is
         uint256 userDepositLimit;
         uint256 strategyDepostLimit;
         // uint256 strategyCapacity;
-        uint256 assetsToClaim; // asset balance that is processed for withdraws
+        uint256 assetsToWithdraw; // asset balance that is processed for withdraws
+        uint256 assetsToClaim; // asset balance that is ready to be claimed
         uint256 pendingUtilization;
         uint256 pendingDeutilization;
         uint256 pendingDecreaseCollateral;
@@ -106,15 +108,9 @@ contract ManagedBasisStrategy is
         address indexed caller, address indexed receiver, address indexed owner, bytes32 requestId, uint256 amount
     );
 
-    event WithdrawReport(address indexed caller, bytes32 requestId, uint256 amountExecuted);
-
-    event StateReport(
-        address indexed caller, uint256 roundId, uint256 netBalance, uint256 sizeInTokens, uint256 markPrice
-    );
-
     event Claim(address indexed claimer, bytes32 requestId, uint256 amount);
 
-    event ExecuteRedeem(bytes32 requestId, uint256 requestedAmount, uint256 executedAmount);
+    event ExecuteWithdraw(bytes32 requestId, uint256 requestedAmount, uint256 executedAmount);
 
     event PendingUtilizationIncrease(uint256 amount);
 
@@ -279,7 +275,7 @@ contract ManagedBasisStrategy is
             $.pendingDeutilization += $.oracle.convertTokenAmount(asset(), product(), remainingAmountToWithdrawFromSpot);
             $.pendingUtilization -= idle;
             $.idleImbalance += idle.mulDiv(PRECISION, PRECISION + $.targetLeverage);
-            $.assetsToClaim += idle;
+            $.assetsToWithdraw += idle;
             $.activeWithdrawRequests.push(withdrawId);
             $.requestCounter[owner]++;
 
@@ -291,23 +287,22 @@ contract ManagedBasisStrategy is
 
     function claim(bytes32 requestId) external virtual {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        WithdrawState memory requestData = $.withdrawRequests[requestId];
+        WithdrawState memory request = $.withdrawRequests[requestId];
 
         // validate claim
-        if (requestData.receiver != msg.sender) {
-            revert Errors.UnauthorizedClaimer(msg.sender, requestData.receiver);
+        if (request.receiver != msg.sender) {
+            revert Errors.UnauthorizedClaimer(msg.sender, request.receiver);
         }
-        if (!requestData.isExecuted) {
+        if (!request.isExecuted) {
             revert Errors.RequestNotExecuted();
         }
-        if (requestData.isClaimed) {
+        if (request.isClaimed) {
             revert Errors.RequestAlreadyClaimed();
         }
 
-        $.assetsToClaim -= (requestData.executedFromSpot + requestData.executedFromIdle);
+        uint256 totalExecuted = request.executedFromSpot + request.executedFromIdle + request.executedFromHedge;
+        $.assetsToClaim -= totalExecuted;
         $.withdrawRequests[requestId].isClaimed = true;
-        uint256 totalExecuted =
-            requestData.executedFromSpot + requestData.executedFromIdle + requestData.executedFromHedge;
         IERC20 asset_ = IERC20(asset());
         asset_.safeTransfer(msg.sender, totalExecuted);
 
@@ -337,7 +332,7 @@ contract ManagedBasisStrategy is
     function idleAssets() public view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
-        return assetBalance - $.assetsToClaim;
+        return assetBalance - ($.assetsToClaim + $.assetsToWithdraw);
     }
 
     function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
@@ -375,15 +370,13 @@ contract ManagedBasisStrategy is
 
         // can only utilize when pending utilization is positive
         if ($.pendingUtilization == 0) {
-            revert Errors.NegativePendingUtilization($.pendingUtilization);
+            revert Errors.ZeroPendingUtilization();
         }
 
-        // actual utilize amount is min of amount, idle assets,  pending utilization and available capacity
+        // actual utilize amount is min of amount, idle assets and pending utilization
         uint256 idle = idleAssets();
         amount = amount > idle ? idle : amount;
         amount = amount > $.pendingUtilization ? $.pendingUtilization : amount;
-        // uint256 availableCapacity = $.strategyCapacity - utilizedAssets();
-        // amount = amount > availableCapacity ? availableCapacity : amount;
 
         // can only utilize when amount is positive
         if (amount == 0) {
@@ -398,7 +391,8 @@ contract ManagedBasisStrategy is
         }
 
         // TODO: check prices
-        uint256 spotExecutionPrice = amount.mulDiv(PRECISION, amountOut, Math.Rounding.Ceil);
+        uint256 spotExecutionPrice =
+            amount.mulDiv(uint256(IERC20Metadata(product()).decimals()), amountOut, Math.Rounding.Ceil);
         IPositionManager($.positionManager).increasePositionSize(amountOut, spotExecutionPrice);
 
         $.utilizing = true;
@@ -433,7 +427,7 @@ contract ManagedBasisStrategy is
 
         if (!$.rebalancing) {
             // processing withdraw requests
-            $.assetsToClaim += amountOut;
+            $.assetsToWithdraw += amountOut;
         }
 
         // TODO: check prices
@@ -480,6 +474,11 @@ contract ManagedBasisStrategy is
     function assetsToClaim() external view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         return $.assetsToClaim;
+    }
+
+    function assetsToWithdraw() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.assetsToWithdraw;
     }
 
     function currentRound() external view returns (uint256) {
@@ -529,9 +528,6 @@ contract ManagedBasisStrategy is
                 uint256 totalWithdraw = $.totalPendingWithdraw;
                 (, totalWithdraw) = totalWithdraw.trySub(amountAvailable);
                 $.totalPendingWithdraw = totalWithdraw;
-
-                // amountExecuted should be recorded is assetsToClaim
-                $.assetsToClaim += amountExecuted;
 
                 uint256 cacheDecreaseCollateral = $.pendingDecreaseCollateral;
                 uint256 index;
@@ -605,7 +601,6 @@ contract ManagedBasisStrategy is
                     }
 
                     // request decrease collateral from position manager if there are any fulfilled requests
-
                     IPositionManager($.positionManager).decreasePositionCollateral(cacheDecreaseCollateral);
                 }
             }
@@ -614,7 +609,7 @@ contract ManagedBasisStrategy is
         }
     }
 
-    function afterIncreasePositionCollaterla() external {
+    function afterIncreasePositionCollateral() external {
         // TODO
     }
 
@@ -624,13 +619,47 @@ contract ManagedBasisStrategy is
         if (msg.sender != $.positionManager) {
             revert Errors.CallerNotPositionManager();
         }
+        if (isSuccess) {
+            if ($.rebalancing) {
+                // processing rebalance request
+            } else {
+                // processing withdraw requests
+                IERC20(asset()).safeTransferFrom($.positionManager, address(this), amount);
+                uint256 totalAmountToExecute = $.assetsToWithdraw + amount;
+                uint256 processedAssetAmount;
+                uint256 index;
+                while (totalAmountToExecute > 0 && index < $.closedWithdrawRequests.length) {
+                    // process closed requests one by one
+                    bytes32 requestId = $.closedWithdrawRequests[index];
+                    WithdrawState storage request = $.withdrawRequests[requestId];
 
-        if ($.rebalancing) {
-            // processing rebalance request
-        } else {
-            // processing withdraw requests
+                    uint256 amountToExecute = request.requestedAmount - request.executionCost;
+                    if (amountToExecute <= totalAmountToExecute) {
+                        // if there is enough processed asset to cover requested amount minus execution cost, execute
+                        request.isExecuted = true;
+                        processedAssetAmount += amountToExecute;
+                        totalAmountToExecute -= amountToExecute;
 
-            IERC20(asset()).safeTransferFrom($.positionManager, address(this), amount);
+                        index++;
+
+                        emit ExecuteWithdraw(requestId, request.requestedAmount, amountToExecute);
+                    }
+                }
+
+                // update global state
+                $.assetsToClaim += processedAssetAmount;
+                $.assetsToWithdraw -= processedAssetAmount;
+
+                // remove executed requests from closedWithdrawRequests based on index
+                if (index > 0) {
+                    for (uint256 i = 0; i < $.closedWithdrawRequests.length - index; i++) {
+                        $.closedWithdrawRequests[i] = $.closedWithdrawRequests[i + index];
+                    }
+                    for (uint256 j = 0; j < index; j++) {
+                        $.closedWithdrawRequests.pop();
+                    }
+                }
+            }
         }
     }
 }

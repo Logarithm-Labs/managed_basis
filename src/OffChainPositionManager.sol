@@ -2,14 +2,27 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
+import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Errors} from "src/libraries/Errors.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-abstract contract OffChainPositionManager is IPositionManager {
+abstract contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUpgradeable {
     using SafeCast for uint256;
+    using Math for uint256;
+
+    enum RequestType {
+        IncreasePositionSize,
+        DecreasePositionSize,
+        IncreasePositionCollateral,
+        DecreasePositionCollateral
+    }
 
     struct PositionState {
         uint256 sizeInTokens;
@@ -19,10 +32,8 @@ abstract contract OffChainPositionManager is IPositionManager {
     }
 
     struct RequestInfo {
-        uint256 sizeDeltaInTokens;
-        uint256 collateralAmount;
-        uint256 spotExecutionPrice;
-        bool isIncrease;
+        RequestType requestType;
+        bytes data;
         bool isExecuted;
     }
     /*//////////////////////////////////////////////////////////////
@@ -33,18 +44,21 @@ abstract contract OffChainPositionManager is IPositionManager {
     struct OffChainPositionManagerStorage {
         // configuration
         address strategy;
+        address agent;
         address oracle;
         address indexToken;
         address collateralToken;
+        uint256 targetLeverage;
         bool isLong;
-        uint256 maxClaimableFundingShare;
-        uint256 maxHedgeDeviation;
         // position state
         uint256 currentRound;
         bytes32 activeRequestId;
+        uint256 pendingCollateralIncrease;
         mapping(uint256 => PositionState) positionStates;
         mapping(bytes32 => RequestInfo) requests;
     }
+
+    uint256 private constant FLOAT_PRECISION = 1e30;
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.OffChainPositionManager")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant OffChainPositionManagerStorageLocation =
@@ -54,6 +68,28 @@ abstract contract OffChainPositionManager is IPositionManager {
         assembly {
             $.slot := OffChainPositionManagerStorageLocation
         }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    function initialize(
+        address strategy_,
+        address agent_,
+        address oracle_,
+        address indexToken_,
+        address collateralToken_,
+        bool isLong_
+    ) external initializer {
+        __Ownable_init(msg.sender);
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        $.strategy = strategy_;
+        $.agent = agent_;
+        $.oracle = oracle_;
+        $.indexToken = indexToken_;
+        $.collateralToken = collateralToken_;
+        $.isLong = isLong_;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -77,6 +113,26 @@ abstract contract OffChainPositionManager is IPositionManager {
     event ReportState(uint256 positionSizeInTokens, uint256 positionNetBalance, uint256 markPrice, uint256 timestamp);
 
     /*//////////////////////////////////////////////////////////////
+                            MODIFIERS
+    //////////////////////////////////////////////////////////////*/
+
+    modifier onlyStrategy() {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        if (msg.sender != $.strategy) {
+            revert Errors.CallerNotStrategy();
+        }
+        _;
+    }
+
+    modifier onlyAgent() {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        if (msg.sender != $.agent) {
+            revert Errors.CallerNotAgent();
+        }
+        _;
+    }
+
+    /*//////////////////////////////////////////////////////////////
                         POSITION MANAGEMENT
     //////////////////////////////////////////////////////////////*/
 
@@ -84,7 +140,7 @@ abstract contract OffChainPositionManager is IPositionManager {
         return keccak256(abi.encodePacked(address(this), round));
     }
 
-    function increasePositionSize(uint256 sizeDeltaIntokens, uint256 spotExecutionPrice) public {
+    function increasePositionSize(uint256 sizeDeltaIntokens, uint256 spotExecutionPrice) public onlyStrategy {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
         if ($.activeRequestId != bytes32(0)) {
@@ -98,17 +154,15 @@ abstract contract OffChainPositionManager is IPositionManager {
         $.activeRequestId = requestId;
 
         $.requests[requestId] = RequestInfo({
-            sizeDeltaInTokens: sizeDeltaIntokens,
-            collateralAmount: 0,
-            spotExecutionPrice: spotExecutionPrice,
-            isIncrease: true,
+            requestType: RequestType.IncreasePositionSize,
+            data: abi.encode(sizeDeltaIntokens, spotExecutionPrice),
             isExecuted: false
         });
 
         emit RequestIncreasePositionSize(sizeDeltaIntokens, requestId);
     }
 
-    function decreasePositionSize(uint256 sizeDeltaIntokens, uint256 spotExecutionPrice) public {
+    function decreasePositionSize(uint256 sizeDeltaIntokens, uint256 spotExecutionPrice) public onlyStrategy {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
         if ($.activeRequestId != bytes32(0)) {
@@ -122,22 +176,27 @@ abstract contract OffChainPositionManager is IPositionManager {
         $.activeRequestId = requestId;
 
         $.requests[requestId] = RequestInfo({
-            sizeDeltaInTokens: sizeDeltaIntokens,
-            collateralAmount: 0,
-            spotExecutionPrice: spotExecutionPrice,
-            isIncrease: false,
+            requestType: RequestType.DecreasePositionSize,
+            data: abi.encode(sizeDeltaIntokens, spotExecutionPrice),
             isExecuted: false
         });
 
         emit RequestDecreasePositionSize(sizeDeltaIntokens, requestId);
     }
 
-    function increasePositionCollateral(uint256 collateralAmount) public {
+    function increasePositionCollateral(uint256 collateralAmount) public onlyStrategy {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
         if ($.activeRequestId != bytes32(0)) {
             revert Errors.ActiveRequestIsNotClosed($.activeRequestId);
         }
+
+        uint256 collateralBalance = IERC20($.collateralToken).balanceOf(address(this));
+        if (collateralBalance < collateralAmount) {
+            revert Errors.InsufficientCollateralBalance(collateralBalance, collateralAmount);
+        }
+
+        $.pendingCollateralIncrease += collateralAmount;
 
         uint256 round = $.currentRound + 1;
         bytes32 requestId = getRequestId(round);
@@ -146,17 +205,15 @@ abstract contract OffChainPositionManager is IPositionManager {
         $.activeRequestId = requestId;
 
         $.requests[requestId] = RequestInfo({
-            sizeDeltaInTokens: 0,
-            collateralAmount: collateralAmount,
-            spotExecutionPrice: 0,
-            isIncrease: true,
+            requestType: RequestType.IncreasePositionCollateral,
+            data: abi.encode(collateralAmount),
             isExecuted: false
         });
 
         emit RequestIncreasePositionCollateral(collateralAmount, requestId);
     }
 
-    function decreasePositionCollateral(uint256 collateralAmount) public {
+    function decreasePositionCollateral(uint256 collateralAmount) public onlyStrategy {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
         if ($.activeRequestId != bytes32(0)) {
@@ -170,10 +227,8 @@ abstract contract OffChainPositionManager is IPositionManager {
         $.activeRequestId = requestId;
 
         $.requests[requestId] = RequestInfo({
-            sizeDeltaInTokens: 0,
-            collateralAmount: collateralAmount,
-            spotExecutionPrice: 0,
-            isIncrease: false,
+            requestType: RequestType.DecreasePositionCollateral,
+            data: abi.encode(collateralAmount),
             isExecuted: false
         });
 
@@ -184,14 +239,35 @@ abstract contract OffChainPositionManager is IPositionManager {
                             AGENT LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function transferToAgent(uint256 amount) external {
+    function transferToAgent() external onlyAgent {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        RequestInfo memory request = $.requests[$.activeRequestId];
+        if (request.requestType != RequestType.IncreasePositionCollateral) {
+            revert Errors.InvalidActiveRequestType();
+        }
+        uint256 amount = abi.decode(request.data, (uint256));
+
+        $.pendingCollateralIncrease += amount;
+
+        _transferToAgent(amount);
+    }
+
+    function forcedTransferToAgent(uint256 amount) external onlyAgent {
+        _transferToAgent(amount);
+    }
+
+    function _transferToAgent(uint256 amount) internal {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         IERC20($.collateralToken).transfer(msg.sender, amount);
 
         emit AgentTransfer(msg.sender, amount, false);
     }
 
-    function transferFromAgent(uint256 amount) external {
+    function forcedTransferFromAgent(uint256 amount) external onlyAgent {
+        _transferFromAgent(amount);
+    }
+
+    function _transferFromAgent(uint256 amount) internal {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         IERC20($.collateralToken).transferFrom(msg.sender, address(this), amount);
 
@@ -206,9 +282,12 @@ abstract contract OffChainPositionManager is IPositionManager {
         bytes32 requestId,
         uint256 sizeInTokens,
         uint256 netBalance,
+        uint256 markPrice,
         uint256 requestExecutionPrice,
+        uint256 requestExecutionCost,
         bool isSuccess
-    ) public {
+    ) external onlyAgent {
+        // TODO: add validation for prices (difference between mark price, execution price and oracle price should be within the threshold)
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
         if (requestId != $.activeRequestId || requestId == bytes32(0)) {
@@ -216,22 +295,41 @@ abstract contract OffChainPositionManager is IPositionManager {
         }
 
         if (requestId != bytes32(0)) {
-            RequestInfo memory request0 = $.requests[requestId];
+            RequestInfo memory request = $.requests[requestId];
             if (isSuccess) {
-                // if request is executed successfully we need to calculate execution cost and emit execution event
-                int256 executionCost; // negative execution cost means profit
-                if (request0.isIncrease) {
-                    executionCost = (int256(request0.spotExecutionPrice) - int256(requestExecutionPrice))
-                        * int256(request0.sizeDeltaInTokens);
-                    emit IncreasePositionSize(request0.sizeDeltaInTokens, executionCost, requestId);
-                } else {
-                    executionCost = (int256(requestExecutionPrice) - int256(request0.spotExecutionPrice))
-                        * int256(request0.sizeDeltaInTokens);
-                    emit DecreasePositionSize(request0.sizeDeltaInTokens, executionCost, requestId);
+                if (request.requestType == RequestType.IncreasePositionCollateral) {
+                    // if request is successfull we need to decrease pending collateral
+                    $.pendingCollateralIncrease -= abi.decode(request.data, (uint256));
+                    IBasisStrategy($.strategy).afterIncreasePositionCollateral(
+                        abi.decode(request.data, (uint256)), true
+                    );
+                } else if (request.requestType == RequestType.DecreasePositionCollateral) {
+                    // if request is successfull we need to transfer collateral from agent to position manager
+                    _transferFromAgent(abi.decode(request.data, (uint256)));
+                    IBasisStrategy($.strategy).afterDecreasePositionCollateral(
+                        abi.decode(request.data, (uint256)), true
+                    );
+                } else if (request.requestType == RequestType.IncreasePositionSize) {
+                    // if request is successfull, estimate executed amount, execution costs, and transfer back to strategy
+                    (uint256 sizeDeltaInTokens, uint256 spotExecutionPrice) =
+                        abi.decode(request.data, (uint256, uint256));
+
+                    uint256 indexPrecision = 10 ** uint256(IERC20Metadata($.indexToken).decimals());
+                    int256 executionSpread = int256(spotExecutionPrice) - int256(requestExecutionPrice);
+                    int256 executionCost = executionSpread > 0
+                        ? (uint256(executionSpread).mulDiv(sizeDeltaInTokens, indexPrecision)).toInt256()
+                        : -(uint256(-executionSpread).mulDiv(sizeDeltaInTokens, indexPrecision)).toInt256();
+                    executionCost += requestExecutionCost.toInt256();
+
+                    uint256 executedAmount =
+                        sizeDeltaInTokens.mulDiv(requestExecutionPrice * 1e18, $.targetLeverage * indexPrecision);
+                } else if (request.requestType == RequestType.DecreasePositionSize) {
+                    // TODO
+                    // we need to decrease position size in strategy
                 }
             } else {
                 // TODO
-                // if request failed we need to revert changes in strategy spot position
+                // if request failed we need to revert changes
             }
         }
 
@@ -241,13 +339,15 @@ abstract contract OffChainPositionManager is IPositionManager {
         state.markPrice = requestExecutionPrice;
         state.timestamp = block.timestamp;
 
+        $.activeRequestId = bytes32(0);
+
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
     }
 
     function positionNetBalance() public view virtual override returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         PositionState memory state = $.positionStates[$.currentRound];
-
+        uint256 initialNetBalance = state.netBalance + $.pendingCollateralIncrease;
         uint256 price = IOracle($.oracle).getAssetPrice($.indexToken);
         uint256 positionValue = state.sizeInTokens * price;
         uint256 positionSize = state.sizeInTokens * state.markPrice;
@@ -256,9 +356,9 @@ abstract contract OffChainPositionManager is IPositionManager {
             : positionSize.toInt256() - positionValue.toInt256();
 
         if (virtualPnl >= 0) {
-            return state.netBalance + uint256(virtualPnl);
-        } else if (state.netBalance > uint256(-virtualPnl)) {
-            return state.netBalance - uint256(-virtualPnl);
+            return initialNetBalance + uint256(virtualPnl);
+        } else if (initialNetBalance > uint256(-virtualPnl)) {
+            return initialNetBalance - uint256(-virtualPnl);
         } else {
             return 0;
         }
