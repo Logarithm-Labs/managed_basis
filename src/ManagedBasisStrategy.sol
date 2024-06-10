@@ -216,7 +216,11 @@ contract ManagedBasisStrategy is
         $.pendingUtilization += assetsToSpot;
 
         _asset.safeTransfer($.positionManager, assetsToHedge);
-        IPositionManager($.positionManager).increasePositionCollateral(assetsToHedge);
+
+        $.pendingIncreaseCollateral += assetsToHedge;
+
+        // // TODO: remove this call from _deposit
+        // IPositionManager($.positionManager).increasePositionCollateral(assetsToHedge);
 
         _mint(receiver, shares);
 
@@ -393,7 +397,11 @@ contract ManagedBasisStrategy is
         // TODO: check prices
         uint256 spotExecutionPrice =
             amount.mulDiv(uint256(IERC20Metadata(product()).decimals()), amountOut, Math.Rounding.Ceil);
+
         IPositionManager($.positionManager).increasePositionSize(amountOut, spotExecutionPrice);
+        IPositionManager($.positionManager).increasePositionCollateral($.pendingIncreaseCollateral);
+
+        // IPositionManager($.positionManager).increasePosition(amountOut /*positionSize*/, $.pendingIncreaseCollateral, spotExecutionPrice);
 
         $.utilizing = true;
 
@@ -635,7 +643,7 @@ contract ManagedBasisStrategy is
 
                     uint256 amountToExecute = request.requestedAmount - request.executionCost;
                     if (amountToExecute <= totalAmountToExecute) {
-                        // if there is enough processed asset to cover requested amount minus execution cost, execute
+                        // if there is enough processed asset to cover requested amount minus execution cost,  mark as executed
                         request.isExecuted = true;
                         processedAssetAmount += amountToExecute;
                         totalAmountToExecute -= amountToExecute;
