@@ -18,10 +18,10 @@ import {ArbGasInfoMock} from "./mock/ArbGasInfoMock.sol";
 import {ArbSysMock} from "./mock/ArbSysMock.sol";
 import {MockFactory} from "./mock/MockFactory.sol";
 import {MockPriceFeed} from "./mock/MockPriceFeed.sol";
+import {MockStrategy} from "./mock/MockStrategy.sol";
 
 import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
-import {ManagedBasisStrategy} from "src/ManagedBasisStrategy.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {Keeper} from "src/Keeper.sol";
 import {Errors} from "src/libraries/Errors.sol";
@@ -50,7 +50,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
     uint256 constant targetLeverage = 3 ether;
 
     GmxV2PositionManager positionManager;
-    ManagedBasisStrategy strategy;
+    MockStrategy strategy;
     LogarithmOracle oracle;
     Keeper keeper;
     address factory;
@@ -91,27 +91,17 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
             address(new ERC1967Proxy(keeperImpl, abi.encodeWithSelector(Keeper.initialize.selector, address(factory))));
         keeper = Keeper(payable(keeperProxy));
 
-        // deploy strategy
-        address strategyImpl = address(new ManagedBasisStrategy());
-        address strategyProxy = address(
-            new ERC1967Proxy(
-                strategyImpl,
-                abi.encodeWithSelector(
-                    ManagedBasisStrategy.initialize.selector, asset, product, owner, oracle, entryCost, exitCost, isLong
-                )
-            )
-        );
-        strategy = ManagedBasisStrategy(strategyProxy);
+        strategy = new MockStrategy();
 
         // deploy positionManager
         address positionManagerImpl = address(new GmxV2PositionManager());
         address positionManagerProxy = address(
             new ERC1967Proxy(
-                positionManagerImpl, abi.encodeWithSelector(GmxV2PositionManager.initialize.selector, address(strategy))
+                positionManagerImpl,
+                abi.encodeWithSelector(GmxV2PositionManager.initialize.selector, address(strategy), address(keeper))
             )
         );
         positionManager = GmxV2PositionManager(payable(positionManagerProxy));
-        positionManager.setKeeper(address(keeper));
         keeper.registerPositionManager(address(positionManager));
         strategy.setPositionManager(positionManagerProxy);
         vm.stopPrank();
@@ -247,23 +237,23 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
     //     assertEq(usdcBalanceOfStartegyBefore + 100 * USDC_PRECISION, usdcBalanceOfStartegyAfter);
     // }
 
-    function test_totalAssets() public afterHavingPosition {
-        uint256 totalAssets = positionManager.totalAssets();
-        assertEq(totalAssets, 294995464);
+    function test_positionNetBalance() public afterHavingPosition {
+        uint256 positionNetBalance = positionManager.positionNetBalance();
+        assertEq(positionNetBalance, 294995464);
     }
 
-    // function test_totalAssets_whenPending() public afterHavingPosition {
-    //     uint256 totalAssetsBefore = positionManager.totalAssets();
+    // function test_positionNetBalance_whenPending() public afterHavingPosition {
+    //     uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
     //     vm.startPrank(address(strategy));
     //     positionManager.increasePosition(300 * USDC_PRECISION, 1 ether);
-    //     assertEq(positionManager.totalAssets(), totalAssetsBefore + 300 * USDC_PRECISION);
+    //     assertEq(positionManager.positionNetBalance(), positionNetBalanceBefore + 300 * USDC_PRECISION);
     // }
 
-    // function test_totalAssets_afterExecution() public afterHavingPosition {
+    // function test_positionNetBalance_afterExecution() public afterHavingPosition {
     //     vm.startPrank(address(strategy));
     //     bytes32 orderKey = positionManager.increasePosition(300 * USDC_PRECISION, 1 ether);
     //     _executeOrder(orderKey);
-    //     assertEq(positionManager.totalAssets(), 589989774);
+    //     assertEq(positionManager.positionNetBalance(), 589989774);
     // }
 
     function test_decreasePositionCollateral_createOrders() public afterHavingPosition {
@@ -278,7 +268,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
-        uint256 totalAssetsBefore = positionManager.totalAssets();
+        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
@@ -286,7 +276,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         _executeOrder(decreaseKey);
         _executeOrder(increaseKey);
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
-        uint256 totalAssetsAfter = positionManager.totalAssets();
+        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertEq(positionInfoAfter.position.numbers.sizeInUsd, positionInfoBefore.position.numbers.sizeInUsd);
         assertEq(positionInfoAfter.position.numbers.sizeInTokens, positionInfoBefore.position.numbers.sizeInTokens);
@@ -295,7 +285,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
             positionInfoBefore.position.numbers.collateralAmount - collateralDelta
         );
         assertEq(positionInfoAfter.pnlAfterPriceImpactUsd, positionInfoBefore.pnlAfterPriceImpactUsd);
-        assertEq(totalAssetsAfter, totalAssetsBefore - collateralDelta);
+        assertEq(positionNetBalanceAfter, positionNetBalanceBefore - collateralDelta);
         assertEq(strategyBalanceAfter, strategyBalanceBefore + collateralDelta);
     }
 
@@ -304,14 +294,14 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
-        uint256 totalAssetsBefore = positionManager.totalAssets();
+        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         console.log("-------before-------");
         console.log("size in usd", positionInfoBefore.position.numbers.sizeInUsd);
         console.log("size in token", positionInfoBefore.position.numbers.sizeInTokens);
         console.log("collateral", positionInfoBefore.position.numbers.collateralAmount);
         console.log("pnl", uint256(positionInfoBefore.pnlAfterPriceImpactUsd));
-        console.log("total asssets", totalAssetsBefore);
+        console.log("total asssets", positionNetBalanceBefore);
         console.log("balance", strategyBalanceBefore);
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
@@ -319,14 +309,14 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         _executeOrder(decreaseKey);
         _executeOrder(increaseKey);
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
-        uint256 totalAssetsAfter = positionManager.totalAssets();
+        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         console.log("-------after-------");
         console.log("size in usd", positionInfoAfter.position.numbers.sizeInUsd);
         console.log("size in token", positionInfoAfter.position.numbers.sizeInTokens);
         console.log("collateral", positionInfoAfter.position.numbers.collateralAmount);
         console.log("pnl", uint256(positionInfoAfter.pnlAfterPriceImpactUsd));
-        console.log("total asssets", totalAssetsAfter);
+        console.log("total asssets", positionNetBalanceAfter);
         console.log("balance", strategyBalanceAfter);
         // assertEq(positionInfoAfter.position.numbers.sizeInUsd, positionInfoBefore.position.numbers.sizeInUsd);
         // assertEq(positionInfoAfter.position.numbers.sizeInTokens, positionInfoBefore.position.numbers.sizeInTokens);
@@ -335,7 +325,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         //     positionInfoBefore.position.numbers.collateralAmount - collateralDelta
         // );
         // assertEq(positionInfoAfter.pnlAfterPriceImpactUsd, positionInfoBefore.pnlAfterPriceImpactUsd);
-        // assertEq(totalAssetsAfter, totalAssetsBefore - collateralDelta);
+        // assertEq(positionNetBalanceAfter, positionNetBalanceBefore - collateralDelta);
         // assertEq(strategyBalanceAfter, strategyBalanceBefore + collateralDelta);
     }
 
