@@ -19,8 +19,8 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
 
     /// @custom:storage-location erc7201:logarithm.storage.Keeper
     struct KeeperStorage {
-        address _forwarderAddress;
-        mapping(address positionManager => bool) _isPositionManager;
+        address forwarderAddress;
+        mapping(address positionManager => bool) isPositionManager;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.Keeper")) - 1)) & ~bytes32(uint256(0xff))
@@ -53,12 +53,12 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
     /// @dev Only callable by the owner
     /// @param _forwarderAddress the address to set
     function setForwarderAddress(address _forwarderAddress) external onlyOwner {
-        _getKeeperStorage()._forwarderAddress = _forwarderAddress;
+        _getKeeperStorage().forwarderAddress = _forwarderAddress;
     }
 
     /// @dev register gmx position manager to make them use native ETH
     function registerPositionManager(address positionManager) external onlyOwner {
-        _getKeeperStorage()._isPositionManager[positionManager] = true;
+        _getKeeperStorage().isPositionManager[positionManager] = true;
     }
 
     /// @inheritdoc AutomationCompatibleInterface
@@ -100,7 +100,7 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
     }
 
     function forwarderAddress() public view returns (address) {
-        return _getKeeperStorage()._forwarderAddress;
+        return _getKeeperStorage().forwarderAddress;
     }
 
     function _performUpkeep(bytes memory performData) private {
@@ -110,7 +110,7 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
     }
 
     function _onlyPositionManager(address caller) private view {
-        if (!_getKeeperStorage()._isPositionManager[caller]) {
+        if (!_getKeeperStorage().isPositionManager[caller]) {
             revert Errors.CallerNotPositionManager();
         }
     }

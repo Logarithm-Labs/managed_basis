@@ -12,7 +12,7 @@ abstract contract FactoryDeployable is Initializable {
 
     /// @custom:storage-location erc7201:logarithm.storage.FactoryDeployable
     struct FactoryDeployableStorage {
-        address _factory;
+        address factory;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.FactoryDeployable")) - 1)) & ~bytes32(uint256(0xff))
@@ -40,7 +40,7 @@ abstract contract FactoryDeployable is Initializable {
 
     function __FactoryDeployable_init() internal onlyInitializing {
         FactoryDeployableStorage storage $ = _getFactoryDeployableStorage();
-        $._factory = msg.sender;
+        $.factory = msg.sender;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -49,7 +49,7 @@ abstract contract FactoryDeployable is Initializable {
 
     function factory() public view returns (address) {
         FactoryDeployableStorage storage $ = _getFactoryDeployableStorage();
-        return $._factory;
+        return $.factory;
     }
 
     function _checkFactory() internal view {
