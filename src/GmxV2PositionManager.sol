@@ -76,7 +76,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         uint256 spotExecutionPrice;
         uint256 sizeInTokensBefore;
         // state for handling realized pnl when decreasing
-        uint256 realizedPnlInCollateralTokenWhenDecreasing;
+        uint256 realizedPnlAmountWhenDecreasing;
         bool isDecreasingCollateral;
     }
 
@@ -276,12 +276,11 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         returns (bytes32 decreaseOrderKey, bytes32 increaseOrderKey)
     {
         address _factory = factory();
-        uint256 realizedPnlInCollateralTokenWhenDecreasing =
-            _getGmxV2PositionManagerStorage().realizedPnlInCollateralTokenWhenDecreasing;
-        if (collateralDelta < realizedPnlInCollateralTokenWhenDecreasing) {
+        uint256 realizedPnlAmountWhenDecreasing = _getGmxV2PositionManagerStorage().realizedPnlAmountWhenDecreasing;
+        if (collateralDelta < realizedPnlAmountWhenDecreasing) {
             // realizedPnl, already transferred to strategy, is bigger than the expected collateralDelta to claim
             // hence increase the shortfall collateral instead of decreasing
-            uint256 shortfallCollateral = realizedPnlInCollateralTokenWhenDecreasing - collateralDelta;
+            uint256 shortfallCollateral = realizedPnlAmountWhenDecreasing - collateralDelta;
             IERC20(collateralToken()).safeTransferFrom(strategy(), address(this), shortfallCollateral);
             increaseOrderKey = _createOrder(
                 InternalCreateOrderParams({
@@ -298,16 +297,16 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 })
             );
             // set _isDecreasingCollateral as true
-            // so that wipe the realizedPnlInCollateralTokenWhenDecreasing value after successfull execution
+            // so that wipe the realizedPnlAmountWhenDecreasing value after successfull execution
             _getGmxV2PositionManagerStorage().isDecreasingCollateral = true;
             return (decreaseOrderKey, increaseOrderKey);
-        } else if (collateralDelta == realizedPnlInCollateralTokenWhenDecreasing) {
-            _getGmxV2PositionManagerStorage().realizedPnlInCollateralTokenWhenDecreasing = 0;
+        } else if (collateralDelta == realizedPnlAmountWhenDecreasing) {
+            _getGmxV2PositionManagerStorage().realizedPnlAmountWhenDecreasing = 0;
             IBasisStrategy(strategy()).afterDecreasePositionCollateral(collateralDelta, true);
             return (decreaseOrderKey, increaseOrderKey);
         }
         // treat realizedPnl already transferred to strategy as reduced collateral
-        collateralDelta -= realizedPnlInCollateralTokenWhenDecreasing;
+        collateralDelta -= realizedPnlAmountWhenDecreasing;
 
         uint256 idleCollateralAmount = IERC20(collateralToken()).balanceOf(address(this));
         if (collateralDelta <= idleCollateralAmount) {
@@ -360,7 +359,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
             );
         }
         // set _isDecreasingCollateral as true
-        // so that wipe the realizedPnlInCollateralTokenWhenDecreasing value after successfull execution
+        // so that wipe the realizedPnlAmountWhenDecreasing value after successfull execution
         _getGmxV2PositionManagerStorage().isDecreasingCollateral = true;
 
         return (decreaseOrderKey, increaseOrderKey);
@@ -491,7 +490,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
             // when decreasing collateral
             // wipe the realizedPnl info
             _getGmxV2PositionManagerStorage().isDecreasingCollateral = false;
-            _getGmxV2PositionManagerStorage().realizedPnlInCollateralTokenWhenDecreasing = 0;
+            _getGmxV2PositionManagerStorage().realizedPnlAmountWhenDecreasing = 0;
             IBasisStrategy(order.addresses.receiver).afterDecreasePositionCollateral(0, true);
         } else if (!isIncrease) {
             // when decreasing size
@@ -501,8 +500,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
             executedHedgeAmount = executedHedgeInUsd / collateralTokenPrice;
             // increase this value only when decreasePositionSize function is called
             // Note: decrease order can be created by decreasePositionCollateral function
-            _getGmxV2PositionManagerStorage().realizedPnlInCollateralTokenWhenDecreasing +=
-                eventData.uintItems.items[0].value;
+            _getGmxV2PositionManagerStorage().realizedPnlAmountWhenDecreasing += eventData.uintItems.items[0].value;
             IBasisStrategy(order.addresses.receiver).afterDecreasePositionSize(
                 executedHedgeAmount,
                 executionCostAmount > 0 ? uint256(executionCostAmount) : uint256(-executionCostAmount),
