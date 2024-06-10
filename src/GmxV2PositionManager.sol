@@ -201,6 +201,13 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         GmxV2Lib.GetPrices memory pricesParams = _getPricesParams(_factory);
         _recordExecutionCostCalcInfo(positionParams, spotExecutionPrice);
         uint256 sizeDeltaUsd = GmxV2Lib.getSizeDeltaUsdForIncrease(positionParams, pricesParams, sizeDeltaInTokens);
+        uint256 collateralDelta;
+        uint256 idleCollateralAmount = IERC20(collateralToken()).balanceOf(address(this));
+        if (idleCollateralAmount > 0) {
+            IERC20(collateralToken()).safeTransfer(IBasisGmxFactory(_factory).orderVault(), idleCollateralAmount);
+            collateralDelta = idleCollateralAmount;
+            _getGmxV2PositionManagerStorage().pendingCollateralAmount = idleCollateralAmount;
+        }
 
         // record position fee
         // once order is confirmed, can't calc the exact fee because open interest are changed.
@@ -214,7 +221,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
                 orderVault: IBasisGmxFactory(_factory).orderVault(),
                 collateralToken: collateralToken(),
-                collateralDelta: 0,
+                collateralDelta: collateralDelta,
                 sizeDeltaUsd: sizeDeltaUsd,
                 callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
                 referralCode: IBasisGmxFactory(_factory).referralCode()
@@ -635,14 +642,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
 
     /// @dev create increase/decrease order
     function _createOrder(InternalCreateOrderParams memory params) private returns (bytes32) {
-        if (params.isIncrease) {
-            uint256 idleCollateralAmount = IERC20(params.collateralToken).balanceOf(address(this));
-            if (idleCollateralAmount > 0) {
-                IERC20(params.collateralToken).safeTransfer(params.orderVault, idleCollateralAmount);
-                params.collateralDelta = idleCollateralAmount;
-                _getGmxV2PositionManagerStorage().pendingCollateralAmount = idleCollateralAmount;
-            }
-        }
         (uint256 increaseExecutionFee, uint256 decreaseExecutionFee) = getExecutionFee();
         uint256 executionFee = params.isIncrease ? increaseExecutionFee : decreaseExecutionFee;
         IKeeper(keeper()).payGmxExecutionFee(params.exchangeRouter, params.orderVault, executionFee);
