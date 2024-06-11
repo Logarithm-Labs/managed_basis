@@ -62,10 +62,6 @@ contract InchTest is Test {
         feeds[1] = productPriceFeed;
 
         oracle.setPriceFeeds(assets, feeds);
-
-        // grant operator role to owner
-        strategy.grantRole(strategy.OPERATOR_ROLE(), owner);
-        assertEq(strategy.hasRole(strategy.OPERATOR_ROLE(), owner), true);
     }
 
     function test_inchUtilize() public {

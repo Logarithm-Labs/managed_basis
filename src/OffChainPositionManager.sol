@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IOffChainPositionManager} from "src/interfaces/IOffChainPositionManager.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 
@@ -13,7 +14,7 @@ import {Errors} from "src/libraries/Errors.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-abstract contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUpgradeable {
+contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, OwnableUpgradeable {
     using SafeCast for uint256;
     using Math for uint256;
 
@@ -90,7 +91,12 @@ abstract contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, 
         $.indexToken = indexToken_;
         $.collateralToken = collateralToken_;
         $.isLong = isLong_;
+
+        // strategy is trusted
+        IERC20(collateralToken_).approve(strategy_, type(uint256).max);
     }
+
+    function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
 
     /*//////////////////////////////////////////////////////////////
                             EVENTS

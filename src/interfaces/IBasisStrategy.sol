@@ -7,6 +7,7 @@ interface IBasisStrategy {
     function asset() external view returns (address);
     function product() external view returns (address);
     function positionManager() external view returns (address);
+    function targetLeverage() external view returns (uint256);
 
     // callback logic
     function afterIncreasePositionSize(uint256 amountExecuted, bool isSuccess) external;

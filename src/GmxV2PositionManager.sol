@@ -507,11 +507,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 true
             );
         } else {
-            IBasisStrategy(order.addresses.receiver).afterIncreasePositionSize(
-                executedHedgeAmount,
-                executionCostAmount > 0 ? uint256(executionCostAmount) : uint256(-executionCostAmount),
-                true
-            );
+            IBasisStrategy(order.addresses.receiver).afterIncreasePositionSize(executedHedgeAmount, true);
         }
     }
 
@@ -534,7 +530,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         } else if (!isIncrease) {
             IBasisStrategy(order.addresses.receiver).afterDecreasePositionSize(0, 0, false);
         } else {
-            IBasisStrategy(order.addresses.receiver).afterIncreasePositionSize(0, 0, false);
+            IBasisStrategy(order.addresses.receiver).afterIncreasePositionSize(0, false);
         }
     }
 

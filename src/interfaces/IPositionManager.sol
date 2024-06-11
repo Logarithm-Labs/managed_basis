@@ -15,11 +15,4 @@ interface IPositionManager {
     function increasePositionSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice) external;
 
     function decreasePositionSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice) external;
-
-    function adjustPosition(
-        uint256 sizeDeltaInTokens,
-        uint256 spotExectuionPrice,
-        uint256 collateralDeltaAmount,
-        bool isIncrease
-    ) external returns (bytes32 requestId);
 }

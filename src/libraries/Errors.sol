@@ -79,4 +79,6 @@ library Errors {
     error InsufficientCollateralBalance(uint256 collateralBalance, uint256 collateralAmount);
 
     error NoActiveRequests();
+
+    error CallerNotOperator();
 }
