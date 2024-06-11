@@ -38,10 +38,12 @@ contract ManagedBasisStrategy is
     }
 
     // TODO: refactor for enum
-    enum State {
-        UTILIZING,
-        DEUTILIZING,
-        IDLE
+    enum StrategyStatus {
+        IDLE,
+        DEPOSITING,
+        WITHDRAWING,
+        REBALANCING_UP,
+        REBALANCING_DOWN
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -60,13 +62,6 @@ contract ManagedBasisStrategy is
         bool isClaimed;
     }
 
-    struct PositionState {
-        uint256 netBalance;
-        uint256 sizeInTokens;
-        uint256 markPrice;
-        uint256 timestamp;
-    }
-
     struct ManagedBasisStrategyStorage {
         IOracle oracle;
         address positionManager;
@@ -75,10 +70,11 @@ contract ManagedBasisStrategy is
         uint256 entryCost;
         uint256 userDepositLimit;
         uint256 strategyDepostLimit;
-        // uint256 strategyCapacity;
-        uint256 assetsToClaim; // asset balance that is processed for withdraws
+        uint256 assetsToClaim; // asset balance that is ready to claim
+        uint256 assetsToWithdraw; // asset balance that is processed for withdrawals
         uint256 pendingUtilization;
         uint256 pendingDeutilization;
+        uint256 pendingIncreaseCollateral;
         uint256 pendingDecreaseCollateral;
         uint256 totalPendingWithdraw; // total amount of asset that remains to be withdrawn
         uint256 withdrawnFromSpot; // asset amount withdrawn from spot that is not yet processed
@@ -86,10 +82,11 @@ contract ManagedBasisStrategy is
         uint256 idleImbalance; // imbalance in idle assets between spot and hedge due to withdraws from idle
         bytes32[] activeWithdrawRequests;
         bytes32[] closedWithdrawRequests;
-        bool rebalancing;
-        bool utilizing;
-        // TODO:
-        bool deutilizing;
+        StrategyStatus status;
+        bytes32 activeRequestId;
+        bool rebalancing; // TODO: potentially remove
+        bool utilizing; // TODO: potentually remove
+        bool deutilizing; // TODO: potentially remove
         mapping(address => uint128) requestCounter;
         mapping(bytes32 => WithdrawState) withdrawRequests;
     }
@@ -112,10 +109,8 @@ contract ManagedBasisStrategy is
     //////////////////////////////////////////////////////////////*/
 
     event WithdrawRequest(
-        address indexed caller, address indexed receiver, address indexed owner, bytes32 requestId, uint256 amount
+        address indexed caller, address indexed receiver, address indexed owner, bytes32 withdrawId, uint256 amount
     );
-
-    event WithdrawReport(address indexed caller, bytes32 requestId, uint256 amountExecuted);
 
     event StateReport(
         address indexed caller, uint256 roundId, uint256 netBalance, uint256 sizeInTokens, uint256 markPrice
@@ -123,7 +118,7 @@ contract ManagedBasisStrategy is
 
     event Claim(address indexed claimer, bytes32 requestId, uint256 amount);
 
-    event ExecuteRedeem(bytes32 requestId, uint256 requestedAmount, uint256 executedAmount);
+    event ExecuteWithdraw(bytes32 requestId, uint256 requestedAmount, uint256 executedAmount);
 
     event PendingUtilizationIncrease(uint256 amount);
 
@@ -154,7 +149,6 @@ contract ManagedBasisStrategy is
         $.entryCost = _entryCost;
         $.userDepositLimit = type(uint256).max;
         $.strategyDepostLimit = type(uint256).max;
-        // $.strategyCapacity = 0;
     }
 
     function setPositionManager(address _positionManager) external onlyFactory {
@@ -227,10 +221,9 @@ contract ManagedBasisStrategy is
         uint256 assetsToHedge = assets.mulDiv(PRECISION, PRECISION + $.targetLeverage);
         uint256 assetsToSpot = assets - assetsToHedge;
         $.pendingUtilization += assetsToSpot;
+        $.pendingIncreaseCollateral += assetsToHedge;
 
         _asset.safeTransfer($.positionManager, assetsToHedge);
-        // TODO: adjust for idle imbalance
-        IPositionManager($.positionManager).increasePositionCollateral(assetsToHedge);
 
         _mint(receiver, shares);
 
@@ -289,7 +282,7 @@ contract ManagedBasisStrategy is
             $.pendingDeutilization += $.oracle.convertTokenAmount(asset(), product(), remainingAmountToWithdrawFromSpot);
             $.pendingUtilization -= idle;
             $.idleImbalance += idle.mulDiv(PRECISION, PRECISION + $.targetLeverage);
-            $.assetsToClaim += idle;
+            $.assetsToWithdraw += idle;
             $.activeWithdrawRequests.push(withdrawId);
             $.requestCounter[owner]++;
 
@@ -314,10 +307,10 @@ contract ManagedBasisStrategy is
             revert Errors.RequestAlreadyClaimed();
         }
 
-        $.assetsToClaim -= (requestData.executedFromSpot + requestData.executedFromIdle);
-        $.withdrawRequests[requestId].isClaimed = true;
         uint256 totalExecuted =
             requestData.executedFromSpot + requestData.executedFromIdle + requestData.executedFromHedge;
+        $.assetsToClaim -= totalExecuted;
+        $.withdrawRequests[requestId].isClaimed = true;
         IERC20 asset_ = IERC20(asset());
         asset_.safeTransfer(msg.sender, totalExecuted);
 
@@ -347,7 +340,7 @@ contract ManagedBasisStrategy is
     function idleAssets() public view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
-        return assetBalance - $.assetsToClaim;
+        return assetBalance - ($.assetsToClaim + $.assetsToWithdraw);
     }
 
     function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
@@ -378,22 +371,21 @@ contract ManagedBasisStrategy is
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-        // can only utilize when there is no pending utilization
-        if ($.utilizing) {
-            revert Errors.AlreadyUtilizing();
+        // can only utilize when the strategy status is IDLE
+        if ($.status != StrategyStatus.IDLE) {
+            revert Errors.StatusNotIdle();
         }
+        $.status = StrategyStatus.DEPOSITING;
 
         // can only utilize when pending utilization is positive
         if ($.pendingUtilization == 0) {
-            revert Errors.NegativePendingUtilization($.pendingUtilization);
+            revert Errors.ZeroPendingUtilization();
         }
 
-        // actual utilize amount is min of amount, idle assets,  pending utilization and available capacity
+        // actual utilize amount is min of amount, idle assets and pending utilization
         uint256 idle = idleAssets();
         amount = amount > idle ? idle : amount;
         amount = amount > $.pendingUtilization ? $.pendingUtilization : amount;
-        // uint256 availableCapacity = $.strategyCapacity - utilizedAssets();
-        // amount = amount > availableCapacity ? availableCapacity : amount;
 
         // can only utilize when amount is positive
         if (amount == 0) {
@@ -410,11 +402,11 @@ contract ManagedBasisStrategy is
         // TODO: check prices
         uint256 spotExecutionPrice = amount.mulDiv(PRECISION, amountOut, Math.Rounding.Ceil);
 
-        //
-        IPositionManager($.positionManager).increasePositionCollateral(amountOut, spotExecutionPrice);
-        IPositionManager($.positionManager).increasePositionSize(amountOut, spotExecutionPrice);
-
-        $.utilizing = true;
+        bytes32 requestId = IPositionManager($.positionManager).adjustPosition(
+            amountOut, spotExecutionPrice, $.pendingIncreaseCollateral, true
+        );
+        $.activeRequestId = requestId;
+        $.pendingIncreaseCollateral = 0;
 
         emit Utilize(msg.sender, amount, amountOut);
     }
@@ -446,7 +438,7 @@ contract ManagedBasisStrategy is
 
         if (!$.rebalancing) {
             // processing withdraw requests
-            $.assetsToClaim += amountOut;
+            $.assetsToWithdraw += amountOut;
         }
 
         // TODO: check prices
@@ -495,6 +487,11 @@ contract ManagedBasisStrategy is
         return $.assetsToClaim;
     }
 
+    function assetsToWithdraw() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.assetsToWithdraw;
+    }
+
     function currentRound() external view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         return $.currentRound;
@@ -504,17 +501,40 @@ contract ManagedBasisStrategy is
                     POSITION MANAGER CALLBACKS LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function afterIncreasePositionSize() external {
+    function afterExecuteRequest(bytes32 requestId) external {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        if (msg.sender != $.positionManager) {
+            revert Errors.CallerNotPositionManager();
+        }
+
+        if (requestId != $.activeRequestId) {
+            revert Errors.InvalidRequestId(requestId, $.activeRequestId);
+        }
+
+        delete $.activeRequestId;
+        $.status = StrategyStatus.IDLE;
+    }
+
+    function afterIncreasePositionSize(uint256 sizeDeltaInTokens, bool isSuccess) external {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         if (msg.sender != $.positionManager) {
             revert Errors.CallerNotPositionManager();
         }
 
-        if (!$.utilizing) {
+        StrategyStatus status = $.status;
+
+        if (status == StrategyStatus.DEPOSITING || status == StrategyStatus.REBALANCING_UP) {
+            // processsing deposit request
+            if (isSuccess) {
+                $.pendingUtilization -= sizeDeltaInTokens;
+            } else {
+                // should sell sizeDeltaInTokens of product back to asset to remain delta neutral
+                // TODO: implemet fallback swap logic without external swap data
+            }
+        } else {
             revert Errors.NotUtilizing();
         }
-
-        // TODO
     }
 
     function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bool isSuccess) external {
@@ -524,14 +544,10 @@ contract ManagedBasisStrategy is
             revert Errors.CallerNotPositionManager();
         }
 
-        if (!$.utilizing) {
-            revert Errors.NotUtilizing();
-        }
+        StrategyStatus status = $.status;
 
         if (isSuccess) {
-            if ($.rebalancing) {
-                // processing rebalance request
-            } else {
+            if (status == StrategyStatus.WITHDRAWING) {
                 // processing withdraw requests
                 uint256 cacheWithdrawnFromSpot = $.withdrawnFromSpot;
                 uint256 cacheWithdrawnFromIdle = $.withdrawnFromIdle;
@@ -622,6 +638,10 @@ contract ManagedBasisStrategy is
                     //TODO: adjust for idle imbalance
                     IPositionManager($.positionManager).decreasePositionCollateral(cacheDecreaseCollateral);
                 }
+            } else if (status == StrategyStatus.REBALANCING_DOWN) {
+                // processing rebalance request
+            } else {
+                revert Errors.NotDeutilizing();
             }
         } else {
             // processing execution revert
@@ -629,7 +649,7 @@ contract ManagedBasisStrategy is
     }
 
     //
-    function afterIncreasePositionCollateral() external {
+    function afterIncreasePositionCollateral(uint256 collateralDeltaAmount, bool isSuccess) external {
         // TODO
     }
 
@@ -640,12 +660,52 @@ contract ManagedBasisStrategy is
             revert Errors.CallerNotPositionManager();
         }
 
-        if ($.rebalancing) {
-            // processing rebalance request
-        } else {
-            // processing withdraw requests
+        StrategyStatus status = $.status;
 
-            IERC20(asset()).safeTransferFrom($.positionManager, address(this), amount);
+        if (status == StrategyStatus.WITHDRAWING) {
+            if (isSuccess) {
+                // processing withdraw requests
+                IERC20(asset()).safeTransferFrom($.positionManager, address(this), amount);
+                uint256 totalAmountToExecute = $.assetsToWithdraw + amount;
+                uint256 processedAssetAmount;
+                uint256 index;
+                while (totalAmountToExecute > 0 && index < $.closedWithdrawRequests.length) {
+                    // process closed requests one by one
+                    bytes32 withdrawId = $.closedWithdrawRequests[index];
+                    WithdrawState storage request = $.withdrawRequests[withdrawId];
+
+                    uint256 amountToExecute = request.requestedAmount - request.executionCost;
+                    if (amountToExecute <= totalAmountToExecute) {
+                        // if there is enough processed asset to cover requested amount minus execution cost,  mark as executed
+                        request.isExecuted = true;
+                        processedAssetAmount += amountToExecute;
+                        totalAmountToExecute -= amountToExecute;
+
+                        index++;
+
+                        emit ExecuteWithdraw(withdrawId, request.requestedAmount, amountToExecute);
+                    }
+                }
+
+                // update global state
+                $.assetsToClaim += processedAssetAmount;
+                $.assetsToWithdraw -= processedAssetAmount;
+
+                // remove executed requests from closedWithdrawRequests based on index
+                if (index > 0) {
+                    for (uint256 i = 0; i < $.closedWithdrawRequests.length - index; i++) {
+                        $.closedWithdrawRequests[i] = $.closedWithdrawRequests[i + index];
+                    }
+                    for (uint256 j = 0; j < index; j++) {
+                        $.closedWithdrawRequests.pop();
+                    }
+                }
+            }
+        } else if (status == StrategyStatus.REBALANCING_DOWN) {
+            // processing rebalance request
+            // TODO
+        } else {
+            revert Errors.NotDeutilizing();
         }
     }
 }

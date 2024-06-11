@@ -9,8 +9,9 @@ interface IBasisStrategy {
     function positionManager() external view returns (address);
 
     // callback logic
-    function afterIncreasePositionSize(uint256 amountExecuted, uint256 executionCost, bool isSuccess) external;
+    function afterIncreasePositionSize(uint256 amountExecuted, bool isSuccess) external;
     function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bool isSuccess) external;
     function afterIncreasePositionCollateral(uint256 collateralAmount, bool isSuccess) external;
     function afterDecreasePositionCollateral(uint256 collateralAmount, bool isSuccess) external;
+    function afterExecuteRequest(bytes32 requestId) external;
 }

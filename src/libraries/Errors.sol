@@ -58,9 +58,11 @@ library Errors {
 
     error ActiveRequestIsNotClosed(bytes32 requestId);
 
-    error AlreadyUtilizing();
+    error StatusNotIdle();
 
     error NotUtilizing();
+
+    error NotDeutilizing();
 
     error ZeroPendingUtilization();
 
@@ -75,4 +77,6 @@ library Errors {
     error InvalidActiveRequestType();
 
     error InsufficientCollateralBalance(uint256 collateralBalance, uint256 collateralAmount);
+
+    error NoActiveRequests();
 }
