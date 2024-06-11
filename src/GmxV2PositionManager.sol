@@ -75,7 +75,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         uint256 spotExecutionPrice;
         uint256 sizeInTokensBefore;
         // state for handling realized pnl when decreasing
-        uint256 realizedPnlAmountWhenDecreasing;
         bool isDecreasingCollateral;
     }
 
@@ -151,6 +150,9 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
 
         $.maxClaimableFundingShare = 1e16; // 1%
         $.maxHedgeDeviation = 1e15; // 0.1%
+
+        // approve strategy to max amount
+        IERC20(asset).approve($.strategy, type(uint256).max);
     }
 
     function _authorizeUpgrade(address) internal virtual override onlyFactory {}
@@ -180,7 +182,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     ///
     /// @param assetsToPositionManager is the amount to trnasfer to position manager
     function increasePositionCollateral(uint256 assetsToPositionManager) external onlyStrategy {
-        IERC20(collateralToken()).safeTransferFrom(strategy(), address(this), assetsToPositionManager);
+        // IERC20(collateralToken()).safeTransferFrom(strategy(), address(this), assetsToPositionManager);
     }
 
     /// @dev increase position size
@@ -279,45 +281,14 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         whenNotPending
         returns (bytes32 decreaseOrderKey, bytes32 increaseOrderKey)
     {
-        address _factory = factory();
-        uint256 realizedPnlAmountWhenDecreasing = _getGmxV2PositionManagerStorage().realizedPnlAmountWhenDecreasing;
-        if (collateralDelta < realizedPnlAmountWhenDecreasing) {
-            // realizedPnl, already transferred to strategy, is bigger than the expected collateralDelta to claim
-            // hence increase the shortfall collateral instead of decreasing
-            uint256 shortfallCollateral = realizedPnlAmountWhenDecreasing - collateralDelta;
-            IERC20(collateralToken()).safeTransferFrom(strategy(), address(this), shortfallCollateral);
-            increaseOrderKey = _createOrder(
-                InternalCreateOrderParams({
-                    isLong: isLong(),
-                    isIncrease: true,
-                    exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
-                    orderVault: IBasisGmxFactory(_factory).orderVault(),
-                    collateralToken: collateralToken(),
-                    collateralDelta: shortfallCollateral,
-                    sizeDeltaUsd: 0,
-                    callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
-                    referralCode: IBasisGmxFactory(_factory).referralCode()
-                })
-            );
-            // set _isDecreasingCollateral as true
-            // so that wipe the realizedPnlAmountWhenDecreasing value after successfull execution
-            _getGmxV2PositionManagerStorage().isDecreasingCollateral = true;
-            return (decreaseOrderKey, increaseOrderKey);
-        } else if (collateralDelta == realizedPnlAmountWhenDecreasing) {
-            _getGmxV2PositionManagerStorage().realizedPnlAmountWhenDecreasing = 0;
-            IBasisStrategy(strategy()).afterDecreasePositionCollateral(collateralDelta, true);
-            return (decreaseOrderKey, increaseOrderKey);
-        }
-        // treat realizedPnl already transferred to strategy as reduced collateral
-        collateralDelta -= realizedPnlAmountWhenDecreasing;
-
+        address _factory = factory(); // to reduce gas cost
+        // realized pnl while decreasing size will be included here
         uint256 idleCollateralAmount = IERC20(collateralToken()).balanceOf(address(this));
         if (collateralDelta <= idleCollateralAmount) {
-            IERC20(collateralToken()).safeTransfer(strategy(), collateralDelta);
-            IBasisStrategy(strategy()).afterDecreasePositionCollateral(collateralDelta, true);
+            // let strategy withdraw full balance
+            IBasisStrategy(strategy()).afterDecreasePositionCollateral(idleCollateralAmount, true);
             return (decreaseOrderKey, increaseOrderKey);
         } else if (idleCollateralAmount > 0) {
-            IERC20(collateralToken()).safeTransfer(strategy(), idleCollateralAmount);
             collateralDelta -= idleCollateralAmount;
         }
 
@@ -359,10 +330,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 })
             );
         }
-        // set _isDecreasingCollateral as true
-        // so that wipe the realizedPnlAmountWhenDecreasing value after successfull execution
         _getGmxV2PositionManagerStorage().isDecreasingCollateral = true;
-
         return (decreaseOrderKey, increaseOrderKey);
     }
 
@@ -450,24 +418,22 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     }
 
     /// @inheritdoc IOrderCallbackReceiver
-    function afterOrderExecution(bytes32 key, Order.Props calldata order, EventUtils.EventLogData calldata eventData)
-        external
-        override
-    {
+    function afterOrderExecution(
+        bytes32 key,
+        Order.Props calldata order,
+        EventUtils.EventLogData calldata /*eventData*/
+    ) external override {
         bool isIncrease = order.numbers.orderType == Order.OrderType.MarketIncrease;
         _validateOrderHandler(key, isIncrease);
         _setPendingOrderKey(bytes32(0), isIncrease);
-        if (isIncrease) {
-            _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
-        }
-        int256 executionCostAmount;
+
+        uint256 executionCostAmount;
         uint256 executedHedgeAmount;
-
         uint256 spotExecutionPrice = _getGmxV2PositionManagerStorage().spotExecutionPrice;
-        uint256 collateralTokenPrice = IOracle(IBasisGmxFactory(factory()).oracle()).getAssetPrice(collateralToken());
-
         // spotExecutionPrice > 0 means adjust sizes that needs the execution cost calc
         if (spotExecutionPrice > 0) {
+            uint256 collateralTokenPrice =
+                IOracle(IBasisGmxFactory(factory()).oracle()).getAssetPrice(collateralToken());
             uint256 _sizeInTokensBefore = _getGmxV2PositionManagerStorage().sizeInTokensBefore;
             uint256 _sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
             uint256 sizeDeltaInTokens =
@@ -480,31 +446,44 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 : order.numbers.sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256();
             uint256 pendingPositionFeeUsd = _getGmxV2PositionManagerStorage().pendingPositionFeeUsd;
             _getGmxV2PositionManagerStorage().pendingPositionFeeUsd = 0;
-            executionCostInUsd += pendingPositionFeeUsd.toInt256();
-            executionCostAmount = executionCostInUsd / collateralTokenPrice.toInt256();
+            executionCostAmount = (
+                executionCostInUsd < 0
+                    ? uint256(-executionCostInUsd) + pendingPositionFeeUsd
+                    : uint256(executionCostInUsd) + pendingPositionFeeUsd
+            ) / collateralTokenPrice;
             _wipeExecutionCostCalcInfo();
         }
 
         if (_getGmxV2PositionManagerStorage().isDecreasingCollateral) {
-            // when decreasing collateral
-            // wipe the realizedPnl info
-            _getGmxV2PositionManagerStorage().isDecreasingCollateral = false;
-            _getGmxV2PositionManagerStorage().realizedPnlAmountWhenDecreasing = 0;
-            IBasisStrategy(strategy()).afterDecreasePositionCollateral(0, true);
+            if (!_isPending()) {
+                // decrease collateral operations may have both decrease and increase
+                // so need to check pending is false
+                _getGmxV2PositionManagerStorage().isDecreasingCollateral = false;
+                // let strategy withdraw full balance of this address
+                IBasisStrategy(strategy()).afterDecreasePositionCollateral(
+                    IERC20(collateralToken()).balanceOf(address(this)), true
+                );
+            }
         } else if (!isIncrease) {
             // when decreasing size
+            uint256 collateralTokenPrice =
+                IOracle(IBasisGmxFactory(factory()).oracle()).getAssetPrice(collateralToken());
             uint256 executedHedgeInUsd =
                 order.numbers.sizeDeltaUsd.mulDiv(PRECISION, IBasisStrategy(strategy()).targetLeverage());
             executedHedgeAmount = executedHedgeInUsd / collateralTokenPrice;
-            // increase this value only when decreasePositionSize function is called
-            // Note: decrease order can be created by decreasePositionCollateral function
-            _getGmxV2PositionManagerStorage().realizedPnlAmountWhenDecreasing += eventData.uintItems.items[0].value;
             IBasisStrategy(strategy()).afterDecreasePositionSize(
                 executedHedgeAmount,
                 executionCostAmount > 0 ? uint256(executionCostAmount) : uint256(-executionCostAmount),
                 true
             );
         } else {
+            // increase
+            if (order.numbers.initialCollateralDeltaAmount > 0) {
+                // increase collateral
+                _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
+                IBasisStrategy(strategy()).afterIncreasePositionCollateral();
+            }
+            // increase size
             IBasisStrategy(strategy()).afterIncreasePositionSize(
                 executedHedgeAmount,
                 executionCostAmount > 0 ? uint256(executionCostAmount) : uint256(-executionCostAmount),
@@ -523,15 +502,16 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         _validateOrderHandler(key, isIncrease);
         _setPendingOrderKey(bytes32(0), isIncrease);
         _wipeExecutionCostCalcInfo();
-        if (isIncrease) {
-            _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
-        }
 
         if (_getGmxV2PositionManagerStorage().isDecreasingCollateral) {
             IBasisStrategy(strategy()).afterDecreasePositionCollateral(0, false);
         } else if (!isIncrease) {
             IBasisStrategy(strategy()).afterDecreasePositionSize(0, 0, false);
         } else {
+            if (order.numbers.initialCollateralDeltaAmount > 0) {
+                _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
+                IBasisStrategy(strategy()).afterIncreasePositionCollateral();
+            }
             IBasisStrategy(strategy()).afterIncreasePositionSize(0, 0, false);
         }
     }
