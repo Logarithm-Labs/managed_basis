@@ -471,11 +471,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
             uint256 executedHedgeInUsd =
                 order.numbers.sizeDeltaUsd.mulDiv(PRECISION, IBasisStrategy(strategy()).targetLeverage());
             executedHedgeAmount = executedHedgeInUsd / collateralTokenPrice;
-            IBasisStrategy(strategy()).afterDecreasePositionSize(
-                executedHedgeAmount,
-                executionCostAmount > 0 ? uint256(executionCostAmount) : uint256(-executionCostAmount),
-                true
-            );
+            IBasisStrategy(strategy()).afterDecreasePositionSize(executedHedgeAmount, executionCostAmount, true);
         } else {
             // increase
             if (order.numbers.initialCollateralDeltaAmount > 0) {
@@ -484,11 +480,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 IBasisStrategy(strategy()).afterIncreasePositionCollateral();
             }
             // increase size
-            IBasisStrategy(strategy()).afterIncreasePositionSize(
-                executedHedgeAmount,
-                executionCostAmount > 0 ? uint256(executionCostAmount) : uint256(-executionCostAmount),
-                true
-            );
+            IBasisStrategy(strategy()).afterIncreasePositionSize(executedHedgeAmount, executionCostAmount, true);
         }
     }
 
