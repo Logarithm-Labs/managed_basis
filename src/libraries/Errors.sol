@@ -67,4 +67,6 @@ library Errors {
     error NegativePendingUtilization(uint256 pendingUtilization);
 
     error ZeroAmountUtilization();
+
+    error NotEnoughCollateral();
 }
