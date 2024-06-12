@@ -52,9 +52,5 @@ contract DeployScript is Script {
         feeds[0] = assetPriceFeed;
         feeds[1] = productPriceFeed;
         oracle.setPriceFeeds(assets, feeds);
-
-        // grant operator role to keeper
-        strategy.grantRole(strategy.OPERATOR_ROLE(), keeper);
-        require(strategy.hasRole(strategy.OPERATOR_ROLE(), keeper), "Failed to grant operator role to keeper");
     }
 }

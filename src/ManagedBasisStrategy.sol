@@ -2,10 +2,9 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IOffChainPositionManager} from "src/interfaces/IOffChainPositionManager.sol";
 
-import {AccessControlDefaultAdminRulesUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlDefaultAdminRulesUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -22,12 +21,9 @@ import {Errors} from "src/libraries/Errors.sol";
 import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
 import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
 
-contract ManagedBasisStrategy is
-    UUPSUpgradeable,
-    FactoryDeployable,
-    LogBaseVaultUpgradeable,
-    AccessControlDefaultAdminRulesUpgradeable
-{
+import {console2 as console} from "forge-std/console2.sol";
+
+contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, OwnableUpgradeable {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using Math for uint256;
@@ -35,6 +31,15 @@ contract ManagedBasisStrategy is
     enum SwapType {
         MANUAL,
         INCH_V6
+    }
+
+    // TODO: refactor for enum
+    enum StrategyStatus {
+        IDLE,
+        DEPOSITING,
+        WITHDRAWING,
+        REBALANCING_UP,
+        REBALANCING_DOWN
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -53,25 +58,20 @@ contract ManagedBasisStrategy is
         bool isClaimed;
     }
 
-    struct PositionState {
-        uint256 netBalance;
-        uint256 sizeInTokens;
-        uint256 markPrice;
-        uint256 timestamp;
-    }
-
     struct ManagedBasisStrategyStorage {
         IOracle oracle;
+        address operator;
         address positionManager;
         uint256 targetLeverage;
         uint256 currentRound;
         uint256 entryCost;
         uint256 userDepositLimit;
         uint256 strategyDepostLimit;
-        // uint256 strategyCapacity;
-        uint256 assetsToClaim; // asset balance that is processed for withdraws
+        uint256 assetsToClaim; // asset balance that is ready to claim
+        uint256 assetsToWithdraw; // asset balance that is processed for withdrawals
         uint256 pendingUtilization;
         uint256 pendingDeutilization;
+        uint256 pendingIncreaseCollateral;
         uint256 pendingDecreaseCollateral;
         uint256 totalPendingWithdraw; // total amount of asset that remains to be withdrawn
         uint256 withdrawnFromSpot; // asset amount withdrawn from spot that is not yet processed
@@ -79,8 +79,8 @@ contract ManagedBasisStrategy is
         uint256 idleImbalance; // imbalance in idle assets between spot and hedge due to withdraws from idle
         bytes32[] activeWithdrawRequests;
         bytes32[] closedWithdrawRequests;
-        bool rebalancing;
-        bool utilizing;
+        StrategyStatus strategyStatus;
+        bytes32 activeRequestId;
         mapping(address => uint128) requestCounter;
         mapping(bytes32 => WithdrawState) withdrawRequests;
     }
@@ -99,14 +99,47 @@ contract ManagedBasisStrategy is
     }
 
     /*//////////////////////////////////////////////////////////////
+                        INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    function initialize(
+        address _asset,
+        address _product,
+        address _oracle,
+        address _operator,
+        uint256 _targetLeverage,
+        uint256 _entryCost
+    ) external initializer {
+        __ERC4626_init(IERC20(_asset));
+        __LogBaseVault_init(IERC20(_product));
+        __Ownable_init(msg.sender);
+        __ManagedBasisStrategy_init(_oracle, _operator, _targetLeverage, _entryCost);
+    }
+
+    function __ManagedBasisStrategy_init(
+        address _oracle,
+        address _operator,
+        uint256 _targetLeverage,
+        uint256 _entryCost
+    ) public initializer {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        $.oracle = IOracle(_oracle);
+        $.operator = _operator;
+        $.entryCost = _entryCost;
+        $.targetLeverage = _targetLeverage;
+        $.userDepositLimit = type(uint256).max;
+        $.strategyDepostLimit = type(uint256).max;
+    }
+
+    function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
+
+    /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
     event WithdrawRequest(
-        address indexed caller, address indexed receiver, address indexed owner, bytes32 requestId, uint256 amount
+        address indexed caller, address indexed receiver, address indexed owner, bytes32 withdrawId, uint256 amount
     );
-
-    event WithdrawReport(address indexed caller, bytes32 requestId, uint256 amountExecuted);
 
     event StateReport(
         address indexed caller, uint256 roundId, uint256 netBalance, uint256 sizeInTokens, uint256 markPrice
@@ -114,7 +147,7 @@ contract ManagedBasisStrategy is
 
     event Claim(address indexed claimer, bytes32 requestId, uint256 amount);
 
-    event ExecuteRedeem(bytes32 requestId, uint256 requestedAmount, uint256 executedAmount);
+    event ExecuteWithdraw(bytes32 requestId, uint256 requestedAmount, uint256 executedAmount);
 
     event PendingUtilizationIncrease(uint256 amount);
 
@@ -125,30 +158,30 @@ contract ManagedBasisStrategy is
     event Deutilize(address indexed caller, uint256 amountIn, uint256 amountOut);
 
     /*//////////////////////////////////////////////////////////////
-                        INITIALIZATION / CONFIGURATION
+                            MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address _asset, address _product, address _owner, address _oracle, uint256 _entryCost)
-        external
-        initializer
-    {
-        __FactoryDeployable_init();
-        __ERC4626_init(IERC20(_asset));
-        __LogBaseVault_init(IERC20(_product));
-        __AccessControlDefaultAdminRules_init(1 days, _owner);
-        __ManagedBasisStrategy_init(_oracle, _entryCost);
-    }
-
-    function __ManagedBasisStrategy_init(address _oracle, uint256 _entryCost) public initializer {
+    modifier onlyOperator() {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        $.oracle = IOracle(_oracle);
-        $.entryCost = _entryCost;
-        $.userDepositLimit = type(uint256).max;
-        $.strategyDepostLimit = type(uint256).max;
-        // $.strategyCapacity = 0;
+        if (msg.sender != $.operator) {
+            revert Errors.CallerNotOperator();
+        }
+        _;
     }
 
-    function setPositionManager(address _positionManager) external onlyFactory {
+    modifier onlyPositionManager() {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (msg.sender != $.positionManager) {
+            revert Errors.CallerNotPositionManager();
+        }
+        _;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            CONFIGURATION
+    //////////////////////////////////////////////////////////////*/
+
+    function setPositionManager(address _positionManager) external onlyOwner {
         if (_positionManager == address(0)) {
             revert Errors.ZeroAddress();
         }
@@ -156,21 +189,15 @@ contract ManagedBasisStrategy is
         IERC20(asset()).approve(_positionManager, type(uint256).max);
     }
 
-    function setEntryCost(uint256 _entryCost) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setEntryCost(uint256 _entryCost) external onlyOwner {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         $.entryCost = _entryCost;
     }
 
-    function setDepositLimits(uint256 userLimit, uint256 strategyLimit) external onlyRole(OPERATOR_ROLE) {
+    function setDepositLimits(uint256 userLimit, uint256 strategyLimit) external onlyOwner {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         $.userDepositLimit = userLimit;
         $.strategyDepostLimit = strategyLimit;
-    }
-
-    function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyFactory {}
-
-    function positionManager() public view returns (address) {
-        return _getManagedBasisStrategyStorage().positionManager;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -208,19 +235,12 @@ contract ManagedBasisStrategy is
         IERC20 _asset = IERC20(asset());
         _asset.safeTransferFrom(caller, address(this), assets);
 
-        // TODO: might be useful to implement the following logic:
-
-        // uint256 availableCapacity = $.strategyCapacity - utilizedAssets();
-        // uint256 assetsToUtilize = assets > availableCapacity ? availableCapacity : assets;
-
-        // the problem is that we need a different way to manage idle assets
-
         uint256 assetsToHedge = assets.mulDiv(PRECISION, PRECISION + $.targetLeverage);
         uint256 assetsToSpot = assets - assetsToHedge;
         $.pendingUtilization += assetsToSpot;
+        $.pendingIncreaseCollateral += assetsToHedge;
 
         _asset.safeTransfer($.positionManager, assetsToHedge);
-        IPositionManager($.positionManager).increasePositionCollateral(assetsToHedge);
 
         _mint(receiver, shares);
 
@@ -279,7 +299,7 @@ contract ManagedBasisStrategy is
             $.pendingDeutilization += $.oracle.convertTokenAmount(asset(), product(), remainingAmountToWithdrawFromSpot);
             $.pendingUtilization -= idle;
             $.idleImbalance += idle.mulDiv(PRECISION, PRECISION + $.targetLeverage);
-            $.assetsToClaim += idle;
+            $.assetsToWithdraw += idle;
             $.activeWithdrawRequests.push(withdrawId);
             $.requestCounter[owner]++;
 
@@ -304,10 +324,10 @@ contract ManagedBasisStrategy is
             revert Errors.RequestAlreadyClaimed();
         }
 
-        $.assetsToClaim -= (requestData.executedFromSpot + requestData.executedFromIdle);
-        $.withdrawRequests[requestId].isClaimed = true;
         uint256 totalExecuted =
             requestData.executedFromSpot + requestData.executedFromIdle + requestData.executedFromHedge;
+        $.assetsToClaim -= totalExecuted;
+        $.withdrawRequests[requestId].isClaimed = true;
         IERC20 asset_ = IERC20(asset());
         asset_.safeTransfer(msg.sender, totalExecuted);
 
@@ -321,23 +341,24 @@ contract ManagedBasisStrategy is
     //////////////////////////////////////////////////////////////*/
 
     // TODO: account for pendings
-    function totalAssets() public view virtual override returns (uint256 total) {
-        return utilizedAssets() + idleAssets();
+    function totalAssets() public view virtual override returns (uint256) {
+        uint256 total = utilizedAssets() + idleAssets();
+        return total;
     }
 
     function utilizedAssets() public view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 productBalance = IERC20(product()).balanceOf(address(this));
-        uint256 productPrice = $.oracle.getAssetPrice(product());
-        uint256 assetPrice = $.oracle.getAssetPrice(asset());
-        uint256 positionNetBalance = IPositionManager($.positionManager).positionNetBalance();
-        return productBalance.mulDiv(productPrice, assetPrice) + positionNetBalance;
+        uint256 positionNetBalance = IOffChainPositionManager($.positionManager).positionNetBalance();
+        uint256 productValueInAsset = $.oracle.convertTokenAmount(product(), asset(), productBalance);
+        return productValueInAsset + positionNetBalance;
     }
 
     function idleAssets() public view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
-        return assetBalance - $.assetsToClaim;
+        uint256 idle = assetBalance - ($.assetsToClaim + $.assetsToWithdraw);
+        return idle;
     }
 
     function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
@@ -346,12 +367,18 @@ contract ManagedBasisStrategy is
 
     function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (totalSupply() == 0) {
+            return assets;
+        }
         uint256 baseShares = convertToShares(assets);
         return baseShares.mulDiv(PRECISION - $.entryCost, PRECISION);
     }
 
     function previewMint(uint256 shares) public view virtual override returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (totalSupply() == 0) {
+            return shares;
+        }
         uint256 baseAssets = convertToAssets(shares);
         return baseAssets.mulDiv(PRECISION, PRECISION - $.entryCost);
     }
@@ -363,33 +390,33 @@ contract ManagedBasisStrategy is
     function utilize(uint256 amount, SwapType swapType, bytes calldata data)
         public
         virtual
-        onlyRole(OPERATOR_ROLE)
-        returns (uint256 amountOut)
+        onlyOperator
+        returns (bytes32 requestId)
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-        // can only utilize when there is no pending utilization
-        if ($.utilizing) {
-            revert Errors.AlreadyUtilizing();
+        // can only utilize when the strategy status is IDLE
+        if ($.strategyStatus != StrategyStatus.IDLE) {
+            revert Errors.StatusNotIdle();
         }
+        $.strategyStatus = StrategyStatus.DEPOSITING;
 
         // can only utilize when pending utilization is positive
         if ($.pendingUtilization == 0) {
-            revert Errors.NegativePendingUtilization($.pendingUtilization);
+            revert Errors.ZeroPendingUtilization();
         }
 
-        // actual utilize amount is min of amount, idle assets,  pending utilization and available capacity
+        // actual utilize amount is min of amount, idle assets and pending utilization
         uint256 idle = idleAssets();
         amount = amount > idle ? idle : amount;
         amount = amount > $.pendingUtilization ? $.pendingUtilization : amount;
-        // uint256 availableCapacity = $.strategyCapacity - utilizedAssets();
-        // amount = amount > availableCapacity ? availableCapacity : amount;
 
         // can only utilize when amount is positive
         if (amount == 0) {
             revert Errors.ZeroAmountUtilization();
         }
 
+        uint256 amountOut;
         if (swapType == SwapType.INCH_V6) {
             amountOut = InchAggregatorV6Logic.executeSwap(asset(), product(), true, data);
         } else {
@@ -399,9 +426,12 @@ contract ManagedBasisStrategy is
 
         // TODO: check prices
         uint256 spotExecutionPrice = amount.mulDiv(PRECISION, amountOut, Math.Rounding.Ceil);
-        IPositionManager($.positionManager).increasePositionSize(amountOut, spotExecutionPrice);
 
-        $.utilizing = true;
+        requestId = IOffChainPositionManager($.positionManager).adjustPosition(
+            amountOut, spotExecutionPrice, $.pendingIncreaseCollateral, true
+        );
+        $.activeRequestId = requestId;
+        $.pendingIncreaseCollateral = 0;
 
         emit Utilize(msg.sender, amount, amountOut);
     }
@@ -409,8 +439,8 @@ contract ManagedBasisStrategy is
     function deutilize(uint256 amount, SwapType swapType, bytes calldata data)
         public
         virtual
-        onlyRole(OPERATOR_ROLE)
-        returns (uint256 amountOut)
+        onlyOperator
+        returns (bytes32 requestId)
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 productBalance = IERC20(product()).balanceOf(address(this));
@@ -424,6 +454,7 @@ contract ManagedBasisStrategy is
             revert Errors.ZeroAmountUtilization();
         }
 
+        uint256 amountOut;
         if (swapType == SwapType.INCH_V6) {
             amountOut = InchAggregatorV6Logic.executeSwap(asset(), product(), false, data);
         } else {
@@ -431,94 +462,60 @@ contract ManagedBasisStrategy is
             revert Errors.UnsupportedSwapType();
         }
 
-        if (!$.rebalancing) {
+        if ($.strategyStatus == StrategyStatus.WITHDRAWING) {
             // processing withdraw requests
-            $.assetsToClaim += amountOut;
+            $.assetsToWithdraw += amountOut;
         }
 
         // TODO: check prices
         uint256 spotExecutionPrice = amount.mulDiv(PRECISION, amountOut, Math.Rounding.Ceil);
-        IPositionManager($.positionManager).decreasePositionSize(amountOut, spotExecutionPrice);
+        requestId = IOffChainPositionManager($.positionManager).adjustPosition(amountOut, spotExecutionPrice, 0, false);
 
         emit Deutilize(msg.sender, amount, amountOut);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        EXTERNAL STORAGE GETTERS
-    //////////////////////////////////////////////////////////////*/
-
-    function oracle() external view returns (address) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return address($.oracle);
-    }
-
-    function entryCost() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.entryCost;
-    }
-
-    function userDepositLimit() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.userDepositLimit;
-    }
-
-    function strategyDepositLimit() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.strategyDepostLimit;
-    }
-
-    function requestCounter(address owner) external view returns (uint128) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.requestCounter[owner];
-    }
-
-    function withdrawRequest(bytes32 requestId) external view returns (WithdrawState memory) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.withdrawRequests[requestId];
-    }
-
-    function assetsToClaim() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.assetsToClaim;
-    }
-
-    function currentRound() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.currentRound;
     }
 
     /*//////////////////////////////////////////////////////////////
                     POSITION MANAGER CALLBACKS LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function afterIncreasePositionSize() external {
+    function afterExecuteRequest(bytes32 requestId) external onlyPositionManager {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if (msg.sender != $.positionManager) {
-            revert Errors.CallerNotPositionManager();
+
+        if (requestId != $.activeRequestId) {
+            revert Errors.InvalidRequestId(requestId, $.activeRequestId);
         }
 
-        if (!$.utilizing) {
-            revert Errors.NotUtilizing();
-        }
-
-        // TODO
+        delete $.activeRequestId;
+        $.strategyStatus = StrategyStatus.IDLE;
     }
 
-    function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bool isSuccess) external {
+    function afterIncreasePositionSize(uint256 sizeDeltaInTokens, bool isSuccess) external onlyPositionManager {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        StrategyStatus status = $.strategyStatus;
 
-        if (msg.sender != $.positionManager) {
-            revert Errors.CallerNotPositionManager();
-        }
-
-        if (!$.utilizing) {
+        if (status == StrategyStatus.DEPOSITING || status == StrategyStatus.REBALANCING_UP) {
+            // processsing deposit request
+            if (isSuccess) {
+                $.pendingUtilization -= sizeDeltaInTokens;
+            } else {
+                // should sell sizeDeltaInTokens of product back to asset to remain delta neutral
+                // TODO: implemet fallback swap logic without external swap data
+            }
+        } else {
             revert Errors.NotUtilizing();
         }
+    }
+
+    function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bool isSuccess)
+        external
+        onlyPositionManager
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        StrategyStatus status = $.strategyStatus;
 
         if (isSuccess) {
-            if ($.rebalancing) {
-                // processing rebalance request
-            } else {
+            if (status == StrategyStatus.WITHDRAWING) {
                 // processing withdraw requests
                 uint256 cacheWithdrawnFromSpot = $.withdrawnFromSpot;
                 uint256 cacheWithdrawnFromIdle = $.withdrawnFromIdle;
@@ -590,6 +587,7 @@ contract ManagedBasisStrategy is
                 // update global state
                 $.withdrawnFromSpot = 0;
                 $.withdrawnFromIdle = 0;
+
                 // recalculate pendingDeutilization based on the new oracle price
                 $.pendingDeutilization =
                     totalWithdraw > 0 ? $.oracle.convertTokenAmount(asset(), product(), totalWithdraw) : 0;
@@ -606,31 +604,199 @@ contract ManagedBasisStrategy is
 
                     // request decrease collateral from position manager if there are any fulfilled requests
 
-                    IPositionManager($.positionManager).decreasePositionCollateral(cacheDecreaseCollateral);
+                    //TODO: adjust for idle imbalance
+                    IOffChainPositionManager($.positionManager).adjustPosition(0, 0, cacheDecreaseCollateral, false);
                 }
+            } else if (status == StrategyStatus.REBALANCING_DOWN) {
+                // processing rebalance request
+            } else {
+                revert Errors.NotDeutilizing();
             }
         } else {
             // processing execution revert
         }
     }
 
-    function afterIncreasePositionCollaterla() external {
+    //
+    function afterIncreasePositionCollateral(uint256 collateralDeltaAmount, bool isSuccess)
+        external
+        onlyPositionManager
+    {
         // TODO
     }
 
-    function afterDecreasePositionCollateral(uint256 amount, bool isSuccess) external {
+    function afterDecreasePositionCollateral(uint256 amount, bool isSuccess) external onlyPositionManager {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
         if (msg.sender != $.positionManager) {
             revert Errors.CallerNotPositionManager();
         }
 
-        if ($.rebalancing) {
-            // processing rebalance request
-        } else {
-            // processing withdraw requests
+        StrategyStatus status = $.strategyStatus;
 
-            IERC20(asset()).safeTransferFrom($.positionManager, address(this), amount);
+        if (status == StrategyStatus.WITHDRAWING) {
+            if (isSuccess) {
+                // processing withdraw requests
+                IERC20(asset()).safeTransferFrom($.positionManager, address(this), amount);
+                uint256 totalAmountToExecute = $.assetsToWithdraw + amount;
+                uint256 processedAssetAmount;
+                uint256 index;
+                while (totalAmountToExecute > 0 && index < $.closedWithdrawRequests.length) {
+                    // process closed requests one by one
+                    bytes32 withdrawId = $.closedWithdrawRequests[index];
+                    WithdrawState storage request = $.withdrawRequests[withdrawId];
+
+                    uint256 amountToExecute = request.requestedAmount - request.executionCost;
+                    if (amountToExecute <= totalAmountToExecute) {
+                        // if there is enough processed asset to cover requested amount minus execution cost,  mark as executed
+                        request.isExecuted = true;
+                        processedAssetAmount += amountToExecute;
+                        totalAmountToExecute -= amountToExecute;
+
+                        index++;
+
+                        emit ExecuteWithdraw(withdrawId, request.requestedAmount, amountToExecute);
+                    }
+                }
+
+                // update global state
+                $.assetsToClaim += processedAssetAmount;
+                $.assetsToWithdraw -= processedAssetAmount;
+
+                // remove executed requests from closedWithdrawRequests based on index
+                if (index > 0) {
+                    for (uint256 i = 0; i < $.closedWithdrawRequests.length - index; i++) {
+                        $.closedWithdrawRequests[i] = $.closedWithdrawRequests[i + index];
+                    }
+                    for (uint256 j = 0; j < index; j++) {
+                        $.closedWithdrawRequests.pop();
+                    }
+                }
+            }
+        } else if (status == StrategyStatus.REBALANCING_DOWN) {
+            // processing rebalance request
+            // TODO
+        } else {
+            revert Errors.NotDeutilizing();
         }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        STORAGE GETTERS
+    //////////////////////////////////////////////////////////////*/
+
+    function oracle() external view returns (address) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return address($.oracle);
+    }
+
+    function positionManager() external view returns (address) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.positionManager;
+    }
+
+    function targetLeverage() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.targetLeverage;
+    }
+
+    function currentRound() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.currentRound;
+    }
+
+    function entryCost() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.entryCost;
+    }
+
+    function userDepositLimit() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.userDepositLimit;
+    }
+
+    function strategyDepositLimit() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.strategyDepostLimit;
+    }
+
+    function assetsToClaim() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.assetsToClaim;
+    }
+
+    function assetsToWithdraw() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.assetsToWithdraw;
+    }
+
+    function pendingUtilization() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.pendingUtilization;
+    }
+
+    function pendingDeutilization() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.pendingDeutilization;
+    }
+
+    function pendingIncreaseCollateral() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.pendingIncreaseCollateral;
+    }
+
+    function pendingDecreaseCollateral() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.pendingDecreaseCollateral;
+    }
+
+    function totalPendingWithdraw() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.totalPendingWithdraw;
+    }
+
+    function withdrawnFromSpot() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.withdrawnFromSpot;
+    }
+
+    function withdrawnFromIdle() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.withdrawnFromIdle;
+    }
+
+    function idleImbalance() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.idleImbalance;
+    }
+
+    function activeWithdrawRequests() external view returns (bytes32[] memory) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.activeWithdrawRequests;
+    }
+
+    function closedWithdrawRequests() external view returns (bytes32[] memory) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.closedWithdrawRequests;
+    }
+
+    function strategyStatus() external view returns (StrategyStatus) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.strategyStatus;
+    }
+
+    function activeRequestId() external view returns (bytes32) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.activeRequestId;
+    }
+
+    function requestCounter(address owner) external view returns (uint128) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.requestCounter[owner];
+    }
+
+    function withdrawRequest(bytes32 requestId) external view returns (WithdrawState memory) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.withdrawRequests[requestId];
     }
 }

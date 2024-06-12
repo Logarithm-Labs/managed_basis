@@ -62,10 +62,6 @@ contract InchTest is Test {
         feeds[1] = productPriceFeed;
 
         oracle.setPriceFeeds(assets, feeds);
-
-        // grant operator role to owner
-        strategy.grantRole(strategy.OPERATOR_ROLE(), owner);
-        assertEq(strategy.hasRole(strategy.OPERATOR_ROLE(), owner), true);
     }
 
     function test_inchUtilize() public {
@@ -75,9 +71,8 @@ contract InchTest is Test {
         bytes memory data = generateInchCallData(asset, product, amount);
 
         // call utilize
-        uint256 amountOut = strategy.utilize(amount, ManagedBasisStrategy.SwapType.INCH_V6, data);
-        assertEq(amountOut, IERC20(product).balanceOf(address(strategy)));
-        console.log("amountOut: ", amountOut);
+        strategy.utilize(amount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        console.log("amountOut: ", IERC20(product).balanceOf(address(strategy)));
     }
 
     function test_inchDeutilize() public {
@@ -87,9 +82,8 @@ contract InchTest is Test {
         bytes memory data = generateInchCallData(product, asset, amount);
 
         // call deutilize
-        uint256 amountOut = strategy.deutilize(amount, ManagedBasisStrategy.SwapType.INCH_V6, data);
-        assertEq(amountOut, IERC20(asset).balanceOf(address(strategy)));
-        console.log("amountOut: ", amountOut);
+        strategy.deutilize(amount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        console.log("amountOut: ", IERC20(asset).balanceOf(address(strategy)));
     }
 
     function writeTokenBalance(address who, address token, uint256 amt) internal {

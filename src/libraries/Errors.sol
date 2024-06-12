@@ -18,8 +18,6 @@ library Errors {
     error CallerNotStrategy();
     /// @notice only callable by keeper
     error CallerNotKeeper();
-    /// @notice only callable by position managers
-    error CallerNotPositionManager();
     /// @notice invalid maket config when deploying pos manager
     error InvalidMarket();
     /// @notice asset and product are not matched with short and long tokens
@@ -60,13 +58,28 @@ library Errors {
 
     error ActiveRequestIsNotClosed(bytes32 requestId);
 
-    error AlreadyUtilizing();
+    error StatusNotIdle();
 
     error NotUtilizing();
 
-    error NegativePendingUtilization(uint256 pendingUtilization);
+    error NotDeutilizing();
+
+    error ZeroPendingUtilization();
 
     error ZeroAmountUtilization();
 
+    error CallerNotPositionManager();
+
+    error CallerNotAgent();
+
+    error InvalidRequestId(bytes32 requestId, bytes32 activeRequestId);
+
+    error InvalidActiveRequestType();
+
+    error InsufficientCollateralBalance(uint256 collateralBalance, uint256 collateralAmount);
+
+    error NoActiveRequests();
+
+    error CallerNotOperator();
     error NotEnoughCollateral();
 }
