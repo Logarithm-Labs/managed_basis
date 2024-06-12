@@ -14,6 +14,8 @@ import {Errors} from "src/libraries/Errors.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
+import {console2 as console} from "forge-std/console2.sol";
+
 contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, OwnableUpgradeable {
     using SafeCast for uint256;
     using Math for uint256;
@@ -146,14 +148,6 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
         return keccak256(abi.encodePacked(address(this), round));
     }
 
-    // 1. pnl realization from size decrease
-    // 2. delta between pnl realization and required collateral decrease
-    // 3.1 if pnl realization > required collateral decrease
-    //     3.1 increase collateral by this delta in callback
-    // 3.2 if pnl realization < required collateral decrease
-    //      3.2 remove collateral from base collateral
-    // 3.3 if the base is not enough ....
-
     function adjustPosition(
         uint256 sizeDeltaInTokens,
         uint256 spotExecutionPrice,
@@ -169,7 +163,7 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
         uint256 round = $.currentRound + 1;
         requestId = getRequestId(round);
 
-        $.currentRound = round;
+        // $.currentRound = round;
         $.activeRequestId = requestId;
 
         $.requests[requestId] = RequestInfo({
@@ -203,7 +197,7 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
     function transferToAgent() external onlyAgent {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         RequestInfo memory request = $.requests[$.activeRequestId];
-        if (request.isIncrease && request.collateralDeltaAmount > 0) {
+        if (!request.isIncrease || request.collateralDeltaAmount == 0) {
             revert Errors.InvalidActiveRequestType();
         }
 
@@ -296,12 +290,13 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
 
         // if agent submits state without request, it means that it is regular state update
         // no need to report back to strategy
-
-        PositionState storage state = $.positionStates[$.currentRound];
+        uint256 round = $.currentRound + 1;
+        PositionState storage state = $.positionStates[round];
         state.sizeInTokens = sizeInTokens;
         state.netBalance = netBalance;
         state.markPrice = markPrice;
         state.timestamp = block.timestamp;
+        $.currentRound = round;
 
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
     }
@@ -311,9 +306,11 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
         PositionState memory state = $.positionStates[$.currentRound];
         uint256 initialNetBalance =
             state.netBalance + $.pendingCollateralIncrease + IERC20($.collateralToken).balanceOf(address(this));
-        uint256 price = IOracle($.oracle).getAssetPrice($.indexToken);
-        uint256 positionValue = state.sizeInTokens * price;
-        uint256 positionSize = state.sizeInTokens * state.markPrice;
+
+        uint256 positionValue =
+            IOracle($.oracle).convertTokenAmount($.indexToken, $.collateralToken, state.sizeInTokens);
+        uint256 positionSize =
+            state.sizeInTokens.mulDiv(state.markPrice, 10 ** uint256(IERC20Metadata($.indexToken).decimals()));
         int256 virtualPnl = $.isLong
             ? positionValue.toInt256() - positionSize.toInt256()
             : positionSize.toInt256() - positionValue.toInt256();

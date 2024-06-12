@@ -1,23 +1,31 @@
+=========================
+STATE AFTER REDEEM
 
+====STATE_TRANSITIONS====
+sharePrice 999917039200000000
+totalAssets 4999585196
+utilizedAssets 9999170392
+idleAssets 0
+totalPendingWithdraw 4999585196
+assetsToClaim 0
+assetsToWithdraw 0
+strategyAssetBalance 0
+productValueInAsset 7499227311
+positionManagerAssetBalance 0
+positionNetBalance 2499943081
 
-spotExecutionPrice = 71376360000
-hedgeExecutionPrice = 71376360000 * 0.98 = 69948832800
-sizeDeltaInTokens = 2 BTC = 2 * 1e10
+=========================
+STATE AFTER DEUTILIZE
 
-executionCost = (71376360000 - 69948832800) * 2 * 1e12 = 
-
-
-nominal spread = 71376.360000 - 69948.832800 = 1427.527199
-nominal cost = 2 * 1427.527199 = 2855.054398
-
-realCost = 2855054398
-realSpread = 71376360000 - 69948832800 = 1427527200
-realCost = realSpread * sizeDeltaInTokens / indexDecimals = 1427527200 * 2 * 1e12 / 1e12
-
-executionAmount = sizeDeltaInTokens / targetLeverage * exectuionPrice
-
-nominal execution amount = 2 * 69948.832800 / 3 = 46632.5552
-realExecutionAmount = 46632555200
-realExecutionAmount = 2 * 1e10 * 69948832800 * 1e18 / (3 * 1e18 * 1e10) = 
-
-
+====STATE_TRANSITIONS====
+sharePrice 999779117800000000
+totalAssets 4998895589
+utilizedAssets 6249481495
+idleAssets 0
+totalPendingWithdraw 1250585906
+assetsToClaim 0
+assetsToWithdraw 3748999290
+strategyAssetBalance 3748999290
+productValueInAsset 3749538414
+positionManagerAssetBalance 0
+positionNetBalance 2499943081

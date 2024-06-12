@@ -10,6 +10,7 @@ library Errors {
     error InchSwapInvailidTokens();
     error InchSwapAmountExceedsBalance(uint256 swapAmount, uint256 balance);
     error InchInvalidReceiver();
+    error InchInvalidAmount(uint256 requestedAmountIn, uint256 unpackedAmountIn);
 
     error IncosistentParamsLength();
     /// @notice only callable by factory
