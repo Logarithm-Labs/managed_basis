@@ -21,6 +21,8 @@ import {Errors} from "src/libraries/Errors.sol";
 import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
 import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
 
+import {console2 as console} from "forge-std/console2.sol";
+
 contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, OwnableUpgradeable {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -100,21 +102,31 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                         INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address _asset, address _product, address _oracle, address _operator, uint256 _entryCost)
-        external
-        initializer
-    {
+    function initialize(
+        address _asset,
+        address _product,
+        address _oracle,
+        address _operator,
+        uint256 _targetLeverage,
+        uint256 _entryCost
+    ) external initializer {
         __ERC4626_init(IERC20(_asset));
         __LogBaseVault_init(IERC20(_product));
         __Ownable_init(msg.sender);
-        __ManagedBasisStrategy_init(_oracle, _operator, _entryCost);
+        __ManagedBasisStrategy_init(_oracle, _operator, _targetLeverage, _entryCost);
     }
 
-    function __ManagedBasisStrategy_init(address _oracle, address _operator, uint256 _entryCost) public initializer {
+    function __ManagedBasisStrategy_init(
+        address _oracle,
+        address _operator,
+        uint256 _targetLeverage,
+        uint256 _entryCost
+    ) public initializer {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         $.oracle = IOracle(_oracle);
         $.operator = _operator;
         $.entryCost = _entryCost;
+        $.targetLeverage = _targetLeverage;
         $.userDepositLimit = type(uint256).max;
         $.strategyDepostLimit = type(uint256).max;
     }
@@ -223,13 +235,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         IERC20 _asset = IERC20(asset());
         _asset.safeTransferFrom(caller, address(this), assets);
 
-        // TODO: might be useful to implement the following logic:
-
-        // uint256 availableCapacity = $.strategyCapacity - utilizedAssets();
-        // uint256 assetsToUtilize = assets > availableCapacity ? availableCapacity : assets;
-
-        // the problem is that we need a different way to manage idle assets
-
         uint256 assetsToHedge = assets.mulDiv(PRECISION, PRECISION + $.targetLeverage);
         uint256 assetsToSpot = assets - assetsToHedge;
         $.pendingUtilization += assetsToSpot;
@@ -336,23 +341,24 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     //////////////////////////////////////////////////////////////*/
 
     // TODO: account for pendings
-    function totalAssets() public view virtual override returns (uint256 total) {
-        return utilizedAssets() + idleAssets();
+    function totalAssets() public view virtual override returns (uint256) {
+        uint256 total = utilizedAssets() + idleAssets();
+        return total;
     }
 
     function utilizedAssets() public view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 productBalance = IERC20(product()).balanceOf(address(this));
-        uint256 productPrice = $.oracle.getAssetPrice(product());
-        uint256 assetPrice = $.oracle.getAssetPrice(asset());
         uint256 positionNetBalance = IOffChainPositionManager($.positionManager).positionNetBalance();
-        return productBalance.mulDiv(productPrice, assetPrice) + positionNetBalance;
+        uint256 productValueInAsset = $.oracle.convertTokenAmount(product(), asset(), productBalance);
+        return productValueInAsset + positionNetBalance;
     }
 
     function idleAssets() public view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
-        return assetBalance - ($.assetsToClaim + $.assetsToWithdraw);
+        uint256 idle = assetBalance - ($.assetsToClaim + $.assetsToWithdraw);
+        return idle;
     }
 
     function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
@@ -361,12 +367,18 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (totalSupply() == 0) {
+            return assets;
+        }
         uint256 baseShares = convertToShares(assets);
         return baseShares.mulDiv(PRECISION - $.entryCost, PRECISION);
     }
 
     function previewMint(uint256 shares) public view virtual override returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (totalSupply() == 0) {
+            return shares;
+        }
         uint256 baseAssets = convertToAssets(shares);
         return baseAssets.mulDiv(PRECISION, PRECISION - $.entryCost);
     }
@@ -379,7 +391,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         public
         virtual
         onlyOperator
-        returns (uint256 amountOut)
+        returns (bytes32 requestId)
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
@@ -404,6 +416,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             revert Errors.ZeroAmountUtilization();
         }
 
+        uint256 amountOut;
         if (swapType == SwapType.INCH_V6) {
             amountOut = InchAggregatorV6Logic.executeSwap(asset(), product(), true, data);
         } else {
@@ -414,7 +427,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         // TODO: check prices
         uint256 spotExecutionPrice = amount.mulDiv(PRECISION, amountOut, Math.Rounding.Ceil);
 
-        bytes32 requestId = IOffChainPositionManager($.positionManager).adjustPosition(
+        requestId = IOffChainPositionManager($.positionManager).adjustPosition(
             amountOut, spotExecutionPrice, $.pendingIncreaseCollateral, true
         );
         $.activeRequestId = requestId;
@@ -427,7 +440,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         public
         virtual
         onlyOperator
-        returns (uint256 amountOut)
+        returns (bytes32 requestId)
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 productBalance = IERC20(product()).balanceOf(address(this));
@@ -441,6 +454,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             revert Errors.ZeroAmountUtilization();
         }
 
+        uint256 amountOut;
         if (swapType == SwapType.INCH_V6) {
             amountOut = InchAggregatorV6Logic.executeSwap(asset(), product(), false, data);
         } else {
@@ -455,128 +469,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         // TODO: check prices
         uint256 spotExecutionPrice = amount.mulDiv(PRECISION, amountOut, Math.Rounding.Ceil);
-        IOffChainPositionManager($.positionManager).adjustPosition(amountOut, spotExecutionPrice, 0, false);
+        requestId = IOffChainPositionManager($.positionManager).adjustPosition(amountOut, spotExecutionPrice, 0, false);
 
         emit Deutilize(msg.sender, amount, amountOut);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        EXTERNAL STORAGE GETTERS
-    //////////////////////////////////////////////////////////////*/
-
-    function oracle() external view returns (address) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return address($.oracle);
-    }
-
-    function positionManager() external view returns (address) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.positionManager;
-    }
-
-    function targetLeverage() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.targetLeverage;
-    }
-
-    function currentRound() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.currentRound;
-    }
-
-    function entryCost() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.entryCost;
-    }
-
-    function userDepositLimit() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.userDepositLimit;
-    }
-
-    function strategyDepositLimit() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.strategyDepostLimit;
-    }
-
-    function assetsToClaim() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.assetsToClaim;
-    }
-
-    function assetsToWithdraw() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.assetsToWithdraw;
-    }
-
-    function pendingUtilization() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.pendingUtilization;
-    }
-
-    function pendingDeutilization() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.pendingDeutilization;
-    }
-
-    function pendingIncreaseCollateral() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.pendingIncreaseCollateral;
-    }
-
-    function pendingDecreaseCollateral() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.pendingDecreaseCollateral;
-    }
-
-    function totalPendingWithdraw() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.totalPendingWithdraw;
-    }
-
-    function withdrawnFromSpot() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.withdrawnFromSpot;
-    }
-
-    function withdrawnFromIdle() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.withdrawnFromIdle;
-    }
-
-    function idleImbalance() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.idleImbalance;
-    }
-
-    function activeWithdrawRequests() external view returns (bytes32[] memory) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.activeWithdrawRequests;
-    }
-
-    function closedWithdrawRequests() external view returns (bytes32[] memory) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.closedWithdrawRequests;
-    }
-
-    function strategyStatus() external view returns (StrategyStatus) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.strategyStatus;
-    }
-
-    function activeRequestId() external view returns (bytes32) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.activeRequestId;
-    }
-
-    function requestCounter(address owner) external view returns (uint128) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.requestCounter[owner];
-    }
-
-    function withdrawRequest(bytes32 requestId) external view returns (WithdrawState memory) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.withdrawRequests[requestId];
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -784,5 +679,124 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         } else {
             revert Errors.NotDeutilizing();
         }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        STORAGE GETTERS
+    //////////////////////////////////////////////////////////////*/
+
+    function oracle() external view returns (address) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return address($.oracle);
+    }
+
+    function positionManager() external view returns (address) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.positionManager;
+    }
+
+    function targetLeverage() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.targetLeverage;
+    }
+
+    function currentRound() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.currentRound;
+    }
+
+    function entryCost() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.entryCost;
+    }
+
+    function userDepositLimit() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.userDepositLimit;
+    }
+
+    function strategyDepositLimit() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.strategyDepostLimit;
+    }
+
+    function assetsToClaim() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.assetsToClaim;
+    }
+
+    function assetsToWithdraw() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.assetsToWithdraw;
+    }
+
+    function pendingUtilization() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.pendingUtilization;
+    }
+
+    function pendingDeutilization() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.pendingDeutilization;
+    }
+
+    function pendingIncreaseCollateral() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.pendingIncreaseCollateral;
+    }
+
+    function pendingDecreaseCollateral() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.pendingDecreaseCollateral;
+    }
+
+    function totalPendingWithdraw() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.totalPendingWithdraw;
+    }
+
+    function withdrawnFromSpot() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.withdrawnFromSpot;
+    }
+
+    function withdrawnFromIdle() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.withdrawnFromIdle;
+    }
+
+    function idleImbalance() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.idleImbalance;
+    }
+
+    function activeWithdrawRequests() external view returns (bytes32[] memory) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.activeWithdrawRequests;
+    }
+
+    function closedWithdrawRequests() external view returns (bytes32[] memory) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.closedWithdrawRequests;
+    }
+
+    function strategyStatus() external view returns (StrategyStatus) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.strategyStatus;
+    }
+
+    function activeRequestId() external view returns (bytes32) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.activeRequestId;
+    }
+
+    function requestCounter(address owner) external view returns (uint128) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.requestCounter[owner];
+    }
+
+    function withdrawRequest(bytes32 requestId) external view returns (WithdrawState memory) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.withdrawRequests[requestId];
     }
 }

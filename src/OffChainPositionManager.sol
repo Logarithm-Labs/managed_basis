@@ -309,7 +309,8 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
     function positionNetBalance() public view virtual override returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         PositionState memory state = $.positionStates[$.currentRound];
-        uint256 initialNetBalance = state.netBalance + $.pendingCollateralIncrease;
+        uint256 initialNetBalance =
+            state.netBalance + $.pendingCollateralIncrease + IERC20($.collateralToken).balanceOf(address(this));
         uint256 price = IOracle($.oracle).getAssetPrice($.indexToken);
         uint256 positionValue = state.sizeInTokens * price;
         uint256 positionSize = state.sizeInTokens * state.markPrice;
@@ -324,5 +325,34 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
         } else {
             return 0;
         }
+    }
+
+    function currentPositionState() public view returns (PositionState memory) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.positionStates[$.currentRound];
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            STORAGE GETTERS
+    //////////////////////////////////////////////////////////////*/
+
+    function activeRequestId() public view returns (bytes32) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.activeRequestId;
+    }
+
+    function currentRound() public view returns (uint256) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.currentRound;
+    }
+
+    function positionState(uint256 round) public view returns (PositionState memory) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.positionStates[round];
+    }
+
+    function pendingCollateralIncrease() public view returns (uint256) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.pendingCollateralIncrease;
     }
 }
