@@ -192,7 +192,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         uint256 spotExecutionPrice,
         uint256 collateralDeltaAmount,
         bool isIncrease
-    ) external onlyStrategy whenNotPending returns {
+    ) external onlyStrategy whenNotPending returns (bytes32) {
         address _factory = factory();
         GmxV2Lib.GetPosition memory positionParams = _getPositionParams(_factory);
         GmxV2Lib.GetPrices memory pricesParams = _getPricesParams(_factory);
@@ -235,7 +235,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 })
             );
             _getGmxV2PositionManagerStorage().status = Status.INCREASING;
-
         } else {
             if (spotExecutionPrice > 0) {
                 _recordExecutionCostCalcInfo(positionParams, spotExecutionPrice);
@@ -413,61 +412,73 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         bool isIncrease = order.numbers.orderType == Order.OrderType.MarketIncrease;
         _validateOrderHandler(key, isIncrease);
         _setPendingOrderKey(bytes32(0), isIncrease);
-
-        uint256 executionCostAmount;
-        uint256 executedHedgeAmount;
-        uint256 spotExecutionPrice = _getGmxV2PositionManagerStorage().spotExecutionPrice;
-        // spotExecutionPrice > 0 means adjust sizes that needs the execution cost calc
-        if (spotExecutionPrice > 0) {
-            uint256 collateralTokenPrice =
-                IOracle(IBasisGmxFactory(factory()).oracle()).getAssetPrice(collateralToken());
-            uint256 _sizeInTokensBefore = _getGmxV2PositionManagerStorage().sizeInTokensBefore;
-            uint256 _sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
-            uint256 sizeDeltaInTokens =
-                isIncrease ? _sizeInTokensAfter - _sizeInTokensBefore : _sizeInTokensBefore - _sizeInTokensAfter;
-            // executionCostInUsd = (spotExecutionPrice - hedgeExectuionPrice) * sizeDelta
-            // or = (hedgeExectuionPrice - spotExecutionPrice) * sizeDelta
-            // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
-            int256 executionCostInUsd = isIncrease
-                ? (spotExecutionPrice * sizeDeltaInTokens).toInt256() - order.numbers.sizeDeltaUsd.toInt256()
-                : order.numbers.sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256();
-            uint256 pendingPositionFeeUsd = _getGmxV2PositionManagerStorage().pendingPositionFeeUsd;
-            _getGmxV2PositionManagerStorage().pendingPositionFeeUsd = 0;
-            executionCostAmount = (
-                executionCostInUsd < 0
-                    ? uint256(-executionCostInUsd) + pendingPositionFeeUsd
-                    : uint256(executionCostInUsd) + pendingPositionFeeUsd
-            ) / collateralTokenPrice;
-            _wipeExecutionCostCalcInfo();
-        }
-
-        if (_getGmxV2PositionManagerStorage().isDecreasingCollateral) {
-            if (!_isPending()) {
-                // decrease collateral operations may have both decrease and increase
-                // so need to check pending is false
-                _getGmxV2PositionManagerStorage().isDecreasingCollateral = false;
-                // let strategy withdraw full balance of this address
-                IBasisStrategy(strategy()).afterDecreasePositionCollateral(
-                    IERC20(collateralToken()).balanceOf(address(this)), true
-                );
-            }
-        } else if (!isIncrease) {
-            // when decreasing size
-            uint256 collateralTokenPrice =
-                IOracle(IBasisGmxFactory(factory()).oracle()).getAssetPrice(collateralToken());
-            uint256 executedHedgeInUsd =
-                order.numbers.sizeDeltaUsd.mulDiv(PRECISION, IBasisStrategy(strategy()).targetLeverage());
-            executedHedgeAmount = executedHedgeInUsd / collateralTokenPrice;
-            IBasisStrategy(strategy()).afterDecreasePositionSize(executedHedgeAmount, executionCostAmount, true);
+        if (_getGmxV2PositionManagerStorage().status == Status.KEEPING) {
+            _getGmxV2PositionManagerStorage().status = Status.IDLE;
         } else {
-            // increase
-            if (order.numbers.initialCollateralDeltaAmount > 0) {
-                // increase collateral
-                _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
-                IBasisStrategy(strategy()).afterIncreasePositionCollateral();
+            if (isIncrease) {
+                if (_getGmxV2PositionManagerStorage().status == Status.INCREASING) {
+                    if (order.numbers.initialCollateralDeltaAmount > 0) {
+                        // increase collateral
+                        _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
+                        IBasisStrategy(strategy()).afterIncreasePositionCollateral(
+                            order.numbers.initialCollateralDeltaAmount, true
+                        );
+                    }
+                    // increase size
+                    IBasisStrategy(strategy()).afterIncreasePositionSize(order.numbers.sizeDeltaInTokens, true);
+                    IBasisStrategy(strategy()).afterExecuteRequest(bytes32(0));
+                } else if (_getGmxV2PositionManagerStorage().status == Status.DEC_INC_SIZE) {
+                    IBasisStrategy(strategy()).afterDecreasePositionCollateral(
+                        IERC20(collateralToken()).balanceOf(address(this)), true
+                    );
+                    IBasisStrategy(strategy()).afterExecuteRequest(bytes32(0));
+                } else if (_getGmxV2PositionManagerStorage().status == Status.DEC_INC_COLLATERAL) {
+                    IBasisStrategy(strategy()).afterDecreasePositionCollateral(
+                        IERC20(collateralToken()).balanceOf(address(this)), true
+                    );
+                    IBasisStrategy(strategy()).afterExecuteRequest(bytes32(0));
+                }
+                _getGmxV2PositionManagerStorage().status = Status.IDLE;
+            } else {
+                uint256 executionCostAmount;
+                uint256 spotExecutionPrice = _getGmxV2PositionManagerStorage().spotExecutionPrice;
+                // spotExecutionPrice > 0 means adjust sizes that needs the execution cost calc
+                if (spotExecutionPrice > 0) {
+                    uint256 collateralTokenPrice =
+                        IOracle(IBasisGmxFactory(factory()).oracle()).getAssetPrice(collateralToken());
+                    uint256 _sizeInTokensBefore = _getGmxV2PositionManagerStorage().sizeInTokensBefore;
+                    uint256 _sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
+                    uint256 sizeDeltaInTokens =
+                        isIncrease ? _sizeInTokensAfter - _sizeInTokensBefore : _sizeInTokensBefore - _sizeInTokensAfter;
+                    // executionCostInUsd = (spotExecutionPrice - hedgeExectuionPrice) * sizeDelta
+                    // or = (hedgeExectuionPrice - spotExecutionPrice) * sizeDelta
+                    // sizeDeltaUsd = hedgeExectuionPrice * sizeDelta
+                    int256 executionCostInUsd =
+                        order.numbers.sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256();
+                    uint256 pendingPositionFeeUsd = _getGmxV2PositionManagerStorage().pendingPositionFeeUsd;
+                    _getGmxV2PositionManagerStorage().pendingPositionFeeUsd = 0;
+                    executionCostAmount = (
+                        executionCostInUsd < 0
+                            ? pendingPositionFeeUsd
+                            : uint256(executionCostInUsd) + pendingPositionFeeUsd
+                    ) / collateralTokenPrice;
+                    _wipeExecutionCostCalcInfo();
+                }
+                if (_getGmxV2PositionManagerStorage().status == Status.DECREASING) {
+                    IBasisStrategy(strategy()).afterDecreasePositionSize(
+                        order.numbers.sizeDeltaInTokens, executionCostAmount, true
+                    );
+                    IBasisStrategy(strategy()).afterDecreasePositionCollateral(
+                        IERC20(collateralToken()).balanceOf(address(this)), true
+                    );
+                    IBasisStrategy(strategy()).afterExecuteRequest(bytes32(0));
+                    _getGmxV2PositionManagerStorage().status = Status.IDLE;
+                } else {
+                    IBasisStrategy(strategy()).afterDecreasePositionSize(
+                        order.numbers.sizeDeltaInTokens, executionCostAmount, true
+                    );
+                }
             }
-            // increase size
-            IBasisStrategy(strategy()).afterIncreasePositionSize(executedHedgeAmount, executionCostAmount, true);
         }
     }
 
@@ -491,7 +502,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
                 IBasisStrategy(strategy()).afterIncreasePositionCollateral();
             }
-            IBasisStrategy(strategy()).afterIncreasePositionSize(0, 0, false);
+            IBasisStrategy(strategy()).afterIncreasePositionSize(0, false);
         }
     }
 
