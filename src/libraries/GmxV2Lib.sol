@@ -139,7 +139,7 @@ library GmxV2Lib {
         uint256 collateralTokenPrice = IOracle(pricesParams.oracle).getAssetPrice(position.addresses.collateralToken);
         Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
         sizeDeltaUsdToDecrease = _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokens);
-        positionFeeUsd = _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsdToDecrease, false);
+        positionFeeUsd = _getPositionFeeUsd(positionParams, position, indexTokenPrice, sizeDeltaUsdToDecrease, false);
         (int256 totalPositionPnlUsd,) = _getPositionPnl(positionParams, pricesParams, position.numbers.sizeInUsd);
         int256 realizedPnlUsd = Precision.mulDiv(totalPositionPnlUsd, sizeDeltaInTokens, position.numbers.sizeInTokens);
         int256 realizedPnlAmount = realizedPnlUsd / collateralTokenPrice.toInt256();
@@ -205,10 +205,12 @@ library GmxV2Lib {
             uint256 sizeDeltaInTokensToBeRealized =
                 collateralDeltaAmount.mulDiv(position.numbers.sizeInTokens, totalPositionPnlAmount);
             sizeDeltaUsdToDecrease += _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokensToBeRealized);
-            positionFeeUsd = _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsdToDecrease, false);
+            positionFeeUsd =
+                _getPositionFeeUsd(positionParams, position, indexTokenPrice, sizeDeltaUsdToDecrease, false);
             sizeDeltaUsdToIncrease =
-                _getSizeDeltaUsdForIncrease(position, indexTokenPrice, sizeDeltaInTokensToBeRealized);
-            positionFeeUsd += _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsdToIncrease, true);
+                _getSizeDeltaUsdForIncrease(positionParams, position, indexTokenPrice, sizeDeltaInTokensToBeRealized);
+            positionFeeUsd +=
+                _getPositionFeeUsd(positionParams, position, indexTokenPrice, sizeDeltaUsdToIncrease, true);
         }
         return (
             isIncreaseCollateral,
@@ -230,14 +232,14 @@ library GmxV2Lib {
     }
 
     function getSizeDeltaUsdForDecrease(
-        GetPosition calldata params,
+        GetPosition calldata positionParams,
         GetPrices calldata pricesParams,
         uint256 sizeDeltaInTokens
     ) external view returns (uint256 sizeDeltaUsd, uint256 positionFeeUsd) {
-        Position.Props memory position = _getPosition(params);
+        Position.Props memory position = _getPosition(positionParams);
         sizeDeltaUsd = _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokens);
         Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
-        positionFeeUsd = _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsd, false);
+        positionFeeUsd = _getPositionFeeUsd(positionParams, position, indexTokenPrice, sizeDeltaUsd, false);
         return (sizeDeltaUsd, positionFeeUsd);
     }
 
@@ -248,8 +250,8 @@ library GmxV2Lib {
     ) external view returns (uint256 sizeDeltaUsd, uint256 positionFeeUsd) {
         Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
         Position.Props memory position = _getPosition(positionParams);
-        sizeDeltaUsd = _getSizeDeltaUsdForIncrease(position, indexTokenPrice, sizeDeltaInTokens);
-        positionFeeUsd = _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsd, true);
+        sizeDeltaUsd = _getSizeDeltaUsdForIncrease(positionParams, position, indexTokenPrice, sizeDeltaInTokens);
+        positionFeeUsd = _getPositionFeeUsd(positionParams, position, indexTokenPrice, sizeDeltaUsd, true);
         return (sizeDeltaUsd, positionFeeUsd);
     }
 
@@ -278,7 +280,7 @@ library GmxV2Lib {
     ) external view returns (uint256) {
         Position.Props memory position = _getPosition(positionParams);
         Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
-        return _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsd, isIncrease);
+        return _getPositionFeeUsd(positionParams, position, indexTokenPrice, sizeDeltaUsd, isIncrease);
     }
 
     /// @dev in gmx v2, sizeDeltaInTokens = sizeInTokens * sizeDeltaUsd / sizeInUsd
@@ -293,12 +295,14 @@ library GmxV2Lib {
     /// @dev return position delta size in usd when increasing
     /// considered the price impact
     function _getSizeDeltaUsdForIncrease(
+        GetPosition calldata positionParams,
         Position.Props memory position,
         Price.Props memory indexTokenPrice,
         uint256 sizeDeltaInTokens
     ) private returns (uint256) {
         int256 baseSizeDeltaUsd = sizeDeltaInTokens.toInt256() * indexTokenPrice.max.toInt256();
-        int256 priceImpactUsd = _getPriceImpactUsd(position, indexTokenPrice, positionParams, baseSizeDeltaUsd);
+        int256 priceImpactUsd =
+            _getPriceImpactUsd(positionParams, position, indexTokenPrice, positionParams, baseSizeDeltaUsd);
         uint256 sizeDeltaUsd;
         // in gmx v2
         // int256 sizeDeltaInTokens;
@@ -318,6 +322,7 @@ library GmxV2Lib {
 
     // @dev calculate the position fee in usd when changing position size
     function _getPositionFeeUsd(
+        GetPosition calldata positionParams,
         Position.Props memory position,
         Price.Props memory indexTokenPrice,
         uint256 sizeDeltaUsd,
