@@ -37,13 +37,22 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     uint256 public constant PRECISION = 1e18;
     string constant API_VERSION = "0.0.1";
 
+    enum Status {
+        IDLE,
+        INCREASING,
+        DECREASING,
+        DEC_INC_SIZE, // decrease and then increase size
+        DEC_INC_COLLATERAL, // decrease and then increase collateral
+        KEEPING
+    }
+
     struct InternalCreateOrderParams {
         bool isLong;
         bool isIncrease;
         address exchangeRouter;
         address orderVault;
         address collateralToken;
-        uint256 collateralDelta;
+        uint256 collateralDeltaAmount;
         uint256 sizeDeltaUsd;
         uint256 callbackGasLimit;
         bytes32 referralCode;
@@ -67,15 +76,16 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         uint256 maxClaimableFundingShare;
         uint256 maxHedgeDeviation;
         // state
+        Status status;
+        // bytes32 activeRequestId;
         bytes32 pendingIncreaseOrderKey;
         bytes32 pendingDecreaseOrderKey;
         uint256 pendingCollateralAmount;
+        uint256 nextCollateralIncreaseAmount;
         // state for calcuating execution cost
         uint256 pendingPositionFeeUsd;
         uint256 spotExecutionPrice;
         uint256 sizeInTokensBefore;
-        // state for handling realized pnl when decreasing
-        bool isDecreasingCollateral;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager")) - 1)) & ~bytes32(uint256(0xff))
@@ -177,162 +187,137 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         _getGmxV2PositionManagerStorage().maxHedgeDeviation = _maxDeviation;
     }
 
-    /// @dev check if the increasement amount was transferred
-    ///
-    /// @param assetsToPositionManager is the amount to trnasfer to position manager
-    function increasePositionCollateral(uint256 assetsToPositionManager) external view onlyStrategy {
-        if (IERC20(collateralToken()).balanceOf(address(this)) < assetsToPositionManager) {
-            revert Errors.NotEnoughCollateral();
-        }
-    }
-
-    /// @dev increase position size
-    /// Note: if there is idle collateral, then increase the collateral with it
-    ///
-    /// @param sizeDeltaInTokens is the delta amount in index token to increase
-    /// @param spotExecutionPrice is the spot execution price in usd/product
-    ///
-    /// @return orderKey
-    function increasePositionSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice)
-        external
-        onlyStrategy
-        whenNotPending
-        returns (bytes32)
-    {
+    function adjustPosition(
+        uint256 sizeDeltaInTokens,
+        uint256 spotExecutionPrice,
+        uint256 collateralDeltaAmount,
+        bool isIncrease
+    ) external onlyStrategy whenNotPending returns {
         address _factory = factory();
         GmxV2Lib.GetPosition memory positionParams = _getPositionParams(_factory);
         GmxV2Lib.GetPrices memory pricesParams = _getPricesParams(_factory);
-        _recordExecutionCostCalcInfo(positionParams, spotExecutionPrice);
-        uint256 sizeDeltaUsd = GmxV2Lib.getSizeDeltaUsdForIncrease(positionParams, pricesParams, sizeDeltaInTokens);
-        uint256 collateralDelta;
+
         uint256 idleCollateralAmount = IERC20(collateralToken()).balanceOf(address(this));
-        if (idleCollateralAmount > 0) {
-            IERC20(collateralToken()).safeTransfer(IBasisGmxFactory(_factory).orderVault(), idleCollateralAmount);
-            collateralDelta = idleCollateralAmount;
-            _getGmxV2PositionManagerStorage().pendingCollateralAmount = idleCollateralAmount;
-        }
 
-        // record position fee
-        // once order is confirmed, can't calc the exact fee because open interest are changed.
-        _getGmxV2PositionManagerStorage().pendingPositionFeeUsd =
-            GmxV2Lib.getPositionFeeUsd(positionParams, pricesParams, sizeDeltaUsd, true);
+        if (isIncrease) {
+            if (collateralDeltaAmount > idleCollateralAmount) {
+                revert Error.NotEnoughCollateral();
+            }
 
-        return _createOrder(
-            InternalCreateOrderParams({
-                isLong: isLong(),
-                isIncrease: true,
-                exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
-                orderVault: IBasisGmxFactory(_factory).orderVault(),
-                collateralToken: collateralToken(),
-                collateralDelta: collateralDelta,
-                sizeDeltaUsd: sizeDeltaUsd,
-                callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
-                referralCode: IBasisGmxFactory(_factory).referralCode()
-            })
-        );
-    }
+            if (idleCollateralAmount > 0) {
+                IERC20(collateralToken()).safeTransfer(IBasisGmxFactory(_factory).orderVault(), idleCollateralAmount);
+                _getGmxV2PositionManagerStorage().pendingCollateralAmount = idleCollateralAmount;
+            }
 
-    /// @dev decreases the position size
-    ///
-    /// @param sizeDeltaInTokens is the delta amount in index token to decrease
-    /// @param spotExecutionPrice is the spot execution price in usd/product
-    ///
-    /// @return orderKey
-    function decreasePositionSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice)
-        external
-        onlyStrategy
-        whenNotPending
-        returns (bytes32)
-    {
-        address _factory = factory();
-        GmxV2Lib.GetPosition memory positionParams = _getPositionParams(_factory);
-        _recordExecutionCostCalcInfo(positionParams, spotExecutionPrice);
-        uint256 sizeDeltaUsd = GmxV2Lib.getSizeDeltaUsdForDecrease(positionParams, sizeDeltaInTokens);
+            uint256 sizeDeltaUsd;
+            if (sizeDeltaInTokens > 0) {
+                uint256 positionFeeUsd;
+                (sizeDeltaUsd, positionFeeUsd) =
+                    GmxV2Lib.getSizeDeltaUsdForIncrease(positionParams, pricesParams, sizeDeltaInTokens);
 
-        // record position fee
-        // once order is confirmed, can't calc the exact fee because open interest are changed.
-        _getGmxV2PositionManagerStorage().pendingPositionFeeUsd =
-            GmxV2Lib.getPositionFeeUsd(positionParams, _getPricesParams(_factory), sizeDeltaUsd, false);
-
-        return _createOrder(
-            InternalCreateOrderParams({
-                isLong: isLong(),
-                isIncrease: false,
-                exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
-                orderVault: IBasisGmxFactory(_factory).orderVault(),
-                collateralToken: collateralToken(),
-                collateralDelta: 0,
-                sizeDeltaUsd: sizeDeltaUsd,
-                callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
-                referralCode: IBasisGmxFactory(_factory).referralCode()
-            })
-        );
-    }
-
-    /// @dev remove collateral from position to strategy
-    /// Note: the execution fee shoud be sum of decrease and inrease fees
-    ///
-    /// @param collateralDelta is the target delta amount to remove
-    ///
-    /// @return decreaseOrderKey is the order key of decreasing
-    /// @return increaseOrderKey is the order key of increasing
-    function decreasePositionCollateral(uint256 collateralDelta)
-        external
-        onlyStrategy
-        whenNotPending
-        returns (bytes32 decreaseOrderKey, bytes32 increaseOrderKey)
-    {
-        address _factory = factory(); // to reduce gas cost
-        // realized pnl while decreasing size will be included here
-        uint256 idleCollateralAmount = IERC20(collateralToken()).balanceOf(address(this));
-        if (collateralDelta <= idleCollateralAmount) {
-            // let strategy withdraw full balance
-            IBasisStrategy(strategy()).afterDecreasePositionCollateral(idleCollateralAmount, true);
-            return (decreaseOrderKey, increaseOrderKey);
-        } else if (idleCollateralAmount > 0) {
-            collateralDelta -= idleCollateralAmount;
-        }
-
-        GmxV2Lib.GetPosition memory positionParams = _getPositionParams(_factory);
-        GmxV2Lib.GetPrices memory pricesParams = _getPricesParams(_factory);
-        (uint256 initialCollateralDelta, uint256 sizeDeltaInTokens) =
-            GmxV2Lib.getDecreaseCollateralResult(positionParams, pricesParams, collateralDelta);
-
-        uint256 sizeDeltaUsdForDecrease = GmxV2Lib.getSizeDeltaUsdForDecrease(positionParams, sizeDeltaInTokens);
-
-        decreaseOrderKey = _createOrder(
-            InternalCreateOrderParams({
-                isLong: isLong(),
-                isIncrease: false,
-                exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
-                orderVault: IBasisGmxFactory(_factory).orderVault(),
-                collateralToken: collateralToken(),
-                collateralDelta: initialCollateralDelta,
-                sizeDeltaUsd: sizeDeltaUsdForDecrease,
-                callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
-                referralCode: IBasisGmxFactory(_factory).referralCode()
-            })
-        );
-
-        if (sizeDeltaInTokens > 0) {
-            uint256 sizeDeltaUsdForIncrease =
-                GmxV2Lib.getSizeDeltaUsdForIncrease(positionParams, pricesParams, sizeDeltaInTokens);
-            increaseOrderKey = _createOrder(
+                if (positionFeeUsd > 0) {
+                    // record position fee
+                    // once order is confirmed, can't calc the exact fee because open interest are changed.
+                    _getGmxV2PositionManagerStorage().pendingPositionFeeUsd = positionFeeUsd;
+                }
+            }
+            _createOrder(
                 InternalCreateOrderParams({
                     isLong: isLong(),
                     isIncrease: true,
                     exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
                     orderVault: IBasisGmxFactory(_factory).orderVault(),
                     collateralToken: collateralToken(),
-                    collateralDelta: 0,
-                    sizeDeltaUsd: sizeDeltaUsdForIncrease,
+                    collateralDeltaAmount: idleCollateralAmount,
+                    sizeDeltaUsd: sizeDeltaUsd,
                     callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
                     referralCode: IBasisGmxFactory(_factory).referralCode()
                 })
             );
+            _getGmxV2PositionManagerStorage().status = Status.INCREASING;
+
+        } else {
+            if (spotExecutionPrice > 0) {
+                _recordExecutionCostCalcInfo(positionParams, spotExecutionPrice);
+            }
+
+            // if(idleCollateralAmount > collateralDeltaAmount) {
+            //     collateralDeltaAmount = 0;
+            // } else {
+            //     collateralDeltaAmount -= idleCollateralAmount;
+            // }
+
+            // if (sizeDeltaInTokens == 0 && collateralDeltaAmount == 0) {
+            //     IBasisStrategy(strategy()).afterDecreasePositionCollateral(idleCollateralAmount, true);
+            //     IBasisStrategy(strategy()).
+            // }
+
+            (
+                bool isIncreaseCollateral,
+                uint256 initialcollateralDeltaAmount,
+                uint256 sizeDeltaUsdToDecrease,
+                uint256 sizeDeltaUsdToIncrease,
+                uint256 positionFeeUsd
+            ) = GmxV2Lib.getDecreasePositionResult(
+                positionParams, pricesParams, sizeDeltaInTokens, collateralDeltaAmount
+            );
+
+            if (positionFeeUsd > 0) {
+                // record position fee
+                // once order is confirmed, can't calc the exact fee because open interest are changed.
+                _getGmxV2PositionManagerStorage().pendingPositionFeeUsd = positionFeeUsd;
+            }
+
+            _createOrder(
+                InternalCreateOrderParams({
+                    isLong: isLong(),
+                    isIncrease: false,
+                    exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                    orderVault: IBasisGmxFactory(_factory).orderVault(),
+                    collateralToken: collateralToken(),
+                    collateralDeltaAmount: !isIncreaseCollateral ? initialcollateralDeltaAmount : 0,
+                    sizeDeltaUsd: sizeDeltaUsdToDecrease,
+                    callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                    referralCode: IBasisGmxFactory(_factory).referralCode()
+                })
+            );
+
+            if (sizeDeltaUsdToIncrease > 0) {
+                _getGmxV2PositionManagerStorage().status = Status.DEC_INC_SIZE;
+                _createOrder(
+                    InternalCreateOrderParams({
+                        isLong: isLong(),
+                        isIncrease: true,
+                        exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                        orderVault: IBasisGmxFactory(_factory).orderVault(),
+                        collateralToken: collateralToken(),
+                        collateralDeltaAmount: 0,
+                        sizeDeltaUsd: sizeDeltaUsdToIncrease,
+                        callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                        referralCode: IBasisGmxFactory(_factory).referralCode()
+                    })
+                );
+            } else if (isIncreaseCollateral) {
+                _getGmxV2PositionManagerStorage().status = Status.DEC_INC_COLLATERAL;
+                _createOrder(
+                    InternalCreateOrderParams({
+                        isLong: isLong(),
+                        isIncrease: true,
+                        exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                        orderVault: IBasisGmxFactory(_factory).orderVault(),
+                        collateralToken: collateralToken(),
+                        collateralDeltaAmount: initialcollateralDeltaAmount,
+                        sizeDeltaUsd: 0,
+                        callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                        referralCode: IBasisGmxFactory(_factory).referralCode()
+                    })
+                );
+            } else {
+                _getGmxV2PositionManagerStorage().status = Status.DECREASING;
+            }
         }
-        _getGmxV2PositionManagerStorage().isDecreasingCollateral = true;
-        return (decreaseOrderKey, increaseOrderKey);
+
+        return bytes32(0);
     }
 
     /// @notice claim funding or adjust size as needed
@@ -347,6 +332,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
             if (sizeDeltaInTokens < 0) {
                 uint256 sizeDeltaUsd =
                     GmxV2Lib.getSizeDeltaUsdForDecrease(_getPositionParams(_factory), uint256(-sizeDeltaInTokens));
+                _getGmxV2PositionManagerStorage().status = Status.KEEPING;
                 return _createOrder(
                     InternalCreateOrderParams({
                         isLong: isLong(),
@@ -354,7 +340,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                         exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
                         orderVault: IBasisGmxFactory(_factory).orderVault(),
                         collateralToken: collateralToken(),
-                        collateralDelta: 0,
+                        collateralDeltaAmount: 0,
                         sizeDeltaUsd: sizeDeltaUsd,
                         callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
                         referralCode: IBasisGmxFactory(_factory).referralCode()
@@ -371,7 +357,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                         exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
                         orderVault: IBasisGmxFactory(_factory).orderVault(),
                         collateralToken: collateralToken(),
-                        collateralDelta: 0,
+                        collateralDeltaAmount: 0,
                         sizeDeltaUsd: sizeDeltaUsd,
                         callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
                         referralCode: IBasisGmxFactory(_factory).referralCode()

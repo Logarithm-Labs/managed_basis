@@ -53,8 +53,10 @@ library Errors {
     // @notice upkeep validation
     error UnAuthorizedForwarder(address fowarder);
 
-    // @notice there is no positive when decrease collateral
-    error NotPositivePnl();
+    // @notice there is not enough positive pnl when decrease collateral
+    error NotEnoughPnl();
+
+    error NotEnoughCollateral();
 
     error ActiveRequestIsNotClosed(bytes32 requestId);
 
