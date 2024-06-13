@@ -424,8 +424,9 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                             order.numbers.initialCollateralDeltaAmount, true
                         );
                     }
-                    // increase size
-                    IBasisStrategy(strategy()).afterIncreasePositionSize(order.numbers.sizeDeltaInTokens, true);
+                    if (order.numbers.sizeDeltaInTokens > 0) {
+                        IBasisStrategy(strategy()).afterIncreasePositionSize(order.numbers.sizeDeltaInTokens, true);
+                    }
                     IBasisStrategy(strategy()).afterExecuteRequest(bytes32(0));
                 } else if (_getGmxV2PositionManagerStorage().status == Status.DEC_INC_SIZE) {
                     IBasisStrategy(strategy()).afterDecreasePositionCollateral(
@@ -465,18 +466,24 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                     _wipeExecutionCostCalcInfo();
                 }
                 if (_getGmxV2PositionManagerStorage().status == Status.DECREASING) {
-                    IBasisStrategy(strategy()).afterDecreasePositionSize(
-                        order.numbers.sizeDeltaInTokens, executionCostAmount, true
-                    );
-                    IBasisStrategy(strategy()).afterDecreasePositionCollateral(
-                        IERC20(collateralToken()).balanceOf(address(this)), true
-                    );
+                    if (order.numbers.sizeDeltaInTokens > 0) {
+                        IBasisStrategy(strategy()).afterDecreasePositionSize(
+                            order.numbers.sizeDeltaInTokens, executionCostAmount, true
+                        );
+                    }
+                    if (order.numbers.initialCollateralDeltaAmount > 0) {
+                        IBasisStrategy(strategy()).afterDecreasePositionCollateral(
+                            IERC20(collateralToken()).balanceOf(address(this)), true
+                        );
+                    }
                     IBasisStrategy(strategy()).afterExecuteRequest(bytes32(0));
                     _getGmxV2PositionManagerStorage().status = Status.IDLE;
                 } else {
-                    IBasisStrategy(strategy()).afterDecreasePositionSize(
-                        order.numbers.sizeDeltaInTokens, executionCostAmount, true
-                    );
+                    if (order.numbers.sizeDeltaInTokens > 0) {
+                        IBasisStrategy(strategy()).afterDecreasePositionSize(
+                            order.numbers.sizeDeltaInTokens, executionCostAmount, true
+                        );
+                    }
                 }
             }
         }
@@ -493,16 +500,41 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         _setPendingOrderKey(bytes32(0), isIncrease);
         _wipeExecutionCostCalcInfo();
 
-        if (_getGmxV2PositionManagerStorage().isDecreasingCollateral) {
-            IBasisStrategy(strategy()).afterDecreasePositionCollateral(0, false);
-        } else if (!isIncrease) {
-            IBasisStrategy(strategy()).afterDecreasePositionSize(0, 0, false);
+        if (_getGmxV2PositionManagerStorage().status == Status.KEEPING) {
+            _getGmxV2PositionManagerStorage().status = Status.IDLE;
         } else {
-            if (order.numbers.initialCollateralDeltaAmount > 0) {
-                _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
-                IBasisStrategy(strategy()).afterIncreasePositionCollateral();
+            if (isIncrease) {
+                if (_getGmxV2PositionManagerStorage().status == Status.INCREASING) {
+                    if (order.numbers.initialCollateralDeltaAmount > 0) {
+                        // increase collateral
+                        _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
+                        IBasisStrategy(strategy()).afterIncreasePositionCollateral(0, false);
+                    }
+                    if (order.numbers.sizeDeltaInTokens > 0) {
+                        IBasisStrategy(strategy()).afterIncreasePositionSize(0, false);
+                    }
+                    IBasisStrategy(strategy()).afterExecuteRequest(bytes32(0));
+                } else if (_getGmxV2PositionManagerStorage().status == Status.DEC_INC_SIZE) {
+                    IBasisStrategy(strategy()).afterExecuteRequest(bytes32(0));
+                } else if (_getGmxV2PositionManagerStorage().status == Status.DEC_INC_COLLATERAL) {
+                    IBasisStrategy(strategy()).afterDecreasePositionCollateral(0, false);
+                    IBasisStrategy(strategy()).afterExecuteRequest(bytes32(0));
+                }
+                _getGmxV2PositionManagerStorage().status = Status.IDLE;
+            } else {
+                if (_getGmxV2PositionManagerStorage().status == Status.DECREASING) {
+                    if (order.numbers.sizeDeltaInTokens > 0) {
+                        IBasisStrategy(strategy()).afterDecreasePositionSize(0, 0, false);
+                    }
+                    if (order.numbers.initialCollateralDeltaAmount > 0) {
+                        IBasisStrategy(strategy()).afterDecreasePositionCollateral(0, false);
+                    }
+                    IBasisStrategy(strategy()).afterExecuteRequest(bytes32(0));
+                    _getGmxV2PositionManagerStorage().status = Status.IDLE;
+                } else {
+                    IBasisStrategy(strategy()).afterDecreasePositionSize(0, 0, false);
+                }
             }
-            IBasisStrategy(strategy()).afterIncreasePositionSize(0, false);
         }
     }
 
