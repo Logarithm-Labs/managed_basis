@@ -158,6 +158,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     event Deutilize(address indexed caller, uint256 amountIn, uint256 amountOut);
 
+    event SwapFailed();
+
     /*//////////////////////////////////////////////////////////////
                             MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -420,8 +422,14 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         }
 
         uint256 amountOut;
+        bool success;
         if (swapType == SwapType.INCH_V6) {
-            amountOut = InchAggregatorV6Logic.executeSwap(amount, asset(), product(), true, data);
+            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, asset(), product(), true, data);
+            if (!success) {
+                emit SwapFailed();
+                $.strategyStatus = StrategyStatus.IDLE;
+                return bytes32(0);
+            }
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
@@ -463,8 +471,14 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         }
 
         uint256 amountOut;
+        bool success;
         if (swapType == SwapType.INCH_V6) {
-            amountOut = InchAggregatorV6Logic.executeSwap(amount, asset(), product(), false, data);
+            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, asset(), product(), false, data);
+            if (!success) {
+                emit SwapFailed();
+                $.strategyStatus = StrategyStatus.IDLE;
+                return bytes32(0);
+            }
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
@@ -474,11 +488,15 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             // processing withdraw requests
             $.assetsToWithdraw += amountOut;
             $.totalPendingWithdraw -= amountOut;
+            $.withdrawnFromSpot += amountOut;
         }
 
         // TODO: check prices
-        uint256 spotExecutionPrice = amount.mulDiv(PRECISION, amountOut, Math.Rounding.Ceil);
-        requestId = IOffChainPositionManager($.positionManager).adjustPosition(amountOut, spotExecutionPrice, 0, false);
+        uint256 spotExecutionPrice =
+            amountOut.mulDiv(10 ** IERC20Metadata(product()).decimals(), amount, Math.Rounding.Ceil);
+        requestId = IOffChainPositionManager($.positionManager).adjustPosition(amount, spotExecutionPrice, 0, false);
+
+        $.activeRequestId = requestId;
 
         emit Deutilize(msg.sender, amount, amountOut);
     }
@@ -487,19 +505,14 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                     POSITION MANAGER CALLBACKS LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function afterExecuteRequest(bytes32 requestId) external onlyPositionManager {
+    function afterIncreasePositionSize(uint256 sizeDeltaInTokens, bytes32 requestId, bool isSuccess)
+        external
+        onlyPositionManager
+    {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-
         if (requestId != $.activeRequestId) {
             revert Errors.InvalidRequestId(requestId, $.activeRequestId);
         }
-
-        delete $.activeRequestId;
-        $.strategyStatus = StrategyStatus.IDLE;
-    }
-
-    function afterIncreasePositionSize(uint256 sizeDeltaInTokens, bool isSuccess) external onlyPositionManager {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         StrategyStatus status = $.strategyStatus;
 
         if (status == StrategyStatus.DEPOSITING || status == StrategyStatus.REBALANCING_UP) {
@@ -513,13 +526,19 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         } else {
             revert Errors.NotUtilizing();
         }
+        delete $.activeRequestId;
+        $.strategyStatus = StrategyStatus.IDLE;
     }
 
-    function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bool isSuccess)
+    function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bytes32 requestId, bool isSuccess)
         external
         onlyPositionManager
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (requestId != $.activeRequestId) {
+            revert Errors.InvalidRequestId(requestId, $.activeRequestId);
+        }
+        console.log("amountExecuted", amountExecuted);
 
         StrategyStatus status = $.strategyStatus;
 
@@ -535,14 +554,12 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 uint256 totalWithdraw = $.totalPendingWithdraw;
                 (, totalWithdraw) = totalWithdraw.trySub(amountAvailable);
                 $.totalPendingWithdraw = totalWithdraw;
-
-                // amountExecuted should be recorded is assetsToClaim
-                $.assetsToClaim += amountExecuted;
+                // $.assetsToWithdraw += amountAvailable;
 
                 uint256 cacheDecreaseCollateral = $.pendingDecreaseCollateral;
                 uint256 index;
 
-                while (amountAvailable > 0) {
+                while (amountAvailable > 0 && index < $.activeWithdrawRequests.length) {
                     bytes32 requestId0 = $.activeWithdrawRequests[index];
                     WithdrawState memory request0 = $.withdrawRequests[requestId0];
                     uint256 executedAmount = request0.executedFromSpot + request0.executedFromIdle
@@ -610,9 +627,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                     for (uint256 j = 0; j < index; j++) {
                         $.activeWithdrawRequests.pop();
                     }
+                    // close current request
 
                     // request decrease collateral from position manager if there are any fulfilled requests
-
                     //TODO: adjust for idle imbalance
                     IOffChainPositionManager($.positionManager).adjustPosition(0, 0, cacheDecreaseCollateral, false);
                 }
@@ -624,18 +641,41 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         } else {
             // processing execution revert
         }
+        delete $.activeRequestId;
+        $.strategyStatus = StrategyStatus.IDLE;
     }
 
     //
-    function afterIncreasePositionCollateral(uint256 collateralDeltaAmount, bool isSuccess)
+    function afterIncreasePositionCollateral(
+        uint256,
+        /*collateralDeltaAmount*/
+        bytes32 requestId,
+        bool isSuccess
+    ) external onlyPositionManager {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (requestId != $.activeRequestId) {
+            revert Errors.InvalidRequestId(requestId, $.activeRequestId);
+        }
+
+        // TODO
+        if (isSuccess) {
+            // processing increase collateral request
+        } else {
+            // processing execution revert
+        }
+
+        delete $.activeRequestId;
+        $.strategyStatus = StrategyStatus.IDLE;
+    }
+
+    function afterDecreasePositionCollateral(uint256 amount, bytes32 requestId, bool isSuccess)
         external
         onlyPositionManager
     {
-        // TODO
-    }
-
-    function afterDecreasePositionCollateral(uint256 amount, bool isSuccess) external onlyPositionManager {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (requestId != $.activeRequestId) {
+            revert Errors.InvalidRequestId(requestId, $.activeRequestId);
+        }
 
         if (msg.sender != $.positionManager) {
             revert Errors.CallerNotPositionManager();
@@ -688,6 +728,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         } else {
             revert Errors.NotDeutilizing();
         }
+        delete $.activeRequestId;
+        $.strategyStatus = StrategyStatus.IDLE;
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -67,7 +67,7 @@ library InchAggregatorV6Logic {
 
     function executeSwap(uint256 amount, address asset, address product, bool isUtilize, bytes calldata data)
         external
-        returns (uint256 amountOut)
+        returns (uint256 amountOut, bool success)
     {
         // unpack swap data
         (address srcToken, address dstToken, uint256 amountIn, address receiver) = _unpackSwapData(data);
@@ -106,13 +106,12 @@ library InchAggregatorV6Logic {
         }
 
         // perform swap
-        (bool success, bytes memory result) = _AGGREGATOR_V6_ADDRESS.call{value: msg.value}(data);
+        bytes memory result;
+        (success, result) = _AGGREGATOR_V6_ADDRESS.call{value: msg.value}(data);
         if (success) {
             amountOut = abi.decode(result, (uint256));
         } else {
-            assembly {
-                revert(add(result, 32), mload(result))
-            }
+            IERC20(srcToken).approve(_AGGREGATOR_V6_ADDRESS, 0);
         }
     }
 

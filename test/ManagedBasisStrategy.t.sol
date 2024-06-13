@@ -35,7 +35,6 @@ contract ManagedBasisStrategyTest is Test {
     address constant productPriceFeed = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // Chainlink ETH-USD price feed
     uint256 constant entryCost = 0; // 0%
     uint256 constant targetLeverage = 3 ether; // 3x
-    uint256 constant executionFee = 0.001 ether;
 
     address constant usdcWhale = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
     uint256 constant depositAmount = 10_000 * 1e6;
@@ -50,6 +49,7 @@ contract ManagedBasisStrategyTest is Test {
     uint256 public positionNetBalance;
     uint256 public positionSizeInTokens;
     uint256 public positionMarkPrice;
+    uint256 constant executionFee = 0.001 ether;
 
     function setUp() public {
         IERC20(asset).approve(agent, type(uint256).max);
@@ -110,6 +110,7 @@ contract ManagedBasisStrategyTest is Test {
                     address(oracle),
                     product,
                     asset,
+                    targetLeverage,
                     false
                 )
             )
@@ -220,6 +221,7 @@ contract ManagedBasisStrategyTest is Test {
     function _logWithdrawState(bytes32 withdrawId) internal view {
         ManagedBasisStrategy.WithdrawState memory state = strategy.withdrawRequests(withdrawId);
         console.log("WITHDRAW STATE");
+        console.logBytes32(withdrawId);
         console.log("Timestamp", state.requestTimestamp);
         console.log("Requested Amount", state.requestedAmount);
         console.log("Executed Amount From Spot", state.executedFromSpot);
@@ -230,6 +232,42 @@ contract ManagedBasisStrategyTest is Test {
         console.log("Is Executed", state.isExecuted);
         console.log("Is Claimed", state.isClaimed);
         console.log("");
+    }
+
+    function _logRequest(bytes32 requestId)
+        internal
+        view
+        returns (OffChainPositionManager.RequestInfo memory request)
+    {
+        request = positionManager.requests(requestId);
+        console.log("REQUEST STATE");
+        console.logBytes32(requestId);
+        console.log("Size Delta In Tokens", request.sizeDeltaInTokens);
+        console.log("Spot Execution Price", request.spotExecutionPrice);
+        console.log("Collateral Delta Amount", request.collateralDeltaAmount);
+        console.log("Is Increase", request.isIncrease);
+        console.log("");
+    }
+
+    function _logTotalAssets() internal view {
+        console.log("LOG TOTAL ASSETS");
+
+        console.log("Utilized Assets:");
+        console.log("productBalance", IERC20(product).balanceOf(address(strategy)));
+        console.log(
+            "productValueInAsset",
+            oracle.convertTokenAmount(product, asset, IERC20(product).balanceOf(address(strategy)))
+        );
+        console.log("positionNetBalance", positionManager.positionNetBalance());
+        console.log("utilizedAssets", strategy.utilizedAssets());
+        console.log("");
+        console.log("Idle Assets:");
+        console.log("assetBalance", IERC20(asset).balanceOf(address(strategy)));
+        console.log("assetsToClaim", strategy.assetsToClaim());
+        console.log("assetsToWithdraw", strategy.assetsToWithdraw());
+        console.log("idleAssets", strategy.idleAssets());
+        console.log("");
+        console.log("totalPendingWithdraw", strategy.totalPendingWithdraw());
     }
 
     function _getStrategyState(string memory stateName) internal view {
@@ -357,7 +395,7 @@ contract ManagedBasisStrategyTest is Test {
         _getStrategyState("AFTER EXECUTE");
     }
 
-    function test_simpleRedeem() public {
+    function test_simpleRedeemFullUtilize() public {
         vm.startPrank(user);
         IERC20(asset).approve(address(strategy), depositAmount);
         strategy.deposit(depositAmount, user);
@@ -386,6 +424,63 @@ contract ManagedBasisStrategyTest is Test {
         _getStrategyState("STATE BEFORE REDEEM");
 
         uint256 sharesToRedeem = IERC20(address(strategy)).balanceOf(user) / 2;
+        vm.startPrank(user);
+        strategy.redeem(sharesToRedeem, user, user);
+        _getStrategyState("STATE AFTER REDEEM");
+
+        bytes32 withdrawId = strategy.getWithdrawId(user, 0);
+        _logWithdrawState(withdrawId);
+
+        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        data = _generateInchCallData(product, asset, pendingDeutilization);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestDecreasePositionSize(0, bytes32(0));
+
+        vm.startPrank(operator);
+        requestId = strategy.deutilize(pendingDeutilization, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        _getStrategyState("STATE AFTER DEUTILIZE");
+
+        OffChainPositionManager.RequestInfo memory request = _logRequest(requestId);
+        sizeDeltaInTokens = request.sizeDeltaInTokens;
+
+        vm.startPrank(agent);
+        _decreasePositionSize(sizeDeltaInTokens);
+        _reportState(requestId, sizeDeltaInTokens);
+        _logTotalAssets();
+        _getStrategyState("STATE AFTER EXECUTE");
+        _logWithdrawState(withdrawId);
+    }
+
+    function test_fullRedeem() public {
+        vm.startPrank(user);
+        IERC20(asset).approve(address(strategy), depositAmount);
+        strategy.deposit(depositAmount, user);
+
+        uint256 utilizationAmount = strategy.pendingUtilization();
+        bytes memory data = _generateInchCallData(asset, product, utilizationAmount);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, bytes32(0));
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionSize(0, bytes32(0));
+
+        vm.startPrank(operator);
+        bytes32 requestId = strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+
+        vm.startPrank(agent);
+        positionManager.transferToAgent();
+        uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
+        uint256 collateralDelta = IERC20(asset).balanceOf(agent);
+
+        _increasePositionSize(sizeDeltaInTokens);
+        _increasePositionCollateral(collateralDelta);
+
+        _reportState(requestId, sizeDeltaInTokens);
+        _getStrategyState("STATE BEFORE REDEEM");
+
+        uint256 sharesToRedeem = IERC20(address(strategy)).balanceOf(user);
         vm.startPrank(user);
         strategy.redeem(sharesToRedeem, user, user);
         _getStrategyState("STATE AFTER REDEEM");
