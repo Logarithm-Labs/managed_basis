@@ -48,6 +48,7 @@ library GmxV2Lib {
         address dataStore;
         /// @dev resulted size after execution
         uint256 sizeInUsd;
+        /// @dev positive means increase, negative means decrease
         int256 sizeDeltaUsd;
         uint256 collateralTokenPrice;
         bool isLong;
@@ -90,36 +91,103 @@ library GmxV2Lib {
         return position.numbers.sizeInTokens;
     }
 
-    /// @dev reduce the collateral including initial collateral and positive pnl
-    /// without changing position size in token
-    function getDecreaseCollateralResult(
+    /// @dev reduce collateral and position size in tokens
+    /// 1. decrease size
+    /// 2. if positive pnl, check realized pnl
+    /// 2.1 if realized positive pnl is bigger than the target delta collateral to decrease
+    ///     increase the init collateral by the remaining delta amount
+    /// 2.2 if the realized positive pnl is the same as the target
+    ///     simply decrease the size
+    /// 2.3 if the realized positive pnl is smaller than the target
+    ///     decrease collateral substracted by the pnl
+    /// 2.3.1 if the delta collateral to decrease is bigger than 9/10 of init collateral or minimum requirement
+    ///       decrease the position size to fill the remainint amount with realized pnl and increase the size back
+    /// 2.3.2 if the delta collateral to decrease is same or smaller
+    ///       simply decrease init callateral
+    /// 3. if negative pnl, check the delta collateral to decrease with the remaining collateral substracted by the realized negative pnl
+    /// 3.1 if the delta collateral is equal or smaller so that the remaining is bigger than minium requirement
+    ///     decrease the delta collateral
+    /// 3.2 if the delta collateral is bigger
+    ///     revert
+    /// Note: there are 3 types of operations
+    /// 1. decreasePosition (initCollateralDelta1, deltaSize1)
+    /// 1. decreasePosition (initCollateralDelta1, deltaSize1) and increasePosition(0, deltaSize2)
+    /// 3. decreasePosition (0, delta size) and increasePosition(init collateralDelta, 0)
+    ///
+    /// @return isIncreaseCollateral is to determine whether to decrease or increase collateral
+    /// @return initialCollateralDelta is amount to decrease or increase
+    /// @return sizeDeltaUsdToDecrease is the delta usd size to decrease,
+    ///         if it is bigger than the target, then the difference should be increased again
+    /// @return positionFeeUsd is the position fee
+    function getDecreasePositionResult(
         GetPosition calldata positionParams,
         GetPrices calldata pricesParams,
+        uint256 sizeDeltaInTokens,
         uint256 collateralDelta
-    ) external view returns (uint256 initialCollateralDelta, uint256 sizeDeltaInTokens) {
+    )
+        external
+        view
+        returns (
+            bool isIncreaseCollateral,
+            uint256 initialCollateralDelta,
+            uint256 sizeDeltaUsdToDecrease,
+            uint256 sizeDeltaUsdToIncrease,
+            uint256 positionFeeUsd
+        )
+    {
         Position.Props memory position = _getPosition(positionParams);
+        uint256 collateralTokenPrice = IOracle(pricesParams.oracle).getAssetPrice(position.addresses.collateralToken);
+        Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
+        sizeDeltaUsdToDecrease = _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokens);
+        positionFeeUsd = _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsdToDecrease, false);
+        (int256 totalPositionPnlUsd,) = _getPositionPnl(positionParams, pricesParams, position.numbers.sizeInUsd);
+        int256 realizedPnlUsd = Precision.mulDiv(totalPositionPnlUsd, sizeDeltaInTokens, position.numbers.sizeInTokens);
+        int256 realizedPnlAmount = realizedPnlUsd / collateralTokenPrice.toInt256();
+        uint256 initialCollateralAmount = position.numbers.collateralAmount;
+
+        if (realizedPnlAmount < 0) {
+            initialCollateralAmount -= uint256(-realizedPnlAmount);
+        } else if (realizedPnlAmount > collateralDelta) {
+            isIncreaseCollateral = true;
+            initialCollateralDelta = realizedPnlAmount - collateralDelta;
+            return (
+                isIncreaseCollateral,
+                initialCollateralDelta,
+                sizeDeltaUsdToDecrease,
+                sizeDeltaUsdToIncrease,
+                positionFeeUsd
+            );
+        } else if (realizedPnlAmount == collateralDelta) {
+            return (
+                isIncreaseCollateral,
+                initialCollateralDelta,
+                sizeDeltaUsdToDecrease,
+                sizeDeltaUsdToIncrease,
+                positionFeeUsd
+            );
+        }
+
         // get the delta amount to reduce initial collateral
-        initialCollateralDelta = position.numbers.collateralAmount * 9 / 10;
+        initialCollateralDelta = initialCollateralAmount * 9 / 10;
         // if 9/10 of init collateral is bigger than the target
         // then reduce as the target simply
         if (initialCollateralDelta > collateralDelta) {
             initialCollateralDelta = collateralDelta;
         }
-        uint256 collateralTokenPrice = IOracle(pricesParams.oracle).getAssetPrice(position.addresses.collateralToken);
         uint256 minCollateralAmount = _getMinCollateralAmount(
             InternalGetMinCollateralAmount({
                 market: pricesParams.market,
                 dataStore: positionParams.dataStore,
-                sizeInUsd: position.numbers.sizeInUsd,
-                sizeDeltaUsd: 0,
+                sizeInUsd: position.numbers.sizeInUsd - sizeDeltaUsdToDecrease,
+                sizeDeltaUsd: -sizeDeltaUsdToDecrease.toInt256(),
                 collateralTokenPrice: collateralTokenPrice,
                 isLong: positionParams.isLong
             })
         );
         // if the remaining collateral is smaller than the minimum requirements by gmx
         // then modify init collateral delta so that it can satisfy the requirement
-        if (minCollateralAmount > position.numbers.collateralAmount - initialCollateralDelta) {
-            initialCollateralDelta = position.numbers.collateralAmount - minCollateralAmount;
+        if (minCollateralAmount > initialCollateralAmount - initialCollateralDelta) {
+            initialCollateralDelta = initialCollateralAmount - minCollateralAmount;
         }
 
         // if the target collateral delta is still bigger than the init collateral reduction
@@ -130,15 +198,21 @@ library GmxV2Lib {
         if (collateralDelta > initialCollateralDelta) {
             // fill the reducing collateral with realized pnl
             collateralDelta -= initialCollateralDelta;
-            (, int256 uncappedPositionPnlUsd,) =
-                _getPositionPnl(positionParams, pricesParams, position.numbers.sizeInUsd);
-            if (uncappedPositionPnlUsd <= 0) {
-                revert Errors.NotPositivePnl();
+            if (totalPositionPnlUsd <= collateralDelta.toInt256()) {
+                revert Errors.NotEnoughPnl();
             }
-            uint256 uncappedPositionPnlAmount = uncappedPositionPnlUsd.toUint256() / collateralTokenPrice;
-            sizeDeltaInTokens = collateralDelta.mulDiv(position.numbers.sizeInTokens, uncappedPositionPnlAmount);
+            uint256 totalPositionPnlAmount = totalPositionPnlUsd.toUint256() / collateralTokenPrice;
+            uint256 sizeDeltaInTokensToBeRealized =
+                collateralDelta.mulDiv(position.numbers.sizeInTokens, totalPositionPnlAmount);
+            sizeDeltaUsdToDecrease += _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokensToBeRealized);
+            positionFeeUsd = _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsdToDecrease, false);
+            sizeDeltaUsdToIncrease =
+                _getSizeDeltaUsdForIncrease(position, indexTokenPrice, sizeDeltaInTokensToBeRealized);
+            positionFeeUsd += _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsdToIncrease, true);
         }
-        return (initialCollateralDelta, sizeDeltaInTokens);
+        return (
+            isIncreaseCollateral, initialCollateralDelta, sizeDeltaUsdToDecrease, sizeDeltaUsdToIncrease, positionFeeUsd
+        );
     }
 
     /// @dev position info when closing fully
@@ -151,44 +225,28 @@ library GmxV2Lib {
         return _getPositionInfo(positionParams, prices, referralStorage);
     }
 
-    /// @dev in gmx v2, sizeDeltaInTokens = sizeInTokens * sizeDeltaUsd / sizeInUsd
-    /// hence sizeDeltaUsd = ceil(sizeDeltaInTokens * sizeInUsd / sizeInTokens)
-    function getSizeDeltaUsdForDecrease(GetPosition calldata params, uint256 sizeDeltaInTokens)
-        external
-        view
-        returns (uint256 sizeDeltaUsd)
-    {
+    function getSizeDeltaUsdForDecrease(
+        GetPosition calldata params,
+        GetPrices calldata pricesParams,
+        uint256 sizeDeltaInTokens
+    ) external view returns (uint256 sizeDeltaUsd, uint256 positionFeeUsd) {
         Position.Props memory position = _getPosition(params);
-        sizeDeltaUsd =
-            sizeDeltaInTokens.mulDiv(position.numbers.sizeInUsd, position.numbers.sizeInTokens, Math.Rounding.Ceil);
-        return sizeDeltaUsd;
+        sizeDeltaUsd = _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokens);
+        Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
+        positionFeeUsd = _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsd, false);
+        return (sizeDeltaUsd, positionFeeUsd);
     }
 
-    /// @dev return position delta size in usd when increasing
-    /// considered the price impact
     function getSizeDeltaUsdForIncrease(
         GetPosition calldata positionParams,
         GetPrices calldata pricesParams,
         uint256 sizeDeltaInTokens
-    ) external view returns (uint256 sizeDeltaUsd) {
+    ) external view returns (uint256 sizeDeltaUsd, uint256 positionFeeUsd) {
         Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
         Position.Props memory position = _getPosition(positionParams);
-        int256 baseSizeDeltaUsd = sizeDeltaInTokens.toInt256() * indexTokenPrice.max.toInt256();
-        int256 priceImpactUsd = _getPriceImpactUsd(position, indexTokenPrice, positionParams, baseSizeDeltaUsd);
-        // in gmx v2
-        // int256 sizeDeltaInTokens;
-        // if (params.position.isLong()) {
-        //     sizeDeltaInTokens = baseSizeDeltaInTokens.toInt256() + priceImpactAmount;
-        // } else {
-        //     sizeDeltaInTokens = baseSizeDeltaInTokens.toInt256() - priceImpactAmount;
-        // }
-        // the resulted actual size delta will be a little bit different from this estimation
-        if (positionParams.isLong) {
-            sizeDeltaUsd = (baseSizeDeltaUsd - priceImpactUsd).toUint256();
-        } else {
-            sizeDeltaUsd = (baseSizeDeltaUsd + priceImpactUsd).toUint256();
-        }
-        return sizeDeltaUsd;
+        sizeDeltaUsd = _getSizeDeltaUsdForIncrease(position, indexTokenPrice, sizeDeltaInTokens);
+        positionFeeUsd = _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsd, true);
+        return (sizeDeltaUsd, positionFeeUsd);
     }
 
     /// @dev returns transaction fees needed for gmx keeper
@@ -208,7 +266,6 @@ library GmxV2Lib {
         return (gasPrice * gasLimitIncrease, gasPrice * gasLimitDecrease);
     }
 
-    // @dev calculate the position fee in usd when changing position size
     function getPositionFeeUsd(
         GetPosition calldata positionParams,
         GetPrices calldata pricesParams,
@@ -217,6 +274,51 @@ library GmxV2Lib {
     ) external view returns (uint256) {
         Position.Props memory position = _getPosition(positionParams);
         Price.Props memory indexTokenPrice = _getPrice(pricesParams.oracle, pricesParams.market.indexToken);
+        return _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsd, isIncrease);
+    }
+
+    /// @dev in gmx v2, sizeDeltaInTokens = sizeInTokens * sizeDeltaUsd / sizeInUsd
+    /// hence sizeDeltaUsd = ceil(sizeDeltaInTokens * sizeInUsd / sizeInTokens)
+    function _getSizeDeltaUsdForDecrease(Position.Props memory position, uint256 sizeDeltaInTokens)
+        private
+        returns (uint256)
+    {
+        return sizeDeltaInTokens.mulDiv(position.numbers.sizeInUsd, position.numbers.sizeInTokens, Math.Rounding.Ceil);
+    }
+
+    /// @dev return position delta size in usd when increasing
+    /// considered the price impact
+    function _getSizeDeltaUsdForIncrease(
+        Position.Props memory position,
+        Price.Props memory indexTokenPrice,
+        uint256 sizeDeltaInTokens
+    ) private returns (uint256) {
+        int256 baseSizeDeltaUsd = sizeDeltaInTokens.toInt256() * indexTokenPrice.max.toInt256();
+        int256 priceImpactUsd = _getPriceImpactUsd(position, indexTokenPrice, positionParams, baseSizeDeltaUsd);
+        uint256 sizeDeltaUsd;
+        // in gmx v2
+        // int256 sizeDeltaInTokens;
+        // if (params.position.isLong()) {
+        //     sizeDeltaInTokens = baseSizeDeltaInTokens.toInt256() + priceImpactAmount;
+        // } else {
+        //     sizeDeltaInTokens = baseSizeDeltaInTokens.toInt256() - priceImpactAmount;
+        // }
+        // the resulted actual size delta will be a little bit different from this estimation
+        if (positionParams.isLong) {
+            sizeDeltaUsd = (baseSizeDeltaUsd - priceImpactUsd).toUint256();
+        } else {
+            sizeDeltaUsd = (baseSizeDeltaUsd + priceImpactUsd).toUint256();
+        }
+        return sizeDeltaUsd;
+    }
+
+    // @dev calculate the position fee in usd when changing position size
+    function _getPositionFeeUsd(
+        Position.Props memory position,
+        Price.Props memory indexTokenPrice,
+        uint256 sizeDeltaUsd,
+        bool isIncrease
+    ) private view returns (uint256) {
         int256 priceImpactUsd = _getPriceImpactUsd(
             position, indexTokenPrice, positionParams, isIncrease ? int256(sizeDeltaUsd) : -int256(sizeDeltaUsd)
         );
@@ -358,7 +460,7 @@ library GmxV2Lib {
         if (minCollateralFactorForMarket > minCollateralFactor) {
             minCollateralFactor = minCollateralFactorForMarket;
         }
-
+        // params.sizeInUsd should be resulted size
         uint256 minCollateralUsdForLeverage = Precision.applyFactor(params.sizeInUsd, minCollateralFactor);
         // the oracle price that gmx uses is a real time, which has a little deviation with the onchain oracle
         // so make the minimum one bigger by 5%
