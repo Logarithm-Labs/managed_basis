@@ -112,10 +112,10 @@ library GmxV2Lib {
     /// Note: there are 3 types of operations
     /// 1. decreasePosition (initCollateralDelta1, deltaSize1)
     /// 1. decreasePosition (initCollateralDelta1, deltaSize1) and increasePosition(0, deltaSize2)
-    /// 3. decreasePosition (0, delta size) and increasePosition(init collateralDelta, 0)
+    /// 3. decreasePosition (0, delta size) and increasePosition(initCollateralDelta, 0)
     ///
     /// @return isIncreaseCollateral is to determine whether to decrease or increase collateral
-    /// @return initialCollateralDelta is amount to decrease or increase
+    /// @return initialCollateralDeltaAmount is amount to decrease or increase
     /// @return sizeDeltaUsdToDecrease is the delta usd size to decrease,
     ///         if it is bigger than the target, then the difference should be increased again
     /// @return positionFeeUsd is the position fee
@@ -123,13 +123,13 @@ library GmxV2Lib {
         GetPosition calldata positionParams,
         GetPrices calldata pricesParams,
         uint256 sizeDeltaInTokens,
-        uint256 collateralDelta
+        uint256 collateralDeltaAmount
     )
         external
         view
         returns (
             bool isIncreaseCollateral,
-            uint256 initialCollateralDelta,
+            uint256 initialCollateralDeltaAmount,
             uint256 sizeDeltaUsdToDecrease,
             uint256 sizeDeltaUsdToIncrease,
             uint256 positionFeeUsd
@@ -147,20 +147,20 @@ library GmxV2Lib {
 
         if (realizedPnlAmount < 0) {
             initialCollateralAmount -= uint256(-realizedPnlAmount);
-        } else if (realizedPnlAmount > collateralDelta) {
+        } else if (realizedPnlAmount > collateralDeltaAmount) {
             isIncreaseCollateral = true;
-            initialCollateralDelta = realizedPnlAmount - collateralDelta;
+            initialCollateralDeltaAmount = realizedPnlAmount - collateralDeltaAmount;
             return (
                 isIncreaseCollateral,
-                initialCollateralDelta,
+                initialCollateralDeltaAmount,
                 sizeDeltaUsdToDecrease,
                 sizeDeltaUsdToIncrease,
                 positionFeeUsd
             );
-        } else if (realizedPnlAmount == collateralDelta) {
+        } else if (realizedPnlAmount == collateralDeltaAmount) {
             return (
                 isIncreaseCollateral,
-                initialCollateralDelta,
+                initialCollateralDeltaAmount,
                 sizeDeltaUsdToDecrease,
                 sizeDeltaUsdToIncrease,
                 positionFeeUsd
@@ -168,11 +168,11 @@ library GmxV2Lib {
         }
 
         // get the delta amount to reduce initial collateral
-        initialCollateralDelta = initialCollateralAmount * 9 / 10;
+        initialCollateralDeltaAmount = initialCollateralAmount * 9 / 10;
         // if 9/10 of init collateral is bigger than the target
         // then reduce as the target simply
-        if (initialCollateralDelta > collateralDelta) {
-            initialCollateralDelta = collateralDelta;
+        if (initialCollateralDeltaAmount > collateralDeltaAmount) {
+            initialCollateralDeltaAmount = collateralDeltaAmount;
         }
         uint256 minCollateralAmount = _getMinCollateralAmount(
             InternalGetMinCollateralAmount({
@@ -186,8 +186,8 @@ library GmxV2Lib {
         );
         // if the remaining collateral is smaller than the minimum requirements by gmx
         // then modify init collateral delta so that it can satisfy the requirement
-        if (minCollateralAmount > initialCollateralAmount - initialCollateralDelta) {
-            initialCollateralDelta = initialCollateralAmount - minCollateralAmount;
+        if (minCollateralAmount > initialCollateralAmount - initialCollateralDeltaAmount) {
+            initialCollateralDeltaAmount = initialCollateralAmount - minCollateralAmount;
         }
 
         // if the target collateral delta is still bigger than the init collateral reduction
@@ -195,15 +195,15 @@ library GmxV2Lib {
         // Note: with regard to minimum collateral requirement,
         //       if the above is satisfied, then all is ok because the reverted sizeUsd will be smaller than original
         // if negative pnl, then revert
-        if (collateralDelta > initialCollateralDelta) {
+        if (collateralDeltaAmount > initialCollateralDeltaAmount) {
             // fill the reducing collateral with realized pnl
-            collateralDelta -= initialCollateralDelta;
-            if (totalPositionPnlUsd <= collateralDelta.toInt256()) {
+            collateralDeltaAmount -= initialCollateralDeltaAmount;
+            if (totalPositionPnlUsd <= collateralDeltaAmount.toInt256()) {
                 revert Errors.NotEnoughPnl();
             }
             uint256 totalPositionPnlAmount = totalPositionPnlUsd.toUint256() / collateralTokenPrice;
             uint256 sizeDeltaInTokensToBeRealized =
-                collateralDelta.mulDiv(position.numbers.sizeInTokens, totalPositionPnlAmount);
+                collateralDeltaAmount.mulDiv(position.numbers.sizeInTokens, totalPositionPnlAmount);
             sizeDeltaUsdToDecrease += _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokensToBeRealized);
             positionFeeUsd = _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsdToDecrease, false);
             sizeDeltaUsdToIncrease =
@@ -211,7 +211,11 @@ library GmxV2Lib {
             positionFeeUsd += _getPositionFeeUsd(position, indexTokenPrice, sizeDeltaUsdToIncrease, true);
         }
         return (
-            isIncreaseCollateral, initialCollateralDelta, sizeDeltaUsdToDecrease, sizeDeltaUsdToIncrease, positionFeeUsd
+            isIncreaseCollateral,
+            initialCollateralDeltaAmount,
+            sizeDeltaUsdToDecrease,
+            sizeDeltaUsdToIncrease,
+            positionFeeUsd
         );
     }
 
