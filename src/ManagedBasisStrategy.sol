@@ -77,6 +77,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 totalPendingWithdraw; // total amount of asset that remains to be withdrawn
         uint256 withdrawnFromSpot; // asset amount withdrawn from spot that is not yet processed
         uint256 withdrawnFromIdle; // asset amount withdrawn from idle that is not yet processed
+        uint256 withdrawingFromHedge; // asset amount that is ready to be withdrawn from hedge
         uint256 idleImbalance; // imbalance in idle assets between spot and hedge due to withdraws from idle
         bytes32[] activeWithdrawRequests;
         bytes32[] closedWithdrawRequests;
@@ -302,7 +303,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             $.pendingDeutilization += $.oracle.convertTokenAmount(asset(), product(), remainingAmountToWithdrawFromSpot);
             $.pendingUtilization -= idle;
             $.idleImbalance += idle.mulDiv(PRECISION, PRECISION + $.targetLeverage);
-            $.assetsToWithdraw += idle;
+            $.assetsToClaim += idle;
             $.activeWithdrawRequests.push(withdrawId);
             $.requestCounter[owner]++;
 
@@ -346,7 +347,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     // TODO: account for pendings
     function totalAssets() public view virtual override returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 total = utilizedAssets() + idleAssets() - $.totalPendingWithdraw;
+        uint256 total = utilizedAssets() + idleAssets() - $.totalPendingWithdraw - $.withdrawingFromHedge;
         return total;
     }
 
@@ -361,7 +362,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     function idleAssets() public view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
-        uint256 idle = assetBalance - ($.assetsToClaim + $.assetsToWithdraw);
+        uint256 idle = assetBalance - $.assetsToClaim;
         return idle;
     }
 
@@ -486,7 +487,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         if ($.strategyStatus == StrategyStatus.WITHDRAWING) {
             // processing withdraw requests
-            $.assetsToWithdraw += amountOut;
+            $.assetsToClaim += amountOut;
             $.totalPendingWithdraw -= amountOut;
             $.withdrawnFromSpot += amountOut;
         }
@@ -554,7 +555,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 uint256 totalWithdraw = $.totalPendingWithdraw;
                 (, totalWithdraw) = totalWithdraw.trySub(amountAvailable);
                 $.totalPendingWithdraw = totalWithdraw;
-                // $.assetsToWithdraw += amountAvailable;
+                $.withdrawingFromHedge += amountAvailable;
 
                 uint256 cacheDecreaseCollateral = $.pendingDecreaseCollateral;
                 uint256 index;
