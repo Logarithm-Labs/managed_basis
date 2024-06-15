@@ -8,6 +8,7 @@ interface IOffChainPositionManager {
         address oracle,
         address indexToken,
         address collateralToken,
+        uint256 targetLeverage,
         bool isLong
     ) external;
 

@@ -10,6 +10,13 @@ interface IBasisStrategy {
     function targetLeverage() external view returns (uint256);
 
     // callback logic
+    function afterIncreasePositionSize(uint256 amountExecuted, bytes32 requestId, bool isSuccess) external;
+    function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bytes32 requestId, bool isSuccess)
+        external;
+    function afterIncreasePositionCollateral(uint256 collateralAmount, bytes32 requestId, bool isSuccess) external;
+    function afterDecreasePositionCollateral(uint256 collateralAmount, bytes32 requestId, bool isSuccess) external;
+
+    // legacy
     function afterIncreasePositionSize(uint256 amountExecuted, bool isSuccess) external;
     function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bool isSuccess) external;
     function afterIncreasePositionCollateral(uint256 collateralAmount, bool isSuccess) external;

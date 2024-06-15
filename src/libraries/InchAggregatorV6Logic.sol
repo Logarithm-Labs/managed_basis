@@ -17,6 +17,7 @@ library InchAggregatorV6Logic {
     error InchInvalidDestinationToken(address destinationToken, address requiredDestinationToken);
     error InchInvalidReceiver(address receiver, address requiredReceiver);
     error InchInsufficientSourceBalance(uint256 sourceAmount, uint256 sourceBalance);
+    error InchInvalidAmount(uint256 requestedAmountIn, uint256 unpackedAmountIn);
 
     address private constant _AGGREGATOR_V6_ADDRESS = 0x111111125421cA6dc452d289314280a0f8842A65;
     uint256 private constant _UNISWAP_ZERO_FOR_ONE_OFFSET = 247;
@@ -64,14 +65,17 @@ library InchAggregatorV6Logic {
         }
     }
 
-    function executeSwap(address asset, address product, bool isUtilize, bytes calldata data)
+    function executeSwap(uint256 amount, address asset, address product, bool isUtilize, bytes calldata data)
         external
-        returns (uint256 amountOut)
+        returns (uint256 amountOut, bool success)
     {
         // unpack swap data
         (address srcToken, address dstToken, uint256 amountIn, address receiver) = _unpackSwapData(data);
 
         // validate swap data and approve ERC20
+        if (amount != amountIn) {
+            revert InchInvalidAmount(amount, amountIn);
+        }
         if (isUtilize) {
             if (srcToken != asset) {
                 revert InchInvalidSourceToken(srcToken, asset);
@@ -102,13 +106,12 @@ library InchAggregatorV6Logic {
         }
 
         // perform swap
-        (bool success, bytes memory result) = _AGGREGATOR_V6_ADDRESS.call{value: msg.value}(data);
+        bytes memory result;
+        (success, result) = _AGGREGATOR_V6_ADDRESS.call{value: msg.value}(data);
         if (success) {
             amountOut = abi.decode(result, (uint256));
         } else {
-            assembly {
-                revert(add(result, 32), mload(result))
-            }
+            IERC20(srcToken).approve(_AGGREGATOR_V6_ADDRESS, 0);
         }
     }
 
