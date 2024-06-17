@@ -104,7 +104,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
 
     event FundingClaimed(address indexed token, uint256 indexed amount);
     event CollateralClaimed(address indexed token, uint256 indexed amount);
-    event PositionSizeIncreased(uint256 indexed sizeDeltaInTokens);
 
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
@@ -357,21 +356,41 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
 
     /// @dev claims all the claimable funding fee
     /// this is callable by anyone
+    /// Note: collateral funding amount is transfered to this position manager
+    ///       otherwise, transfered to strategy
     function claimFunding() public {
         IExchangeRouter exchangeRouter = IExchangeRouter(IBasisGmxFactory(factory()).exchangeRouter());
-        address marketTokenAddr = marketToken();
-        address shortTokenAddr = shortToken();
-        address longTokenAddr = longToken();
+        address _shortToken = shortToken();
+        address _longToken = longToken();
+        address _collateralToken = collateralToken();
 
-        address[] memory markets = new address[](2);
-        markets[0] = marketTokenAddr;
-        markets[1] = marketTokenAddr;
-        address[] memory tokens = new address[](2);
-        tokens[0] = shortTokenAddr;
-        tokens[1] = longTokenAddr;
-        uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, strategy());
-        emit FundingClaimed(shortTokenAddr, amounts[0]);
-        emit FundingClaimed(longTokenAddr, amounts[1]);
+        address[] memory markets = new address[](1);
+        markets[0] = marketToken();
+        address[] memory tokens = new address[](1);
+
+        uint256 shortTokenAmount;
+        uint256 longTokenAmount;
+
+        tokens[0] = _shortToken;
+        if (_shortToken == _collateralToken) {
+            uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, address(this));
+            shortTokenAmount = amounts[0];
+        } else {
+            uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, strategy());
+            shortTokenAmount = amounts[0];
+        }
+
+        tokens[0] = _longToken;
+        if (_longToken == _collateralToken) {
+            uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, address(this));
+            shortTokenAmount = amounts[0];
+        } else {
+            uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, strategy());
+            shortTokenAmount = amounts[0];
+        }
+
+        emit FundingClaimed(_shortToken, shortTokenAmount);
+        emit FundingClaimed(_longToken, longTokenAmount);
     }
 
     /// @dev claims all the claimable callateral amount
