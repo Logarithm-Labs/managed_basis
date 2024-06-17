@@ -205,7 +205,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
 
             if (idleCollateralAmount > 0) {
                 IERC20(collateralToken()).safeTransfer(IBasisGmxFactory(_factory).orderVault(), idleCollateralAmount);
-                _getGmxV2PositionManagerStorage().pendingCollateralAmount = idleCollateralAmount;
             }
 
             uint256 sizeDeltaUsd;
@@ -294,6 +293,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                     })
                 );
             } else if (isIncreaseCollateral) {
+                // TODO impl within callback
                 _getGmxV2PositionManagerStorage().status = Status.DEC_INC_COLLATERAL;
                 _createOrder(
                     InternalCreateOrderParams({
@@ -437,6 +437,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                     _processDecreasePositionSize(order.numbers.sizeDeltaUsd);
                 } else if (_status == Status.DEC_INC_COLLATERAL) {
                     // when realized collateral is big
+                    _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
                     IBasisStrategy(strategy()).afterDecreasePositionCollateral(
                         IERC20(collateralToken()).balanceOf(address(this)), bytes32(0), true
                     );
@@ -495,6 +496,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                     _wipeExecutionCostCalcInfo();
                     IBasisStrategy(strategy()).afterDecreasePositionSize(0, 0, bytes32(0), false);
                 } else if (_status == Status.DEC_INC_COLLATERAL) {
+                    _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
                     IBasisStrategy(strategy()).afterDecreasePositionCollateral(0, bytes32(0), false);
                 }
                 _getGmxV2PositionManagerStorage().status = Status.IDLE;
@@ -626,6 +628,9 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
 
     /// @dev create increase/decrease order
     function _createOrder(InternalCreateOrderParams memory params) private returns (bytes32) {
+        if (params.isIncrease && params.collateralDeltaAmount > 0) {
+            _getGmxV2PositionManagerStorage().pendingCollateralAmount = params.collateralDeltaAmount;
+        }
         (uint256 increaseExecutionFee, uint256 decreaseExecutionFee) = getExecutionFee();
         uint256 executionFee = params.isIncrease ? increaseExecutionFee : decreaseExecutionFee;
         IKeeper(keeper()).payGmxExecutionFee(params.exchangeRouter, params.orderVault, executionFee);
