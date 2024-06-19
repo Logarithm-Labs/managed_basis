@@ -734,14 +734,10 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
 
     function _processDecreasePositionSize(uint256 sizeDeltaUsd) private {
         uint256 spotExecutionPrice = _getGmxV2PositionManagerStorage().spotExecutionPrice;
-        if (spotExecutionPrice > 0) {
-            (uint256 sizeDeltaInTokens, uint256 executionCostAmount) =
-                _getDecreasePositionSizeResult(spotExecutionPrice, sizeDeltaUsd);
-            _wipeExecutionCostCalcInfo();
-            IBasisStrategy(strategy()).afterDecreasePositionSize(
-                sizeDeltaInTokens, executionCostAmount, bytes32(0), true
-            );
-        }
+        (uint256 sizeDeltaInTokens, uint256 executionCostAmount) =
+            _getDecreasePositionSizeResult(spotExecutionPrice, sizeDeltaUsd);
+        _wipeExecutionCostCalcInfo();
+        IBasisStrategy(strategy()).afterDecreasePositionSize(sizeDeltaInTokens, executionCostAmount, bytes32(0), true);
     }
 
     function _getDecreasePositionSizeResult(uint256 spotExecutionPrice, uint256 sizeDeltaUsd)
@@ -753,7 +749,9 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         uint256 _sizeInTokensBefore = _getGmxV2PositionManagerStorage().sizeInTokensBefore;
         uint256 _sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
         (, sizeDeltaInTokens) = _sizeInTokensBefore.trySub(_sizeInTokensAfter);
-        int256 executionCostInUsd = sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256();
+        int256 executionCostInUsd = spotExecutionPrice != 0
+            ? sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256()
+            : int256(0);
         uint256 pendingPositionFeeUsd = _getGmxV2PositionManagerStorage().pendingPositionFeeUsd;
         executionCostAmount = (
             executionCostInUsd > 0 ? uint256(executionCostInUsd) + pendingPositionFeeUsd : pendingPositionFeeUsd
