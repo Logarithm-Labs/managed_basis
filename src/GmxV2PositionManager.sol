@@ -727,29 +727,19 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
 
     function _processDecreasePositionSize(uint256 sizeDeltaUsd) private {
         uint256 spotExecutionPrice = _getGmxV2PositionManagerStorage().spotExecutionPrice;
-        (uint256 sizeDeltaInTokens, uint256 executionCostAmount) =
-            _getDecreasePositionSizeResult(spotExecutionPrice, sizeDeltaUsd);
-        _wipeExecutionCostCalcInfo();
-        IBasisStrategy(strategy()).afterDecreasePositionSize(sizeDeltaInTokens, executionCostAmount, bytes32(0), true);
-    }
-
-    function _getDecreasePositionSizeResult(uint256 spotExecutionPrice, uint256 sizeDeltaUsd)
-        private
-        view
-        returns (uint256 sizeDeltaInTokens, uint256 executionCostAmount)
-    {
         uint256 collateralTokenPrice = IOracle(IBasisGmxFactory(factory()).oracle()).getAssetPrice(collateralToken());
         uint256 _sizeInTokensBefore = _getGmxV2PositionManagerStorage().sizeInTokensBefore;
         uint256 _sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(factory()));
-        (, sizeDeltaInTokens) = _sizeInTokensBefore.trySub(_sizeInTokensAfter);
+        (, uint256 sizeDeltaInTokens) = _sizeInTokensBefore.trySub(_sizeInTokensAfter);
         int256 executionCostInUsd = spotExecutionPrice != 0
             ? sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256()
             : int256(0);
         uint256 pendingPositionFeeUsd = _getGmxV2PositionManagerStorage().pendingPositionFeeUsd;
-        executionCostAmount = (
+        uint256 executionCostAmount = (
             executionCostInUsd > 0 ? uint256(executionCostInUsd) + pendingPositionFeeUsd : pendingPositionFeeUsd
         ) / collateralTokenPrice;
-        return (sizeDeltaInTokens, executionCostAmount);
+        _wipeExecutionCostCalcInfo();
+        IBasisStrategy(strategy()).afterDecreasePositionSize(sizeDeltaInTokens, executionCostAmount, bytes32(0), true);
     }
 
     function _getGmxParams(address _factory) private view returns (GmxV2Lib.GmxParams memory) {
