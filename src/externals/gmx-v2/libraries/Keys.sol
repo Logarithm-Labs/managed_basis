@@ -25,6 +25,9 @@ library Keys {
 
     bytes32 public constant OPEN_INTEREST = keccak256(abi.encode("OPEN_INTEREST"));
 
+    // @dev key for claimable funding amount
+    bytes32 public constant CLAIMABLE_FUNDING_AMOUNT = keccak256(abi.encode("CLAIMABLE_FUNDING_AMOUNT"));
+
     // @dev key for position fee factor
     // @param market the market address to check
     // @param forPositiveImpact whether the fee is for an action that has a positive price impact
@@ -56,5 +59,18 @@ library Keys {
     // @return key for open interest
     function openInterestKey(address market, address collateralToken, bool isLong) internal pure returns (bytes32) {
         return keccak256(abi.encode(OPEN_INTEREST, market, collateralToken, isLong));
+    }
+
+    // @dev key for claimable funding amount by account
+    // @param market the market to check
+    // @param token the token to check
+    // @param account the account to check
+    // @return key for claimable funding amount
+    function claimableFundingAmountKey(address market, address token, address account)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(CLAIMABLE_FUNDING_AMOUNT, market, token, account));
     }
 }

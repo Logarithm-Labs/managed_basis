@@ -337,6 +337,22 @@ library GmxV2Lib {
         );
     }
 
+    function getClaimableFundingAmounts(
+        GetPosition calldata positionParams,
+        GetPrices calldata pricesParams,
+        address referralStorage
+    ) external view returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount) {
+        MarketUtils.MarketPrices memory prices = _getPrices(pricesParams.oracle, pricesParams.market);
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(positionParams, prices, referralStorage);
+        (claimableLongTokenAmount, claimableShortTokenAmount) = _getClaimableFundingAmounts(
+            positionParams,
+            pricesParams,
+            positionInfo.fees.funding.claimableLongTokenAmount,
+            positionInfo.fees.funding.claimableShortTokenAmount
+        );
+        return (claimableLongTokenAmount, claimableShortTokenAmount);
+    }
+
     /// @dev in gmx v2, sizeDeltaInTokens = sizeInTokens * sizeDeltaUsd / sizeInUsd
     /// hence sizeDeltaUsd = ceil(sizeDeltaInTokens * sizeInUsd / sizeInTokens)
     function _getSizeDeltaUsdForDecrease(Position.Props memory position, uint256 sizeDeltaInTokens)
@@ -410,14 +426,19 @@ library GmxV2Lib {
         ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(positionParams, prices, referralStorage);
         uint256 collateralTokenPrice =
             IOracle(pricesParams.oracle).getAssetPrice(positionInfo.position.addresses.collateralToken);
-        uint256 claimableUsd = positionInfo.fees.funding.claimableLongTokenAmount * prices.longTokenPrice.min
-            + positionInfo.fees.funding.claimableShortTokenAmount * prices.shortTokenPrice.min;
+        (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount) = _getClaimableFundingAmounts(
+            positionParams,
+            pricesParams,
+            positionInfo.fees.funding.claimableLongTokenAmount,
+            positionInfo.fees.funding.claimableShortTokenAmount
+        );
+        uint256 claimableUsd = claimableLongTokenAmount * prices.longTokenPrice.min
+            + claimableShortTokenAmount * prices.shortTokenPrice.min;
         uint256 claimableTokenAmount = claimableUsd / collateralTokenPrice;
 
         int256 remainingCollateral = positionInfo.position.numbers.collateralAmount.toInt256()
             + positionInfo.pnlAfterPriceImpactUsd / collateralTokenPrice.toInt256()
             - positionInfo.fees.totalCostAmount.toInt256();
-
         return (remainingCollateral > 0 ? remainingCollateral.toUint256() : 0, claimableTokenAmount);
     }
 
@@ -455,6 +476,37 @@ library GmxV2Lib {
             true // usePositionSizeAsSizeDeltaUsd meaning when closing fully
         );
         return positionInfo;
+    }
+
+    /// @dev return claimable token amount + next claimable token amount
+    function _getClaimableFundingAmounts(
+        GetPosition calldata positionParams,
+        GetPrices calldata pricesParams,
+        uint256 nextClaimableLongTokenAmount,
+        uint256 nextClaimableShortTokenAmount
+    ) private view returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount) {
+        claimableLongTokenAmount = _getStoredClaimableFundingAmount(
+            positionParams.dataStore, positionParams.marketToken, pricesParams.market.longToken, positionParams.account
+        );
+        claimableShortTokenAmount = _getStoredClaimableFundingAmount(
+            positionParams.dataStore, positionParams.marketToken, pricesParams.market.shortToken, positionParams.account
+        );
+
+        claimableLongTokenAmount += nextClaimableLongTokenAmount;
+        claimableShortTokenAmount += nextClaimableShortTokenAmount;
+
+        return (claimableLongTokenAmount, claimableShortTokenAmount);
+    }
+
+    /// @dev return claimable token amount that is actually claimable
+    function _getStoredClaimableFundingAmount(address dataStore, address market, address token, address account)
+        private
+        view
+        returns (uint256)
+    {
+        bytes32 key = Keys.claimableFundingAmountKey(market, token, account);
+        uint256 claimableAmount = IDataStore(dataStore).getUint(key);
+        return claimableAmount;
     }
 
     /// @dev returns pnls and token size

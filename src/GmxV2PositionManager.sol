@@ -581,6 +581,18 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         );
     }
 
+    function getClaimableFundingAmounts()
+        public
+        view
+        returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount)
+    {
+        address _factory = factory();
+        (claimableLongTokenAmount, claimableShortTokenAmount) = GmxV2Lib.getClaimableFundingAmounts(
+            _getPositionParams(_factory), _getPricesParams(_factory), IBasisGmxFactory(_factory).referralStorage()
+        );
+        return (claimableLongTokenAmount, claimableShortTokenAmount);
+    }
+
     /// @notice check if position is need to be kept by claiming funding or adjusting size
     function checkUpkeep(bytes calldata) external view returns (bool upkeepNeeded, bytes memory performData) {
         bool settleNeeded = _checkSettle();
