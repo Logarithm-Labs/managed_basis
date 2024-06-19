@@ -160,7 +160,7 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
 
         if ($.activeRequestId != bytes32(0)) {
             revert Errors.ActiveRequestIsNotClosed($.activeRequestId);
-        }
+        }git 
 
         uint256 round = $.currentRound + 1;
         requestId = getRequestId(round);
