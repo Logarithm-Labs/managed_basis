@@ -193,8 +193,8 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         bool isIncrease
     ) external onlyStrategy whenNotPending returns (bytes32) {
         address _factory = factory();
-        GmxV2Lib.GetPosition memory positionParams = _getPositionParams(_factory);
-        GmxV2Lib.GetPrices memory pricesParams = _getPricesParams(_factory);
+        GmxV2Lib.GmxParams memory gmxParams = _getGmxParams(_factory);
+        address _oracle = IBasisGmxFactory(_factory).oracle();
         address _collateralToken = collateralToken();
 
         uint256 idleCollateralAmount = IERC20(_collateralToken).balanceOf(address(this));
@@ -211,8 +211,8 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
             uint256 sizeDeltaUsd;
             if (sizeDeltaInTokens > 0) {
                 // record sizeInTokens
-                _getGmxV2PositionManagerStorage().sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(positionParams);
-                (sizeDeltaUsd,) = GmxV2Lib.getSizeDeltaUsdForIncrease(positionParams, pricesParams, sizeDeltaInTokens);
+                _getGmxV2PositionManagerStorage().sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
+                (sizeDeltaUsd,) = GmxV2Lib.getSizeDeltaUsdForIncrease(gmxParams, _oracle, sizeDeltaInTokens);
             }
             _createOrder(
                 InternalCreateOrderParams({
@@ -246,7 +246,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
             }
             if (sizeDeltaInTokens > 0) {
                 _getGmxV2PositionManagerStorage().spotExecutionPrice = spotExecutionPrice;
-                _getGmxV2PositionManagerStorage().sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(positionParams);
+                _getGmxV2PositionManagerStorage().sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
             }
             (
                 bool isIncreaseCollateral,
@@ -254,9 +254,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 uint256 sizeDeltaUsdToDecrease,
                 uint256 sizeDeltaUsdToIncrease,
                 uint256 positionFeeUsd
-            ) = GmxV2Lib.getDecreasePositionResult(
-                positionParams, pricesParams, sizeDeltaInTokens, collateralDeltaAmount
-            );
+            ) = GmxV2Lib.getDecreasePositionResult(gmxParams, _oracle, sizeDeltaInTokens, collateralDeltaAmount);
 
             if (positionFeeUsd > 0) {
                 // record position fee
@@ -316,7 +314,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
             address _factory = factory();
             if (sizeDeltaInTokens < 0) {
                 (uint256 sizeDeltaUsd,) = GmxV2Lib.getSizeDeltaUsdForDecrease(
-                    _getPositionParams(_factory), _getPricesParams(_factory), uint256(-sizeDeltaInTokens)
+                    _getGmxParams(_factory), IBasisGmxFactory(_factory).oracle(), uint256(-sizeDeltaInTokens)
                 );
                 return _createOrder(
                     InternalCreateOrderParams({
@@ -333,7 +331,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                 );
             } else {
                 (uint256 sizeDeltaUsd,) = GmxV2Lib.getSizeDeltaUsdForIncrease(
-                    _getPositionParams(_factory), _getPricesParams(_factory), uint256(sizeDeltaInTokens)
+                    _getGmxParams(_factory), IBasisGmxFactory(_factory).oracle(), uint256(sizeDeltaInTokens)
                 );
                 return _createOrder(
                     InternalCreateOrderParams({
@@ -434,7 +432,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                         );
                     }
                     if (order.numbers.sizeDeltaUsd > 0) {
-                        uint256 sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
+                        uint256 sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(factory()));
                         IBasisStrategy(strategy()).afterIncreasePositionSize(
                             sizeInTokensAfter - _getGmxV2PositionManagerStorage().sizeInTokensBefore, bytes32(0), true
                         );
@@ -564,7 +562,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     function positionNetBalance() public view returns (uint256) {
         address _factory = factory();
         uint256 positionNetAmount = GmxV2Lib.getPositionNetAmount(
-            _getPositionParams(_factory), _getPricesParams(_factory), IBasisGmxFactory(_factory).referralStorage()
+            _getGmxParams(_factory), IBasisGmxFactory(_factory).oracle(), IBasisGmxFactory(_factory).referralStorage()
         );
         return positionNetAmount + IERC20(collateralToken()).balanceOf(address(this))
             + _getGmxV2PositionManagerStorage().pendingCollateralAmount;
@@ -588,7 +586,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     {
         address _factory = factory();
         (claimableLongTokenAmount, claimableShortTokenAmount) = GmxV2Lib.getClaimableFundingAmounts(
-            _getPositionParams(_factory), _getPricesParams(_factory), IBasisGmxFactory(_factory).referralStorage()
+            _getGmxParams(_factory), IBasisGmxFactory(_factory).oracle(), IBasisGmxFactory(_factory).referralStorage()
         );
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
@@ -701,8 +699,8 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     function _checkSettle() private view returns (bool) {
         address _factory = factory();
         bool isFundingClaimable = GmxV2Lib.isFundingClaimable(
-            _getPositionParams(_factory),
-            _getPricesParams(_factory),
+            _getGmxParams(_factory),
+            IBasisGmxFactory(_factory).oracle(),
             IBasisGmxFactory(_factory).referralStorage(),
             maxClaimableFundingShare(),
             PRECISION
@@ -715,7 +713,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     /// @return sizeDeltaInTokens is delta size of perp position to be adjusted
     function _checkAdjustPositionSize() private view returns (bool isNeed, int256 sizeDeltaInTokens) {
         uint256 productBalance = IERC20(indexToken()).balanceOf(strategy());
-        uint256 positionSizeInTokens = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
+        uint256 positionSizeInTokens = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(factory()));
         sizeDeltaInTokens = productBalance.toInt256() - positionSizeInTokens.toInt256();
         uint256 deviation;
         if (sizeDeltaInTokens < 0) {
@@ -742,7 +740,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     {
         uint256 collateralTokenPrice = IOracle(IBasisGmxFactory(factory()).oracle()).getAssetPrice(collateralToken());
         uint256 _sizeInTokensBefore = _getGmxV2PositionManagerStorage().sizeInTokensBefore;
-        uint256 _sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getPositionParams(factory()));
+        uint256 _sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(factory()));
         (, sizeDeltaInTokens) = _sizeInTokensBefore.trySub(_sizeInTokensAfter);
         int256 executionCostInUsd = spotExecutionPrice != 0
             ? sizeDeltaUsd.toInt256() - (spotExecutionPrice * sizeDeltaInTokens).toInt256()
@@ -754,25 +752,21 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         return (sizeDeltaInTokens, executionCostAmount);
     }
 
-    function _getPositionParams(address _factory) private view returns (GmxV2Lib.GetPosition memory) {
-        return GmxV2Lib.GetPosition({
-            dataStore: IBasisGmxFactory(_factory).dataStore(),
-            reader: IBasisGmxFactory(_factory).reader(),
-            marketToken: marketToken(),
-            account: address(this),
-            collateralToken: collateralToken(),
-            isLong: isLong()
-        });
-    }
-
-    function _getPricesParams(address _factory) private view returns (GmxV2Lib.GetPrices memory) {
+    function _getGmxParams(address _factory) private view returns (GmxV2Lib.GmxParams memory) {
         Market.Props memory market = Market.Props({
             marketToken: marketToken(),
             indexToken: indexToken(),
             longToken: longToken(),
             shortToken: shortToken()
         });
-        return GmxV2Lib.GetPrices({market: market, oracle: IBasisGmxFactory(_factory).oracle()});
+        return GmxV2Lib.GmxParams({
+            market: market,
+            dataStore: IBasisGmxFactory(_factory).dataStore(),
+            reader: IBasisGmxFactory(_factory).reader(),
+            account: address(this),
+            collateralToken: collateralToken(),
+            isLong: isLong()
+        });
     }
 
     /*//////////////////////////////////////////////////////////////
