@@ -575,6 +575,59 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertEq(strategyBalanceAfter - strategyBalanceBefore, strategy.collateralDelta());
     }
 
+    function test_getClaimableFundingAmounts() public afterHavingPosition {
+        _moveTimestamp(24 * 3600);
+        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        console.log("claimableLongAmount", claimableLongAmount);
+        console.log("claimableShortAmount", claimableShortAmount);
+        console.log("--------------------------------------------");
+        _moveTimestamp(24 * 3600);
+        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        console.log("claimableLongAmount", claimableLongAmount);
+        console.log("claimableShortAmount", claimableShortAmount);
+        console.log("--------------------------------------------");
+        _moveTimestamp(24 * 3600);
+        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        console.log("claimableLongAmount", claimableLongAmount);
+        console.log("claimableShortAmount", claimableShortAmount);
+        console.log("--------------------------------------------");
+        _moveTimestamp(24 * 3600);
+        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        console.log("claimableLongAmount", claimableLongAmount);
+        console.log("claimableShortAmount", claimableShortAmount);
+        console.log("--------------------------------------------");
+        _moveTimestamp(24 * 3600);
+        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        console.log("claimableLongAmount", claimableLongAmount);
+        console.log("claimableShortAmount", claimableShortAmount);
+        console.log("--------------------------------------------");
+        _moveTimestamp(24 * 3600);
+        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        console.log("claimableLongAmount", claimableLongAmount);
+        console.log("claimableShortAmount", claimableShortAmount);
+        console.log("--------------------------------------------");
+    }
+
+    function test_claimFunding() public afterHavingPosition {
+        _moveTimestamp(24 * 3600);
+        vm.startPrank(address(strategy));
+        positionManager.adjustPosition(1, 0, 0, true);
+        _executeOrder(positionManager.pendingIncreaseOrderKey());
+
+        uint256 collateralBalanceBefore = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
+        uint256 productBalacneBefore = IERC20(positionManager.longToken()).balanceOf(address(strategy));
+        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        assertTrue(claimableLongAmount > 0);
+        assertTrue(claimableShortAmount > 0);
+        address anyone = makeAddr("anyone");
+        vm.startPrank(anyone);
+        positionManager.claimFunding();
+        uint256 collateralBalanceAfter = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
+        uint256 productBalacneAfter = IERC20(positionManager.longToken()).balanceOf(address(strategy));
+        assertEq(collateralBalanceAfter - collateralBalanceBefore, claimableShortAmount);
+        assertEq(productBalacneAfter - productBalacneBefore, claimableLongAmount);
+    }
+
     // function test_checkUpkeep_needAdjust_whenSpotBigger() public afterHavingPosition {
     //     vm.startPrank(wethWhale);
     //     IERC20(product).transfer(address(strategy), 1.5 ether);
@@ -622,6 +675,13 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         MockPriceFeed(priceFeed).updatePrice(answer);
     }
 
+    function _moveTimestamp(uint256 deltaTime) internal {
+        uint256 targetTimestamp = vm.getBlockTimestamp() + deltaTime;
+        vm.warp(targetTimestamp);
+        MockPriceFeed(assetPriceFeed).setUpdatedAt(targetTimestamp);
+        MockPriceFeed(productPriceFeed).setUpdatedAt(targetTimestamp);
+    }
+
     function _executeOrder(bytes32 key) internal {
         if (key != bytes32(0)) {
             IOrderHandler.SetPricesParams memory oracleParams;
@@ -647,23 +707,20 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
 
     function _getPositionInfo() internal view returns (ReaderUtils.PositionInfo memory) {
         return GmxV2Lib.getPositionInfo(
-            GmxV2Lib.GetPosition({
-                dataStore: MockFactory(factory).dataStore(),
-                reader: MockFactory(factory).reader(),
-                marketToken: positionManager.marketToken(),
-                account: address(positionManager),
-                collateralToken: positionManager.collateralToken(),
-                isLong: positionManager.isLong()
-            }),
-            GmxV2Lib.GetPrices({
+            GmxV2Lib.GmxParams({
                 market: Market.Props({
                     marketToken: positionManager.marketToken(),
                     indexToken: positionManager.indexToken(),
                     longToken: positionManager.longToken(),
                     shortToken: positionManager.shortToken()
                 }),
-                oracle: address(oracle)
+                dataStore: MockFactory(factory).dataStore(),
+                reader: MockFactory(factory).reader(),
+                account: address(positionManager),
+                collateralToken: positionManager.collateralToken(),
+                isLong: positionManager.isLong()
             }),
+            address(oracle),
             MockFactory(factory).referralStorage()
         );
     }
