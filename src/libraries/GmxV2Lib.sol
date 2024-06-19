@@ -173,6 +173,8 @@ library GmxV2Lib {
                 sizeDeltaUsdToIncrease,
                 positionFeeUsd
             );
+        } else {
+            collateralDeltaAmount -= uint256(realizedPnlAmount);
         }
 
         // get the delta amount to reduce initial collateral
