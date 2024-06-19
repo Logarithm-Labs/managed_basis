@@ -659,6 +659,14 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         return _getGmxV2PositionManagerStorage().maxClaimableFundingShare;
     }
 
+    function pendingIncreaseOrderKey() public view returns (bytes32) {
+        return _getGmxV2PositionManagerStorage().pendingIncreaseOrderKey;
+    }
+
+    function pendingDecreaseOrderKey() public view returns (bytes32) {
+        return _getGmxV2PositionManagerStorage().pendingDecreaseOrderKey;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
