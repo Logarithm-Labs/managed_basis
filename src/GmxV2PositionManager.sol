@@ -306,7 +306,42 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     function performUpkeep(bytes calldata performData) external onlyKeeper whenNotPending returns (bytes32) {
         (bool settleNeeded, bool adjustNeeded) = abi.decode(performData, (bool, bool));
         if (settleNeeded) {
-            claimFunding();
+            _getGmxV2PositionManagerStorage().status = Status.KEEPING;
+            // if there is idle collateral, then increasing that amount to settle the claimable funding
+            // otherwise, decrease collateral by 1 to settle
+            address _collateralToken = collateralToken();
+            address _factory = factory();
+            uint256 idleCollateralAmount = IERC20(_collateralToken).balanceOf(address(this));
+            if (idleCollateralAmount > 0) {
+                IERC20(_collateralToken).safeTransfer(IBasisGmxFactory(_factory).orderVault(), idleCollateralAmount);
+                _createOrder(
+                    InternalCreateOrderParams({
+                        isLong: isLong(),
+                        isIncrease: true,
+                        exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                        orderVault: IBasisGmxFactory(_factory).orderVault(),
+                        collateralToken: _collateralToken,
+                        collateralDeltaAmount: idleCollateralAmount,
+                        sizeDeltaUsd: 0,
+                        callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                        referralCode: IBasisGmxFactory(_factory).referralCode()
+                    })
+                );
+            } else {
+                _createOrder(
+                    InternalCreateOrderParams({
+                        isLong: isLong(),
+                        isIncrease: false,
+                        exchangeRouter: IBasisGmxFactory(_factory).exchangeRouter(),
+                        orderVault: IBasisGmxFactory(_factory).orderVault(),
+                        collateralToken: _collateralToken,
+                        collateralDeltaAmount: 1,
+                        sizeDeltaUsd: 0,
+                        callbackGasLimit: IBasisGmxFactory(_factory).callbackGasLimit(),
+                        referralCode: IBasisGmxFactory(_factory).referralCode()
+                    })
+                );
+            }
         }
         if (adjustNeeded) {
             _getGmxV2PositionManagerStorage().status = Status.KEEPING;
@@ -420,6 +455,9 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         Status _status = _getGmxV2PositionManagerStorage().status;
 
         if (_status == Status.KEEPING) {
+            if (order.numbers.initialCollateralDeltaAmount > 0) {
+                _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
+            }
             _getGmxV2PositionManagerStorage().status = Status.IDLE;
         } else {
             if (isIncrease) {
