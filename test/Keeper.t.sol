@@ -150,7 +150,7 @@ contract KeeperTest is StdInvariant, Test {
     function test_performUpkeep_revert() public afterHavingPosition {
         vm.startPrank(wethWhale);
         IERC20(product).transfer(address(strategy), 1.5 ether);
-        (bool upkeepNeeded,) = keeper.checkUpkeep(abi.encode(address(positionManager)));
+        (bool upkeepNeeded, bytes memory data) = keeper.checkUpkeep(abi.encode(address(positionManager)));
         assertTrue(upkeepNeeded);
         vm.startPrank(makeAddr("anyone"));
         vm.expectRevert(Errors.UnAuthorizedForwarder.selector);
