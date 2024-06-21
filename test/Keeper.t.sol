@@ -152,8 +152,9 @@ contract KeeperTest is StdInvariant, Test {
         IERC20(product).transfer(address(strategy), 1.5 ether);
         (bool upkeepNeeded, bytes memory data) = keeper.checkUpkeep(abi.encode(address(positionManager)));
         assertTrue(upkeepNeeded);
-        vm.startPrank(makeAddr("anyone"));
-        vm.expectRevert(Errors.UnAuthorizedForwarder.selector);
+        address anyone = makeAddr("anyone");
+        vm.startPrank(anyone);
+        vm.expectRevert(abi.encodeWithSelector(Errors.UnAuthorizedForwarder.selector, anyone));
         keeper.performUpkeep(data);
     }
 
