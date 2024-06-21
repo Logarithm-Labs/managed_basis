@@ -716,10 +716,12 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         uint256 positionSizeInTokens = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(factory()));
         sizeDeltaInTokens = productBalance.toInt256() - positionSizeInTokens.toInt256();
         uint256 deviation;
-        if (sizeDeltaInTokens < 0) {
-            deviation = uint256(-sizeDeltaInTokens).mulDiv(PRECISION, productBalance);
-        } else {
-            deviation = uint256(sizeDeltaInTokens).mulDiv(PRECISION, productBalance);
+        if (productBalance > 0) {
+            if (sizeDeltaInTokens < 0) {
+                deviation = uint256(-sizeDeltaInTokens).mulDiv(PRECISION, productBalance);
+            } else {
+                deviation = uint256(sizeDeltaInTokens).mulDiv(PRECISION, productBalance);
+            }
         }
         isNeed = deviation > _getGmxV2PositionManagerStorage().maxHedgeDeviation;
         return (isNeed, sizeDeltaInTokens);
