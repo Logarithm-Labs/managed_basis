@@ -604,25 +604,79 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertEq(productBalacneAfter - productBalacneBefore, claimableLongAmount);
     }
 
-    // function test_checkUpkeep_needAdjust_whenSpotBigger() public afterHavingPosition {
-    //     vm.startPrank(wethWhale);
-    //     IERC20(product).transfer(address(strategy), 1.5 ether);
-    //     (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep("");
-    //     (bool settleNeeded, bool adjustNeeded) = abi.decode(data, (bool, bool));
-    //     assertTrue(upkeepNeeded);
-    //     assertTrue(adjustNeeded);
-    //     assertTrue(!settleNeeded);
-    // }
+    function test_checkUpkeep_needAdjust_whenSpotBigger() public afterHavingPosition {
+        vm.startPrank(wethWhale);
+        IERC20(product).transfer(address(strategy), 1.5 ether);
+        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
+        (bool settleNeeded, bool adjustNeeded) = abi.decode(data, (bool, bool));
+        assertTrue(upkeepNeeded);
+        assertTrue(adjustNeeded);
+        assertTrue(!settleNeeded);
+    }
 
-    // function test_checkUpkeep_needAdjust_whenSpotSmaller() public afterHavingPosition {
-    //     vm.startPrank(wethWhale);
-    //     IERC20(product).transfer(address(strategy), 0.5 ether);
-    //     (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep("");
-    //     (bool settleNeeded, bool adjustNeeded) = abi.decode(data, (bool, bool));
-    //     assertTrue(upkeepNeeded);
-    //     assertTrue(adjustNeeded);
-    //     assertTrue(!settleNeeded);
-    // }
+    function test_checkUpkeep_NotNeedAdjust_whenSpotBigger() public afterHavingPosition {
+        vm.startPrank(wethWhale);
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
+        IERC20(product).transfer(address(strategy), positionInfo.position.numbers.sizeInTokens * 10005 / 10000); // 0.05% deviation
+        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
+        (bool settleNeeded, bool adjustNeeded) = abi.decode(data, (bool, bool));
+        assertTrue(!upkeepNeeded);
+        assertTrue(!adjustNeeded);
+        assertTrue(!settleNeeded);
+    }
+
+    function test_checkUpkeep_needAdjust_whenSpotSmaller() public afterHavingPosition {
+        vm.startPrank(wethWhale);
+        IERC20(product).transfer(address(strategy), 0.5 ether);
+        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
+        (bool settleNeeded, bool adjustNeeded) = abi.decode(data, (bool, bool));
+        assertTrue(upkeepNeeded);
+        assertTrue(adjustNeeded);
+        assertTrue(!settleNeeded);
+    }
+
+    function test_checkUpkeep_NotNeedAdjust_whenSpotSmaller() public afterHavingPosition {
+        vm.startPrank(wethWhale);
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
+        IERC20(product).transfer(address(strategy), positionInfo.position.numbers.sizeInTokens * 9995 / 10000); // 0.05% deviation
+        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
+        (bool settleNeeded, bool adjustNeeded) = abi.decode(data, (bool, bool));
+        assertTrue(!upkeepNeeded);
+        assertTrue(!adjustNeeded);
+        assertTrue(!settleNeeded);
+    }
+
+    function test_performUpkeep_adjust_increase() public afterHavingPosition {
+        vm.startPrank(wethWhale);
+        IERC20(product).transfer(address(strategy), 1.5 ether);
+        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
+        (bool settleNeeded, bool adjustNeeded) = abi.decode(data, (bool, bool));
+        assertTrue(upkeepNeeded);
+        assertTrue(adjustNeeded);
+        assertTrue(!settleNeeded);
+        vm.startPrank(address(keeper));
+        positionManager.performUpkeep(data);
+        assertTrue(positionManager.pendingIncreaseOrderKey() != bytes32(0));
+        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
+        assertApproxEqRel(positionInfo.position.numbers.sizeInTokens, 1.5 ether, 0.999999 ether);
+    }
+
+    function test_performUpkeep_adjust_decrease() public afterHavingPosition {
+        vm.startPrank(wethWhale);
+        IERC20(product).transfer(address(strategy), 0.5 ether);
+        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
+        (bool settleNeeded, bool adjustNeeded) = abi.decode(data, (bool, bool));
+        assertTrue(upkeepNeeded);
+        assertTrue(adjustNeeded);
+        assertTrue(!settleNeeded);
+        vm.startPrank(address(keeper));
+        positionManager.performUpkeep(data);
+        assertTrue(positionManager.pendingDecreaseOrderKey() != bytes32(0));
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
+        assertEq(positionInfo.position.numbers.sizeInTokens, 0.5 ether);
+    }
 
     function _forkArbitrum() internal {
         uint256 arbitrumFork = vm.createFork(vm.rpcUrl("arbitrum_one"));

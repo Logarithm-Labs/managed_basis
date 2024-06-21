@@ -592,7 +592,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     }
 
     /// @notice check if position is need to be kept by claiming funding or adjusting size
-    function checkUpkeep(bytes calldata) external view returns (bool upkeepNeeded, bytes memory performData) {
+    function checkUpkeep() external view returns (bool upkeepNeeded, bytes memory performData) {
         bool settleNeeded = _checkSettle();
         (bool adjustNeeded,) = _checkAdjustPositionSize();
         upkeepNeeded = (settleNeeded || adjustNeeded) && !_isPending();
