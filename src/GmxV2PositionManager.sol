@@ -556,17 +556,16 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         return API_VERSION;
     }
 
-    /// @notice total asset token amount that can be claimable from gmx position when closing it
-    ///
-    /// @dev this amount includes the pending asset token amount and idle assets
+    /// @notice total asset token amount that position holds
+    /// Note: should exclude the claimable funding amounts until claiming them
+    ///       and include the pending asset token amount and idle assets
     function positionNetBalance() public view returns (uint256) {
         address _factory = factory();
-        (uint256 remainingCollateral, uint256 claimableTokenAmount) = GmxV2Lib
-            .getRemainingCollateralAndClaimableFundingAmount(
+        (uint256 remainingCollateral,) = GmxV2Lib.getRemainingCollateralAndClaimableFundingAmount(
             _getGmxParams(_factory), IBasisGmxFactory(_factory).oracle(), IBasisGmxFactory(_factory).referralStorage()
         );
 
-        return remainingCollateral + claimableTokenAmount + IERC20(collateralToken()).balanceOf(address(this))
+        return remainingCollateral + IERC20(collateralToken()).balanceOf(address(this))
             + _getGmxV2PositionManagerStorage().pendingCollateralAmount;
     }
 
@@ -581,15 +580,13 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         );
     }
 
-    function getClaimableFundingAmounts()
+    function getAccruedFundingAmounts()
         public
         view
         returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount)
     {
-        address _factory = factory();
-        (claimableLongTokenAmount, claimableShortTokenAmount) = GmxV2Lib.getClaimableFundingAmounts(
-            _getGmxParams(_factory), IBasisGmxFactory(_factory).oracle(), IBasisGmxFactory(_factory).referralStorage()
-        );
+        (claimableLongTokenAmount, claimableShortTokenAmount) =
+            GmxV2Lib.getAccruedFundingAmounts(_getGmxParams(factory()));
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
@@ -697,18 +694,15 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         return orderKey;
     }
 
-    /// @dev check if the claimable funding fee amount is over than max share
+    /// @dev check if the claimable funding amount is over than max share
     function _checkSettle() private view returns (bool) {
         address _factory = factory();
-
         (uint256 remainingCollateral, uint256 claimableTokenAmount) = GmxV2Lib
             .getRemainingCollateralAndClaimableFundingAmount(
             _getGmxParams(_factory), IBasisGmxFactory(_factory).oracle(), IBasisGmxFactory(_factory).referralStorage()
         );
-        uint256 netAmount = remainingCollateral + claimableTokenAmount;
-
-        if (netAmount > 0) {
-            return claimableTokenAmount.mulDiv(PRECISION, netAmount) > maxClaimableFundingShare();
+        if (remainingCollateral > 0) {
+            return claimableTokenAmount.mulDiv(PRECISION, remainingCollateral) > maxClaimableFundingShare();
         } else {
             return false;
         }

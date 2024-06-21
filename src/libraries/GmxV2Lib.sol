@@ -280,17 +280,17 @@ library GmxV2Lib {
         );
     }
 
-    function getClaimableFundingAmounts(GmxParams calldata params, address oracle, address referralStorage)
-        external
+    /// @dev return the funding amounts received
+    function getAccruedFundingAmounts(GmxParams calldata params)
+        public
         view
         returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount)
     {
-        MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
-        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
-        (claimableLongTokenAmount, claimableShortTokenAmount) = _getClaimableFundingAmounts(
-            params,
-            positionInfo.fees.funding.claimableLongTokenAmount,
-            positionInfo.fees.funding.claimableShortTokenAmount
+        claimableLongTokenAmount = _getAccruedFundingAmount(
+            params.dataStore, params.market.marketToken, params.market.longToken, params.account
+        );
+        claimableShortTokenAmount = _getAccruedFundingAmount(
+            params.dataStore, params.market.marketToken, params.market.shortToken, params.account
         );
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
@@ -304,13 +304,8 @@ library GmxV2Lib {
         MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
         ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
         uint256 collateralTokenPrice = IOracle(oracle).getAssetPrice(positionInfo.position.addresses.collateralToken);
-        (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount) = _getClaimableFundingAmounts(
-            params,
-            positionInfo.fees.funding.claimableLongTokenAmount,
-            positionInfo.fees.funding.claimableShortTokenAmount
-        );
-        uint256 claimableUsd = claimableLongTokenAmount * prices.longTokenPrice.min
-            + claimableShortTokenAmount * prices.shortTokenPrice.min;
+        uint256 claimableUsd = positionInfo.fees.funding.claimableLongTokenAmount * prices.longTokenPrice.min
+            + positionInfo.fees.funding.claimableShortTokenAmount * prices.shortTokenPrice.min;
         uint256 claimableTokenAmount = claimableUsd / collateralTokenPrice;
 
         int256 remainingCollateral = positionInfo.position.numbers.collateralAmount.toInt256()
@@ -413,27 +408,8 @@ library GmxV2Lib {
         return positionInfo;
     }
 
-    /// @dev return claimable token amount + next claimable token amount
-    function _getClaimableFundingAmounts(
-        GmxParams calldata params,
-        uint256 nextClaimableLongTokenAmount,
-        uint256 nextClaimableShortTokenAmount
-    ) private view returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount) {
-        claimableLongTokenAmount = _getStoredClaimableFundingAmount(
-            params.dataStore, params.market.marketToken, params.market.longToken, params.account
-        );
-        claimableShortTokenAmount = _getStoredClaimableFundingAmount(
-            params.dataStore, params.market.marketToken, params.market.shortToken, params.account
-        );
-
-        claimableLongTokenAmount += nextClaimableLongTokenAmount;
-        claimableShortTokenAmount += nextClaimableShortTokenAmount;
-
-        return (claimableLongTokenAmount, claimableShortTokenAmount);
-    }
-
-    /// @dev return claimable token amount that is actually claimable
-    function _getStoredClaimableFundingAmount(address dataStore, address market, address token, address account)
+    /// @dev return received founding amount given a token
+    function _getAccruedFundingAmount(address dataStore, address market, address token, address account)
         private
         view
         returns (uint256)
