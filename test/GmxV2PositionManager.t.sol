@@ -575,14 +575,20 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertEq(strategyBalanceAfter - strategyBalanceBefore, strategy.collateralDelta());
     }
 
-    function test_getClaimableFundingAmounts() public afterHavingPosition {
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+    function test_getAccruedFundingAmounts() public afterHavingPosition {
         _moveTimestamp(3600);
-        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
-        assertTrue(positionNetBalanceAfter > positionNetBalanceBefore);
+        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getAccruedFundingAmounts();
+        assertTrue(claimableLongAmount == 0);
+        assertTrue(claimableShortAmount == 0);
+        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        vm.startPrank(address(strategy));
+        positionManager.adjustPosition(0, 0, 1, false);
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        (claimableLongAmount, claimableShortAmount) = positionManager.getAccruedFundingAmounts();
         assertTrue(claimableLongAmount > 0);
         assertTrue(claimableShortAmount > 0);
+        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        assertTrue(positionNetBalanceAfter + 1 == positionNetBalanceBefore);
     }
 
     function test_claimFunding() public afterHavingPosition {
@@ -592,7 +598,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         _executeOrder(positionManager.pendingIncreaseOrderKey());
         uint256 collateralBalanceBefore = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
         uint256 productBalacneBefore = IERC20(positionManager.longToken()).balanceOf(address(strategy));
-        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getAccruedFundingAmounts();
         assertTrue(claimableLongAmount > 0);
         assertTrue(claimableShortAmount > 0);
         address anyone = makeAddr("anyone");
@@ -612,6 +618,17 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertTrue(upkeepNeeded);
         assertTrue(adjustNeeded);
         assertTrue(!settleNeeded);
+    }
+
+    function test_checkUpkeep_settle() public afterHavingPosition {
+        _moveTimestamp(2 * 24 * 3600);
+        vm.startPrank(address(factory));
+        positionManager.setMaxClaimableFundingShare(0.0001 ether);
+        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
+        (bool settleNeeded, bool adjustNeeded) = abi.decode(data, (bool, bool));
+        assertTrue(upkeepNeeded);
+        assertTrue(settleNeeded);
+        assertTrue(!adjustNeeded);
     }
 
     function test_checkUpkeep_NotNeedAdjust_whenSpotBigger() public afterHavingPosition {
@@ -676,6 +693,67 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
         assertEq(positionInfo.position.numbers.sizeInTokens, 0.5 ether);
+    }
+
+    function test_performUpkeep_settle_decreaseCollateral() public afterHavingPosition {
+        _moveTimestamp(2 * 24 * 3600);
+        vm.startPrank(address(factory));
+        positionManager.setMaxClaimableFundingShare(0.0001 ether);
+        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getAccruedFundingAmounts();
+        assertTrue(claimableLongAmount == 0);
+        assertTrue(claimableShortAmount == 0);
+
+        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
+        (bool settleNeeded, bool adjustNeeded) = abi.decode(data, (bool, bool));
+        assertTrue(upkeepNeeded);
+        assertTrue(settleNeeded);
+        assertTrue(!adjustNeeded);
+        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 idleCollateralAmount = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
+        assertTrue(idleCollateralAmount == 0);
+        vm.startPrank(address(keeper));
+        positionManager.performUpkeep(data);
+        assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
+        assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        (claimableLongAmount, claimableShortAmount) = positionManager.getAccruedFundingAmounts();
+        assertTrue(claimableLongAmount > 0);
+        assertTrue(claimableShortAmount > 0);
+        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        assertTrue(positionNetBalanceAfter == positionNetBalanceBefore);
+    }
+
+    function test_performUpkeep_settle_increaseCollateral() public afterHavingPosition {
+        _moveTimestamp(2 * 24 * 3600);
+        vm.startPrank(address(factory));
+        positionManager.setMaxClaimableFundingShare(0.0001 ether);
+        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getAccruedFundingAmounts();
+        assertTrue(claimableLongAmount == 0);
+        assertTrue(claimableShortAmount == 0);
+
+        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
+        (bool settleNeeded, bool adjustNeeded) = abi.decode(data, (bool, bool));
+        assertTrue(upkeepNeeded);
+        assertTrue(settleNeeded);
+        assertTrue(!adjustNeeded);
+
+        vm.startPrank(usdcWhale);
+        IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
+        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 idleCollateralAmount = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
+        assertTrue(idleCollateralAmount == 300 * USDC_PRECISION);
+        vm.startPrank(address(keeper));
+        positionManager.performUpkeep(data);
+        uint256 positionNetBalancePending = positionManager.positionNetBalance();
+        assertNotEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
+        assertEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
+        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        (claimableLongAmount, claimableShortAmount) = positionManager.getAccruedFundingAmounts();
+        assertTrue(claimableLongAmount > 0);
+        assertTrue(claimableShortAmount > 0);
+        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        assertTrue(positionNetBalanceAfter == positionNetBalanceBefore);
+        assertTrue(positionNetBalanceAfter == positionNetBalancePending);
     }
 
     function _forkArbitrum() internal {
