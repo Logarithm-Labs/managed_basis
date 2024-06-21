@@ -576,36 +576,13 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
     }
 
     function test_getClaimableFundingAmounts() public afterHavingPosition {
-        _moveTimestamp(24 * 3600);
+        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        _moveTimestamp(3600);
         (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
-        console.log("claimableLongAmount", claimableLongAmount);
-        console.log("claimableShortAmount", claimableShortAmount);
-        console.log("--------------------------------------------");
-        _moveTimestamp(24 * 3600);
-        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
-        console.log("claimableLongAmount", claimableLongAmount);
-        console.log("claimableShortAmount", claimableShortAmount);
-        console.log("--------------------------------------------");
-        _moveTimestamp(24 * 3600);
-        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
-        console.log("claimableLongAmount", claimableLongAmount);
-        console.log("claimableShortAmount", claimableShortAmount);
-        console.log("--------------------------------------------");
-        _moveTimestamp(24 * 3600);
-        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
-        console.log("claimableLongAmount", claimableLongAmount);
-        console.log("claimableShortAmount", claimableShortAmount);
-        console.log("--------------------------------------------");
-        _moveTimestamp(24 * 3600);
-        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
-        console.log("claimableLongAmount", claimableLongAmount);
-        console.log("claimableShortAmount", claimableShortAmount);
-        console.log("--------------------------------------------");
-        _moveTimestamp(24 * 3600);
-        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
-        console.log("claimableLongAmount", claimableLongAmount);
-        console.log("claimableShortAmount", claimableShortAmount);
-        console.log("--------------------------------------------");
+        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        assertTrue(positionNetBalanceAfter > positionNetBalanceBefore);
+        assertTrue(claimableLongAmount > 0);
+        assertTrue(claimableShortAmount > 0);
     }
 
     function test_claimFunding() public afterHavingPosition {
@@ -613,7 +590,6 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(1, 0, 0, true);
         _executeOrder(positionManager.pendingIncreaseOrderKey());
-
         uint256 collateralBalanceBefore = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
         uint256 productBalacneBefore = IERC20(positionManager.longToken()).balanceOf(address(strategy));
         (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
