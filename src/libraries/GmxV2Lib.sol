@@ -49,38 +49,6 @@ library GmxV2Lib {
         bool isLong;
     }
 
-    /// @dev calculate the total claimable amount in collateral token when closing the whole
-    /// Note: collateral + pnlAfterPriceImpactUsd (pnl + price impact) -
-    /// total fee costs (funding fee + borrowing fee + position fee) + claimable fundings
-    function getPositionNetAmount(GmxParams calldata params, address oracle, address referralStorage)
-        external
-        view
-        returns (uint256)
-    {
-        (uint256 remainingCollateral, uint256 claimableTokenAmount) =
-            _getRemainingCollateralAndClaimableFundingAmount(params, oracle, referralStorage);
-        return remainingCollateral + claimableTokenAmount;
-    }
-
-    /// @dev check if the claimable amount is bigger than limit share based on the remaining collateral
-    function isFundingClaimable(
-        GmxParams calldata params,
-        address oracle,
-        address referralStorage,
-        uint256 maxClaimableFundingShare,
-        uint256 precision
-    ) external view returns (bool) {
-        (uint256 remainingCollateral, uint256 claimableTokenAmount) =
-            _getRemainingCollateralAndClaimableFundingAmount(params, oracle, referralStorage);
-        uint256 netAmount = remainingCollateral + claimableTokenAmount;
-
-        if (netAmount > 0) {
-            return claimableTokenAmount.mulDiv(precision, netAmount) > maxClaimableFundingShare;
-        } else {
-            return false;
-        }
-    }
-
     function getPositionSizeInTokens(GmxParams calldata params) external view returns (uint256) {
         Position.Props memory position = _getPosition(params);
         return position.numbers.sizeInTokens;
@@ -327,6 +295,30 @@ library GmxV2Lib {
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
+    /// @dev returns remainingCollateral and claimable funding amount in collateral token
+    function getRemainingCollateralAndClaimableFundingAmount(
+        GmxParams calldata params,
+        address oracle,
+        address referralStorage
+    ) external view returns (uint256, uint256) {
+        MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
+        uint256 collateralTokenPrice = IOracle(oracle).getAssetPrice(positionInfo.position.addresses.collateralToken);
+        (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount) = _getClaimableFundingAmounts(
+            params,
+            positionInfo.fees.funding.claimableLongTokenAmount,
+            positionInfo.fees.funding.claimableShortTokenAmount
+        );
+        uint256 claimableUsd = claimableLongTokenAmount * prices.longTokenPrice.min
+            + claimableShortTokenAmount * prices.shortTokenPrice.min;
+        uint256 claimableTokenAmount = claimableUsd / collateralTokenPrice;
+
+        int256 remainingCollateral = positionInfo.position.numbers.collateralAmount.toInt256()
+            + positionInfo.pnlAfterPriceImpactUsd / collateralTokenPrice.toInt256()
+            - positionInfo.fees.totalCostAmount.toInt256();
+        return (remainingCollateral > 0 ? remainingCollateral.toUint256() : 0, claimableTokenAmount);
+    }
+
     /// @dev in gmx v2, sizeDeltaInTokens = sizeInTokens * sizeDeltaUsd / sizeInUsd
     /// hence sizeDeltaUsd = ceil(sizeDeltaInTokens * sizeInUsd / sizeInTokens)
     function _getSizeDeltaUsdForDecrease(Position.Props memory position, uint256 sizeDeltaInTokens)
@@ -383,30 +375,6 @@ library GmxV2Lib {
         );
         uint256 positionFeeUsd = Precision.applyFactor(sizeDeltaUsd, positionFeeFactor);
         return positionFeeUsd;
-    }
-
-    /// @dev returns remainingCollateral and claimable funding amount in collateral token
-    function _getRemainingCollateralAndClaimableFundingAmount(
-        GmxParams calldata params,
-        address oracle,
-        address referralStorage
-    ) private view returns (uint256, uint256) {
-        MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
-        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
-        uint256 collateralTokenPrice = IOracle(oracle).getAssetPrice(positionInfo.position.addresses.collateralToken);
-        (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount) = _getClaimableFundingAmounts(
-            params,
-            positionInfo.fees.funding.claimableLongTokenAmount,
-            positionInfo.fees.funding.claimableShortTokenAmount
-        );
-        uint256 claimableUsd = claimableLongTokenAmount * prices.longTokenPrice.min
-            + claimableShortTokenAmount * prices.shortTokenPrice.min;
-        uint256 claimableTokenAmount = claimableUsd / collateralTokenPrice;
-
-        int256 remainingCollateral = positionInfo.position.numbers.collateralAmount.toInt256()
-            + positionInfo.pnlAfterPriceImpactUsd / collateralTokenPrice.toInt256()
-            - positionInfo.fees.totalCostAmount.toInt256();
-        return (remainingCollateral > 0 ? remainingCollateral.toUint256() : 0, claimableTokenAmount);
     }
 
     function _getPositionKey(address account, address marketToken, address collateralToken, bool isLong)

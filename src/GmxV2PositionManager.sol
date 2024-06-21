@@ -561,10 +561,12 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     /// @dev this amount includes the pending asset token amount and idle assets
     function positionNetBalance() public view returns (uint256) {
         address _factory = factory();
-        uint256 positionNetAmount = GmxV2Lib.getPositionNetAmount(
+        (uint256 remainingCollateral, uint256 claimableTokenAmount) = GmxV2Lib
+            .getRemainingCollateralAndClaimableFundingAmount(
             _getGmxParams(_factory), IBasisGmxFactory(_factory).oracle(), IBasisGmxFactory(_factory).referralStorage()
         );
-        return positionNetAmount + IERC20(collateralToken()).balanceOf(address(this))
+
+        return remainingCollateral + claimableTokenAmount + IERC20(collateralToken()).balanceOf(address(this))
             + _getGmxV2PositionManagerStorage().pendingCollateralAmount;
     }
 
@@ -698,14 +700,18 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
     /// @dev check if the claimable funding fee amount is over than max share
     function _checkSettle() private view returns (bool) {
         address _factory = factory();
-        bool isFundingClaimable = GmxV2Lib.isFundingClaimable(
-            _getGmxParams(_factory),
-            IBasisGmxFactory(_factory).oracle(),
-            IBasisGmxFactory(_factory).referralStorage(),
-            maxClaimableFundingShare(),
-            PRECISION
+
+        (uint256 remainingCollateral, uint256 claimableTokenAmount) = GmxV2Lib
+            .getRemainingCollateralAndClaimableFundingAmount(
+            _getGmxParams(_factory), IBasisGmxFactory(_factory).oracle(), IBasisGmxFactory(_factory).referralStorage()
         );
-        return isFundingClaimable;
+        uint256 netAmount = remainingCollateral + claimableTokenAmount;
+
+        if (netAmount > 0) {
+            return claimableTokenAmount.mulDiv(PRECISION, netAmount) > maxClaimableFundingShare();
+        } else {
+            return false;
+        }
     }
 
     /// @dev check deviation between spot and perp
