@@ -244,8 +244,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         $.pendingUtilization += assetsToSpot;
         $.pendingIncreaseCollateral += assetsToHedge;
 
-        _asset.safeTransfer($.positionManager, assetsToHedge);
-
         _mint(receiver, shares);
 
         emit PendingUtilizationIncrease(assetsToSpot);
@@ -407,15 +405,15 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         $.strategyStatus = StrategyStatus.DEPOSITING;
 
         // can only utilize when pending utilization is positive
-        uint256 pendingUtilizationCache = $.pendingUtilization;
-        if (pendingUtilizationCache == 0) {
+        uint256 pendingUtilization_ = $.pendingUtilization;
+        if (pendingUtilization_ == 0) {
             revert Errors.ZeroPendingUtilization();
         }
 
         // actual utilize amount is min of amount, idle assets and pending utilization
         uint256 idle = idleAssets();
         amount = amount > idle ? idle : amount;
-        amount = amount > pendingUtilizationCache ? pendingUtilizationCache : amount;
+        amount = amount > pendingUtilization_ ? pendingUtilization_ : amount;
 
         // can only utilize when amount is positive
         if (amount == 0) {
@@ -439,13 +437,16 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         // TODO: check prices
         uint256 spotExecutionPrice =
             amount.mulDiv(10 ** IERC20Metadata(product()).decimals(), amountOut, Math.Rounding.Ceil);
-
+        uint256 pendingIncreaseCollateral_ = $.pendingIncreaseCollateral;
+        if (pendingIncreaseCollateral_ > 0) {
+            IERC20(asset()).safeTransfer($.positionManager, pendingIncreaseCollateral_);
+        }
         requestId = IOffChainPositionManager($.positionManager).adjustPosition(
-            amountOut, spotExecutionPrice, $.pendingIncreaseCollateral, true
+            amountOut, spotExecutionPrice, pendingIncreaseCollateral_, true
         );
         $.activeRequestId = requestId;
         $.pendingIncreaseCollateral = 0;
-        $.pendingUtilization = pendingUtilizationCache - amount;
+        $.pendingUtilization = pendingUtilization_ - amount;
 
         emit Utilize(msg.sender, amount, amountOut);
     }
@@ -519,7 +520,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (status == StrategyStatus.DEPOSITING || status == StrategyStatus.REBALANCING_UP) {
             // processsing deposit request
             if (isSuccess) {
-                $.pendingUtilization -= sizeDeltaInTokens;
+                // TODO:
+                //
             } else {
                 // should sell sizeDeltaInTokens of product back to asset to remain delta neutral
                 // TODO: implemet fallback swap logic without external swap data

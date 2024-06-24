@@ -160,7 +160,7 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
 
         if ($.activeRequestId != bytes32(0)) {
             revert Errors.ActiveRequestIsNotClosed($.activeRequestId);
-        }git 
+        }
 
         uint256 round = $.currentRound + 1;
         requestId = getRequestId(round);
@@ -208,7 +208,7 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
         _transferToAgent(request.collateralDeltaAmount);
     }
 
-    // to remove
+    // TODO: remove function after testing
     function forcedTransferToAgent(uint256 amount) external onlyAgent {
         _transferToAgent(amount);
     }
@@ -220,6 +220,7 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
         emit AgentTransfer(msg.sender, amount, true);
     }
 
+    // TODO: remove function after testing
     function forcedTransferFromAgent(uint256 amount) external onlyAgent {
         _transferFromAgent(amount);
     }

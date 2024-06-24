@@ -273,7 +273,7 @@ contract ManagedBasisStrategyTest is Test {
     function _getStrategyState(string memory stateName) internal view {
         uint256 supply = strategy.totalSupply();
         uint256 totalAssets = strategy.totalAssets();
-        uint256 sharePrice = totalAssets.mulDiv(1e18, supply);
+        uint256 sharePrice = supply == 0 ? 0 : totalAssets.mulDiv(1e18, supply);
         uint256 productValueInAsset =
             oracle.convertTokenAmount(product, asset, IERC20(product).balanceOf(address(strategy)));
         OffChainPositionManager.PositionState memory state = positionManager.currentPositionState();
@@ -367,7 +367,7 @@ contract ManagedBasisStrategyTest is Test {
         vm.startPrank(user);
         IERC20(asset).approve(address(strategy), depositAmount);
         strategy.deposit(depositAmount, user);
-
+        _getStrategyState("INITIAL STATE");
         uint256 utilizationAmount = strategy.pendingUtilization() / 2;
         bytes memory data = _generateInchCallData(asset, product, utilizationAmount);
 
@@ -395,7 +395,7 @@ contract ManagedBasisStrategyTest is Test {
         _getStrategyState("AFTER EXECUTE");
     }
 
-    function test_simpleRedeemFullUtilize() public {
+    function test_simpleRedeemFullDeutilize() public {
         vm.startPrank(user);
         IERC20(asset).approve(address(strategy), depositAmount);
         strategy.deposit(depositAmount, user);
@@ -423,7 +423,7 @@ contract ManagedBasisStrategyTest is Test {
         _reportState(requestId, sizeDeltaInTokens);
         _getStrategyState("STATE BEFORE REDEEM");
 
-        uint256 sharesToRedeem = IERC20(address(strategy)).balanceOf(user) / 2;
+        uint256 sharesToRedeem = IERC20(address(strategy)).balanceOf(user) / 3;
         vm.startPrank(user);
         strategy.redeem(sharesToRedeem, user, user);
         _getStrategyState("STATE AFTER REDEEM");
