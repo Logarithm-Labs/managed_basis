@@ -212,7 +212,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
             if (sizeDeltaInTokens > 0) {
                 // record sizeInTokens
                 _getGmxV2PositionManagerStorage().sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
-                (sizeDeltaUsd,) = GmxV2Lib.getSizeDeltaUsdForIncrease(gmxParams, _oracle, sizeDeltaInTokens);
+                sizeDeltaUsd = GmxV2Lib.getSizeDeltaUsdForIncrease(gmxParams, _oracle, sizeDeltaInTokens);
             }
             _createOrder(
                 InternalCreateOrderParams({
@@ -348,9 +348,8 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
             (, int256 sizeDeltaInTokens) = _checkAdjustPositionSize();
             address _factory = factory();
             if (sizeDeltaInTokens < 0) {
-                (uint256 sizeDeltaUsd,) = GmxV2Lib.getSizeDeltaUsdForDecrease(
-                    _getGmxParams(_factory), IBasisGmxFactory(_factory).oracle(), uint256(-sizeDeltaInTokens)
-                );
+                uint256 sizeDeltaUsd =
+                    GmxV2Lib.getSizeDeltaUsdForDecrease(_getGmxParams(_factory), uint256(-sizeDeltaInTokens));
                 return _createOrder(
                     InternalCreateOrderParams({
                         isLong: isLong(),
@@ -365,7 +364,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
                     })
                 );
             } else {
-                (uint256 sizeDeltaUsd,) = GmxV2Lib.getSizeDeltaUsdForIncrease(
+                uint256 sizeDeltaUsd = GmxV2Lib.getSizeDeltaUsdForIncrease(
                     _getGmxParams(_factory), IBasisGmxFactory(_factory).oracle(), uint256(sizeDeltaInTokens)
                 );
                 return _createOrder(

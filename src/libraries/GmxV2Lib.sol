@@ -103,14 +103,17 @@ library GmxV2Lib {
         uint256 collateralTokenPrice = IOracle(oracle).getAssetPrice(position.addresses.collateralToken);
         Price.Props memory indexTokenPrice = _getPrice(oracle, params.market.indexToken);
         sizeDeltaUsdToDecrease = _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokens);
-        positionFeeUsd = _getPositionFeeUsd(
-            params,
+        ReaderPricingUtils.ExecutionPriceResult memory decreaseExecutionPriceResult = IReader(params.reader)
+            .getExecutionPrice(
+            IDataStore(params.dataStore),
+            params.market.marketToken,
             indexTokenPrice,
             position.numbers.sizeInUsd,
             position.numbers.sizeInTokens,
-            sizeDeltaUsdToDecrease,
-            false
+            -int256(sizeDeltaUsdToDecrease),
+            params.isLong
         );
+        positionFeeUsd = _getPositionFeeUsd(params, sizeDeltaUsdToDecrease, decreaseExecutionPriceResult.priceImpactUsd);
         (int256 totalPositionPnlUsd,,) = _getPositionPnl(params, oracle, position.numbers.sizeInUsd);
         int256 realizedPnlUsd = Precision.mulDiv(totalPositionPnlUsd, sizeDeltaInTokens, position.numbers.sizeInTokens);
         int256 realizedPnlAmount = realizedPnlUsd / collateralTokenPrice.toInt256();
@@ -178,14 +181,17 @@ library GmxV2Lib {
             uint256 sizeDeltaInTokensToBeRealized =
                 collateralDeltaAmount.mulDiv(position.numbers.sizeInTokens, totalPositionPnlAmount);
             sizeDeltaUsdToDecrease += _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokensToBeRealized);
-            positionFeeUsd = _getPositionFeeUsd(
-                params,
+            decreaseExecutionPriceResult = IReader(params.reader).getExecutionPrice(
+                IDataStore(params.dataStore),
+                params.market.marketToken,
                 indexTokenPrice,
                 position.numbers.sizeInUsd,
                 position.numbers.sizeInTokens,
-                sizeDeltaUsdToDecrease,
-                false
+                -int256(sizeDeltaUsdToDecrease),
+                params.isLong
             );
+            positionFeeUsd =
+                _getPositionFeeUsd(params, sizeDeltaUsdToDecrease, decreaseExecutionPriceResult.priceImpactUsd);
             sizeDeltaUsdToIncrease = _getSizeDeltaUsdForIncrease(
                 params,
                 indexTokenPrice,
@@ -193,14 +199,18 @@ library GmxV2Lib {
                 position.numbers.sizeInTokens,
                 sizeDeltaInTokensToBeRealized
             );
-            positionFeeUsd += _getPositionFeeUsd(
-                params,
+            ReaderPricingUtils.ExecutionPriceResult memory incraeseExecutionPriceResult = IReader(params.reader)
+                .getExecutionPrice(
+                IDataStore(params.dataStore),
+                params.market.marketToken,
                 indexTokenPrice,
                 position.numbers.sizeInUsd,
                 position.numbers.sizeInTokens,
-                sizeDeltaUsdToIncrease,
-                true
+                int256(sizeDeltaUsdToIncrease),
+                params.isLong
             );
+            positionFeeUsd +=
+                _getPositionFeeUsd(params, sizeDeltaUsdToIncrease, incraeseExecutionPriceResult.priceImpactUsd);
         }
         return (
             isIncreaseCollateral,
@@ -221,34 +231,27 @@ library GmxV2Lib {
         return _getPositionInfo(params, prices, referralStorage);
     }
 
-    function getSizeDeltaUsdForDecrease(GmxParams calldata params, address oracle, uint256 sizeDeltaInTokens)
+    function getSizeDeltaUsdForDecrease(GmxParams calldata params, uint256 sizeDeltaInTokens)
         external
         view
-        returns (uint256 sizeDeltaUsd, uint256 positionFeeUsd)
+        returns (uint256)
     {
-        Price.Props memory indexTokenPrice = _getPrice(oracle, params.market.indexToken);
         Position.Props memory position = _getPosition(params);
-        sizeDeltaUsd = _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokens);
-        positionFeeUsd = _getPositionFeeUsd(
-            params, indexTokenPrice, position.numbers.sizeInUsd, position.numbers.sizeInTokens, sizeDeltaUsd, false
-        );
-        return (sizeDeltaUsd, positionFeeUsd);
+        uint256 sizeDeltaUsd = _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokens);
+        return sizeDeltaUsd;
     }
 
     function getSizeDeltaUsdForIncrease(GmxParams calldata params, address oracle, uint256 sizeDeltaInTokens)
         external
         view
-        returns (uint256 sizeDeltaUsd, uint256 positionFeeUsd)
+        returns (uint256)
     {
         Price.Props memory indexTokenPrice = _getPrice(oracle, params.market.indexToken);
         Position.Props memory position = _getPosition(params);
-        sizeDeltaUsd = _getSizeDeltaUsdForIncrease(
+        uint256 sizeDeltaUsd = _getSizeDeltaUsdForIncrease(
             params, indexTokenPrice, position.numbers.sizeInUsd, position.numbers.sizeInTokens, sizeDeltaInTokens
         );
-        positionFeeUsd = _getPositionFeeUsd(
-            params, indexTokenPrice, position.numbers.sizeInUsd, position.numbers.sizeInTokens, sizeDeltaUsd, true
-        );
-        return (sizeDeltaUsd, positionFeeUsd);
+        return sizeDeltaUsd;
     }
 
     /// @dev returns transaction fees needed for gmx keeper
@@ -266,18 +269,6 @@ library GmxV2Lib {
             gasPrice = ArbGasInfo(0x000000000000000000000000000000000000006C).getMinimumGasPrice();
         }
         return (gasPrice * gasLimitIncrease, gasPrice * gasLimitDecrease);
-    }
-
-    function getPositionFeeUsd(GmxParams calldata params, address oracle, uint256 sizeDeltaUsd, bool isIncrease)
-        external
-        view
-        returns (uint256)
-    {
-        Position.Props memory position = _getPosition(params);
-        Price.Props memory indexTokenPrice = _getPrice(oracle, params.market.indexToken);
-        return _getPositionFeeUsd(
-            params, indexTokenPrice, position.numbers.sizeInUsd, position.numbers.sizeInTokens, sizeDeltaUsd, isIncrease
-        );
     }
 
     /// @dev return the funding amounts received
@@ -334,7 +325,15 @@ library GmxV2Lib {
         uint256 sizeDeltaInTokens
     ) private view returns (uint256) {
         int256 baseSizeDeltaUsd = sizeDeltaInTokens.toInt256() * indexTokenPrice.max.toInt256();
-        int256 priceImpactUsd = _getPriceImpactUsd(params, indexTokenPrice, sizeInUsd, sizeInTokens, baseSizeDeltaUsd);
+        ReaderPricingUtils.ExecutionPriceResult memory result = IReader(params.reader).getExecutionPrice(
+            IDataStore(params.dataStore),
+            params.market.marketToken,
+            indexTokenPrice,
+            sizeInUsd,
+            sizeInTokens,
+            baseSizeDeltaUsd,
+            params.isLong
+        );
         uint256 sizeDeltaUsd;
         // in gmx v2
         // int256 sizeDeltaInTokens;
@@ -345,25 +344,19 @@ library GmxV2Lib {
         // }
         // the resulted actual size delta will be a little bit different from this estimation
         if (params.isLong) {
-            sizeDeltaUsd = (baseSizeDeltaUsd - priceImpactUsd).toUint256();
+            sizeDeltaUsd = (baseSizeDeltaUsd - result.priceImpactUsd).toUint256();
         } else {
-            sizeDeltaUsd = (baseSizeDeltaUsd + priceImpactUsd).toUint256();
+            sizeDeltaUsd = (baseSizeDeltaUsd + result.priceImpactUsd).toUint256();
         }
         return sizeDeltaUsd;
     }
 
     // @dev calculate the position fee in usd when changing position size
-    function _getPositionFeeUsd(
-        GmxParams calldata params,
-        Price.Props memory indexTokenPrice,
-        uint256 sizeInUsd,
-        uint256 sizeInTokens,
-        uint256 sizeDeltaUsd,
-        bool isIncrease
-    ) private view returns (uint256) {
-        int256 priceImpactUsd = _getPriceImpactUsd(
-            params, indexTokenPrice, sizeInUsd, sizeInTokens, isIncrease ? int256(sizeDeltaUsd) : -int256(sizeDeltaUsd)
-        );
+    function _getPositionFeeUsd(GmxParams calldata params, uint256 sizeDeltaUsd, int256 priceImpactUsd)
+        private
+        view
+        returns (uint256)
+    {
         bool forPositiveImpact = priceImpactUsd > 0;
         uint256 positionFeeFactor = IDataStore(params.dataStore).getUint(
             Keys.positionFeeFactorKey(params.market.marketToken, forPositiveImpact)
