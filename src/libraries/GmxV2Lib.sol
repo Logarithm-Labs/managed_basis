@@ -209,10 +209,12 @@ library GmxV2Lib {
             result.positionFeeUsd += _getPositionFeeUsd(
                 params, result.sizeDeltaUsdToIncrease, executionPriceResultForIncrease.priceImpactUsd
             );
-            result.executionPrice = (
-                executionPriceResultForDecrease.executionPrice * (sizeDeltaInTokens + sizeDeltaInTokensToBeRealized)
-                    - executionPriceResultForIncrease.executionPrice * sizeDeltaInTokensToBeRealized
-            ) / sizeDeltaInTokens;
+            if (sizeDeltaInTokens > 0) {
+                result.executionPrice = (
+                    executionPriceResultForDecrease.executionPrice * (sizeDeltaInTokens + sizeDeltaInTokensToBeRealized)
+                        - executionPriceResultForIncrease.executionPrice * sizeDeltaInTokensToBeRealized
+                ) / sizeDeltaInTokens;
+            }
         }
         return result;
     }
