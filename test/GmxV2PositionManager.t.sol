@@ -7,6 +7,8 @@ import {console} from "forge-std/console.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
@@ -94,11 +96,14 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
 
         strategy = new MockStrategy();
 
-        // deploy positionManager
+        // deploy positionManager impl
         address positionManagerImpl = address(new GmxV2PositionManager());
+        // deploy positionManager beacon
+        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
+        // deploy positionMnager beacon proxy
         address positionManagerProxy = address(
-            new ERC1967Proxy(
-                positionManagerImpl,
+            new BeaconProxy(
+                positionManagerBeacon,
                 abi.encodeWithSelector(GmxV2PositionManager.initialize.selector, address(strategy), address(keeper))
             )
         );

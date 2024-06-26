@@ -7,7 +7,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
 import {IBaseOrderUtils} from "src/externals/gmx-v2/interfaces/IBaseOrderUtils.sol";
@@ -30,7 +30,7 @@ import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
 /// @title A gmx position manager
 /// @author Logarithm Labs
 /// @dev this contract must be deployed only by the factory
-contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, FactoryDeployable {
+contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, FactoryDeployable {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -167,8 +167,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, UUPSUpgradeable, Factor
         // approve strategy to max amount
         IERC20(asset).approve($.strategy, type(uint256).max);
     }
-
-    function _authorizeUpgrade(address) internal virtual override onlyFactory {}
 
     /*//////////////////////////////////////////////////////////////
                         EXTERNAL FUNCTIONS
