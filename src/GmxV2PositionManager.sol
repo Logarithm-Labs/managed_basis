@@ -515,6 +515,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, FactoryD
                             decreasingCollateralDelta, bytes32(0), true
                         );
                     }
+                    _getGmxV2PositionManagerStorage().status = Status.IDLE;
                 }
             }
         }
