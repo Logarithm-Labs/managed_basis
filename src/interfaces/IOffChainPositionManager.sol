@@ -14,10 +14,5 @@ interface IOffChainPositionManager {
 
     function positionNetBalance() external view returns (uint256);
 
-    function adjustPosition(
-        uint256 sizeDeltaInTokens,
-        uint256 spotExectuionPrice,
-        uint256 collateralDeltaAmount,
-        bool isIncrease
-    ) external returns (bytes32 requestId);
+    function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease) external;
 }

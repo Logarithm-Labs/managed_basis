@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IOffChainPositionManager} from "src/interfaces/IOffChainPositionManager.sol";
+import "src/interfaces/IBasisStrategy.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -37,6 +38,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     // TODO: refactor for enum
     enum StrategyStatus {
         IDLE,
+        NEED_KEEP,
+        KEEPING,
         DEPOSITING,
         WITHDRAWING,
         REBALANCING_UP, // increase leverage
@@ -66,6 +69,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         address positionManager;
         uint256 targetLeverage;
         uint256 entryCost;
+        uint256 exitCost;
         uint256 userDepositLimit;
         uint256 strategyDepostLimit;
         uint256 assetsToClaim; // asset balance that is ready to claim
@@ -79,13 +83,15 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 withdrawnFromIdle; // asset amount withdrawn from idle that is not yet processed
         uint256 withdrawingFromHedge; // asset amount that is ready to be withdrawn from hedge
         uint256 idleImbalance; // imbalance in idle assets between spot and hedge due to withdraws from idle
+        uint256 spotExecutionPrice;
         bytes32[] activeWithdrawRequests;
         bytes32[] closedWithdrawRequests;
         StrategyStatus strategyStatus;
-        bytes32 activeRequestId;
+        bytes32 activeRequestId; // TODO: elimimate this
         mapping(address => uint128) requestCounter;
         mapping(bytes32 => WithdrawState) withdrawRequests;
     }
+    // mapping(bytes32 => RequestParams) positionRequests;
 
     uint256 public constant PRECISION = 1e18;
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
@@ -110,24 +116,27 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         address _oracle,
         address _operator,
         uint256 _targetLeverage,
-        uint256 _entryCost
+        uint256 _entryCost,
+        uint256 _exitCots
     ) external initializer {
         __ERC4626_init(IERC20(_asset));
         __LogBaseVault_init(IERC20(_product));
         __Ownable_init(msg.sender);
-        __ManagedBasisStrategy_init(_oracle, _operator, _targetLeverage, _entryCost);
+        __ManagedBasisStrategy_init(_oracle, _operator, _targetLeverage, _entryCost, _exitCost);
     }
 
     function __ManagedBasisStrategy_init(
         address _oracle,
         address _operator,
         uint256 _targetLeverage,
-        uint256 _entryCost
+        uint256 _entryCost,
+        uint266 _exitCost
     ) public initializer {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         $.oracle = IOracle(_oracle);
         $.operator = _operator;
         $.entryCost = _entryCost;
+        $.exitCost = _exitCost;
         $.targetLeverage = _targetLeverage;
         $.userDepositLimit = type(uint256).max;
         $.strategyDepostLimit = type(uint256).max;
@@ -158,6 +167,10 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     event PendingUtilizationDecrease(uint256 amount);
 
     event Deutilize(address indexed caller, uint256 amountIn, uint256 amountOut);
+
+    event AfterAdjustPosition(
+        uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease, bool isSuccess
+    );
 
     event SwapFailed();
 
@@ -190,12 +203,12 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             revert Errors.ZeroAddress();
         }
         _getManagedBasisStrategyStorage().positionManager = _positionManager;
-        IERC20(asset()).approve(_positionManager, type(uint256).max);
     }
 
-    function setEntryCost(uint256 _entryCost) external onlyOwner {
+    function setEntryExitCosts(uint256 _entryCost, uint256 _exitCost) external onlyOperator {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         $.entryCost = _entryCost;
+        $.exitCost = _exitCost;
     }
 
     function setDepositLimits(uint256 userLimit, uint256 strategyLimit) external onlyOwner {
@@ -273,9 +286,17 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         uint256 idle = idleAssets();
         if (idle >= assets) {
+            // TODO: impelement change in the pendingCollateralIncrease
+            uint256 assetsWithdrawnFromSpot = assets.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
+            uint256 assetsWithdrawnFromHedge = assets - assetsFromSpot;
+
+            // update pending states, prevent underflow
+            (, uint256 pendingUtilization_) = $.pendingUtilization.trySub(assetsFromSpot);
+            (, uint256 pendingIncreaseCollateral_) = $.pendingIncreaseCollateral.trySub(assetsFromHedge);
+            $.pendingUtilization = pendingUtilization_;
+            $.pendingIncreaseCollateral = pendingIncreaseCollateral_;
+
             IERC20(asset()).safeTransfer(receiver, assets);
-            $.idleImbalance += assets.mulDiv(PRECISION, PRECISION + $.targetLeverage);
-            $.pendingUtilization -= assets;
         } else {
             uint128 counter = $.requestCounter[owner];
 
@@ -292,15 +313,17 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 isClaimed: false
             });
 
-            // if strategy holds idle, mark idle as withdrawn
+            // if all idle assets are withdrawn, set pending states to zero
+            $.pendingUtilization = 0;
+            $.pendingIncreaseCollateral = 0;
+            $.withdrawnFromIdle += idle;
+
             uint256 remainingAmountToWithdraw = assets - idle;
             uint256 remainingAmountToWithdrawFromSpot =
                 remainingAmountToWithdraw.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
 
             $.totalPendingWithdraw += remainingAmountToWithdraw;
             $.pendingDeutilization += $.oracle.convertTokenAmount(asset(), product(), remainingAmountToWithdrawFromSpot);
-            $.pendingUtilization -= idle;
-            $.idleImbalance += idle.mulDiv(PRECISION, PRECISION + $.targetLeverage);
             $.assetsToClaim += idle;
             $.activeWithdrawRequests.push(withdrawId);
             $.requestCounter[owner]++;
@@ -345,8 +368,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     // TODO: account for pendings
     function totalAssets() public view virtual override returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 total = utilizedAssets() + idleAssets() - $.totalPendingWithdraw - $.withdrawingFromHedge;
-        return total;
+        return utilizedAssets() + idleAssets() - $.totalPendingWithdraw - $.assetsToWithdraw;
     }
 
     function utilizedAssets() public view virtual returns (uint256) {
@@ -360,8 +382,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     function idleAssets() public view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
-        uint256 idle = assetBalance - $.assetsToClaim;
-        return idle;
+        return assetBalance - $.assetsToClaim;
     }
 
     function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
@@ -441,10 +462,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (pendingIncreaseCollateral_ > 0) {
             IERC20(asset()).safeTransfer($.positionManager, pendingIncreaseCollateral_);
         }
-        requestId = IOffChainPositionManager($.positionManager).adjustPosition(
-            amountOut, spotExecutionPrice, pendingIncreaseCollateral_, true
-        );
-        $.activeRequestId = requestId;
+        IOffChainPositionManager($.positionManager).adjustPosition(amountOut, pendingIncreaseCollateral_, true);
+        $.spotExecutionPrice = spotExecutionPrice;
         $.pendingIncreaseCollateral = 0;
         $.pendingUtilization = pendingUtilization_ - amount;
 
@@ -496,9 +515,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         // TODO: check prices
         uint256 spotExecutionPrice =
             amountOut.mulDiv(10 ** IERC20Metadata(product()).decimals(), amount, Math.Rounding.Ceil);
-        requestId = IOffChainPositionManager($.positionManager).adjustPosition(amount, spotExecutionPrice, 0, false);
-
-        $.activeRequestId = requestId;
+        IOffChainPositionManager($.positionManager).adjustPosition(amount, 0, false);
 
         emit Deutilize(msg.sender, amount, amountOut);
     }
@@ -507,222 +524,251 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                     POSITION MANAGER CALLBACKS LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function afterIncreasePositionSize(uint256 sizeDeltaInTokens, bytes32 requestId, bool isSuccess)
-        external
-        onlyPositionManager
-    {
+    // callback function dispatcher
+    function afterAdjustPosition(PositionManagerCallbackParams memory params) external onlyPositionManager {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if (requestId != $.activeRequestId) {
-            revert Errors.InvalidRequestId(requestId, $.activeRequestId);
-        }
         StrategyStatus status = $.strategyStatus;
-
-        if (status == StrategyStatus.DEPOSITING || status == StrategyStatus.REBALANCING_UP) {
-            // processsing deposit request
-            if (isSuccess) {
-                // TODO:
-                //
-            } else {
-                // should sell sizeDeltaInTokens of product back to asset to remain delta neutral
-                // TODO: implemet fallback swap logic without external swap data
+        if (status == StrategyStatus.IDLE) {
+            revert Errors.InvalidCallback();
+        }
+        if (params.isIncrease) {
+            // TODO
+            if (params.collateralDeltaAmount > 0) {
+                // afterIncreasePositionCollateral callback
+                if (params.isSuccess) {
+                    _afterIncreasePositionCollateralSuccess(params, status);
+                } else {
+                    _afterIncreasePositionCollateralRevert(params, status);
+                }
+            }
+            if (params.sizeDeltaInTokens > 0) {
+                // afterIncreasePositionSize callback
+                if (params.isSuccess) {
+                    _afterIncreasePositionSizeSuccess(params, status);
+                } else {
+                    _afterIncreasePositionSizeRevert(params, status);
+                }
             }
         } else {
-            revert Errors.NotUtilizing();
-        }
-        delete $.activeRequestId;
-        $.strategyStatus = StrategyStatus.IDLE;
-    }
-
-    function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bytes32 requestId, bool isSuccess)
-        external
-        onlyPositionManager
-    {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if (requestId != $.activeRequestId) {
-            revert Errors.InvalidRequestId(requestId, $.activeRequestId);
-        }
-        console.log("amountExecuted", amountExecuted);
-
-        StrategyStatus status = $.strategyStatus;
-
-        if (isSuccess) {
-            if (status == StrategyStatus.WITHDRAWING) {
-                // processing withdraw requests
-                uint256 cacheWithdrawnFromSpot = $.withdrawnFromSpot;
-                uint256 cacheWithdrawnFromIdle = $.withdrawnFromIdle;
-                uint256 amountAvailable =
-                    cacheWithdrawnFromSpot + cacheWithdrawnFromIdle + amountExecuted + executionCost;
-
-                // as all amountAvailable will be processed, we can update the totalPendingWithdrawState
-                uint256 totalWithdraw = $.totalPendingWithdraw;
-                (, totalWithdraw) = totalWithdraw.trySub(amountAvailable);
-                $.totalPendingWithdraw = totalWithdraw;
-                $.withdrawingFromHedge += amountAvailable;
-
-                uint256 cacheDecreaseCollateral = $.pendingDecreaseCollateral;
-                uint256 index;
-
-                while (amountAvailable > 0 && index < $.activeWithdrawRequests.length) {
-                    bytes32 requestId0 = $.activeWithdrawRequests[index];
-                    WithdrawState memory request0 = $.withdrawRequests[requestId0];
-                    uint256 executedAmount = request0.executedFromSpot + request0.executedFromIdle
-                        + request0.executedFromHedge + request0.executionCost;
-                    uint256 remainingAmount = request0.requestedAmount - executedAmount;
-                    if (amountAvailable >= remainingAmount) {
-                        // remaining amount is enough fully cover current request
-
-                        // allocation of withdrawn assets rounded to floor
-                        uint256 allocationOfSpot = cacheWithdrawnFromSpot.mulDiv(remainingAmount, amountAvailable);
-                        uint256 allocationOfIdle = cacheWithdrawnFromIdle.mulDiv(remainingAmount, amountAvailable);
-                        uint256 allocationOfHedge = amountExecuted.mulDiv(remainingAmount, amountAvailable);
-                        uint256 allocationOfCost = executionCost.mulDiv(remainingAmount, amountAvailable);
-
-                        // dust goes to costs
-                        uint256 dust = remainingAmount
-                            - (allocationOfSpot + allocationOfIdle + allocationOfHedge + allocationOfCost);
-
-                        request0.executedFromSpot += allocationOfSpot;
-                        request0.executedFromIdle += allocationOfIdle;
-                        request0.executedFromHedge += allocationOfHedge;
-                        request0.executionCost += (allocationOfCost + dust);
-
-                        amountAvailable -= (remainingAmount - dust);
-                        cacheDecreaseCollateral += allocationOfHedge;
-
-                        cacheWithdrawnFromSpot -= allocationOfSpot;
-                        cacheWithdrawnFromIdle -= allocationOfIdle;
-                        amountExecuted -= allocationOfHedge;
-                        executionCost -= allocationOfCost;
-
-                        // if requested amount is fulfilled push to it closed
-                        $.closedWithdrawRequests.push(requestId0);
-
-                        index++;
-                    } else {
-                        // redistribute remaining allocations
-
-                        request0.executedFromSpot += cacheWithdrawnFromSpot;
-                        request0.executedFromIdle += cacheWithdrawnFromIdle;
-                        request0.executedFromHedge += amountExecuted;
-                        request0.executionCost += executionCost;
-
-                        amountAvailable = 0;
-                    }
-
-                    // update request storage state
-                    $.withdrawRequests[requestId0] = request0;
+            // TODO
+            if (params.collateralDeltaAmount > 0) {
+                // afterDecreasePositionCollateral callback
+                if (params.isSuccess) {
+                    _afterDecreasePositionCollateral(params, status);
+                } else {
+                    _afterDecreasePositionCollateralRevert(params, status);
                 }
-
-                // update global state
-                $.withdrawnFromSpot = 0;
-                $.withdrawnFromIdle = 0;
-
-                // recalculate pendingDeutilization based on the new oracle price
-                $.pendingDeutilization =
-                    totalWithdraw > 0 ? $.oracle.convertTokenAmount(asset(), product(), totalWithdraw) : 0;
-                $.pendingDecreaseCollateral = cacheDecreaseCollateral;
-
-                // remove fulfilled requests from activeWithdrawRequests based on index
-                if (index > 0) {
-                    for (uint256 i = 0; i < $.activeWithdrawRequests.length - index; i++) {
-                        $.activeWithdrawRequests[i] = $.activeWithdrawRequests[i + index];
-                    }
-                    for (uint256 j = 0; j < index; j++) {
-                        $.activeWithdrawRequests.pop();
-                    }
-                    // close current request
-
-                    // request decrease collateral from position manager if there are any fulfilled requests
-                    //TODO: adjust for idle imbalance
-                    IOffChainPositionManager($.positionManager).adjustPosition(0, 0, cacheDecreaseCollateral, false);
-                }
-            } else if (status == StrategyStatus.REBALANCING_DOWN) {
-                // processing rebalance request
-            } else {
-                revert Errors.NotDeutilizing();
             }
-        } else {
-            // processing execution revert
+            if (params.sizeDeltaInTokens > 0) {
+                // afterDecreasePositionSize callback
+                if (params.isSuccess) {
+                    _afterDecreasePositionSizeSuccess(params, status);
+                } else {
+                    _afterDecreasePositionSizeRevert(params, status);
+                }
+            }
         }
-        delete $.activeRequestId;
         $.strategyStatus = StrategyStatus.IDLE;
+
+        emit AfterAdjustPosition(
+            params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease, params.isSuccess
+        );
     }
 
-    //
-    function afterIncreasePositionCollateral(
-        uint256,
-        /*collateralDeltaAmount*/
-        bytes32 requestId,
-        bool isSuccess
-    ) external onlyPositionManager {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if (requestId != $.activeRequestId) {
-            revert Errors.InvalidRequestId(requestId, $.activeRequestId);
-        }
-
-        // TODO
-        if (isSuccess) {
-            // processing increase collateral request
-        } else {
-            // processing execution revert
-        }
-
-        delete $.activeRequestId;
-        $.strategyStatus = StrategyStatus.IDLE;
-    }
-
-    function afterDecreasePositionCollateral(uint256 amount, bytes32 requestId, bool isSuccess)
-        external
-        onlyPositionManager
+    function _afterIncreasePositionSizeSuccess(PositionManagerCallbackParams memory params, StrategyStatus status)
+        internal
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if (requestId != $.activeRequestId) {
-            revert Errors.InvalidRequestId(requestId, $.activeRequestId);
-        }
+        // TODO: implement
+    }
 
-        if (msg.sender != $.positionManager) {
-            revert Errors.CallerNotPositionManager();
-        }
+    function _afterIncreasePositionSizeRevert(PositionManagerCallbackParams memory params, StrategyStatus status)
+        internal
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        // TODO: implement
+    }
 
-        StrategyStatus status = $.strategyStatus;
+    function _afterDecreasePositionSizeSuccess(PositionManagerCallbackParams memory params, StrategyStatus status)
+        internal
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
         if (status == StrategyStatus.WITHDRAWING) {
-            if (isSuccess) {
-                // processing withdraw requests
-                IERC20(asset()).safeTransferFrom($.positionManager, address(this), amount);
-                uint256 totalAmountToExecute = $.assetsToWithdraw + amount;
-                uint256 processedAssetAmount;
-                uint256 index;
-                while (totalAmountToExecute > 0 && index < $.closedWithdrawRequests.length) {
-                    // process closed requests one by one
-                    bytes32 withdrawId = $.closedWithdrawRequests[index];
-                    WithdrawState storage request = $.withdrawRequests[withdrawId];
+            // processing withdraw requests
 
-                    uint256 amountToExecute = request.requestedAmount - request.executionCost;
-                    if (amountToExecute <= totalAmountToExecute) {
-                        // if there is enough processed asset to cover requested amount minus execution cost,  mark as executed
-                        request.isExecuted = true;
-                        processedAssetAmount += amountToExecute;
-                        totalAmountToExecute -= amountToExecute;
+            uint256 sizeDeltaInAsset = params.executionPrice.mulDiv(requestParams.sizeDeltaInTokens, indexPrecision);
+            uint256 amountExecuted = sizeDeltaInAsset.mulDiv(PRECISION, $.targetLeverage);
 
-                        index++;
+            // calculate exit cost
+            uint256 executionCost;
+            if ($.exitCost == 0) {
+                // if no exit cost use manual calculation
+                uint256 indexPrecision = 10 ** uint256(IERC20Metadata($.indexToken).decimals());
+                int256 executionSpread = int256(params.executionPrice) - int256($.spotExecutionPrice);
+                int256 executionCost_ = executionSpread > 0
+                    ? (uint256(executionSpread).mulDiv(requestParams.sizeDeltaInTokens, indexPrecision)).toInt256()
+                    : -(uint256(-executionSpread).mulDiv(requestParams.sizeDeltaInTokens, indexPrecision)).toInt256();
+                executionCost_ += params.executionCost.toInt256();
+                executionCost = executionCost > int256(0) ? uint256(executionCost_) : uint256(0);
+            } else {
+                executionCost = sizeDeltaInAsset.mulDiv($.exitCost, PRECISION);
+            }
+            delete $.spotExecutionPrice;
+            $.assetsToWithdraw += amountExecuted;
 
-                        emit ExecuteWithdraw(withdrawId, request.requestedAmount, amountToExecute);
-                    }
+            uint256 _withdrawnFromSpot = $.withdrawnFromSpot;
+            uint256 _withdrawnFromIdle = $.withdrawnFromIdle;
+            uint256 amountAvailable = _withdrawnFromSpot + _withdrawnFromIdle + amountExecuted + executionCost;
+
+            // as all amountAvailable will be processed, we can update the totalPendingWithdrawState
+            uint256 totalWithdraw = $.totalPendingWithdraw;
+            (, totalWithdraw) = totalWithdraw.trySub(amountExecuted);
+            $.totalPendingWithdraw = totalWithdraw;
+
+            uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
+            uint256 index;
+
+            while (amountAvailable > 0 && index < $.activeWithdrawRequests.length) {
+                bytes32 requestId0 = $.activeWithdrawRequests[index];
+                WithdrawState memory request0 = $.withdrawRequests[requestId0];
+                uint256 executedAmount = request0.executedFromSpot + request0.executedFromIdle
+                    + request0.executedFromHedge + request0.executionCost;
+                uint256 remainingAmount = request0.requestedAmount - executedAmount;
+                if (amountAvailable >= remainingAmount) {
+                    // remaining amount is enough fully cover current request
+
+                    // allocation of withdrawn assets rounded to floor
+                    uint256 allocationOfSpot = _withdrawnFromSpot.mulDiv(remainingAmount, amountAvailable);
+                    uint256 allocationOfIdle = _withdrawnFromIdle.mulDiv(remainingAmount, amountAvailable);
+                    uint256 allocationOfHedge = amountExecuted.mulDiv(remainingAmount, amountAvailable);
+                    uint256 allocationOfCost = executionCost.mulDiv(remainingAmount, amountAvailable);
+
+                    // dust goes to costs
+                    uint256 dust =
+                        remainingAmount - (allocationOfSpot + allocationOfIdle + allocationOfHedge + allocationOfCost);
+
+                    request0.executedFromSpot += allocationOfSpot;
+                    request0.executedFromIdle += allocationOfIdle;
+                    request0.executedFromHedge += allocationOfHedge;
+                    request0.executionCost += (allocationOfCost + dust);
+
+                    amountAvailable -= (remainingAmount - dust);
+                    pendingDecreaseCollateral_ += allocationOfHedge;
+
+                    _withdrawnFromSpot -= allocationOfSpot;
+                    _withdrawnFromIdle -= allocationOfIdle;
+                    amountExecuted -= allocationOfHedge;
+                    executionCost -= allocationOfCost;
+
+                    // if requested amount is fulfilled push to it closed
+                    $.closedWithdrawRequests.push(requestId0);
+
+                    index++;
+                } else {
+                    // redistribute remaining allocations
+
+                    request0.executedFromSpot += _withdrawnFromSpot;
+                    request0.executedFromIdle += _withdrawnFromIdle;
+                    request0.executedFromHedge += amountExecuted;
+                    request0.executionCost += executionCost;
+
+                    amountAvailable = 0;
                 }
 
-                // update global state
-                $.assetsToClaim += processedAssetAmount;
-                $.assetsToWithdraw -= processedAssetAmount;
+                // update request storage state
+                $.withdrawRequests[requestId0] = request0;
+            }
 
-                // remove executed requests from closedWithdrawRequests based on index
-                if (index > 0) {
-                    for (uint256 i = 0; i < $.closedWithdrawRequests.length - index; i++) {
-                        $.closedWithdrawRequests[i] = $.closedWithdrawRequests[i + index];
-                    }
-                    for (uint256 j = 0; j < index; j++) {
-                        $.closedWithdrawRequests.pop();
-                    }
+            // update global state
+            $.withdrawnFromSpot = 0;
+            $.withdrawnFromIdle = 0;
+
+            // recalculate pendingDeutilization based on the new oracle price
+            $.pendingDeutilization =
+                totalWithdraw > 0 ? $.oracle.convertTokenAmount(asset(), product(), totalWithdraw) : 0;
+            $.pendingDecreaseCollateral = pendingDecreaseCollateral_;
+
+            // remove fulfilled requests from activeWithdrawRequests based on index
+            if (index > 0) {
+                for (uint256 i = 0; i < $.activeWithdrawRequests.length - index; i++) {
+                    $.activeWithdrawRequests[i] = $.activeWithdrawRequests[i + index];
+                }
+                for (uint256 j = 0; j < index; j++) {
+                    $.activeWithdrawRequests.pop();
+                }
+                // close current request
+
+                // request decrease collateral from position manager if there are any fulfilled requests
+                IOffChainPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
+            }
+        } else if (status == StrategyStatus.REBALANCING_DOWN) {
+            // processing rebalance request
+        } else {
+            revert Errors.NotDeutilizing();
+        }
+    }
+
+    function _afterDecreasePositionSizeRevert(PositionManagerCallbackParams memory params, StrategyStatus status)
+        internal
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        // TODO: implement
+    }
+
+    function _afterIncreasePositionCollateralSuccess(PositionManagerCallbackParams memory params, StrategyStatus status)
+        internal
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        // TODO implement
+    }
+
+    function _afterIncreasePositionCollateralRevert(PositionManagerCallbackParams memory params, StrategyStatus status)
+        internal
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        // TODO implement
+    }
+
+    function _afterDecreasePositionCollateralSuccess(RequestParams memory params, StrategyStatus status) internal {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        if (status == StrategyStatus.WITHDRAWING) {
+            // processing withdraw requests
+            IERC20(asset()).safeTransferFrom($.positionManager, address(this), params.collateralDeltaAmount);
+            uint256 totalAmountToExecute = $.assetsToWithdraw + params.collateralDeltaAmount;
+            uint256 processedAssetAmount;
+            uint256 index;
+            while (totalAmountToExecute > 0 && index < $.closedWithdrawRequests.length) {
+                // process closed requests one by one
+                bytes32 withdrawId = $.closedWithdrawRequests[index];
+                WithdrawState storage request = $.withdrawRequests[withdrawId];
+
+                uint256 amountToExecute = request.requestedAmount - request.executionCost;
+                if (amountToExecute <= totalAmountToExecute) {
+                    // if there is enough processed asset to cover requested amount minus execution cost,  mark as executed
+                    request.isExecuted = true;
+                    processedAssetAmount += amountToExecute;
+                    totalAmountToExecute -= amountToExecute;
+
+                    index++;
+
+                    emit ExecuteWithdraw(withdrawId, request.requestedAmount, amountToExecute);
+                }
+            }
+
+            // update global state
+            $.assetsToClaim += processedAssetAmount;
+            $.assetsToWithdraw -= processedAssetAmount;
+            $.pendingDecreaseCollateral -= params.collateralDeltaAmount;
+
+            // remove executed requests from closedWithdrawRequests based on index
+            if (index > 0) {
+                for (uint256 i = 0; i < $.closedWithdrawRequests.length - index; i++) {
+                    $.closedWithdrawRequests[i] = $.closedWithdrawRequests[i + index];
+                }
+                for (uint256 j = 0; j < index; j++) {
+                    $.closedWithdrawRequests.pop();
                 }
             }
         } else if (status == StrategyStatus.REBALANCING_DOWN) {
@@ -731,8 +777,13 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         } else {
             revert Errors.NotDeutilizing();
         }
-        delete $.activeRequestId;
-        $.strategyStatus = StrategyStatus.IDLE;
+    }
+
+    function _afterDecreasePositionCollateralRevert(PositionManagerCallbackParams memory params, StrategyStatus status)
+        internal
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        // TODO implement
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -804,6 +855,11 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         return $.totalPendingWithdraw;
     }
 
+    function withdrawingFromHedge() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.withdrawingFromHedge;
+    }
+
     function withdrawnFromSpot() external view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         return $.withdrawnFromSpot;
@@ -812,11 +868,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     function withdrawnFromIdle() external view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         return $.withdrawnFromIdle;
-    }
-
-    function idleImbalance() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.idleImbalance;
     }
 
     function activeWithdrawRequests() external view returns (bytes32[] memory) {

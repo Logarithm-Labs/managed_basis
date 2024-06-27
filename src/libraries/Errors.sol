@@ -75,6 +75,8 @@ library Errors {
 
     error InvalidRequestId(bytes32 requestId, bytes32 activeRequestId);
 
+    error InvalidCallback();
+
     error InvalidActiveRequestType();
 
     error InsufficientCollateralBalance(uint256 collateralBalance, uint256 collateralAmount);
@@ -82,4 +84,6 @@ library Errors {
     error NoActiveRequests();
 
     error CallerNotOperator();
+
+    error Stra
 }
