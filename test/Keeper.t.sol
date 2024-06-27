@@ -16,12 +16,13 @@ import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 
 import {ArbGasInfoMock} from "./mock/ArbGasInfoMock.sol";
 import {ArbSysMock} from "./mock/ArbSysMock.sol";
-import {MockFactory} from "./mock/MockFactory.sol";
 import {MockPriceFeed} from "./mock/MockPriceFeed.sol";
 import {MockStrategy} from "./mock/MockStrategy.sol";
 
 import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
+import {Config} from "src/Config.sol";
+import {ConfigKeys} from "src/libraries/ConfigKeys.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {Keeper} from "src/Keeper.sol";
 import {Errors} from "src/libraries/Errors.sol";
@@ -36,10 +37,15 @@ contract KeeperTest is StdInvariant, Test {
 
     address constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
 
-    address constant usdcWhale = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
-    address constant wethWhale = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
-    address constant gmxKeeper = 0xE47b36382DC50b90bCF6176Ddb159C4b9333A7AB;
-    address constant gmxController = 0x352f684ab9e97a6321a13CF03A61316B681D9fD2;
+    address constant USDC_WHALE = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
+    address constant WETH_WHALE = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
+    address constant GMX_KEEPER = 0xE47b36382DC50b90bCF6176Ddb159C4b9333A7AB;
+    address constant GMX_DATA_STORE = 0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8;
+    address constant GMX_EXCHANGE_ROUTER = 0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8;
+    address constant GMX_ORDER_HANDLER = 0x352f684ab9e97a6321a13CF03A61316B681D9fD2;
+    address constant GMX_ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
+    address constant GMX_READER = 0xdA5A70c885187DaA71E7553ca9F728464af8d2ad;
+    address constant GMX_ETH_USDC_MARKET = 0x70d95587d40A2caf56bd97485aB3Eec10Bee6336;
 
     address constant asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // USDC
     address constant product = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH
@@ -55,7 +61,6 @@ contract KeeperTest is StdInvariant, Test {
     MockStrategy strategy;
     LogarithmOracle oracle;
     Keeper keeper;
-    address factory;
     uint256 increaseFee;
     uint256 decreaseFee;
 
@@ -83,16 +88,28 @@ contract KeeperTest is StdInvariant, Test {
         _mockChainlinkPriceFeed(assetPriceFeed);
         _mockChainlinkPriceFeed(productPriceFeed);
 
-        factory = address(new MockFactory(oracleProxy));
-        vm.stopPrank();
-
-        vm.startPrank(factory);
         // deploy keeper
         address keeperImpl = address(new Keeper());
         address keeperProxy =
-            address(new ERC1967Proxy(keeperImpl, abi.encodeWithSelector(Keeper.initialize.selector, address(factory))));
+            address(new ERC1967Proxy(keeperImpl, abi.encodeWithSelector(Keeper.initialize.selector, owner)));
         keeper = Keeper(payable(keeperProxy));
         keeper.setForwarderAddress(forwarder);
+
+        // deploy config
+        Config config = new Config();
+        config.initialize(owner);
+
+        config.setAddress(ConfigKeys.GMX_EXCHANGE_ROUTER, GMX_EXCHANGE_ROUTER);
+        config.setAddress(ConfigKeys.GMX_DATA_STORE, GMX_DATA_STORE);
+        config.setAddress(ConfigKeys.GMX_ORDER_HANDLER, GMX_ORDER_HANDLER);
+        config.setAddress(ConfigKeys.GMX_ORDER_VAULT, GMX_ORDER_VAULT);
+        config.setAddress(ConfigKeys.GMX_REFERRAL_STORAGE, IOrderHandler(GMX_ORDER_HANDLER).referralStorage());
+        config.setAddress(ConfigKeys.GMX_READER, GMX_READER);
+        config.setAddress(ConfigKeys.ORACLE, address(oracle));
+        config.setAddress(ConfigKeys.KEEPER, address(keeper));
+        config.setAddress(ConfigKeys.gmxMarketKey(asset, product), GMX_ETH_USDC_MARKET);
+
+        config.setUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT, 2_000_000);
 
         strategy = new MockStrategy();
 
@@ -101,7 +118,9 @@ contract KeeperTest is StdInvariant, Test {
         address positionManagerProxy = address(
             new ERC1967Proxy(
                 positionManagerImpl,
-                abi.encodeWithSelector(GmxV2PositionManager.initialize.selector, address(strategy), address(keeper))
+                abi.encodeWithSelector(
+                    GmxV2PositionManager.initialize.selector, owner, address(strategy), address(config)
+                )
             )
         );
         positionManager = GmxV2PositionManager(payable(positionManagerProxy));
@@ -118,7 +137,7 @@ contract KeeperTest is StdInvariant, Test {
     }
 
     modifier afterHavingPosition() {
-        vm.startPrank(usdcWhale);
+        vm.startPrank(USDC_WHALE);
         IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(1 ether, 0, 300 * USDC_PRECISION, true);
@@ -128,14 +147,14 @@ contract KeeperTest is StdInvariant, Test {
     }
 
     function test_checkUpkeep() public afterHavingPosition {
-        vm.startPrank(wethWhale);
+        vm.startPrank(WETH_WHALE);
         IERC20(product).transfer(address(strategy), 1.5 ether);
         (bool upkeepNeeded,) = keeper.checkUpkeep(abi.encode(address(positionManager)));
         assertTrue(upkeepNeeded);
     }
 
     function test_performUpkeep() public afterHavingPosition {
-        vm.startPrank(wethWhale);
+        vm.startPrank(WETH_WHALE);
         IERC20(product).transfer(address(strategy), 1.5 ether);
         (bool upkeepNeeded, bytes memory data) = keeper.checkUpkeep(abi.encode(address(positionManager)));
         assertTrue(upkeepNeeded);
@@ -148,7 +167,7 @@ contract KeeperTest is StdInvariant, Test {
     }
 
     function test_performUpkeep_revert() public afterHavingPosition {
-        vm.startPrank(wethWhale);
+        vm.startPrank(WETH_WHALE);
         IERC20(product).transfer(address(strategy), 1.5 ether);
         (bool upkeepNeeded, bytes memory data) = keeper.checkUpkeep(abi.encode(address(positionManager)));
         assertTrue(upkeepNeeded);
@@ -210,8 +229,8 @@ contract KeeperTest is StdInvariant, Test {
                 tokens[2] = shortToken;
                 oracleParams.priceFeedTokens = tokens;
             }
-            vm.startPrank(gmxKeeper);
-            IOrderHandler(MockFactory(factory).orderHandler()).executeOrder(key, oracleParams);
+            vm.startPrank(GMX_KEEPER);
+            IOrderHandler(GMX_ORDER_HANDLER).executeOrder(key, oracleParams);
         }
     }
 
@@ -224,14 +243,14 @@ contract KeeperTest is StdInvariant, Test {
                     longToken: positionManager.longToken(),
                     shortToken: positionManager.shortToken()
                 }),
-                dataStore: MockFactory(factory).dataStore(),
-                reader: MockFactory(factory).reader(),
+                dataStore: GMX_DATA_STORE,
+                reader: GMX_READER,
                 account: address(positionManager),
                 collateralToken: positionManager.collateralToken(),
                 isLong: positionManager.isLong()
             }),
             address(oracle),
-            MockFactory(factory).referralStorage()
+            IOrderHandler(GMX_ORDER_HANDLER).referralStorage()
         );
     }
 }
