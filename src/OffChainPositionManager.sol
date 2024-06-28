@@ -135,10 +135,7 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
                         POSITION MANAGEMENT
     //////////////////////////////////////////////////////////////*/
 
-    function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease)
-        external
-        onlyStrategy
-    {
+    function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease) external {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
         if (msg.sender != $.strategy) {
@@ -168,60 +165,21 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
                 emit RequestDecreasePositionSize(sizeDeltaInTokens, round);
             }
         }
+
+        $.positionStates[round] = $.positionStates[round - 1];
+        $.currentRound = round;
     }
 
     function reportStateAndExecuteRequest(
         uint256 sizeInTokens,
         uint256 netBalance,
         uint256 markPrice,
-        uint256 requestExecutionPrice,
-        uint256 requestExecutionCost,
-        bool isSuccess
+        PositionManagerCallbackParams calldata params
     ) external onlyAgent {
         // TODO: add validation for prices (difference between mark price, execution price and oracle price should be within the threshold)
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
-        uint256 round = $.currentRound + 1;
-        if (requestId != bytes32(0)) {
-            RequestInfo memory request = $.requests[round];
-            if (isSuccess) {
-                if (request.isIncrease && request.collateralDeltaAmount > 0) {
-                    // if request is successfull we need to decrease pending collateral
-                    $.pendingCollateralIncrease -= request.collateralDeltaAmount;
-                    IManagedBasisStrategy($.strategy).afterIncreasePositionCollateral(
-                        request.collateralDeltaAmount, requestId, true
-                    );
-
-                    emit IncreasePositionCollateral(request.collateralDeltaAmount, round);
-                }
-
-                if (!request.isIncrease && request.collateralDeltaAmount > 0) {
-                    // if request is successfull we need to transfer collateral from agent to position manager
-                    _transferFromAgent(request.collateralDeltaAmount);
-                    IManagedBasisStrategy($.strategy).afterDecreasePositionCollateral(
-                        request.collateralDeltaAmount, requestId, true
-                    );
-
-                    emit DecreasePositionCollateral(request.collateralDeltaAmount, requestId);
-                }
-
-                if (request.isIncrease && request.sizeDeltaInTokens > 0) {
-                    // if request is successfull report back to strategy
-                    IManagedBasisStrategy($.strategy).afterIncreasePositionSize(
-                        request.sizeDeltaInTokens, requestId, true
-                    );
-
-                    emit IncreasePositionSize(request.sizeDeltaInTokens, requestExecutionCost.toInt256(), requestId);
-                }
-
-                if (!request.isIncrease && request.sizeDeltaInTokens > 0) {
-                    emit DecreasePositionSize(request.sizeDeltaInTokens, executionCost, requestId);
-                }
-            } else {
-                // TODO
-                // if request failed we need to revert changes
-            }
-        }
+        uint256 round = $.currentRound;
 
         // if agent submits state without request, it means that it is regular state update
         // no need to report back to strategy
@@ -230,7 +188,16 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
         state.netBalance = netBalance;
         state.markPrice = markPrice;
         state.timestamp = block.timestamp;
+        if (params.isIncrease) {
+            $.pendingCollateralIncrease -= params.collateralDeltaAmount;
+        } else {
+            if (params.collateralDeltaAmount > 0) {
+                _transferFromAgent(params.collateralDeltaAmount);
+            }
+        }
         $.currentRound = round;
+
+        IManagedBasisStrategy($.strategy).afterAdjustPosition(params);
 
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
     }
@@ -246,7 +213,7 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
             revert Errors.CallerNotAgent();
         }
 
-        RequestInfo memory request = $.requests[$.activeRequestId];
+        RequestInfo memory request = $.requests[$.currentRound];
         if (!request.isIncrease || request.collateralDeltaAmount == 0) {
             revert Errors.InvalidActiveRequestType();
         }
