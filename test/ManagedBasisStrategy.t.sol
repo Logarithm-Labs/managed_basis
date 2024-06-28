@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
 
+import "src/interfaces/IManagedBasisStrategy.sol";
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -34,6 +35,7 @@ contract ManagedBasisStrategyTest is Test {
     address constant assetPriceFeed = 0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3; // Chainlink USDC-USD price feed
     address constant productPriceFeed = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // Chainlink ETH-USD price feed
     uint256 constant entryCost = 0; // 0%
+    uint256 constant exitCost = 0; // 0%
     uint256 constant targetLeverage = 3 ether; // 3x
 
     address constant usdcWhale = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
@@ -91,7 +93,8 @@ contract ManagedBasisStrategyTest is Test {
                     oracle,
                     operator,
                     targetLeverage,
-                    entryCost
+                    entryCost,
+                    exitCost
                 )
             )
         );
@@ -176,6 +179,24 @@ contract ManagedBasisStrategyTest is Test {
         data = vm.ffi(inputs);
     }
 
+    function _executeRequest(OffChainPositionManager.RequestInfo memory request) internal {
+        if (request.isIncrease) {
+            if (request.collateralDeltaAmount > 0) {
+                _increasePositionCollateral(request.collateralDeltaAmount);
+            }
+            if (request.sizeDeltaInTokens > 0) {
+                _increasePositionSize(request.sizeDeltaInTokens);
+            }
+        } else {
+            if (request.collateralDeltaAmount > 0) {
+                _decreasePositionCollateral(request.collateralDeltaAmount);
+            }
+            if (request.sizeDeltaInTokens > 0) {
+                _decreasePositionSize(request.sizeDeltaInTokens);
+            }
+        }
+    }
+
     function _increasePositionSize(uint256 sizeDeltaInTokens) internal {
         positionSizeInTokens += sizeDeltaInTokens;
     }
@@ -215,19 +236,18 @@ contract ManagedBasisStrategyTest is Test {
         }
     }
 
-    function _reportState(bytes32 requestId, uint256 sizeDeltaInTokens) internal {
-        (uint256 executionPrice, uint256 executionCost) = _getExecutionParams(sizeDeltaInTokens);
+    function _reportState(OffChainPositionManager.RequestInfo memory request) internal {
+        (uint256 executionPrice, uint256 executionCost) = _getExecutionParams(request.sizeDeltaInTokens);
         uint256 markPrice = _getMarkPrice();
-        console.log("REPORT STATE");
-        console.log("positionSizeInTokens", positionSizeInTokens);
-        console.log("positionNetBalance", positionNetBalance);
-        console.log("markPrice", markPrice);
-        console.log("requestId", vm.toString(requestId));
-        console.log("executionPrice", executionPrice);
-        console.log("executionCost", executionCost);
-        positionManager.reportStateAndExecuteRequest(
-            positionSizeInTokens, positionNetBalance, markPrice, requestId, executionPrice, executionCost, true
-        );
+        PositionManagerCallbackParams memory params = PositionManagerCallbackParams({
+            sizeDeltaInTokens: request.sizeDeltaInTokens,
+            collateralDeltaAmount: request.collateralDeltaAmount,
+            executionPrice: executionPrice,
+            executionCost: executionCost,
+            isIncrease: request.isIncrease,
+            isSuccess: true
+        });
+        positionManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
     }
 
     function _logWithdrawState(bytes32 withdrawId) internal view {
@@ -243,19 +263,20 @@ contract ManagedBasisStrategyTest is Test {
         console.log("Receiver", state.receiver);
         console.log("Is Executed", state.isExecuted);
         console.log("Is Claimed", state.isClaimed);
+        console.log(
+            "Ready To Execute",
+            state.requestedAmount
+                == state.executedFromSpot + state.executedFromIdle + state.executedFromHedge + state.executionCost
+        );
         console.log("");
     }
 
-    function _logRequest(bytes32 requestId)
-        internal
-        view
-        returns (OffChainPositionManager.RequestInfo memory request)
-    {
-        request = positionManager.requests(requestId);
+    function _logRequest() internal view returns (OffChainPositionManager.RequestInfo memory request) {
+        uint256 round = positionManager.currentRound();
+        request = positionManager.requests(round);
         console.log("REQUEST STATE");
-        console.logBytes32(requestId);
+        console.log("Round", round);
         console.log("Size Delta In Tokens", request.sizeDeltaInTokens);
-        console.log("Spot Execution Price", request.spotExecutionPrice);
         console.log("Collateral Delta Amount", request.collateralDeltaAmount);
         console.log("Is Increase", request.isIncrease);
         console.log("");
@@ -296,13 +317,16 @@ contract ManagedBasisStrategyTest is Test {
         console.log("totalAssets", strategy.totalAssets());
         console.log("utilizedAssets", strategy.utilizedAssets());
         console.log("idleAssets", strategy.idleAssets());
+        console.log("pendingIncreaseCollateral", strategy.pendingIncreaseCollateral());
         console.log("totalPendingWithdraw", strategy.totalPendingWithdraw());
+        console.log("pendingDeutilization", strategy.pendingDeutilization());
         console.log("withdrawingFromHedge", strategy.withdrawingFromHedge());
         console.log("assetsToClaim", strategy.assetsToClaim());
         console.log("assetsToWithdraw", strategy.assetsToWithdraw());
         console.log("strategyAssetBalance", IERC20(asset).balanceOf(address(strategy)));
         console.log("productValueInAsset", productValueInAsset);
         console.log("positionManagerAssetBalance", IERC20(asset).balanceOf(address(positionManager)));
+        console.log("agentBalance", IERC20(asset).balanceOf(agent));
         console.log("positionNetBalance", positionManager.positionNetBalance());
         console.log("=========================");
         console.log("");
@@ -339,10 +363,7 @@ contract ManagedBasisStrategyTest is Test {
         console.log("Pending Decrease Collateral", strategy.pendingDecreaseCollateral());
         console.log("Withdrawn From Spot", strategy.withdrawnFromSpot());
         console.log("Withdrawn From Idle", strategy.withdrawnFromIdle());
-        console.log("Idle Imbalance", strategy.idleImbalance());
         console.log("Strategy Status", uint256(strategy.strategyStatus()));
-        console.log("Active Request ID", vm.toString(strategy.activeRequestId()));
-        console.log("PositionManager Active Request ID", vm.toString(positionManager.activeRequestId()));
         console.log("PositionManager Current Round", positionManager.currentRound());
         console.log("PositionManager Pending Collateral Increase", positionManager.pendingCollateralIncrease());
         console.log("=========GETTERS=========");
@@ -373,65 +394,90 @@ contract ManagedBasisStrategyTest is Test {
         vm.startPrank(user);
         IERC20(asset).approve(address(strategy), depositAmount);
         strategy.deposit(depositAmount, user);
-        _logStrategyState("AFTER DEPOSIT");
+        _logStateTransitions("AFTER DEPOSIT");
 
         uint256 utilizationAmount = strategy.pendingUtilization();
         bytes memory data = _generateInchCallData(asset, product, utilizationAmount);
 
         vm.expectEmit(false, false, false, false, address(positionManager));
-        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, bytes32(0));
+        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, 0);
 
         vm.expectEmit(false, false, false, false, address(positionManager));
-        emit OffChainPositionManager.RequestIncreasePositionSize(0, bytes32(0));
+        emit OffChainPositionManager.RequestIncreasePositionSize(0, 0);
 
         vm.startPrank(operator);
-        bytes32 requestId = strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
-        _logStrategyState("AFTER UTILIZE");
+        strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        _logStateTransitions("AFTER UTILIZE");
 
         vm.startPrank(agent);
         positionManager.transferToAgent();
-        uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
-        uint256 collateralDelta = IERC20(asset).balanceOf(agent);
-        _logStrategyState("AFTER TRANSFER TO AGENT");
+        _logStateTransitions("AFTER TRANSFER TO AGENT");
 
-        _increasePositionSize(sizeDeltaInTokens);
-        _increasePositionCollateral(collateralDelta);
+        OffChainPositionManager.RequestInfo memory request = _logRequest();
+        // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
+        // uint256 collateralDelta = IERC20(asset).balanceOf(agent);
 
-        _reportState(requestId, sizeDeltaInTokens);
+        _executeRequest(request);
+        _reportState(request);
 
-        _logStrategyState("AFTER EXECUTE");
+        _logStateTransitions("AFTER EXECUTE");
     }
 
     function test_partialUtilize() public {
         vm.startPrank(user);
         IERC20(asset).approve(address(strategy), depositAmount);
         strategy.deposit(depositAmount, user);
-        _logStrategyState("INITIAL STATE");
+        _logStateTransitions("INITIAL STATE");
         uint256 utilizationAmount = strategy.pendingUtilization() / 2;
         bytes memory data = _generateInchCallData(asset, product, utilizationAmount);
 
         vm.expectEmit(false, false, false, false, address(positionManager));
-        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, bytes32(0));
+        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, 0);
 
         vm.expectEmit(false, false, false, false, address(positionManager));
-        emit OffChainPositionManager.RequestIncreasePositionSize(0, bytes32(0));
+        emit OffChainPositionManager.RequestIncreasePositionSize(0, 0);
 
         vm.startPrank(operator);
-        bytes32 requestId = strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
-        _logStrategyState("AFTER UTILIZE");
+        strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        _logStateTransitions("AFTER UTILIZE 1");
 
         vm.startPrank(agent);
         positionManager.transferToAgent();
-        uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
-        uint256 collateralDelta = IERC20(asset).balanceOf(agent);
-        _logStrategyState("AFTER TRANSFER TO AGENT");
+        _logStateTransitions("AFTER TRANSFER TO AGENT 1");
 
-        _increasePositionSize(sizeDeltaInTokens);
-        _increasePositionCollateral(collateralDelta);
+        OffChainPositionManager.RequestInfo memory request = _logRequest();
+        _executeRequest(request);
+        _reportState(request);
 
-        _reportState(requestId, sizeDeltaInTokens);
+        _logStateTransitions("AFTER EXECUTE 1");
+        assertEq(
+            uint256(strategy.strategyStatus()),
+            uint256(ManagedBasisStrategy.StrategyStatus.IDLE),
+            "status should be idle"
+        );
 
-        _logStrategyState("AFTER EXECUTE");
+        utilizationAmount = strategy.pendingUtilization();
+        data = _generateInchCallData(asset, product, utilizationAmount);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, 0);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionSize(0, 0);
+
+        vm.startPrank(operator);
+        strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        _logStateTransitions("AFTER UTILIZE 2");
+
+        vm.startPrank(agent);
+        positionManager.transferToAgent();
+        _logStateTransitions("AFTER TRANSFER TO AGENT 2");
+
+        request = _logRequest();
+        _executeRequest(request);
+        _reportState(request);
+
+        _logStateTransitions("AFTER EXECUTE 2");
     }
 
     function test_simpleRedeemFullDeutilize() public {
@@ -443,25 +489,24 @@ contract ManagedBasisStrategyTest is Test {
         bytes memory data = _generateInchCallData(asset, product, utilizationAmount);
 
         vm.expectEmit(false, false, false, false, address(positionManager));
-        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, bytes32(0));
+        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, 0);
 
         vm.expectEmit(false, false, false, false, address(positionManager));
-        emit OffChainPositionManager.RequestIncreasePositionSize(0, bytes32(0));
+        emit OffChainPositionManager.RequestIncreasePositionSize(0, 0);
 
         vm.startPrank(operator);
-        bytes32 requestId = strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
 
         vm.startPrank(agent);
 
         positionManager.transferToAgent();
-        uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
-        uint256 collateralDelta = IERC20(asset).balanceOf(agent);
+        // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
+        // uint256 collateralDelta = IERC20(asset).balanceOf(agent);
 
-        _increasePositionSize(sizeDeltaInTokens);
+        OffChainPositionManager.RequestInfo memory request = _logRequest();
+        _executeRequest(request);
+        _reportState(request);
 
-        _increasePositionCollateral(collateralDelta);
-
-        _reportState(requestId, sizeDeltaInTokens);
         _logStateTransitions("STATE BEFORE REDEEM");
 
         uint256 sharesToRedeem = IERC20(address(strategy)).balanceOf(user) / 3;
@@ -476,53 +521,36 @@ contract ManagedBasisStrategyTest is Test {
         data = _generateInchCallData(product, asset, pendingDeutilization);
 
         vm.expectEmit(false, false, false, false, address(positionManager));
-        emit OffChainPositionManager.RequestDecreasePositionSize(0, bytes32(0));
+        emit OffChainPositionManager.RequestDecreasePositionSize(0, 0);
 
         vm.startPrank(operator);
-        requestId = strategy.deutilize(pendingDeutilization, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        strategy.deutilize(pendingDeutilization, ManagedBasisStrategy.SwapType.INCH_V6, data);
         _logStateTransitions("STATE AFTER DEUTILIZE");
 
-        OffChainPositionManager.RequestInfo memory request = positionManager.requests(requestId);
-        sizeDeltaInTokens = request.sizeDeltaInTokens;
+        request = _logRequest();
 
         vm.startPrank(agent);
-        _decreasePositionSize(sizeDeltaInTokens);
-
-        vm.expectEmit(false, false, false, false, address(positionManager));
-        emit OffChainPositionManager.RequestDecreasePositionCollateral(0, bytes32(0));
-
-        _reportState(requestId, sizeDeltaInTokens);
+        _executeRequest(request);
         _logStateTransitions("STATE AFTER EXECUTE DECREASE SIZE");
 
-        requestId = positionManager.activeRequestId();
-        request = positionManager.requests(requestId);
-        uint256 collateralAmount = request.collateralDeltaAmount;
-        assertEq(IERC20(asset).balanceOf(agent), 0);
-        _decreasePositionCollateral(collateralAmount);
-        assertEq(IERC20(asset).balanceOf(agent), collateralAmount);
+        _reportState(request);
+        _logStateTransitions("STATE AFTER REPORT DECREASE SIZE");
 
-        // vm.expectEmit(false, false, false, false, address(positionManager));
-        // emit OffChainPositionManager.DecreasePositionCollateral(0, bytes32(0));
-        _logRequest(requestId);
+        _logWithdrawState(withdrawId);
 
-        (uint256 executionPrice, uint256 executionCost) = _getExecutionParams(0);
-        uint256 markPrice = _getMarkPrice();
-        console.log("REPORT STATE");
-        console.log("positionSizeInTokens", positionSizeInTokens);
-        console.log("positionNetBalance", positionNetBalance);
-        console.log("markPrice", markPrice);
-        console.log("requestId", vm.toString(requestId));
-        console.log("executionPrice", executionPrice);
-        console.log("executionCost", executionCost);
+        request = _logRequest();
 
-        // _reportState(requestId, 0);
-        positionManager.reportStateAndExecuteRequest(
-            positionSizeInTokens, positionNetBalance, markPrice, requestId, executionPrice, executionCost, true
-        );
+        // if (request.collateralDeltaAmount > 0) {
+        //     uint256 collateralAmount = request.collateralDeltaAmount;
+        //     assertEq(IERC20(asset).balanceOf(agent), 0);
+        //     _executeRequest(request);
+        //     assertEq(IERC20(asset).balanceOf(agent), collateralAmount);
 
-        // // _logWithdrawState(withdrawId);
+        //     _logStateTransitions("STATE AFTER EXECUTE DECREASE COLLATERAL");
 
-        _logStateTransitions("STATE AFTER EXECUTE DECREASE COLLATERAL");
+        //     _reportState(request);
+        //     _logStateTransitions("STATE AFTER REPORT DECREASE COLLATERAL");
+        // }
     }
 
     function test_fullRedeem() public {
@@ -534,23 +562,23 @@ contract ManagedBasisStrategyTest is Test {
         bytes memory data = _generateInchCallData(asset, product, utilizationAmount);
 
         vm.expectEmit(false, false, false, false, address(positionManager));
-        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, bytes32(0));
+        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, 0);
 
         vm.expectEmit(false, false, false, false, address(positionManager));
-        emit OffChainPositionManager.RequestIncreasePositionSize(0, bytes32(0));
+        emit OffChainPositionManager.RequestIncreasePositionSize(0, 0);
 
         vm.startPrank(operator);
-        bytes32 requestId = strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
 
         vm.startPrank(agent);
         positionManager.transferToAgent();
-        uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
-        uint256 collateralDelta = IERC20(asset).balanceOf(agent);
+        // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
+        // uint256 collateralDelta = IERC20(asset).balanceOf(agent);
 
-        _increasePositionSize(sizeDeltaInTokens);
-        _increasePositionCollateral(collateralDelta);
+        OffChainPositionManager.RequestInfo memory request = _logRequest();
+        _executeRequest(request);
 
-        _reportState(requestId, sizeDeltaInTokens);
+        _reportState(request);
         _logStrategyState("STATE BEFORE REDEEM");
 
         uint256 sharesToRedeem = IERC20(address(strategy)).balanceOf(user);
@@ -565,7 +593,7 @@ contract ManagedBasisStrategyTest is Test {
         data = _generateInchCallData(product, asset, pendingDeutilization);
 
         vm.startPrank(operator);
-        requestId = strategy.deutilize(pendingDeutilization, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        strategy.deutilize(pendingDeutilization, ManagedBasisStrategy.SwapType.INCH_V6, data);
         _logStrategyState("STATE AFTER DEUTILIZE");
     }
 }
