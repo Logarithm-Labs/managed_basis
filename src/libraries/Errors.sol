@@ -86,4 +86,6 @@ library Errors {
     error NoActiveRequests();
 
     error CallerNotOperator();
+
+    error InvalidAdjustmentParams();
 }

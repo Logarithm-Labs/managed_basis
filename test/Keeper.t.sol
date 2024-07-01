@@ -140,7 +140,7 @@ contract KeeperTest is StdInvariant, Test {
         vm.startPrank(USDC_WHALE);
         IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(1 ether, 0, 300 * USDC_PRECISION, true);
+        positionManager.adjustPosition(1 ether, 300 * USDC_PRECISION, true);
         bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
         _;

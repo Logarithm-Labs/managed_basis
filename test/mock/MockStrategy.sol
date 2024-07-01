@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
+import {PositionManagerCallbackParams} from "src/interfaces/IManagedBasisStrategy.sol";
 
 contract MockStrategy {
     uint256 public sizeDeltaInTokens;
@@ -24,23 +25,16 @@ contract MockStrategy {
         IERC20(asset()).approve(_positionManager, type(uint256).max);
     }
 
-    function afterIncreasePositionSize(uint256 _amountExecuted, bytes32, bool) public {
-        sizeDeltaInTokens = _amountExecuted;
-    }
-
-    function afterDecreasePositionSize(uint256 _amountExecuted, uint256 _executionCost, bytes32, bool) public {
-        sizeDeltaInTokens = _amountExecuted;
-        executionCost = _executionCost;
-    }
-
-    function afterIncreasePositionCollateral(uint256 _amountExecuted, bytes32, bool) public {
-        collateralDelta = _amountExecuted;
-    }
-
-    function afterDecreasePositionCollateral(uint256 amount, bytes32, bool isSuccess) public {
-        if (isSuccess) {
-            IERC20(asset()).transferFrom(msg.sender, address(this), amount);
-            collateralDelta = amount;
+    function afterAdjustPosition(PositionManagerCallbackParams calldata params) external {
+        if (params.isSuccess) {
+            sizeDeltaInTokens = params.sizeDeltaInTokens;
+            collateralDelta = params.collateralDeltaAmount;
+            if (params.collateralDeltaAmount > 0 && !params.isIncrease) {
+                IERC20(asset()).transferFrom(msg.sender, address(this), collateralDelta);
+            }
+        } else {
+            sizeDeltaInTokens = 0;
+            collateralDelta = 0;
         }
     }
 }
