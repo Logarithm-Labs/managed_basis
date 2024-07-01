@@ -177,6 +177,7 @@ contract ManagedBasisStrategyTest is Test {
         inputs[3] = pathLocation;
 
         data = vm.ffi(inputs);
+        vm.sleep(1_000);
     }
 
     function _executeRequest(OffChainPositionManager.RequestInfo memory request) internal {
@@ -250,23 +251,32 @@ contract ManagedBasisStrategyTest is Test {
         positionManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
     }
 
-    function _logWithdrawState(bytes32 withdrawId) internal view {
-        ManagedBasisStrategy.WithdrawState memory state = strategy.withdrawRequests(withdrawId);
+    function _logWithdrawState(bytes32 withdrawId)
+        internal
+        view
+        returns (ManagedBasisStrategy.WithdrawState memory state)
+    {
+        state = strategy.withdrawRequests(withdrawId);
         console.log("WITHDRAW STATE");
         console.logBytes32(withdrawId);
-        console.log("Timestamp", state.requestTimestamp);
-        console.log("Requested Amount", state.requestedAmount);
-        console.log("Executed Amount From Spot", state.executedFromSpot);
-        console.log("Executed From Idle", state.executedFromIdle);
-        console.log("Executed From Hedge", state.executedFromHedge);
-        console.log("Execution Cost", state.executionCost);
-        console.log("Receiver", state.receiver);
-        console.log("Is Executed", state.isExecuted);
-        console.log("Is Claimed", state.isClaimed);
+        console.log("Timestamp:", state.requestTimestamp);
+        console.log("Requested Amount:", state.requestedAmount);
+        console.log("Executed Amount From Spot:", state.executedFromSpot);
+        console.log("Executed From Idle:", state.executedFromIdle);
+        console.log("Executed From Hedge:", state.executedFromHedge);
+        console.log("Execution Cost:", state.executionCost);
+        console.log("Receiver:", state.receiver);
+        console.log("Is Executed:", state.isExecuted);
+        console.log("Is Claimed:", state.isClaimed);
         console.log(
-            "Ready To Execute",
+            "Ready To Execute:",
             state.requestedAmount
                 == state.executedFromSpot + state.executedFromIdle + state.executedFromHedge + state.executionCost
+        );
+        console.log(
+            "Pending Withdraw:",
+            state.requestedAmount
+                - (state.executedFromSpot + state.executedFromIdle + state.executedFromHedge + state.executionCost)
         );
         console.log("");
     }
@@ -484,7 +494,7 @@ contract ManagedBasisStrategyTest is Test {
         _logStateTransitions("AFTER EXECUTE 2");
     }
 
-    function test_simpleRedeemFullDeutilize() public {
+    function test_simpleRedeemPartialDeutilize() public {
         vm.startPrank(user);
         IERC20(asset).approve(address(strategy), depositAmount);
         strategy.deposit(depositAmount, user);
@@ -521,27 +531,47 @@ contract ManagedBasisStrategyTest is Test {
         bytes32 withdrawId = strategy.getWithdrawId(user, 0);
         _logWithdrawState(withdrawId);
 
-        uint256 pendingDeutilization = strategy.pendingDeutilization();
-        data = _generateInchCallData(product, asset, pendingDeutilization);
+        // first we deutilize half of pendingDeutilization
+        uint256 deutilizationAmount = strategy.pendingDeutilization() / 2;
+        data = _generateInchCallData(product, asset, deutilizationAmount);
 
         vm.expectEmit(false, false, false, false, address(positionManager));
         emit OffChainPositionManager.RequestDecreasePositionSize(0, 0);
 
         vm.startPrank(operator);
-        strategy.deutilize(pendingDeutilization, ManagedBasisStrategy.SwapType.INCH_V6, data);
-        _logStateTransitions("STATE AFTER DEUTILIZE");
-
-        request = _logRequest();
+        strategy.deutilize(deutilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        _logStateTransitions("STATE AFTER DEUTILIZE 1");
 
         vm.startPrank(agent);
+        request = _logRequest();
         _executeRequest(request);
-        _logStateTransitions("STATE AFTER EXECUTE DECREASE SIZE");
+        _logStateTransitions("STATE AFTER EXECUTE DECREASE SIZE 1");
 
         _reportState(request);
-        _logTotalAssets();
-        _logStateTransitions("STATE AFTER REPORT DECREASE SIZE");
+        _logStateTransitions("STATE AFTER REPORT DECREASE SIZE 1");
 
         _logWithdrawState(withdrawId);
+
+        // then we deutilize remaining pendingDeutilization
+        deutilizationAmount = strategy.pendingDeutilization();
+        data = _generateInchCallData(product, asset, deutilizationAmount);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestDecreasePositionSize(0, 0);
+
+        vm.startPrank(operator);
+        strategy.deutilize(deutilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+        _logStateTransitions("STATE AFTER DEUTILIZE 2");
+
+        vm.startPrank(agent);
+        request = _logRequest();
+        _executeRequest(request);
+        _logStateTransitions("STATE AFTER EXECUTE DECREASE SIZE 2");
+
+        _logWithdrawState(withdrawId);
+
+        _reportState(request);
+        _logStateTransitions("STATE AFTER REPORT DECREASE SIZE 2");
 
         request = _logRequest();
 
@@ -553,8 +583,19 @@ contract ManagedBasisStrategyTest is Test {
 
             _logStateTransitions("STATE AFTER EXECUTE DECREASE COLLATERAL");
 
-            // _reportState(request);
-            // _logStateTransitions("STATE AFTER REPORT DECREASE COLLATERAL");
+            _reportState(request);
+            _logStateTransitions("STATE AFTER REPORT DECREASE COLLATERAL");
+
+            ManagedBasisStrategy.WithdrawState memory state = _logWithdrawState(withdrawId);
+
+            uint256 userBalBefore = IERC20(asset).balanceOf(user);
+            vm.startPrank(user);
+            strategy.claim(withdrawId);
+            uint256 userBalAfter = IERC20(asset).balanceOf(user);
+
+            assertEq(userBalAfter - userBalBefore, state.requestedAmount - state.executionCost);
+
+            _logStateTransitions("STATE AFTER CLAIM");
         }
     }
 
