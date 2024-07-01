@@ -323,7 +323,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
             $.totalPendingWithdraw += remainingAmountToWithdraw;
             $.pendingDeutilization += $.oracle.convertTokenAmount(asset(), product(), remainingAmountToWithdrawFromSpot);
-            $.assetsToClaim += idle;
+            $.assetsToWithdraw += idle;
             $.activeWithdrawRequests.push(withdrawId);
             $.requestCounter[owner]++;
 
@@ -367,7 +367,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     // TODO: account for pendings
     function totalAssets() public view virtual override returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return utilizedAssets() + idleAssets() - $.totalPendingWithdraw - $.assetsToWithdraw;
+        return utilizedAssets() + idleAssets() - $.totalPendingWithdraw;
     }
 
     function utilizedAssets() public view virtual returns (uint256) {
@@ -378,10 +378,15 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         return productValueInAsset + positionNetBalance;
     }
 
-    function idleAssets() public view virtual returns (uint256) {
+    function idleAssets() public view virtual returns (uint256 assets) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
-        return assetBalance - $.assetsToClaim;
+        (, assets) = assetBalance.trySub($.assetsToClaim + $.assetsToWithdraw);
+    }
+
+    function withdrawingAssets() public view virtual returns (uint256 assets) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        (, assets) = $.totalPendingWithdraw.trySub($.withdrawingFromHedge);
     }
 
     function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
@@ -650,6 +655,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             uint256 indexPrecision = 10 ** uint256(IERC20Metadata(product()).decimals());
             uint256 sizeDeltaInAsset = params.executionPrice.mulDiv(params.sizeDeltaInTokens, indexPrecision);
             uint256 amountExecuted = sizeDeltaInAsset.mulDiv(PRECISION, $.targetLeverage);
+            uint256 totalPendingWithdraw_ = $.totalPendingWithdraw;
+            amountExecuted = amountExecuted > totalPendingWithdraw_ ? totalPendingWithdraw_ : amountExecuted;
 
             // calculate exit cost
             uint256 executionCost;
@@ -665,7 +672,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 executionCost = sizeDeltaInAsset.mulDiv($.exitCost, PRECISION);
             }
             delete $.spotExecutionPrice;
-            $.assetsToWithdraw += amountExecuted;
+            totalPendingWithdraw_ -= executionCost;
+            uint256 withdrawingFromHedge_ = $.withdrawingFromHedge + amountExecuted;
+            (, uint256 withdrawingAssets_) = totalPendingWithdraw_.trySub(withdrawingFromHedge_);
 
             uint256 _withdrawnFromSpot = $.withdrawnFromSpot;
             uint256 _withdrawnFromIdle = $.withdrawnFromIdle;
@@ -674,10 +683,10 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             console.log("totalPendingWithdraw: ", $.totalPendingWithdraw);
             console.log("amountExecuted: ", amountExecuted);
             // as all amountAvailable will be processed, we can update the totalPendingWithdrawState
-            uint256 totalWithdraw = $.totalPendingWithdraw;
-            (, totalWithdraw) = totalWithdraw.trySub(amountExecuted + executionCost);
-            $.totalPendingWithdraw = totalWithdraw;
-            console.log("totalPendingWithdraw: ", $.totalPendingWithdraw);
+            // uint256 totalWithdraw = $.totalPendingWithdraw;
+            // (, totalWithdraw) = totalWithdraw.trySub(amountExecuted + executionCost);
+            // $.totalPendingWithdraw = totalWithdraw;
+            // console.log("totalPendingWithdraw: ", $.totalPendingWithdraw);
 
             uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
             uint256 index;
@@ -700,6 +709,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                     // dust goes to costs
                     uint256 dust =
                         remainingAmount - (allocationOfSpot + allocationOfIdle + allocationOfHedge + allocationOfCost);
+                    console.log("dust: ", dust);
 
                     request0.executedFromSpot += allocationOfSpot;
                     request0.executedFromIdle += allocationOfIdle;
@@ -736,10 +746,12 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             // update global state
             $.withdrawnFromSpot = 0;
             $.withdrawnFromIdle = 0;
+            $.withdrawingFromHedge = withdrawingFromHedge_;
+            $.totalPendingWithdraw = totalPendingWithdraw_;
 
             // recalculate pendingDeutilization based on the new oracle price
             $.pendingDeutilization =
-                totalWithdraw > 0 ? $.oracle.convertTokenAmount(asset(), product(), totalWithdraw) : 0;
+                withdrawingAssets_ > 0 ? $.oracle.convertTokenAmount(asset(), product(), withdrawingAssets_) : 0;
             $.pendingDecreaseCollateral = pendingDecreaseCollateral_;
 
             // remove fulfilled requests from activeWithdrawRequests based on index

@@ -284,7 +284,6 @@ contract ManagedBasisStrategyTest is Test {
 
     function _logTotalAssets() internal view {
         console.log("LOG TOTAL ASSETS");
-
         console.log("Utilized Assets:");
         console.log("productBalance", IERC20(product).balanceOf(address(strategy)));
         console.log(
@@ -300,7 +299,10 @@ contract ManagedBasisStrategyTest is Test {
         console.log("assetsToWithdraw", strategy.assetsToWithdraw());
         console.log("idleAssets", strategy.idleAssets());
         console.log("");
+        console.log("Withdrawing Assets:");
         console.log("totalPendingWithdraw", strategy.totalPendingWithdraw());
+        console.log("withdrawingFromHedge", strategy.withdrawingFromHedge());
+        console.log("");
     }
 
     function _logStateTransitions(string memory stateName) internal view {
@@ -323,6 +325,8 @@ contract ManagedBasisStrategyTest is Test {
         console.log("withdrawingFromHedge", strategy.withdrawingFromHedge());
         console.log("assetsToClaim", strategy.assetsToClaim());
         console.log("assetsToWithdraw", strategy.assetsToWithdraw());
+        console.log("withdrawnFromSpot", strategy.withdrawnFromSpot());
+        console.log("withdrawnFromIdle", strategy.withdrawnFromIdle());
         console.log("strategyAssetBalance", IERC20(asset).balanceOf(address(strategy)));
         console.log("productValueInAsset", productValueInAsset);
         console.log("positionManagerAssetBalance", IERC20(asset).balanceOf(address(positionManager)));
@@ -534,23 +538,24 @@ contract ManagedBasisStrategyTest is Test {
         _logStateTransitions("STATE AFTER EXECUTE DECREASE SIZE");
 
         _reportState(request);
+        _logTotalAssets();
         _logStateTransitions("STATE AFTER REPORT DECREASE SIZE");
 
         _logWithdrawState(withdrawId);
 
         request = _logRequest();
 
-        // if (request.collateralDeltaAmount > 0) {
-        //     uint256 collateralAmount = request.collateralDeltaAmount;
-        //     assertEq(IERC20(asset).balanceOf(agent), 0);
-        //     _executeRequest(request);
-        //     assertEq(IERC20(asset).balanceOf(agent), collateralAmount);
+        if (request.collateralDeltaAmount > 0) {
+            uint256 collateralAmount = request.collateralDeltaAmount;
+            assertEq(IERC20(asset).balanceOf(agent), 0);
+            _executeRequest(request);
+            assertEq(IERC20(asset).balanceOf(agent), collateralAmount);
 
-        //     _logStateTransitions("STATE AFTER EXECUTE DECREASE COLLATERAL");
+            _logStateTransitions("STATE AFTER EXECUTE DECREASE COLLATERAL");
 
-        //     _reportState(request);
-        //     _logStateTransitions("STATE AFTER REPORT DECREASE COLLATERAL");
-        // }
+            // _reportState(request);
+            // _logStateTransitions("STATE AFTER REPORT DECREASE COLLATERAL");
+        }
     }
 
     function test_fullRedeem() public {
