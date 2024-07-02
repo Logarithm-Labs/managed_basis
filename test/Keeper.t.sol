@@ -134,6 +134,8 @@ contract KeeperTest is StdInvariant, Test {
         (increaseFee, decreaseFee) = positionManager.getExecutionFee();
         assert(increaseFee > 0);
         assert(decreaseFee > 0);
+        vm.startPrank(address(owner));
+        positionManager.setMaxClaimableFundingShare(0.0001 ether);
     }
 
     modifier afterHavingPosition() {
@@ -148,32 +150,32 @@ contract KeeperTest is StdInvariant, Test {
 
     function test_checkUpkeep() public afterHavingPosition {
         vm.startPrank(WETH_WHALE);
-        IERC20(product).transfer(address(strategy), 1.5 ether);
+        _moveTimestamp(3600);
         (bool upkeepNeeded,) = keeper.checkUpkeep(abi.encode(address(positionManager)));
         assertTrue(upkeepNeeded);
     }
 
     function test_performUpkeep() public afterHavingPosition {
         vm.startPrank(WETH_WHALE);
-        IERC20(product).transfer(address(strategy), 1.5 ether);
+        _moveTimestamp(3600);
         (bool upkeepNeeded, bytes memory data) = keeper.checkUpkeep(abi.encode(address(positionManager)));
         assertTrue(upkeepNeeded);
         vm.startPrank(forwarder);
         keeper.performUpkeep(data);
-        assertTrue(positionManager.pendingIncreaseOrderKey() != bytes32(0));
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
-        assertApproxEqRel(positionInfo.position.numbers.sizeInTokens, 1.5 ether, 0.999999 ether);
+        assertTrue(positionManager.pendingDecreaseOrderKey() != bytes32(0));
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        // ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
+        assertTrue(IERC20(strategy.asset()).balanceOf(address(positionManager)) > 1);
     }
 
     function test_performUpkeep_revert() public afterHavingPosition {
         vm.startPrank(WETH_WHALE);
-        IERC20(product).transfer(address(strategy), 1.5 ether);
+        _moveTimestamp(3600);
         (bool upkeepNeeded, bytes memory data) = keeper.checkUpkeep(abi.encode(address(positionManager)));
         assertTrue(upkeepNeeded);
         address anyone = makeAddr("anyone");
         vm.startPrank(anyone);
-        vm.expectRevert(abi.encodeWithSelector(Errors.UnAuthorizedForwarder.selector, anyone));
+        vm.expectRevert(abi.encodeWithSelector(Errors.UnauthorizedForwarder.selector, anyone));
         keeper.performUpkeep(data);
     }
 

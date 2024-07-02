@@ -303,6 +303,18 @@ library GmxV2Lib {
         return (remainingCollateral > 0 ? remainingCollateral.toUint256() : 0, claimableTokenAmount);
     }
 
+    function getClaimableFundingAmounts(GmxParams calldata params, address oracle, address referralStorage)
+        external
+        view
+        returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount)
+    {
+        MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
+        claimableLongTokenAmount = positionInfo.fees.funding.claimableLongTokenAmount;
+        claimableShortTokenAmount = positionInfo.fees.funding.claimableShortTokenAmount;
+        return (claimableLongTokenAmount, claimableShortTokenAmount);
+    }
+
     /// @dev in gmx v2, sizeDeltaInTokens = sizeInTokens * sizeDeltaUsd / sizeInUsd
     /// hence sizeDeltaUsd = ceil(sizeDeltaInTokens * sizeInUsd / sizeInTokens)
     function _getSizeDeltaUsdForDecrease(Position.Props memory position, uint256 sizeDeltaInTokens)

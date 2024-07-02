@@ -52,7 +52,7 @@ library Errors {
     error UnsupportedSwapType();
 
     // @notice upkeep validation
-    error UnAuthorizedForwarder(address fowarder);
+    error UnauthorizedForwarder(address fowarder);
 
     // @notice there is not enough positive pnl when decrease collateral
     error NotEnoughPnl();

@@ -43,7 +43,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
         INCREASING,
         DECREASING_ONE_STEP,
         DECREASING_TWO_STEP,
-        KEEPING
+        SETTLING
     }
 
     struct InternalCreateOrderParams {
@@ -289,11 +289,11 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
     }
 
     /// @notice claim funding or adjust size as needed
-    function performUpkeep(bytes calldata performData) external onlyKeeper whenNotPending returns (bytes32) {
-        (bool settleNeeded, bool adjustNeeded) = abi.decode(performData, (bool, bool));
+    function performUpkeep(bytes calldata performData) external onlyKeeper whenNotPending {
+        bool settleNeeded = abi.decode(performData, (bool));
         if (settleNeeded) {
-            _getGmxV2PositionManagerStorage().status = Status.KEEPING;
-            // if there is idle collateral, then increasing that amount to settle the claimable funding
+            _getGmxV2PositionManagerStorage().status = Status.SETTLING;
+            // if there is idle collateral, then increase that amount to settle the claimable funding
             // otherwise, decrease collateral by 1 to settle
             address _collateralToken = collateralToken();
             address _config = config();
@@ -331,46 +331,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
                 );
             }
         }
-        if (adjustNeeded) {
-            _getGmxV2PositionManagerStorage().status = Status.KEEPING;
-            (, int256 sizeDeltaInTokens) = _checkAdjustPositionSize();
-            address _config = config();
-            if (sizeDeltaInTokens < 0) {
-                uint256 sizeDeltaUsd =
-                    GmxV2Lib.getSizeDeltaUsdForDecrease(_getGmxParams(_config), uint256(-sizeDeltaInTokens));
-                return _createOrder(
-                    InternalCreateOrderParams({
-                        isLong: isLong(),
-                        isIncrease: false,
-                        exchangeRouter: IConfig(_config).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER),
-                        orderVault: IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT),
-                        collateralToken: collateralToken(),
-                        collateralDeltaAmount: 0,
-                        sizeDeltaUsd: sizeDeltaUsd,
-                        callbackGasLimit: IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT),
-                        referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
-                    })
-                );
-            } else {
-                uint256 sizeDeltaUsd = GmxV2Lib.getSizeDeltaUsdForIncrease(
-                    _getGmxParams(_config), IConfig(_config).getAddress(ConfigKeys.ORACLE), uint256(sizeDeltaInTokens)
-                );
-                return _createOrder(
-                    InternalCreateOrderParams({
-                        isLong: isLong(),
-                        isIncrease: true,
-                        exchangeRouter: IConfig(_config).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER),
-                        orderVault: IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT),
-                        collateralToken: collateralToken(),
-                        collateralDeltaAmount: 0,
-                        sizeDeltaUsd: sizeDeltaUsd,
-                        callbackGasLimit: IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT),
-                        referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
-                    })
-                );
-            }
-        }
-        return bytes32(0);
     }
 
     /// @dev claims all the claimable funding fee
@@ -441,11 +401,12 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
 
         Status _status = _getGmxV2PositionManagerStorage().status;
 
-        if (_status == Status.KEEPING) {
+        if (_status == Status.SETTLING) {
             if (order.numbers.initialCollateralDeltaAmount > 0) {
                 _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
             }
             _getGmxV2PositionManagerStorage().status = Status.IDLE;
+            claimFunding();
         } else {
             if (isIncrease) {
                 if (_status == Status.INCREASING) {
@@ -480,7 +441,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
 
         Status _status = _getGmxV2PositionManagerStorage().status;
 
-        if (_status == Status.KEEPING) {
+        if (_status == Status.SETTLING) {
             _getGmxV2PositionManagerStorage().status = Status.IDLE;
         } else {
             if (isIncrease) {
@@ -579,22 +540,25 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
         );
     }
 
-    function getAccruedFundingAmounts()
+    function getClaimableFundingAmounts()
         public
         view
         returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount)
     {
-        (claimableLongTokenAmount, claimableShortTokenAmount) =
-            GmxV2Lib.getAccruedFundingAmounts(_getGmxParams(config()));
+        address _config = config();
+        (claimableLongTokenAmount, claimableShortTokenAmount) = GmxV2Lib.getClaimableFundingAmounts(
+            _getGmxParams(_config),
+            IConfig(_config).getAddress(ConfigKeys.ORACLE),
+            IConfig(_config).getAddress(ConfigKeys.GMX_REFERRAL_STORAGE)
+        );
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
     /// @notice check if position is need to be kept by claiming funding or adjusting size
     function checkUpkeep() external view returns (bool upkeepNeeded, bytes memory performData) {
         bool settleNeeded = _checkSettle();
-        (bool adjustNeeded,) = _checkAdjustPositionSize();
-        upkeepNeeded = (settleNeeded || adjustNeeded) && !_isPending();
-        performData = abi.encode(settleNeeded, adjustNeeded);
+        upkeepNeeded = settleNeeded && !_isPending();
+        performData = abi.encode(settleNeeded);
         return (upkeepNeeded, performData);
     }
 
@@ -712,25 +676,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
         } else {
             return false;
         }
-    }
-
-    /// @dev check deviation between spot and perp
-    /// @return isNeed is for deciding to adjust perp position
-    /// @return sizeDeltaInTokens is delta size of perp position to be adjusted
-    function _checkAdjustPositionSize() private view returns (bool isNeed, int256 sizeDeltaInTokens) {
-        uint256 productBalance = IERC20(indexToken()).balanceOf(strategy());
-        uint256 positionSizeInTokens = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));
-        sizeDeltaInTokens = productBalance.toInt256() - positionSizeInTokens.toInt256();
-        uint256 deviation;
-        if (productBalance > 0) {
-            if (sizeDeltaInTokens < 0) {
-                deviation = uint256(-sizeDeltaInTokens).mulDiv(PRECISION, productBalance);
-            } else {
-                deviation = uint256(sizeDeltaInTokens).mulDiv(PRECISION, productBalance);
-            }
-        }
-        isNeed = deviation > _getGmxV2PositionManagerStorage().maxHedgeDeviation;
-        return (isNeed, sizeDeltaInTokens);
     }
 
     function _processIncreasePosition(uint256 initialCollateralDeltaAmount, uint256 sizeDeltaUsd) private {
