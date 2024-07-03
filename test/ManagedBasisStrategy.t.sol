@@ -25,6 +25,14 @@ contract ManagedBasisStrategyTest is Test {
         uint256 executionCost;
     }
 
+    struct UpkeepParams {
+        bool statusKeep;
+        bool hedgeDeviation;
+        bool decreaseCollateral;
+        bool activeRequests;
+        bool closedRequests;
+    }
+
     address owner = makeAddr("owner");
     address user1 = makeAddr("user1");
     address user2 = makeAddr("user2");
@@ -316,6 +324,28 @@ contract ManagedBasisStrategyTest is Test {
         console.log("");
     }
 
+    function _logUpkeep(bool upkeepNeeded, bytes memory performData)
+        internal
+        view
+        returns (UpkeepParams memory params)
+    {
+        console.log("UPKEEP STATUS");
+        console.log("Upkeep Needed:", upkeepNeeded);
+        (
+            params.statusKeep,
+            params.hedgeDeviation,
+            params.decreaseCollateral,
+            params.activeRequests,
+            params.closedRequests
+        ) = abi.decode(performData, (bool, bool, bool, bool, bool));
+        console.log("Status Keep:", params.statusKeep);
+        console.log("Hedge Deviation:", params.hedgeDeviation);
+        console.log("Decrease Collateral:", params.decreaseCollateral);
+        console.log("Active Requests:", params.activeRequests);
+        console.log("Closed Requests:", params.closedRequests);
+        console.log("");
+    }
+
     function _logTotalAssets() internal view {
         console.log("LOG TOTAL ASSETS");
         console.log("Utilized Assets:");
@@ -366,6 +396,8 @@ contract ManagedBasisStrategyTest is Test {
         console.log("positionManagerAssetBalance", IERC20(asset).balanceOf(address(positionManager)));
         console.log("agentBalance", IERC20(asset).balanceOf(agent));
         console.log("positionNetBalance", positionManager.positionNetBalance());
+        console.log("strategyProductBalance", IERC20(product).balanceOf(address(strategy)));
+        console.log("positionManagerSizeInTokens", positionManager.positionSizeInTokens());
         console.log("=========================");
         console.log("");
     }
@@ -598,16 +630,10 @@ contract ManagedBasisStrategyTest is Test {
         _logStateTransitions("STATE AFTER REPORT DECREASE SIZE 2");
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
-        (bool statusKeep, bool hedgeDeviation, bool decreaseCollateral, bool closedRequests) =
-            abi.decode(performData, (bool, bool, bool, bool));
-        console.log("upkeepNeeded", upkeepNeeded);
-        console.log("statusKeep", statusKeep);
-        console.log("hedgeDeviation", hedgeDeviation);
-        console.log("decreaseCollateral", decreaseCollateral);
-        console.log("closedRequests", closedRequests);
+        UpkeepParams memory upkeepParams = _logUpkeep(upkeepNeeded, performData);
         assertEq(upkeepNeeded, true, "upkeep should be needed");
 
-        if (decreaseCollateral) {
+        if (upkeepParams.decreaseCollateral) {
             strategy.performUpkeep("");
             request = _logRequest();
 
@@ -691,16 +717,10 @@ contract ManagedBasisStrategyTest is Test {
         _logWithdrawState(withdrawId);
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
-        (bool statusKeep, bool hedgeDeviation, bool decreaseCollateral, bool closedRequest) =
-            abi.decode(performData, (bool, bool, bool, bool));
-        console.log("upkeepNeeded", upkeepNeeded);
-        console.log("statusKeep", statusKeep);
-        console.log("hedgeDeviation", hedgeDeviation);
-        console.log("decreaseCollateral", decreaseCollateral);
-        console.log("closedRequest", closedRequest);
+        UpkeepParams memory upkeepParams = _logUpkeep(upkeepNeeded, performData);
         assertEq(upkeepNeeded, true, "upkeep should be needed");
 
-        if (decreaseCollateral) {
+        if (upkeepParams.decreaseCollateral) {
             strategy.performUpkeep("");
             request = _logRequest();
             assertEq(IERC20(asset).balanceOf(agent), 0);
@@ -754,27 +774,71 @@ contract ManagedBasisStrategyTest is Test {
         vm.startPrank(user1);
         strategy.redeem(sharesToRedeem, user1, user1);
 
-        _logStrategyState("STATE BEFORE DEPOSIT");
+        _logStateTransitions("STATE AFTER REDEEM");
 
         depositAmount *= 2;
         vm.startPrank(user2);
         IERC20(asset).approve(address(strategy), depositAmount);
         strategy.deposit(depositAmount, user2);
 
-        _logStrategyState("STATE AFTER DEPOSIT");
+        _logStateTransitions("STATE AFTER DEPOSIT");
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        UpkeepParams memory upkeepParams = _logUpkeep(upkeepNeeded, performData);
+
+        assertEq(upkeepParams.activeRequests, true, "active requests should be true");
+
+        strategy.performUpkeep("");
+
+        _logStateTransitions("STATE AFTER UPKEEP");
 
         bytes32 withdrawId = strategy.getWithdrawId(user1, 0);
-        _logWithdrawState(withdrawId);
+        ManagedBasisStrategy.WithdrawState memory withdrawState = _logWithdrawState(withdrawId);
+        assertEq(withdrawState.isExecuted, true, "withdraw should be executed");
 
-        utilizationAmount = strategy.pendingUtilization();
-        data = _generateInchCallData(asset, product, utilizationAmount);
+        uint256 user1BalBefore = IERC20(asset).balanceOf(user1);
+        vm.startPrank(user1);
+        strategy.claim(withdrawId);
+        uint256 user1BalDelta = IERC20(asset).balanceOf(user1) - user1BalBefore;
+
+        assertEq(
+            user1BalDelta, withdrawState.requestedAmount - withdrawState.executionCost, "user1 should receive funds"
+        );
+    }
+
+    function test_multipleWithdraws() public {
+        vm.startPrank(user1);
+        IERC20(asset).approve(address(strategy), depositAmount);
+        strategy.deposit(depositAmount, user1);
+
+        vm.startPrank(user2);
+        IERC20(asset).approve(address(strategy), depositAmount * 2);
+        strategy.deposit(depositAmount * 2, user2);
+
+        _logStateTransitions("STATE AFTER DEPOSITS");
+
+        uint256 utilizationAmount = strategy.pendingUtilization();
+        bytes memory data = _generateInchCallData(asset, product, utilizationAmount);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, 0);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionSize(0, 0);
 
         vm.startPrank(operator);
         strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
 
+        _logStateTransitions("STATE AFTER UTILIZATION");
+
         vm.startPrank(agent);
         positionManager.transferToAgent();
 
-        request = _logRequest();
+        OffChainPositionManager.RequestInfo memory request = _logRequest();
+        OffChainPositionManager.RequestInfo memory response = _executeRequest(request);
+
+        _logStateTransitions("STATE AFTER EXECUTE INCREASE SIZE");
+
+        _reportState(request, response);
+        _logStateTransitions("STATE AFTER REPORT INCREASE SIZE");
     }
 }

@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IOffChainPositionManager} from "src/interfaces/IOffChainPositionManager.sol";
 import "src/interfaces/IManagedBasisStrategy.sol";
+import {IManagedBasisCallbackReceiver} from "src/interfaces/IManagedBasisCallbackReceiver.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -12,8 +13,6 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-
-import {IAggregationRouterV6} from "src/externals/1inch/interfaces/IAggregationRouterV6.sol";
 
 import {InchAggregatorV6Logic} from "src/libraries/InchAggregatorV6Logic.sol";
 
@@ -58,8 +57,10 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 executedFromHedge;
         uint256 executionCost;
         address receiver;
+        address callbackTarget;
         bool isExecuted;
         bool isClaimed;
+        bytes callbackData;
     }
 
     struct ManagedBasisStrategyStorage {
@@ -166,6 +167,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     event AfterAdjustPosition(
         uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease, bool isSuccess
     );
+
+    event UpdateStrategyStatus(StrategyStatus status);
 
     event SwapFailed();
 
@@ -323,8 +326,10 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 executedFromHedge: 0,
                 executionCost: 0,
                 receiver: receiver,
+                callbackTarget: address(0),
                 isExecuted: false,
-                isClaimed: false
+                isClaimed: false,
+                callbackData: ""
             });
 
             // if all idle assets are withdrawn, set pending states to zero
@@ -447,6 +452,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             revert Errors.InvalidStrategyStatus(uint8($.strategyStatus));
         }
         $.strategyStatus = StrategyStatus.DEPOSITING;
+        emit UpdateStrategyStatus(StrategyStatus.DEPOSITING);
 
         // can only utilize when pending utilization is positive
         uint256 pendingUtilization_ = $.pendingUtilization;
@@ -471,6 +477,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             if (!success) {
                 emit SwapFailed();
                 $.strategyStatus = StrategyStatus.IDLE;
+                emit UpdateStrategyStatus(StrategyStatus.IDLE);
                 return bytes32(0);
             }
         } else {
@@ -506,6 +513,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             revert Errors.InvalidStrategyStatus(uint8($.strategyStatus));
         }
         $.strategyStatus = StrategyStatus.WITHDRAWING;
+        emit UpdateStrategyStatus(StrategyStatus.WITHDRAWING);
+
         uint256 productBalance = IERC20(product()).balanceOf(address(this));
 
         // actual deutilize amount is min of amount, product balance and pending deutilization
@@ -524,6 +533,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             if (!success) {
                 emit SwapFailed();
                 $.strategyStatus = StrategyStatus.IDLE;
+                emit UpdateStrategyStatus(StrategyStatus.IDLE);
                 return bytes32(0);
             }
         } else {
@@ -703,11 +713,13 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 );
             }
             $.strategyStatus = StrategyStatus.KEEPING;
+            emit UpdateStrategyStatus(StrategyStatus.KEEPING);
         } else {
             if (pendingDecreaseCollateral_ > 0) {
                 IOffChainPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
             }
             $.strategyStatus = StrategyStatus.KEEPING;
+            emit UpdateStrategyStatus(StrategyStatus.KEEPING);
         }
         _processActiveWithdrawRequests(0, 0);
         _processClosedWithdrawRequests($.assetsToWithdraw, 0);
@@ -718,8 +730,10 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         bool upkeepNeeded = _checkUpkeep();
         if (upkeepNeeded) {
             $.strategyStatus = StrategyStatus.NEED_KEEP;
+            emit UpdateStrategyStatus(StrategyStatus.NEED_KEEP);
         } else {
             $.strategyStatus = StrategyStatus.IDLE;
+            emit UpdateStrategyStatus(StrategyStatus.IDLE);
         }
     }
 
@@ -863,6 +877,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 requestsLength = $.closedWithdrawRequests.length;
         if (requestsLength > 0) {
             uint256 index;
+            uint256 processedAssetAmount;
             while (totalAvailableAmount > 0 && index < requestsLength) {
                 // process closed requests one by one
                 bytes32 withdrawId = $.closedWithdrawRequests[index];
@@ -889,6 +904,11 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                     request0.isExecuted = true;
                     processedAssetAmount += executionAmount;
                     totalAvailableAmount -= executionAmount;
+                    if (request0.callbackTarget != address(0)) {
+                        try IManagedBasisCallbackReceiver(request0.callbackTarget).managedBasisCallback(
+                            withdrawId, executionAmount, request0.callbackData
+                        ) {} catch {}
+                    }
 
                     index++;
 
@@ -1015,6 +1035,34 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     ) internal pure {
         // TODO implement
     }
+
+    // function requestWipeStrategy(uint256 productAmount, SwapType swapType, bytes memory data) external onlyOwner {
+    //     if (totalSupply() > 0) {
+    //         revert();
+    //     }
+
+    //     ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+    //     if (swapType == SwapType.INCH_V6) {
+    //         (, bool success) = InchAggregatorV6Logic.executeSwap(productAmount, product(), asset(), true, data);
+    //         if (!success) {
+    //             emit SwapFailed();
+    //         }
+    //     } else {
+    //         // TODO: fallback swap
+    //         revert Errors.UnsupportedSwapType();
+    //     }
+    //     uint256 positionSizeInTokens = IOffChainPositionManager($.positionManager).positionSizeInTokens();
+    //     uint256 positionNetBalance = IOffChainPositionManager($.positionManager).positionNetBalance();
+    //     IOffChainPositionManager($.positionManager).adjustPosition(positionSizeInTokens, positionNetBalance, false);
+    // }
+
+    // function wipeStrategy() external onlyOwner {
+    //     ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+    //     address asset_ = asset();
+    //     IERC20(asset_).safeTransferFrom($.positionManager, address(this), IERC20(asset_).balanceOf($.positionManager));
+    //     IERC20(asset_).safeTransfer(msg.sender, IERC20(asset_).balanceOf(address(this)));
+    // }
 
     /*//////////////////////////////////////////////////////////////
                         STORAGE GETTERS
