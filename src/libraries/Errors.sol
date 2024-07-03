@@ -63,10 +63,6 @@ library Errors {
 
     error StatusNotIdle();
 
-    error NotUtilizing();
-
-    error NotDeutilizing();
-
     error ZeroPendingUtilization();
 
     error ZeroAmountUtilization();
@@ -88,4 +84,6 @@ library Errors {
     error CallerNotOperator();
 
     error InvalidAdjustmentParams();
+    
+    error InvalidStrategyStatus(uint8 status);
 }
