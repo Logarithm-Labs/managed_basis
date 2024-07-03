@@ -22,6 +22,7 @@ import {IManagedBasisStrategy, PositionManagerCallbackParams} from "src/interfac
 import {IConfig} from "src/interfaces/IConfig.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 import {IKeeper} from "src/interfaces/IKeeper.sol";
+import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 import {ConfigKeys} from "src/libraries/ConfigKeys.sol";
 import {Errors} from "src/libraries/Errors.sol";
@@ -30,7 +31,7 @@ import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
 /// @title A gmx position manager
 /// @author Logarithm Labs
 /// @dev this contract must be deployed only by the factory
-contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableUpgradeable {
+contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initializable, OwnableUpgradeable {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -489,6 +490,11 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
 
         return remainingCollateral + IERC20(collateralToken()).balanceOf(address(this))
             + _getGmxV2PositionManagerStorage().pendingCollateralAmount;
+    }
+
+    /// @notice position size in index token
+    function positionSizeInTokens() external view returns (uint256) {
+        return GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));
     }
 
     /// @notice calculate the execution fee that is need from gmx when increase and decrease

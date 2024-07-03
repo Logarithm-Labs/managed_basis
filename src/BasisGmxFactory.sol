@@ -15,6 +15,7 @@ import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 import {Errors} from "src/libraries/Errors.sol";
+import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
 
 contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgradeable {
     string constant API_VERSION = "0.0.1";
@@ -212,7 +213,8 @@ contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgra
         strategy = address(new ERC1967Proxy($.strategyImplementation, initializerData));
 
         // deploy position manager proxy of this strategy
-        bytes memory posMngerInitializerData = abi.encodeCall(IPositionManager.initialize, (strategy, $.keeper));
+        bytes memory posMngerInitializerData =
+            abi.encodeCall(GmxV2PositionManager.initialize, (strategy, $.keeper, address(0)));
 
         positionManager = address(new ERC1967Proxy($.positionManagerImplementation, posMngerInitializerData));
         IBasisStrategy(strategy).setPositionManager(positionManager);
