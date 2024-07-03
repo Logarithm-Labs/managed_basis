@@ -40,10 +40,10 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
 
     enum Status {
         IDLE,
-        INCREASING,
-        DECREASING_ONE_STEP,
-        DECREASING_TWO_STEP,
-        SETTLING
+        INCREASE,
+        DECREASE_ONE_STEP,
+        DECREASE_TWO_STEP,
+        SETTLE
     }
 
     struct InternalCreateOrderParams {
@@ -87,7 +87,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
         // this value is set only when changing position sizes
         uint256 sizeInTokensBefore;
         uint256 decreasingCollateralDeltaAmount;
-        bool isFirstStepSucceeded;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager")) - 1)) & ~bytes32(uint256(0xff))
@@ -217,7 +216,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
                     referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
                 })
             );
-            _getGmxV2PositionManagerStorage().status = Status.INCREASING;
+            _getGmxV2PositionManagerStorage().status = Status.INCREASE;
         } else {
             if (sizeDeltaInTokens == 0 && collateralDeltaAmount <= idleCollateralAmount) {
                 IManagedBasisStrategy(strategy()).afterAdjustPosition(
@@ -260,7 +259,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
                     })
                 );
                 if (decreaseResult.sizeDeltaUsdToIncrease > 0) {
-                    _getGmxV2PositionManagerStorage().status = Status.DECREASING_TWO_STEP;
+                    _getGmxV2PositionManagerStorage().status = Status.DECREASE_TWO_STEP;
                     _createOrder(
                         InternalCreateOrderParams({
                             isLong: isLong(),
@@ -275,7 +274,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
                         })
                     );
                 } else {
-                    _getGmxV2PositionManagerStorage().status = Status.DECREASING_ONE_STEP;
+                    _getGmxV2PositionManagerStorage().status = Status.DECREASE_ONE_STEP;
                 }
             }
         }
@@ -285,7 +284,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
     function performUpkeep(bytes calldata performData) external onlyKeeper whenNotPending {
         bool settleNeeded = abi.decode(performData, (bool));
         if (settleNeeded) {
-            _getGmxV2PositionManagerStorage().status = Status.SETTLING;
+            _getGmxV2PositionManagerStorage().status = Status.SETTLE;
             // if there is idle collateral, then increase that amount to settle the claimable funding
             // otherwise, decrease collateral by 1 to settle
             address _collateralToken = collateralToken();
@@ -394,31 +393,20 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
 
         Status _status = _getGmxV2PositionManagerStorage().status;
 
-        if (_status == Status.SETTLING) {
+        if (_status == Status.SETTLE) {
             if (order.numbers.initialCollateralDeltaAmount > 0) {
                 _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
             }
             _getGmxV2PositionManagerStorage().status = Status.IDLE;
             claimFunding();
-        } else {
-            if (isIncrease) {
-                if (_status == Status.INCREASING) {
-                    _processIncreasePosition(order.numbers.initialCollateralDeltaAmount, order.numbers.sizeDeltaUsd);
-                } else if (_status == Status.DECREASING_TWO_STEP) {
-                    if (_getGmxV2PositionManagerStorage().isFirstStepSucceeded) {
-                        _getGmxV2PositionManagerStorage().isFirstStepSucceeded = false;
-                        _processDecreasePosition();
-                    }
-                }
-                _getGmxV2PositionManagerStorage().status = Status.IDLE;
-            } else {
-                if (_status == Status.DECREASING_ONE_STEP) {
-                    _processDecreasePosition();
-                    _getGmxV2PositionManagerStorage().status = Status.IDLE;
-                } else if (_status == Status.DECREASING_TWO_STEP) {
-                    _getGmxV2PositionManagerStorage().isFirstStepSucceeded = true;
-                }
-            }
+        } else if (_status == Status.INCREASE) {
+            _processIncreasePosition(order.numbers.initialCollateralDeltaAmount, order.numbers.sizeDeltaUsd);
+            _getGmxV2PositionManagerStorage().status = Status.IDLE;
+        } else if (_status == Status.DECREASE_ONE_STEP) {
+            _processDecreasePosition();
+            _getGmxV2PositionManagerStorage().status = Status.IDLE;
+        } else if (_status == Status.DECREASE_TWO_STEP) {
+            _getGmxV2PositionManagerStorage().status = Status.DECREASE_ONE_STEP;
         }
     }
 
@@ -433,53 +421,35 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
         _setPendingOrderKey(bytes32(0), isIncrease);
 
         Status _status = _getGmxV2PositionManagerStorage().status;
-
-        if (_status == Status.SETTLING) {
-            _getGmxV2PositionManagerStorage().status = Status.IDLE;
-        } else {
-            if (isIncrease) {
-                if (_status == Status.INCREASING) {
-                    IManagedBasisStrategy(strategy()).afterAdjustPosition(
-                        PositionManagerCallbackParams({
-                            sizeDeltaInTokens: 0,
-                            collateralDeltaAmount: 0,
-                            executionPrice: 0,
-                            executionCost: 0,
-                            isIncrease: true,
-                            isSuccess: false
-                        })
-                    );
-                } else if (_status == Status.DECREASING_TWO_STEP) {
-                    if (_getGmxV2PositionManagerStorage().isFirstStepSucceeded) {
-                        _getGmxV2PositionManagerStorage().isFirstStepSucceeded = false;
-                        _wipeExecutionCostCalcInfo();
-                        IManagedBasisStrategy(strategy()).afterAdjustPosition(
-                            PositionManagerCallbackParams({
-                                sizeDeltaInTokens: 0,
-                                collateralDeltaAmount: 0,
-                                executionPrice: 0,
-                                executionCost: 0,
-                                isIncrease: false,
-                                isSuccess: false
-                            })
-                        );
-                    }
-                }
-            } else {
-                _wipeExecutionCostCalcInfo();
-                IManagedBasisStrategy(strategy()).afterAdjustPosition(
-                    PositionManagerCallbackParams({
-                        sizeDeltaInTokens: 0,
-                        collateralDeltaAmount: 0,
-                        executionPrice: 0,
-                        executionCost: 0,
-                        isIncrease: false,
-                        isSuccess: false
-                    })
-                );
-            }
-            _getGmxV2PositionManagerStorage().status = Status.IDLE;
+        if (_status == Status.IDLE) return;
+        if (_status == Status.INCREASE) {
+            // in the case when increase order was failed
+            IManagedBasisStrategy(strategy()).afterAdjustPosition(
+                PositionManagerCallbackParams({
+                    sizeDeltaInTokens: 0,
+                    collateralDeltaAmount: 0,
+                    executionPrice: 0,
+                    executionCost: 0,
+                    isIncrease: true,
+                    isSuccess: false
+                })
+            );
+        } else if (_status == Status.DECREASE_ONE_STEP || _status == Status.DECREASE_TWO_STEP) {
+            // in case when the first order was executed successfully or one step decrease order was failed
+            // or in case when the order executed in wrong order by gmx was failed
+            _wipeExecutionCostCalcInfo();
+            IManagedBasisStrategy(strategy()).afterAdjustPosition(
+                PositionManagerCallbackParams({
+                    sizeDeltaInTokens: 0,
+                    collateralDeltaAmount: 0,
+                    executionPrice: 0,
+                    executionCost: 0,
+                    isIncrease: false,
+                    isSuccess: false
+                })
+            );
         }
+        _getGmxV2PositionManagerStorage().status = Status.IDLE;
     }
 
     /// @inheritdoc IOrderCallbackReceiver
