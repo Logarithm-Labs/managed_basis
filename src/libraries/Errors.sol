@@ -61,10 +61,6 @@ library Errors {
 
     error StatusNotIdle();
 
-    error NotUtilizing();
-
-    error NotDeutilizing();
-
     error ZeroPendingUtilization();
 
     error ZeroAmountUtilization();
@@ -84,4 +80,6 @@ library Errors {
     error NoActiveRequests();
 
     error CallerNotOperator();
+
+    error InvalidStrategyStatus(uint8 status);
 }

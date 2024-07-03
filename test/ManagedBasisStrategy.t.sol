@@ -597,9 +597,20 @@ contract ManagedBasisStrategyTest is Test {
         _reportState(request, response);
         _logStateTransitions("STATE AFTER REPORT DECREASE SIZE 2");
 
-        request = _logRequest();
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool statusKeep, bool hedgeDeviation, bool decreaseCollateral, bool closedRequests) =
+            abi.decode(performData, (bool, bool, bool, bool));
+        console.log("upkeepNeeded", upkeepNeeded);
+        console.log("statusKeep", statusKeep);
+        console.log("hedgeDeviation", hedgeDeviation);
+        console.log("decreaseCollateral", decreaseCollateral);
+        console.log("closedRequests", closedRequests);
+        assertEq(upkeepNeeded, true, "upkeep should be needed");
 
-        if (request.collateralDeltaAmount > 0) {
+        if (decreaseCollateral) {
+            strategy.performUpkeep("");
+            request = _logRequest();
+
             uint256 collateralAmount = request.collateralDeltaAmount;
             assertEq(IERC20(asset).balanceOf(agent), 0);
             response = _executeRequest(request);
@@ -679,12 +690,22 @@ contract ManagedBasisStrategyTest is Test {
         bytes32 withdrawId = strategy.getWithdrawId(user1, 0);
         _logWithdrawState(withdrawId);
 
-        request = _logRequest();
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool statusKeep, bool hedgeDeviation, bool decreaseCollateral, bool closedRequest) =
+            abi.decode(performData, (bool, bool, bool, bool));
+        console.log("upkeepNeeded", upkeepNeeded);
+        console.log("statusKeep", statusKeep);
+        console.log("hedgeDeviation", hedgeDeviation);
+        console.log("decreaseCollateral", decreaseCollateral);
+        console.log("closedRequest", closedRequest);
+        assertEq(upkeepNeeded, true, "upkeep should be needed");
 
-        if (request.collateralDeltaAmount > 0) {
-            uint256 collateralAmount = request.collateralDeltaAmount;
+        if (decreaseCollateral) {
+            strategy.performUpkeep("");
+            request = _logRequest();
             assertEq(IERC20(asset).balanceOf(agent), 0);
             response = _executeRequest(request);
+            uint256 collateralAmount = response.collateralDeltaAmount;
             assertEq(IERC20(asset).balanceOf(agent), collateralAmount);
 
             _logStateTransitions("STATE AFTER EXECUTE DECREASE COLLATERAL");
@@ -741,5 +762,19 @@ contract ManagedBasisStrategyTest is Test {
         strategy.deposit(depositAmount, user2);
 
         _logStrategyState("STATE AFTER DEPOSIT");
+
+        bytes32 withdrawId = strategy.getWithdrawId(user1, 0);
+        _logWithdrawState(withdrawId);
+
+        utilizationAmount = strategy.pendingUtilization();
+        data = _generateInchCallData(asset, product, utilizationAmount);
+
+        vm.startPrank(operator);
+        strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+
+        vm.startPrank(agent);
+        positionManager.transferToAgent();
+
+        request = _logRequest();
     }
 }

@@ -42,7 +42,7 @@ contract DeployScript is Script {
             )
         );
         ManagedBasisStrategy strategy = ManagedBasisStrategy(strategyProxy);
-        console.log("Strategy deployed at: %s", strategyProxy);
+        console.log("Strategy deployed at: %s", address(strategy));
 
         // set oracle price feed
         address[] memory assets = new address[](2);

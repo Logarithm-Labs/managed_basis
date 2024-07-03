@@ -314,4 +314,9 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.requests[round];
     }
+
+    function positionSizeInTokens() external view returns (uint256) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.positionStates[$.currentRound].sizeInTokens;
+    }
 }
