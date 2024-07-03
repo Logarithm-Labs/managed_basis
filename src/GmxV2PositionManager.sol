@@ -74,7 +74,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
         address collateralToken;
         bool isLong;
         uint256 maxClaimableFundingShare;
-        uint256 maxHedgeDeviation;
         // state
         Status status;
         // bytes32 activeRequestId;
@@ -157,7 +156,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
         $.isLong = false;
 
         $.maxClaimableFundingShare = 1e16; // 1%
-        $.maxHedgeDeviation = 1e15; // 0.1%
 
         // approve strategy to max amount
         IERC20(asset).approve($.strategy, type(uint256).max);
@@ -176,11 +174,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
     function setMaxClaimableFundingShare(uint256 _maxClaimableFundingShare) external onlyOwner {
         require(_maxClaimableFundingShare < 1 ether);
         _getGmxV2PositionManagerStorage().maxClaimableFundingShare = _maxClaimableFundingShare;
-    }
-
-    function setMaxHedgeDeviation(uint256 _maxDeviation) external onlyOwner {
-        require(_maxDeviation < 1 ether);
-        _getGmxV2PositionManagerStorage().maxHedgeDeviation = _maxDeviation;
     }
 
     function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease)
@@ -541,7 +534,7 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
     }
 
     function getClaimableFundingAmounts()
-        public
+        external
         view
         returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount)
     {
@@ -560,63 +553,6 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
         upkeepNeeded = settleNeeded && !_isPending();
         performData = abi.encode(settleNeeded);
         return (upkeepNeeded, performData);
-    }
-
-    function config() public view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.config;
-    }
-
-    function collateralToken() public view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.collateralToken;
-    }
-
-    function strategy() public view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.strategy;
-    }
-
-    function keeper() public view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return IConfig($.config).getAddress(ConfigKeys.KEEPER);
-    }
-
-    function marketToken() public view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.marketToken;
-    }
-
-    function indexToken() public view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.indexToken;
-    }
-
-    function longToken() public view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.longToken;
-    }
-
-    function shortToken() public view returns (address) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.shortToken;
-    }
-
-    function isLong() public view returns (bool) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.isLong;
-    }
-
-    function maxClaimableFundingShare() public view returns (uint256) {
-        return _getGmxV2PositionManagerStorage().maxClaimableFundingShare;
-    }
-
-    function pendingIncreaseOrderKey() public view returns (bytes32) {
-        return _getGmxV2PositionManagerStorage().pendingIncreaseOrderKey;
-    }
-
-    function pendingDecreaseOrderKey() public view returns (bytes32) {
-        return _getGmxV2PositionManagerStorage().pendingDecreaseOrderKey;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -797,5 +733,66 @@ contract GmxV2PositionManager is IOrderCallbackReceiver, Initializable, OwnableU
         _getGmxV2PositionManagerStorage().hedgeExecutionPrice = 0;
         _getGmxV2PositionManagerStorage().sizeInTokensBefore = 0;
         _getGmxV2PositionManagerStorage().pendingPositionFeeUsd = 0;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        STORAGE GETTERS
+    //////////////////////////////////////////////////////////////*/
+
+    function config() public view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.config;
+    }
+
+    function collateralToken() public view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.collateralToken;
+    }
+
+    function strategy() public view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.strategy;
+    }
+
+    function keeper() public view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return IConfig($.config).getAddress(ConfigKeys.KEEPER);
+    }
+
+    function marketToken() public view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.marketToken;
+    }
+
+    function indexToken() public view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.indexToken;
+    }
+
+    function longToken() public view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.longToken;
+    }
+
+    function shortToken() public view returns (address) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.shortToken;
+    }
+
+    function isLong() public view returns (bool) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.isLong;
+    }
+
+    function maxClaimableFundingShare() public view returns (uint256) {
+        return _getGmxV2PositionManagerStorage().maxClaimableFundingShare;
+    }
+
+    function pendingIncreaseOrderKey() public view returns (bytes32) {
+        return _getGmxV2PositionManagerStorage().pendingIncreaseOrderKey;
+    }
+
+    function pendingDecreaseOrderKey() public view returns (bytes32) {
+        return _getGmxV2PositionManagerStorage().pendingDecreaseOrderKey;
     }
 }
