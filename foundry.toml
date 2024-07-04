@@ -7,7 +7,7 @@ eth-rpc-url = "https://arb-mainnet.g.alchemy.com/v2/PeyMa7ljzBjqJxkH6AnLfVH8zRWO
 # fork_block_number = 220831280
 solc = '0.8.25'
 ffi = true
-# yul = true
+yul = true
 via_ir = true
 fs_permissions = [{ access = "write", path = "./" }]
 evm_version = 'shanghai'
@@ -17,6 +17,10 @@ gas_reports = ["GmxV2PositionManager"]
 # All available network keywords:
 # https://github.com/foundry-rs/forge-std/blob/ff4bf7db008d096ea5a657f2c20516182252a3ed/src/StdCheats.sol#L255-L271
 arbitrum_one = "${ARBITRUM_ONE_RPC_URL}"
+
+# [profile.default.optimizer_details.yulDetails]
+# stackAllocation = true
+# optimizerSteps = "dhfoDgvulfnTUtnIf[xa[r]EscLMcCTUtTOntnfDIulLculVcul[j]Tpeulxa[rul]xa[r]cLgvifCTUca[r]LSsTOtfDnca[r]Iulc]jmul[jul]VcTOculjmul"
 
 # [etherscan]
 # arbitrum_one = { key = "${ARBITRUM_ONE_API_KEY}" }

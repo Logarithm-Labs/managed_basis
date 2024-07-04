@@ -3,5 +3,6 @@
     "[solidity]": {
         "editor.defaultFormatter": "JuanBlanco.solidity" 
     },
-    "solidity.formatter": "forge"
+    "solidity.formatter": "forge",
+    "editor.foldingImportsByDefault": true
 }
