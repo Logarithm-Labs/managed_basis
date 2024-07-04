@@ -311,6 +311,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             $.pendingUtilization = pendingUtilization_;
             $.pendingIncreaseCollateral = pendingIncreaseCollateral_;
 
+            emit UpdatePendingUtilization(pendingUtilization_);
+
             IERC20(asset()).safeTransfer(receiver, assets);
         } else {
             uint128 counter = $.requestCounter[owner];
@@ -349,6 +351,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             $.assetsToWithdraw += idle;
             $.activeWithdrawRequests.push(withdrawId);
             $.requestCounter[owner]++;
+
+            emit UpdatePendingDeutilization($.pendingDeutilization);
 
             emit WithdrawRequest(caller, receiver, owner, withdrawId, requestedAmount);
         }
@@ -496,6 +500,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         $.spotExecutionPrice = amount.mulDiv(10 ** IERC20Metadata(product()).decimals(), amountOut, Math.Rounding.Ceil);
         $.pendingIncreaseCollateral = pendingIncreaseCollateral_;
         $.pendingUtilization = pendingUtilization_ - amount;
+
+        emit UpdatePendingUtilization($.pendingUtilization);
 
         emit Utilize(msg.sender, amount, amountOut);
     }
@@ -702,6 +708,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     //TODO: accomodate for Chainlink interface
     function performUpkeep(bytes calldata) public {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        _processActiveWithdrawRequests(0, 0);
+        _processClosedWithdrawRequests($.assetsToWithdraw, 0);
         (uint256 hedgeDeviationInTokens, bool isIncrease) = _checkHedgeDeviation();
         uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
         if (hedgeDeviationInTokens > 0) {
@@ -714,15 +722,13 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             }
             $.strategyStatus = StrategyStatus.KEEPING;
             emit UpdateStrategyStatus(StrategyStatus.KEEPING);
-        } else {
-            if (pendingDecreaseCollateral_ > 0) {
-                IOffChainPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
-            }
+        } else if (pendingDecreaseCollateral_ > 0) {
+            IOffChainPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
             $.strategyStatus = StrategyStatus.KEEPING;
             emit UpdateStrategyStatus(StrategyStatus.KEEPING);
+        } else {
+            _checkStrategyStatus();
         }
-        _processActiveWithdrawRequests(0, 0);
-        _processClosedWithdrawRequests($.assetsToWithdraw, 0);
     }
 
     function _checkStrategyStatus() internal {
@@ -749,15 +755,14 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             }
         }
         uint256 hedgeDeviation = hedgeExposure.mulDiv(PRECISION, spotExposure);
-        uint256 hedgeDeviationThreshold_ = $.hedgeDeviationThreshold;
-        if (hedgeDeviation > PRECISION + hedgeDeviationThreshold_) {
+        if (hedgeDeviation > PRECISION + $.hedgeDeviationThreshold) {
             // strategy is overhedged, need to decrease position size
             isIncrease = false;
             hedgeDeviationInTokens = hedgeExposure - spotExposure;
-        } else if (hedgeDeviation < PRECISION - hedgeDeviationThreshold_) {
+        } else if (hedgeDeviation < PRECISION - $.hedgeDeviationThreshold) {
             // strategy is underhedged, need to increase position size
             isIncrease = true;
-            hedgeDeviationInTokens = spotExposure - hedgeDeviation;
+            hedgeDeviationInTokens = spotExposure - hedgeExposure;
         }
     }
 
@@ -861,14 +866,22 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             $.withdrawnFromIdle = 0;
             $.pendingDecreaseCollateral = pendingDecreaseCollateral_;
             $.withdrawingFromHedge = withdrawingFromHedge_;
-            $.totalPendingWithdraw = totalPendingWithdraw_;
 
-            uint256 pendingDeutilizationInAsset_ =
-                totalPendingWithdraw_.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
-            uint256 pendingDeutilization_ =
-                $.oracle.convertTokenAmount(asset(), product(), pendingDeutilizationInAsset_);
-            $.pendingDeutilization = pendingDeutilization_;
-            emit UpdatePendingDeutilization(pendingDeutilization_);
+            if ($.activeWithdrawRequests.length > 0) {
+                $.totalPendingWithdraw = totalPendingWithdraw_;
+
+                uint256 pendingDeutilizationInAsset_ =
+                    totalPendingWithdraw_.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
+                uint256 pendingDeutilization_ =
+                    $.oracle.convertTokenAmount(asset(), product(), pendingDeutilizationInAsset_);
+                $.pendingDeutilization = pendingDeutilization_;
+                emit UpdatePendingDeutilization(pendingDeutilization_);
+            } else {
+                $.totalPendingWithdraw = 0;
+                $.pendingDeutilization = 0;
+                $.assetsToWithdraw = 0;
+                emit UpdatePendingDeutilization(0);
+            }
         }
     }
 
