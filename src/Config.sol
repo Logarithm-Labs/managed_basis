@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-contract Config is Initializable, OwnableUpgradeable {
+contract Config is UUPSUpgradeable, OwnableUpgradeable {
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -41,6 +41,8 @@ contract Config is Initializable, OwnableUpgradeable {
     function initialize(address owner_) external initializer {
         __Ownable_init(owner_);
     }
+
+    function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
 
     /*//////////////////////////////////////////////////////////////
                         EXTERNAL FUNCTIONS
