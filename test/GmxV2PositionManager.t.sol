@@ -89,12 +89,6 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         _mockChainlinkPriceFeed(assetPriceFeed);
         _mockChainlinkPriceFeed(productPriceFeed);
 
-        // deploy keeper
-        address keeperImpl = address(new Keeper());
-        address keeperProxy =
-            address(new ERC1967Proxy(keeperImpl, abi.encodeWithSelector(Keeper.initialize.selector, owner)));
-        keeper = Keeper(payable(keeperProxy));
-
         // deploy config
         Config config = new Config();
         config.initialize(owner);
@@ -106,12 +100,21 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         config.setAddress(ConfigKeys.GMX_REFERRAL_STORAGE, IOrderHandler(GMX_ORDER_HANDLER).referralStorage());
         config.setAddress(ConfigKeys.GMX_READER, GMX_READER);
         config.setAddress(ConfigKeys.ORACLE, address(oracle));
-        config.setAddress(ConfigKeys.KEEPER, address(keeper));
+
         config.setAddress(ConfigKeys.gmxMarketKey(asset, product), GMX_ETH_USDC_MARKET);
 
         config.setUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT, 2_000_000);
 
         strategy = new MockStrategy();
+
+        // deploy keeper
+        address keeperImpl = address(new Keeper());
+        address keeperProxy = address(
+            new ERC1967Proxy(keeperImpl, abi.encodeWithSelector(Keeper.initialize.selector, owner, address(config)))
+        );
+        keeper = Keeper(payable(keeperProxy));
+
+        config.setAddress(ConfigKeys.KEEPER, address(keeper));
 
         // deploy positionManager impl
         address positionManagerImpl = address(new GmxV2PositionManager());
@@ -127,8 +130,10 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
             )
         );
         positionManager = GmxV2PositionManager(payable(positionManagerProxy));
-        keeper.registerPositionManager(address(positionManager));
+
         strategy.setPositionManager(positionManagerProxy);
+
+        config.setBool(ConfigKeys.isPositionManagerKey(address(positionManager)), true);
 
         // topup keeper with some native token, in practice, its don't through keeper
         vm.deal(address(keeper), 1 ether);
@@ -637,89 +642,27 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertEq(productBalacneAfter - productBalacneBefore, claimableLongAmount);
     }
 
-    // function test_checkUpkeep_needAdjust_whenSpotBigger() public afterHavingPosition {
-    //     vm.startPrank(WETH_WHALE);
-    //     IERC20(product).transfer(address(strategy), 1.5 ether);
-    //     (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
-    //     bool settleNeeded = abi.decode(data, (bool));
-    //
-    //     assertTrue(adjustNeeded);
-    //     assertTrue(!settleNeeded);
-    // }
+    function test_checkSettle_idle() public afterHavingPosition {
+        _moveTimestamp(2 * 24 * 3600);
+        vm.startPrank(USDC_WHALE);
+        IERC20(USDC).transfer(address(positionManager), 5 * USDC_PRECISION);
+        vm.startPrank(address(owner));
+        bool result = positionManager.checkSettle();
+        assertFalse(result);
 
-    function test_checkUpkeep_settle() public afterHavingPosition {
+        vm.startPrank(USDC_WHALE);
+        IERC20(USDC).transfer(address(positionManager), 10 * USDC_PRECISION);
+        result = positionManager.checkSettle();
+        assertTrue(result);
+    }
+
+    function test_checkSettle_funding() public afterHavingPosition {
         _moveTimestamp(2 * 24 * 3600);
         vm.startPrank(address(owner));
         positionManager.setMaxClaimableFundingShare(0.0001 ether);
-        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
-        bool settleNeeded = abi.decode(data, (bool));
-        assertTrue(settleNeeded);
-        assertTrue(upkeepNeeded);
+        bool result = positionManager.checkSettle();
+        assertTrue(result);
     }
-
-    // function test_checkUpkeep_NotNeedAdjust_whenSpotBigger() public afterHavingPosition {
-    //     vm.startPrank(WETH_WHALE);
-    //     ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
-    //     IERC20(product).transfer(address(strategy), positionInfo.position.numbers.sizeInTokens * 10005 / 10000); // 0.05% deviation
-    //     (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
-    //     bool settleNeeded = abi.decode(data, (bool));
-    //     assertTrue(!upkeepNeeded);
-    //     assertTrue(!adjustNeeded);
-    //     assertTrue(!settleNeeded);
-    // }
-
-    // function test_checkUpkeep_needAdjust_whenSpotSmaller() public afterHavingPosition {
-    //     vm.startPrank(WETH_WHALE);
-    //     IERC20(product).transfer(address(strategy), 0.5 ether);
-    //     (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
-    //     bool settleNeeded = abi.decode(data, (bool));
-    //
-    //     assertTrue(adjustNeeded);
-    //     assertTrue(!settleNeeded);
-    // }
-
-    // function test_checkUpkeep_NotNeedAdjust_whenSpotSmaller() public afterHavingPosition {
-    //     vm.startPrank(WETH_WHALE);
-    //     ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
-    //     IERC20(product).transfer(address(strategy), positionInfo.position.numbers.sizeInTokens * 9995 / 10000); // 0.05% deviation
-    //     (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
-    //     bool settleNeeded = abi.decode(data, (bool));
-    //     assertTrue(!upkeepNeeded);
-    //     assertTrue(!adjustNeeded);
-    //     assertTrue(!settleNeeded);
-    // }
-
-    // function test_performUpkeep_adjust_increase() public afterHavingPosition {
-    //     vm.startPrank(WETH_WHALE);
-    //     IERC20(product).transfer(address(strategy), 1.5 ether);
-    //     (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
-    //     bool settleNeeded = abi.decode(data, (bool));
-    //
-    //     assertTrue(adjustNeeded);
-    //     assertTrue(!settleNeeded);
-    //     vm.startPrank(address(keeper));
-    //     positionManager.performUpkeep(data);
-    //     assertTrue(positionManager.pendingIncreaseOrderKey() != bytes32(0));
-    //     _executeOrder(positionManager.pendingIncreaseOrderKey());
-    //     ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
-    //     assertApproxEqRel(positionInfo.position.numbers.sizeInTokens, 1.5 ether, 0.999999 ether);
-    // }
-
-    // function test_performUpkeep_adjust_decrease() public afterHavingPosition {
-    //     vm.startPrank(WETH_WHALE);
-    //     IERC20(product).transfer(address(strategy), 0.5 ether);
-    //     (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
-    //     bool settleNeeded = abi.decode(data, (bool));
-    //
-    //     assertTrue(adjustNeeded);
-    //     assertTrue(!settleNeeded);
-    //     vm.startPrank(address(keeper));
-    //     positionManager.performUpkeep(data);
-    //     assertTrue(positionManager.pendingDecreaseOrderKey() != bytes32(0));
-    //     _executeOrder(positionManager.pendingDecreaseOrderKey());
-    //     ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
-    //     assertEq(positionInfo.position.numbers.sizeInTokens, 0.5 ether);
-    // }
 
     function test_performUpkeep_settle_decreaseCollateral() public afterHavingPosition {
         _moveTimestamp(2 * 24 * 3600);
@@ -728,15 +671,13 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
         assertTrue(claimableLongAmount > 0);
         assertTrue(claimableShortAmount > 0);
-        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
-        bool settleNeeded = abi.decode(data, (bool));
-        assertTrue(settleNeeded);
-        assertTrue(upkeepNeeded);
+        bool result = positionManager.checkSettle();
+        assertTrue(result);
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 idleCollateralAmount = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
         assertTrue(idleCollateralAmount == 0);
-        vm.startPrank(address(keeper));
-        positionManager.performUpkeep(data);
+        vm.startPrank(address(strategy));
+        positionManager.settle();
         assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
         assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
@@ -756,17 +697,15 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
         assertTrue(claimableLongAmount > 0);
         assertTrue(claimableShortAmount > 0);
-        (bool upkeepNeeded, bytes memory data) = positionManager.checkUpkeep();
-        bool settleNeeded = abi.decode(data, (bool));
-        assertTrue(upkeepNeeded);
-        assertTrue(settleNeeded);
+        bool result = positionManager.checkSettle();
+        assertTrue(result);
         vm.startPrank(USDC_WHALE);
         IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 idleCollateralAmount = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
         assertTrue(idleCollateralAmount == 300 * USDC_PRECISION);
-        vm.startPrank(address(keeper));
-        positionManager.performUpkeep(data);
+        vm.startPrank(address(strategy));
+        positionManager.settle();
         uint256 positionNetBalancePending = positionManager.positionNetBalance();
         assertNotEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
         assertEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));

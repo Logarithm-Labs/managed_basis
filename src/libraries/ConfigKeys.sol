@@ -28,10 +28,19 @@ library ConfigKeys {
     // @dev key for the address of the gmx v2 markets
     bytes32 constant GMX_MARKET_LIST = keccak256(abi.encode("GMX_MARKET_LIST"));
 
+    // @dev key for the bool value if a position manager registered
+    bytes32 constant IS_POSITION_MANAGER = keccak256(abi.encode("IS_POSITION_MANAGER"));
+
     // @dev key for the gmx market list
     // @param asset the strategy's asset address for the list
     // @param product the strategy's product address for the list
     function gmxMarketKey(address asset, address product) internal pure returns (bytes32) {
         return keccak256(abi.encode(GMX_MARKET_LIST, asset, product));
+    }
+
+    // @dev key for checking if a position manager has been registered
+    // @param positionManager the address of position manager
+    function isPositionManagerKey(address positionManager) internal pure returns (bytes32) {
+        return keccak256(abi.encode(IS_POSITION_MANAGER, positionManager));
     }
 }

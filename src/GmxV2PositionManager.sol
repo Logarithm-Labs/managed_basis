@@ -30,13 +30,13 @@ import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
 
 /// @title A gmx position manager
 /// @author Logarithm Labs
-/// @dev this contract must be deployed only by the factory
 contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initializable, OwnableUpgradeable {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
-    uint256 public constant PRECISION = 1e18;
+    uint256 constant PRECISION = 1e18;
+    uint256 constant MIN_IDLE_COLLATERAL_USD = 1e31; // $10
     string constant API_VERSION = "0.0.1";
 
     enum Status {
@@ -171,6 +171,10 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
         assert(success);
     }
 
+    function renounceOwnership() public pure override {
+        revert();
+    }
+
     function setMaxClaimableFundingShare(uint256 _maxClaimableFundingShare) external onlyOwner {
         require(_maxClaimableFundingShare < 1 ether);
         _getGmxV2PositionManagerStorage().maxClaimableFundingShare = _maxClaimableFundingShare;
@@ -281,48 +285,45 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
         }
     }
 
-    /// @notice claim funding or adjust size as needed
-    function performUpkeep(bytes calldata performData) external onlyKeeper whenNotPending {
-        bool settleNeeded = abi.decode(performData, (bool));
-        if (settleNeeded) {
-            _getGmxV2PositionManagerStorage().status = Status.SETTLE;
-            // if there is idle collateral, then increase that amount to settle the claimable funding
-            // otherwise, decrease collateral by 1 to settle
-            address _collateralToken = collateralToken();
-            address _config = config();
-            uint256 idleCollateralAmount = IERC20(_collateralToken).balanceOf(address(this));
-            if (idleCollateralAmount > 0) {
-                IERC20(_collateralToken).safeTransfer(
-                    IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT), idleCollateralAmount
-                );
-                _createOrder(
-                    InternalCreateOrderParams({
-                        isLong: isLong(),
-                        isIncrease: true,
-                        exchangeRouter: IConfig(_config).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER),
-                        orderVault: IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT),
-                        collateralToken: _collateralToken,
-                        collateralDeltaAmount: idleCollateralAmount,
-                        sizeDeltaUsd: 0,
-                        callbackGasLimit: IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT),
-                        referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
-                    })
-                );
-            } else {
-                _createOrder(
-                    InternalCreateOrderParams({
-                        isLong: isLong(),
-                        isIncrease: false,
-                        exchangeRouter: IConfig(_config).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER),
-                        orderVault: IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT),
-                        collateralToken: _collateralToken,
-                        collateralDeltaAmount: 1,
-                        sizeDeltaUsd: 0,
-                        callbackGasLimit: IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT),
-                        referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
-                    })
-                );
-            }
+    /// @notice settle position to claim funding and increase collateral if there are idle assets
+    function settle() external onlyStrategy whenNotPending {
+        _getGmxV2PositionManagerStorage().status = Status.SETTLE;
+        // if there is idle collateral, then increase that amount to settle the claimable funding
+        // otherwise, decrease collateral by 1 to settle
+        address _collateralToken = collateralToken();
+        address _config = config();
+        uint256 idleCollateralAmount = IERC20(_collateralToken).balanceOf(address(this));
+        if (idleCollateralAmount > 0) {
+            IERC20(_collateralToken).safeTransfer(
+                IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT), idleCollateralAmount
+            );
+            _createOrder(
+                InternalCreateOrderParams({
+                    isLong: isLong(),
+                    isIncrease: true,
+                    exchangeRouter: IConfig(_config).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER),
+                    orderVault: IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT),
+                    collateralToken: _collateralToken,
+                    collateralDeltaAmount: idleCollateralAmount,
+                    sizeDeltaUsd: 0,
+                    callbackGasLimit: IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT),
+                    referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
+                })
+            );
+        } else {
+            _createOrder(
+                InternalCreateOrderParams({
+                    isLong: isLong(),
+                    isIncrease: false,
+                    exchangeRouter: IConfig(_config).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER),
+                    orderVault: IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT),
+                    collateralToken: _collateralToken,
+                    collateralDeltaAmount: 1,
+                    sizeDeltaUsd: 0,
+                    callbackGasLimit: IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT),
+                    referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
+                })
+            );
         }
     }
 
@@ -523,12 +524,27 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
-    /// @notice check if position is need to be kept by claiming funding or adjusting size
-    function checkUpkeep() external view returns (bool upkeepNeeded, bytes memory performData) {
-        bool settleNeeded = _checkSettle();
-        upkeepNeeded = settleNeeded && !_isPending();
-        performData = abi.encode(settleNeeded);
-        return (upkeepNeeded, performData);
+    /// @dev check if the claimable funding amount is over than max share
+    ///      or if idle collateral is bigger than minimum requriement so that
+    ///      the position can be settled to add it to position's collateral
+    function checkSettle() external view returns (bool) {
+        address _config = config();
+        address _collateralToken = collateralToken();
+        address oralcle = IConfig(_config).getAddress(ConfigKeys.ORACLE);
+        uint256 idleCollateralAmount = IERC20(_collateralToken).balanceOf(address(this));
+        uint256 idleCollateralAmountUsd = IOracle(oralcle).getAssetPrice(_collateralToken) * idleCollateralAmount;
+        if (idleCollateralAmountUsd > MIN_IDLE_COLLATERAL_USD) {
+            return true;
+        }
+        (uint256 remainingCollateral, uint256 claimableTokenAmount) = GmxV2Lib
+            .getRemainingCollateralAndClaimableFundingAmount(
+            _getGmxParams(_config), oralcle, IConfig(_config).getAddress(ConfigKeys.GMX_REFERRAL_STORAGE)
+        );
+        if (remainingCollateral > 0) {
+            return claimableTokenAmount.mulDiv(PRECISION, remainingCollateral) > maxClaimableFundingShare();
+        } else {
+            return false;
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -572,22 +588,6 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
         );
         _setPendingOrderKey(orderKey, params.isIncrease);
         return orderKey;
-    }
-
-    /// @dev check if the claimable funding amount is over than max share
-    function _checkSettle() private view returns (bool) {
-        address _config = config();
-        (uint256 remainingCollateral, uint256 claimableTokenAmount) = GmxV2Lib
-            .getRemainingCollateralAndClaimableFundingAmount(
-            _getGmxParams(_config),
-            IConfig(_config).getAddress(ConfigKeys.ORACLE),
-            IConfig(_config).getAddress(ConfigKeys.GMX_REFERRAL_STORAGE)
-        );
-        if (remainingCollateral > 0) {
-            return claimableTokenAmount.mulDiv(PRECISION, remainingCollateral) > maxClaimableFundingShare();
-        } else {
-            return false;
-        }
     }
 
     function _processIncreasePosition(uint256 initialCollateralDeltaAmount, uint256 sizeDeltaUsd) private {

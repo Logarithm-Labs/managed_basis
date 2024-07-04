@@ -9,4 +9,8 @@ interface IPositionManager {
     function positionSizeInTokens() external view returns (uint256);
 
     function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease) external;
+
+    function settle() external;
+
+    function checkSettle() external view returns (bool);
 }
