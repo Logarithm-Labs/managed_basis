@@ -109,15 +109,8 @@ library GmxV2Lib {
 
         if (sizeDeltaInTokens > 0) {
             result.sizeDeltaUsdToDecrease = _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokens);
-            executionPriceResultForDecrease = IReader(params.reader).getExecutionPrice(
-                IDataStore(params.dataStore),
-                params.market.marketToken,
-                indexTokenPrice,
-                position.numbers.sizeInUsd,
-                position.numbers.sizeInTokens,
-                -int256(result.sizeDeltaUsdToDecrease),
-                params.isLong
-            );
+            executionPriceResultForDecrease =
+                _getExecutionPrice(params, position, indexTokenPrice, -int256(result.sizeDeltaUsdToDecrease));
             result.positionFeeUsd = _getPositionFeeUsd(
                 params, result.sizeDeltaUsdToDecrease, executionPriceResultForDecrease.priceImpactUsd
             );
@@ -177,15 +170,8 @@ library GmxV2Lib {
             uint256 sizeDeltaInTokensToBeRealized =
                 collateralDeltaAmount.mulDiv(position.numbers.sizeInTokens, totalPositionPnlAmount);
             result.sizeDeltaUsdToDecrease += _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokensToBeRealized);
-            executionPriceResultForDecrease = IReader(params.reader).getExecutionPrice(
-                IDataStore(params.dataStore),
-                params.market.marketToken,
-                indexTokenPrice,
-                position.numbers.sizeInUsd,
-                position.numbers.sizeInTokens,
-                -int256(result.sizeDeltaUsdToDecrease),
-                params.isLong
-            );
+            executionPriceResultForDecrease =
+                _getExecutionPrice(params, position, indexTokenPrice, -int256(result.sizeDeltaUsdToDecrease));
             result.positionFeeUsd = _getPositionFeeUsd(
                 params, result.sizeDeltaUsdToDecrease, executionPriceResultForDecrease.priceImpactUsd
             );
@@ -196,16 +182,8 @@ library GmxV2Lib {
                 position.numbers.sizeInTokens,
                 sizeDeltaInTokensToBeRealized
             );
-            ReaderPricingUtils.ExecutionPriceResult memory executionPriceResultForIncrease = IReader(params.reader)
-                .getExecutionPrice(
-                IDataStore(params.dataStore),
-                params.market.marketToken,
-                indexTokenPrice,
-                position.numbers.sizeInUsd,
-                position.numbers.sizeInTokens,
-                int256(result.sizeDeltaUsdToIncrease),
-                params.isLong
-            );
+            ReaderPricingUtils.ExecutionPriceResult memory executionPriceResultForIncrease =
+                _getExecutionPrice(params, position, indexTokenPrice, int256(result.sizeDeltaUsdToIncrease));
             result.positionFeeUsd += _getPositionFeeUsd(
                 params, result.sizeDeltaUsdToIncrease, executionPriceResultForIncrease.priceImpactUsd
             );
@@ -476,6 +454,23 @@ library GmxV2Lib {
             params.isLong
         );
         return result.priceImpactUsd;
+    }
+
+    function _getExecutionPrice(
+        GmxParams calldata params,
+        Position.Props memory position,
+        Price.Props memory indexTokenPrice,
+        int256 sizeDeltaUsd
+    ) private view returns (ReaderPricingUtils.ExecutionPriceResult memory) {
+        return IReader(params.reader).getExecutionPrice(
+            IDataStore(params.dataStore),
+            params.market.marketToken,
+            indexTokenPrice,
+            position.numbers.sizeInUsd,
+            position.numbers.sizeInTokens,
+            sizeDeltaUsd,
+            params.isLong
+        );
     }
 
     function _getMinCollateralAmount(InternalGetMinCollateralAmount memory params) private view returns (uint256) {
