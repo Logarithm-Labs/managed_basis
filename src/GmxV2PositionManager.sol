@@ -285,8 +285,8 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
         }
     }
 
-    /// @notice settle position to claim funding and increase collateral if there are idle assets
-    function settle() external onlyStrategy whenNotPending {
+    /// @notice keep position to claim funding and increase collateral if there are idle assets
+    function keep() external onlyStrategy whenNotPending {
         _getGmxV2PositionManagerStorage().status = Status.SETTLE;
         // if there is idle collateral, then increase that amount to settle the claimable funding
         // otherwise, decrease collateral by 1 to settle
@@ -527,7 +527,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
     /// @dev check if the claimable funding amount is over than max share
     ///      or if idle collateral is bigger than minimum requriement so that
     ///      the position can be settled to add it to position's collateral
-    function checkSettle() external view returns (bool) {
+    function needKeep() external view returns (bool) {
         address _config = config();
         address _collateralToken = collateralToken();
         address oralcle = IConfig(_config).getAddress(ConfigKeys.ORACLE);

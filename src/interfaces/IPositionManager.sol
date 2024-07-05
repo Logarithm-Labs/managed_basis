@@ -10,7 +10,7 @@ interface IPositionManager {
 
     function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease) external;
 
-    function settle() external;
+    function keep() external;
 
-    function checkSettle() external view returns (bool);
+    function needKeep() external view returns (bool);
 }
