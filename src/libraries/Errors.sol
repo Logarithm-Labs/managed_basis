@@ -82,4 +82,6 @@ library Errors {
     error CallerNotOperator();
 
     error InvalidStrategyStatus(uint8 status);
+
+    error ExceededMaxDeposit(address receiver, uint256 assets, uint256 maxAssets);
 }
