@@ -284,8 +284,9 @@ library GmxV2Lib {
         if (priceImpactUsd >= 0) {
             priceImpactUsd = 0;
         } else {
-            uint256 maxPriceImpactFactor =
-                MarketUtils.getMaxPositionImpactFactorForLiquidations(params.dataStore, params.market.marketToken);
+            uint256 maxPriceImpactFactor = MarketUtils.getMaxPositionImpactFactorForLiquidations(
+                IDataStore(params.dataStore), params.market.marketToken
+            );
 
             // if there is a large build up of open interest and a sudden large price movement
             // it may result in a large imbalance between longs and shorts
