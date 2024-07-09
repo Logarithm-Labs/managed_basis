@@ -11,7 +11,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {DepositLogic} from "src/libraries/logic/DepositLogic.sol";
+import {DepositorLogic} from "src/libraries/logic/DepositorLogic.sol";
 
 import {Errors} from "src/libraries/Errors.sol";
 
@@ -167,6 +167,20 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
 
     /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event WithdrawRequest(
+        address indexed caller, address indexed receiver, address indexed owner, bytes32 withdrawId, uint256 amount
+    );
+
+    event Claim(address indexed claimer, bytes32 requestId, uint256 amount);
+
+    event UpdatePendingUtilization(uint256 amount);
+
+    event UpdatePendingDeutilization(uint256 amount);
+
+    /*//////////////////////////////////////////////////////////////
                         STATE TRANSITIONS   
     //////////////////////////////////////////////////////////////*/
 
@@ -187,6 +201,14 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     function updateStrategyState(StrategyStateChache memory cache) internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        if ($.pendingUtilization != cache.pendingUtilization) {
+            emit UpdatePendingUtilization(cache.pendingUtilization);
+        }
+        if ($.pendingDeutilization != cache.pendingDeutilization) {
+            emit UpdatePendingDeutilization(cache.pendingDeutilization);
+        }
+
         $.assetsToClaim = cache.assetsToClaim;
         $.assetsToWithdraw = cache.assetsToWithdraw;
         $.pendingUtilization = cache.pendingUtilization;
@@ -200,38 +222,43 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         $.spotExecutionPrice = cache.spotExecutionPrice;
     }
 
+    function updateWithdrawState(bytes32 withdrawId, WithdrawState memory withdrawState) internal {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        $.withdrawRequests[withdrawId] = withdrawState;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         DEPOSIT / WITHDRAW LOGIC   
     //////////////////////////////////////////////////////////////*/
 
     /// @dev See {IERC4626-deposit}.
-    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual returns (uint256) {
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares)
+        internal
+        virtual
+        returns (uint256)
+    {
+        IERC20(asset()).safeTransferFrom(caller, address(this), assets);
         StrategyStateChache memory cache = getStrategyStateCache();
-        DepositLogic.DepositParams memory params = DepositLogic.DepositParams({
-            asset: asset(),
+        DepositorLogic.DepositParams memory params = DepositorLogic.DepositParams({
             caller: msg.sender,
             receiver: receiver,
             assets: assets,
             shares: shares,
             cache: cache
         });
-        cache = DepositLogic.executeDeposit(msg.sender, receiver, assets, shares);
+        cache = DepositorLogic.executeDeposit(msg.sender, receiver, assets, shares);
         updateStrategyState(cache);
 
         return shares;
     }
 
-
     /**
      * @dev Withdraw/redeem common workflow.
      */
-    function _withdraw(
-        address caller,
-        address receiver,
-        address owner,
-        uint256 assets,
-        uint256 shares
-    ) internal virtual {
+    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
+        internal
+        virtual
+    {
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
         }
@@ -243,22 +270,67 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         // Conclusion: we need to do the transfer after the burn so that any reentrancy would happen after the
         // shares are burned and after the assets are transferred, which is a valid state.
         _burn(owner, shares);
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        StrategyStateChache memory cache = getStrategyStateCache();
-        DepositLogic.WithdrawParams memory params = DepositLogic.WithdrawParams({
-            asset: asset(),
-            caller: msg.sender,
-            receiver: receiver,
-            owner: owner,
-            assets: assets,
-            shares: shares,
-            targetLeverage: $.targetLeverage,
-            requestCounter: $.requestCounter[owner],
-            cache: cache
-        });
-        cache 
 
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        uint256 idle = idleAssets();
+
+        if (idle >= assets) {
+            // update pending states, prevent underflow
+            (, $.pendingUtilization) = $.pendingUtilization.trySub(assetsWithdrawnFromSpot);
+            (, $.pendingIncreaseCollateral) = $.pendingIncreaseCollateral.trySub(assets - assetsWithdrawnFromSpot);
+
+            IERC20(asset()).safeTransfer(receiver, assets);
+        } else {
+            StrategyStateChache memory cache = getStrategyStateCache();
+            bytes32 withdrawId;
+            WithdrawState memory withdrawState;
+            uint256 requestedAmount;
+            DepositorLogic.WithdrawParams memory params = DepositorLogic.WithdrawParams({
+                asset: asset(),
+                product: product(),
+                caller: msg.sender,
+                receiver: receiver,
+                owner: owner,
+                callbackTarget: address(0),
+                oralce: $.oracle,
+                assets: assets,
+                shares: shares,
+                totalAssets: totalAssets(),
+                idleAssets: idle,
+                requestCounter: $.requestCounter[owner],
+                targetLeverage: $.targetLeverage,
+                cache: cache,
+                callbackData: ""
+            });
+            (withdrawId, requestedAmount, cache, withdrawState) = DepositorLogic.executeWithdraw(params);
+            updateStrategyState(cache);
+            $.withdrawRequests[withdrawId] = withdrawState;
+            $.activeWithdrawRequests.push(withdrawId);
+            $.requestCounter[owner]++;
+
+            emit WithdrawRequest(caller, receiver, owner, withdrawId, requestedAmount);
+        }
 
         emit Withdraw(caller, receiver, owner, assets, shares);
+    }
+
+    function claim(bytes32 requestId) external virtual returns (uint256 executedAmount) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        WithdrawState memory withdrawState = $.withdrawRequests[requestId];
+        StrategyStateChache memory cache = getStrategyStateCache();
+        DepositorLogic.ClaimParams memory params =
+            DepositorLogic.ClaimParams({caller: msg.sender, withdrawState: withdrawState, cache: cache});
+        (executedAmount, cache, state) = DepositorLogic.executeClaim(params);
+
+        updateStrategyState(cache);
+        updateWithdrawState(requestId, state);
+
+        IERC20(asset()).safeTransfer(msg.sender, totalExecuted);
+
+        emit Claim(msg.sender, requestId, totalExecuted);
+    }
+
+    function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
+        return DepositorLogic.getWithdrawId(owner, counter);
     }
 }
