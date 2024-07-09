@@ -53,6 +53,7 @@ contract ManagedBasisStrategyTest is Test {
     uint256 constant targetLeverage = 3 ether; // 3x
 
     address constant usdcWhale = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
+    address constant wethWhale = 0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8;
     uint256 public depositAmount = 10_000 * 1e6;
 
     // inch swap data variables
@@ -840,5 +841,274 @@ contract ManagedBasisStrategyTest is Test {
 
         _reportState(request, response);
         _logStateTransitions("STATE AFTER REPORT INCREASE SIZE");
+
+        vm.startPrank(user1);
+        uint256 sharesToRedeem = IERC20(address(strategy)).balanceOf(user1) / 2;
+        strategy.redeem(sharesToRedeem, user1, user1);
+
+        vm.startPrank(user2);
+        sharesToRedeem = IERC20(address(strategy)).balanceOf(user2) / 2;
+        strategy.redeem(sharesToRedeem, user2, user2);
+
+        _logStateTransitions("STATE AFTER REDEEMS");
+
+        vm.startPrank(operator);
+        uint256 pendingDeutilization = strategy.pendingDeutilization() / 2;
+
+        data = _generateInchCallData(product, asset, pendingDeutilization);
+        strategy.deutilize(pendingDeutilization, ManagedBasisStrategy.SwapType.INCH_V6, data);
+
+        _logStateTransitions("STATE AFTER REPORT DEUTILIZE 1");
+
+        vm.startPrank(agent);
+        request = _logRequest();
+        response = _executeRequest(request);
+
+        _logStateTransitions("STATE AFTER EXECUTE DECREASE SIZE 1");
+
+        _reportState(request, response);
+        _logStateTransitions("STATE AFTER REPORT DECREASE SIZE 1");
+
+        bytes32 withdrawId1 = strategy.getWithdrawId(user1, 0);
+        bytes32 withdrawId2 = strategy.getWithdrawId(user2, 0);
+
+        _logWithdrawState(withdrawId1);
+        _logWithdrawState(withdrawId2);
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        UpkeepParams memory upkeepParams = _logUpkeep(upkeepNeeded, performData);
+        assertEq(upkeepParams.closedRequests, true, "active requests should be true");
+
+        strategy.performUpkeep("");
+
+        _logStateTransitions("STATE AFTER UPKEEP 1");
+
+        vm.startPrank(agent);
+        request = _logRequest();
+        response = _executeRequest(request);
+
+        _logStateTransitions("STATE AFTER EXECUTE DECREASE COLLATERAL 1");
+
+        _reportState(request, response);
+        _logStateTransitions("STATE AFTER REPORT DECREASE COLLATERAL 1");
+
+        ManagedBasisStrategy.WithdrawState memory withdrawState1 = _logWithdrawState(withdrawId1);
+        _logWithdrawState(withdrawId2);
+
+        vm.startPrank(user1);
+        uint256 user1BalBefore = IERC20(asset).balanceOf(user1);
+        strategy.claim(withdrawId1);
+        uint256 user1BalDelta = IERC20(asset).balanceOf(user1) - user1BalBefore;
+
+        assertEq(
+            user1BalDelta, withdrawState1.requestedAmount - withdrawState1.executionCost, "user1 should receive funds"
+        );
+
+        _logStateTransitions("STATE AFTER CLAIM 1");
+
+        vm.startPrank(operator);
+        pendingDeutilization = strategy.pendingDeutilization();
+        data = _generateInchCallData(product, asset, pendingDeutilization);
+        strategy.deutilize(pendingDeutilization, ManagedBasisStrategy.SwapType.INCH_V6, data);
+
+        _logStateTransitions("STATE AFTER DEUTILIZE 2");
+
+        request = _logRequest();
+        response = _executeRequest(request);
+
+        _logStateTransitions("STATE AFTER EXECUTE DECREASE SIZE 2");
+
+        _reportState(request, response);
+        _logStateTransitions("STATE AFTER REPORT DECREASE SIZE 2");
+
+        _logWithdrawState(withdrawId2);
+
+        (upkeepNeeded, performData) = strategy.checkUpkeep("");
+        upkeepParams = _logUpkeep(upkeepNeeded, performData);
+        assertEq(upkeepParams.closedRequests, true, "active requests should be true");
+
+        strategy.performUpkeep("");
+
+        _logStateTransitions("STATE AFTER UPKEEP 2");
+
+        vm.startPrank(agent);
+        request = _logRequest();
+        response = _executeRequest(request);
+
+        _logStateTransitions("STATE AFTER EXECUTE DECREASE COLLATERAL 2");
+
+        _reportState(request, response);
+        _logStateTransitions("STATE AFTER REPORT DECREASE COLLATERAL 2");
+
+        ManagedBasisStrategy.WithdrawState memory withdrawState2 = _logWithdrawState(withdrawId2);
+
+        vm.startPrank(user2);
+        uint256 user2BalBefore = IERC20(asset).balanceOf(user2);
+        strategy.claim(withdrawId2);
+        uint256 user2BalDelta = IERC20(asset).balanceOf(user2) - user2BalBefore;
+
+        assertEq(
+            user2BalDelta, withdrawState2.requestedAmount - withdrawState2.executionCost, "user2 should receive funds"
+        );
+
+        _logStateTransitions("STATE AFTER CLAIM 2");
+    }
+
+    function test_hedgeDeviationBelowThreshold() public {
+        vm.startPrank(user1);
+        IERC20(asset).approve(address(strategy), depositAmount);
+        strategy.deposit(depositAmount, user1);
+
+        uint256 utilizationAmount = strategy.pendingUtilization();
+        bytes memory data = _generateInchCallData(asset, product, utilizationAmount);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, 0);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionSize(0, 0);
+
+        vm.startPrank(operator);
+        strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+
+        vm.startPrank(agent);
+        positionManager.transferToAgent();
+
+        OffChainPositionManager.RequestInfo memory request = _logRequest();
+        // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
+        // uint256 collateralDelta = IERC20(asset).balanceOf(agent);
+
+        OffChainPositionManager.RequestInfo memory response = _executeRequest(request);
+        _reportState(request, response);
+
+        _logStateTransitions("STATE BEFORE HEDGE DEVIATION");
+
+        vm.startPrank(wethWhale);
+        uint256 productTransfer = IERC20(product).balanceOf(address(strategy)) / 105;
+        IERC20(product).transfer(address(strategy), productTransfer);
+
+        _logStateTransitions("STATE AFTER HEDGE DEVIATION");
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        UpkeepParams memory upkeepParams = _logUpkeep(upkeepNeeded, performData);
+
+        assertEq(upkeepParams.hedgeDeviation, false, "hedge deviation should be false");
+    }
+
+    function test_hedgeDeviationAboveThresholdUp() public {
+        vm.startPrank(user1);
+        IERC20(asset).approve(address(strategy), depositAmount);
+        strategy.deposit(depositAmount, user1);
+
+        uint256 utilizationAmount = strategy.pendingUtilization();
+        bytes memory data = _generateInchCallData(asset, product, utilizationAmount);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, 0);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionSize(0, 0);
+
+        vm.startPrank(operator);
+        strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+
+        vm.startPrank(agent);
+        positionManager.transferToAgent();
+
+        OffChainPositionManager.RequestInfo memory request = _logRequest();
+        // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
+        // uint256 collateralDelta = IERC20(asset).balanceOf(agent);
+
+        OffChainPositionManager.RequestInfo memory response = _executeRequest(request);
+        _reportState(request, response);
+
+        _logStateTransitions("STATE BEFORE HEDGE DEVIATION");
+
+        vm.startPrank(wethWhale);
+        uint256 productTransfer = IERC20(product).balanceOf(address(strategy)) / 98;
+        IERC20(product).transfer(address(strategy), productTransfer);
+
+        _logStateTransitions("STATE AFTER HEDGE DEVIATION");
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        UpkeepParams memory upkeepParams = _logUpkeep(upkeepNeeded, performData);
+
+        assertEq(upkeepParams.hedgeDeviation, true, "hedge deviation should be true");
+
+        strategy.performUpkeep("");
+
+        _logStateTransitions("STATE AFTER PERFORM KEEP");
+
+        vm.startPrank(agent);
+        request = _logRequest();
+        response = _executeRequest(request);
+
+        _logStateTransitions("STATE AFTER EXECUTE KEEP");
+
+        _reportState(request, response);
+        _logStateTransitions("STATE AFTER REPORT KEEP");
+
+        (upkeepNeeded, performData) = strategy.checkUpkeep("");
+        _logUpkeep(upkeepNeeded, performData);
+        assertEq(upkeepNeeded, false, "upkeep should not be needed");
+    }
+
+    function test_hedgeDeviationAboveThresholdDown() public {
+        vm.startPrank(user1);
+        IERC20(asset).approve(address(strategy), depositAmount);
+        strategy.deposit(depositAmount, user1);
+
+        uint256 utilizationAmount = strategy.pendingUtilization();
+        bytes memory data = _generateInchCallData(asset, product, utilizationAmount);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionCollateral(0, 0);
+
+        vm.expectEmit(false, false, false, false, address(positionManager));
+        emit OffChainPositionManager.RequestIncreasePositionSize(0, 0);
+
+        vm.startPrank(operator);
+        strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
+
+        vm.startPrank(agent);
+        positionManager.transferToAgent();
+
+        OffChainPositionManager.RequestInfo memory request = _logRequest();
+        // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
+        // uint256 collateralDelta = IERC20(asset).balanceOf(agent);
+
+        OffChainPositionManager.RequestInfo memory response = _executeRequest(request);
+        _reportState(request, response);
+
+        _logStateTransitions("STATE BEFORE HEDGE DEVIATION");
+
+        vm.startPrank(address(strategy));
+        uint256 productTransfer = IERC20(product).balanceOf(address(strategy)) / 98;
+        IERC20(product).transfer(address(wethWhale), productTransfer);
+
+        _logStateTransitions("STATE AFTER HEDGE DEVIATION");
+
+        vm.startPrank(address(operator));
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        UpkeepParams memory upkeepParams = _logUpkeep(upkeepNeeded, performData);
+
+        assertEq(upkeepParams.hedgeDeviation, true, "hedge deviation should be true");
+
+        strategy.performUpkeep("");
+
+        _logStateTransitions("STATE AFTER PERFORM KEEP");
+
+        vm.startPrank(agent);
+        request = _logRequest();
+        response = _executeRequest(request);
+
+        _logStateTransitions("STATE AFTER EXECUTE KEEP");
+
+        _reportState(request, response);
+        _logStateTransitions("STATE AFTER REPORT KEEP");
+
+        (upkeepNeeded, performData) = strategy.checkUpkeep("");
+        assertEq(upkeepNeeded, false, "upkeep should not be needed");
     }
 }
