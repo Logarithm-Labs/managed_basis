@@ -14,6 +14,9 @@ library Keys {
     bytes32 public constant INCREASE_ORDER_GAS_LIMIT = keccak256(abi.encode("INCREASE_ORDER_GAS_LIMIT"));
     // @dev key for the estimated gas limit for decrease orders
     bytes32 public constant DECREASE_ORDER_GAS_LIMIT = keccak256(abi.encode("DECREASE_ORDER_GAS_LIMIT"));
+    // @dev key for the max position impact factor for liquidations
+    bytes32 public constant MAX_POSITION_IMPACT_FACTOR_FOR_LIQUIDATIONS =
+        keccak256(abi.encode("MAX_POSITION_IMPACT_FACTOR_FOR_LIQUIDATIONS"));
     // @dev key for the position fee factor
     bytes32 internal constant POSITION_FEE_FACTOR = keccak256(abi.encode("POSITION_FEE_FACTOR"));
 
@@ -27,6 +30,13 @@ library Keys {
 
     // @dev key for claimable funding amount
     bytes32 public constant CLAIMABLE_FUNDING_AMOUNT = keccak256(abi.encode("CLAIMABLE_FUNDING_AMOUNT"));
+
+    // @dev key for the max position impact factor for liquidations
+    // @param market the market address to check
+    // @return key for the max position impact factor
+    function maxPositionImpactFactorForLiquidationsKey(address market) internal pure returns (bytes32) {
+        return keccak256(abi.encode(MAX_POSITION_IMPACT_FACTOR_FOR_LIQUIDATIONS, market));
+    }
 
     // @dev key for position fee factor
     // @param market the market address to check

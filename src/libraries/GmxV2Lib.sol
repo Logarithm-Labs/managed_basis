@@ -275,9 +275,33 @@ library GmxV2Lib {
             + positionInfo.fees.funding.claimableShortTokenAmount * prices.shortTokenPrice.min;
         uint256 claimableTokenAmount = claimableUsd / collateralTokenPrice;
 
+        int256 priceImpactUsd = positionInfo.executionPriceResult.priceImpactUsd;
+
+        // even if there is a large positive price impact, positions that would be liquidated
+        // if the positive price impact is reduced should not be allowed to be created
+        // as they would be easily liquidated if the price impact changes
+        // cap the priceImpactUsd to zero to prevent these positions from being created
+        if (priceImpactUsd >= 0) {
+            priceImpactUsd = 0;
+        } else {
+            uint256 maxPriceImpactFactor =
+                MarketUtils.getMaxPositionImpactFactorForLiquidations(params.dataStore, params.market.marketToken);
+
+            // if there is a large build up of open interest and a sudden large price movement
+            // it may result in a large imbalance between longs and shorts
+            // this could result in very large price impact temporarily
+            // cap the max negative price impact to prevent cascading liquidations
+            int256 maxNegativePriceImpactUsd =
+                -Precision.applyFactor(positionInfo.position.numbers.sizeInUsd, maxPriceImpactFactor).toInt256();
+            if (priceImpactUsd < maxNegativePriceImpactUsd) {
+                priceImpactUsd = maxNegativePriceImpactUsd;
+            }
+        }
+
         int256 remainingCollateral = positionInfo.position.numbers.collateralAmount.toInt256()
-            + positionInfo.pnlAfterPriceImpactUsd / collateralTokenPrice.toInt256()
+            + (positionInfo.basePnlUsd + priceImpactUsd) / collateralTokenPrice.toInt256()
             - positionInfo.fees.totalCostAmount.toInt256();
+
         return (remainingCollateral > 0 ? remainingCollateral.toUint256() : 0, claimableTokenAmount);
     }
 
