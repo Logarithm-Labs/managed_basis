@@ -204,16 +204,11 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                         DEPOSIT / WITHDRAW LOGIC   
     //////////////////////////////////////////////////////////////*/
 
-    function deposit(uint256 assets, address receiver) public virtual returns (uint256) {
-        uint256 maxAssets = maxDeposit(receiver);
-        if (assets > maxAssets) {
-            revert Errors.ExceededMaxDeposit(receiver, assets, maxAssets);
-        }
-
-        uint256 shares = previewDeposit(assets);
-
+    /// @dev See {IERC4626-deposit}.
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual returns (uint256) {
         StrategyStateChache memory cache = getStrategyStateCache();
         DepositLogic.DepositParams memory params = DepositLogic.DepositParams({
+            asset: asset(),
             caller: msg.sender,
             receiver: receiver,
             assets: assets,
@@ -226,9 +221,44 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         return shares;
     }
 
-    function mint(uint256 share, address receiver) public virtual returns (uint256) {
-        
-    }
 
-    function with
+    /**
+     * @dev Withdraw/redeem common workflow.
+     */
+    function _withdraw(
+        address caller,
+        address receiver,
+        address owner,
+        uint256 assets,
+        uint256 shares
+    ) internal virtual {
+        if (caller != owner) {
+            _spendAllowance(owner, caller, shares);
+        }
+
+        // If _asset is ERC777, `transfer` can trigger a reentrancy AFTER the transfer happens through the
+        // `tokensReceived` hook. On the other hand, the `tokensToSend` hook, that is triggered before the transfer,
+        // calls the vault, which is assumed not malicious.
+        //
+        // Conclusion: we need to do the transfer after the burn so that any reentrancy would happen after the
+        // shares are burned and after the assets are transferred, which is a valid state.
+        _burn(owner, shares);
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        StrategyStateChache memory cache = getStrategyStateCache();
+        DepositLogic.WithdrawParams memory params = DepositLogic.WithdrawParams({
+            asset: asset(),
+            caller: msg.sender,
+            receiver: receiver,
+            owner: owner,
+            assets: assets,
+            shares: shares,
+            targetLeverage: $.targetLeverage,
+            requestCounter: $.requestCounter[owner],
+            cache: cache
+        });
+        cache 
+
+
+        emit Withdraw(caller, receiver, owner, assets, shares);
+    }
 }

@@ -84,4 +84,10 @@ library Errors {
     error InvalidStrategyStatus(uint8 status);
 
     error ExceededMaxDeposit(address receiver, uint256 assets, uint256 maxAssets);
+
+    error ExceededMaxMint(address receiver, uint256 shares, uint256 maxShares);
+
+    error ExceededMaxWithdraw(address owner, address assets, address maxAssets);
+
+    error ExceededMaxRedeem(address owner, address shares, address maxShares);
 }

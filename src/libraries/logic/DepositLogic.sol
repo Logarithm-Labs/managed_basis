@@ -3,8 +3,11 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {CompactBasisStrategy} from "src/CompactBasisStrategy.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 library DepositLogic {
+    using Math for uint256;
+
     struct DepositParams {
         address asset;
         address caller;
@@ -20,6 +23,8 @@ library DepositLogic {
         address receiver;
         address owner;
         uint256 assets;
+        uint256 targetLeverage;
+        uint256 requestCounter;
         StrategyStateChache cache;
     }
 
@@ -46,5 +51,15 @@ library DepositLogic {
 
     function executeWithdraw(WithdrawParams memory params) external returns (StrategyStateChache memory cache) {
         cache = params.cache;
+        (, uint256 idle) =
+            IERC20(params.asset).balanceOf(address(this)).trySub(chache.assetsToClaim + cache.assetsToWithdraw);
+        if (idle >= assets) {
+            uint256 assetsWithdrawnFromSpot =
+                params.assets.mulDiv(params.targetLeverage, PRECISION + params.targetLeverage);
+            (, cache.pendingUtilization) = cache.pendingUtilization.trySub(assetsWithdrawnFromSpot);
+            (, cache.pendingIncreaseCollateral) =
+                cache.pendingIncreaseCollateral.trySub(params.assets - assetsWithdrawnFromSpot);
+            IERC20(params.asset).safeTransfer(params.receiver, params.assets);
+        } else {}
     }
 }
