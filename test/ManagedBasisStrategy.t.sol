@@ -481,7 +481,7 @@ contract ManagedBasisStrategyTest is Test {
         _logStateTransitions("AFTER UTILIZE");
 
         vm.startPrank(agent);
-        positionManager.transferToAgent();
+        // positionManager.transferToAgent();
         _logStateTransitions("AFTER TRANSFER TO AGENT");
 
         OffChainPositionManager.RequestInfo memory request = _logRequest();
@@ -513,7 +513,7 @@ contract ManagedBasisStrategyTest is Test {
         _logStateTransitions("AFTER UTILIZE 1");
 
         vm.startPrank(agent);
-        positionManager.transferToAgent();
+        // positionManager.transferToAgent();
         _logStateTransitions("AFTER TRANSFER TO AGENT 1");
 
         OffChainPositionManager.RequestInfo memory request = _logRequest();
@@ -541,7 +541,7 @@ contract ManagedBasisStrategyTest is Test {
         _logStateTransitions("AFTER UTILIZE 2");
 
         vm.startPrank(agent);
-        positionManager.transferToAgent();
+        // positionManager.transferToAgent();
         _logStateTransitions("AFTER TRANSFER TO AGENT 2");
 
         request = _logRequest();
@@ -570,7 +570,7 @@ contract ManagedBasisStrategyTest is Test {
 
         vm.startPrank(agent);
 
-        positionManager.transferToAgent();
+        // positionManager.transferToAgent();
         // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
         // uint256 collateralDelta = IERC20(asset).balanceOf(agent);
 
@@ -679,7 +679,7 @@ contract ManagedBasisStrategyTest is Test {
         strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
 
         vm.startPrank(agent);
-        positionManager.transferToAgent();
+        // positionManager.transferToAgent();
         // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
         // uint256 collateralDelta = IERC20(asset).balanceOf(agent);
 
@@ -765,7 +765,7 @@ contract ManagedBasisStrategyTest is Test {
         strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
 
         vm.startPrank(agent);
-        positionManager.transferToAgent();
+        // positionManager.transferToAgent();
 
         OffChainPositionManager.RequestInfo memory request = _logRequest();
         OffChainPositionManager.RequestInfo memory response = _executeRequest(request);
@@ -832,7 +832,7 @@ contract ManagedBasisStrategyTest is Test {
         _logStateTransitions("STATE AFTER UTILIZATION");
 
         vm.startPrank(agent);
-        positionManager.transferToAgent();
+        // positionManager.transferToAgent();
 
         OffChainPositionManager.RequestInfo memory request = _logRequest();
         OffChainPositionManager.RequestInfo memory response = _executeRequest(request);
@@ -972,7 +972,7 @@ contract ManagedBasisStrategyTest is Test {
         strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
 
         vm.startPrank(agent);
-        positionManager.transferToAgent();
+        // positionManager.transferToAgent();
 
         OffChainPositionManager.RequestInfo memory request = _logRequest();
         // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
@@ -1013,7 +1013,7 @@ contract ManagedBasisStrategyTest is Test {
         strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
 
         vm.startPrank(agent);
-        positionManager.transferToAgent();
+        // positionManager.transferToAgent();
 
         OffChainPositionManager.RequestInfo memory request = _logRequest();
         // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
@@ -1071,7 +1071,7 @@ contract ManagedBasisStrategyTest is Test {
         strategy.utilize(utilizationAmount, ManagedBasisStrategy.SwapType.INCH_V6, data);
 
         vm.startPrank(agent);
-        positionManager.transferToAgent();
+        // positionManager.transferToAgent();
 
         OffChainPositionManager.RequestInfo memory request = _logRequest();
         // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));

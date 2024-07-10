@@ -768,18 +768,14 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     function _processActiveWithdrawRequests(uint256 amountExecuted, uint256 executionCost) internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 activeWithdrawalsLength = $.activeWithdrawRequests.length;
-        if (activeWithdrawalsLength > 0) {
-            uint256 withdrawnFromSpot_ = $.withdrawnFromSpot;
-            uint256 withdrawnFromIdle_ = $.withdrawnFromIdle;
-            uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
+        if ($.activeWithdrawRequests.length > 0) {
             uint256 totalPendingWithdraw_ = $.totalPendingWithdraw;
-            uint256 withdrawingFromHedge_ = $.withdrawingFromHedge;
 
             if (amountExecuted + executionCost > totalPendingWithdraw_) {
                 // if we overshoot with amount executed, reduce amount executed and execution cost proportionally
-                uint256 executionDelta = amountExecuted + executionCost - totalPendingWithdraw_;
-                uint256 deltaShare = executionDelta.mulDiv(PRECISION, amountExecuted + executionCost);
+                uint256 deltaShare = (amountExecuted + executionCost - totalPendingWithdraw_).mulDiv(
+                    PRECISION, amountExecuted + executionCost
+                );
                 amountExecuted = amountExecuted.mulDiv(PRECISION - deltaShare, PRECISION);
                 executionCost = executionCost.mulDiv(PRECISION - deltaShare, PRECISION);
 
@@ -787,37 +783,51 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 executionCost = totalPendingWithdraw_ - amountExecuted;
             }
 
+            uint256 withdrawnFromSpot_ = $.withdrawnFromSpot;
+            uint256 withdrawnFromIdle_ = $.withdrawnFromIdle;
+            uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
+            uint256 withdrawingFromHedge_ = $.withdrawingFromHedge;
             uint256 amountAvailable = withdrawnFromSpot_ + withdrawnFromIdle_ + amountExecuted + executionCost;
-
             uint256 index;
+
             while (amountAvailable > 0 && index < $.activeWithdrawRequests.length) {
                 bytes32 requestId0 = $.activeWithdrawRequests[index];
                 WithdrawState memory request0 = $.withdrawRequests[requestId0];
-                uint256 executedAmount = request0.executedFromSpot + request0.executedFromIdle
-                    + request0.executedFromHedge + request0.executionCost;
-                uint256 remainingAmount = request0.requestedAmount - executedAmount;
+                uint256 remainingAmount = request0.requestedAmount
+                    - (
+                        request0.executedFromSpot + request0.executedFromIdle + request0.executedFromHedge
+                            + request0.executionCost
+                    );
                 if (amountAvailable >= remainingAmount) {
                     // remaining amount is enough fully cover current request
 
+                    // withdrawnFromIdle should first be allocated to the first request in the queue
+                    {
+                        // prevent stack too deep
+                        uint256 allocationOfIdle =
+                            withdrawnFromIdle_ > remainingAmount ? remainingAmount : withdrawnFromIdle_;
+                        remainingAmount -= allocationOfIdle;
+                        amountAvailable -= allocationOfIdle;
+                        withdrawnFromIdle_ -= allocationOfIdle;
+                        request0.executedFromIdle += allocationOfIdle;
+                    }
+
                     // allocation of withdrawn assets rounded to floor
                     uint256 allocationOfSpot = withdrawnFromSpot_.mulDiv(remainingAmount, amountAvailable);
-                    uint256 allocationOfIdle = withdrawnFromIdle_.mulDiv(remainingAmount, amountAvailable);
                     uint256 allocationOfHedge = amountExecuted.mulDiv(remainingAmount, amountAvailable);
                     uint256 allocationOfCost = executionCost.mulDiv(remainingAmount, amountAvailable);
+                    uint256 allocatedAmount = allocationOfSpot + allocationOfHedge + allocationOfCost;
                     // dust goes to costs
-                    uint256 dust =
-                        remainingAmount - (allocationOfSpot + allocationOfIdle + allocationOfHedge + allocationOfCost);
+                    uint256 dust = remainingAmount - (allocatedAmount);
 
                     request0.executedFromSpot += allocationOfSpot;
-                    request0.executedFromIdle += allocationOfIdle;
                     request0.executedFromHedge += allocationOfHedge;
                     request0.executionCost += (allocationOfCost + dust);
 
-                    amountAvailable -= (remainingAmount - dust);
+                    amountAvailable -= (allocatedAmount - dust);
                     pendingDecreaseCollateral_ += request0.executedFromHedge;
 
                     withdrawnFromSpot_ -= allocationOfSpot;
-                    withdrawnFromIdle_ -= allocationOfIdle;
                     amountExecuted -= allocationOfHedge;
                     executionCost -= allocationOfCost;
 
@@ -879,7 +889,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             } else {
                 $.totalPendingWithdraw = 0;
                 $.pendingDeutilization = 0;
-                $.assetsToWithdraw = 0;
                 emit UpdatePendingDeutilization(0);
             }
         }
@@ -892,11 +901,14 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             uint256 index;
             uint256 processedAssetAmount;
             while (totalAvailableAmount > 0 && index < requestsLength) {
+                console.log("BREAK");
                 // process closed requests one by one
                 bytes32 withdrawId = $.closedWithdrawRequests[index];
                 WithdrawState storage request0 = $.withdrawRequests[withdrawId];
 
                 uint256 executionAmount = request0.requestedAmount - request0.executionCost;
+                console.log("executionAmount", executionAmount);
+                console.log("totalAvailableAmount", totalAvailableAmount);
                 if (executionAmount <= totalAvailableAmount) {
                     // if there is enough processed asset to cover requested amount minus execution cost,  mark as executed
                     if (executionCost > 0) {

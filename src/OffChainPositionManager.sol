@@ -152,6 +152,7 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
 
         if (isIncrease) {
             if (collateralDeltaAmount > 0) {
+                _transferToAgent(collateralDeltaAmount);
                 emit RequestIncreasePositionCollateral(collateralDeltaAmount, round);
             }
             if (sizeDeltaInTokens > 0) {
@@ -206,23 +207,6 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
                             AGENT LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function transferToAgent() external onlyAgent {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-
-        if (msg.sender != $.agent) {
-            revert Errors.CallerNotAgent();
-        }
-
-        RequestInfo memory request = $.requests[$.currentRound];
-        if (!request.isIncrease || request.collateralDeltaAmount == 0) {
-            revert Errors.InvalidActiveRequestType();
-        }
-
-        $.pendingCollateralIncrease += request.collateralDeltaAmount;
-
-        _transferToAgent(request.collateralDeltaAmount);
-    }
-
     // TODO: remove function after testing
     function forcedTransferToAgent(uint256 amount) external onlyAgent {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
@@ -236,7 +220,8 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
 
     function _transferToAgent(uint256 amount) internal {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        IERC20($.collateralToken).transfer(msg.sender, amount);
+        $.pendingCollateralIncrease += amount;
+        IERC20($.collateralToken).transfer($.agent, amount);
 
         emit AgentTransfer(msg.sender, amount, true);
     }
