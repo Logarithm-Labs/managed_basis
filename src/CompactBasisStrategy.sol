@@ -64,6 +64,14 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 spotExecutionPrice;
     }
 
+    struct StrategyAddresses {
+        address asset;
+        address product;
+        address oracle;
+        address operator;
+        address positionManager;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -184,6 +192,15 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                         STATE TRANSITIONS   
     //////////////////////////////////////////////////////////////*/
 
+    function getStrategyAddresses() public view returns (StrategyAddresses memory addresses) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        addresses.asset = asset();
+        addresses.product = product();
+        addresses.oracle = $.oracle;
+        addresses.operator = $.operator;
+        addresses.positionManager = $.positionManager;
+    }
+
     function getStrategyStateCache() public view returns (StrategyStateChache memory cache) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         cache.assetsToClaim = $.assetsToClaim;
@@ -248,6 +265,9 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         });
         cache = DepositorLogic.executeDeposit(msg.sender, receiver, assets, shares);
         updateStrategyState(cache);
+
+        _mint(receiver, shares);
+        emit Deposit(caller, receiver, assets, shares);
 
         return shares;
     }
@@ -330,5 +350,26 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
         return DepositorLogic.getWithdrawId(owner, counter);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            ACCOUNTING LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    function totalAssets() public view virtual returns (uint256) {
+        StrategyAddresses memory addresses = getStrategyAddresses();
+        StrategyStateChache memory cache = getStrategyStateCache();
+        return AccountingLogic.getTotalAssets(addresses, cache);
+    }
+
+    function utilizedAssets() public view virtual returns (uint256) {
+        StrategyAddresses memory addresses = getStrategyAddresses();
+        StrategyStateChache memory cache = getStrategyStateCache();
+        return AccountingLogic.getUtilizedAssets(addresses, cache);
+    }
+
+    function idleAssets() public view virtual returns (uint256) {
+        StrategyStateChache memory cache = getStrategyStateCache();
+        return AccountingLogic.getIdleAssets(asset(), cache);
     }
 }
