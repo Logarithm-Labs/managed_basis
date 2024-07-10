@@ -111,7 +111,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     function initialize(
         address _asset,
-        address _product,
+        // address _product,
         address _oracle,
         address _operator,
         uint256 _targetLeverage,
@@ -119,7 +119,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 _exitCost
     ) external initializer {
         __ERC4626_init(IERC20(_asset));
-        __LogBaseVault_init(IERC20(_product));
+        // __LogBaseVault_init(IERC20(_product));
         __Ownable_init(msg.sender);
         __ManagedBasisStrategy_init(_oracle, _operator, _targetLeverage, _entryCost, _exitCost);
     }
