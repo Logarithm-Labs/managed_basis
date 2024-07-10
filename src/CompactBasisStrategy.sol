@@ -231,7 +231,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                         DEPOSIT / WITHDRAW LOGIC   
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev See {IERC4626-deposit}.
+    /// @dev Deposit/mint common workflow.
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares)
         internal
         virtual
@@ -252,9 +252,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         return shares;
     }
 
-    /**
-     * @dev Withdraw/redeem common workflow.
-     */
+    /// @dev Withdraw/redeem common workflow.
     function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
         internal
         virtual
