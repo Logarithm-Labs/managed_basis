@@ -244,7 +244,18 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
                 GmxV2Lib.DecreasePositionResult memory decreaseResult =
                     GmxV2Lib.getDecreasePositionResult(gmxParams, _oracle, sizeDeltaInTokens, collateralDeltaAmount);
                 if (sizeDeltaInTokens > 0) {
-                    _getGmxV2PositionManagerStorage().hedgeExecutionPrice = decreaseResult.executionPrice;
+                    // decimal of gmx executionPrice = 30 - decimal of indexToken
+                    // decimal of hedgeExecutionPrice should be the same as collateral token
+                    // as a result, hedgeExecutionPrice = executionPrice * 10^(decimal of collateral + decimal of index - 30)
+                    // = executionPrice * 10^(decimal of collateral + decimal of index) / 10^30
+                    _getGmxV2PositionManagerStorage().hedgeExecutionPrice = decreaseResult.executionPrice.mulDiv(
+                        10
+                            ** (
+                                IERC20Metadata(_collateralToken).decimals()
+                                    + 10 ** (IERC20Metadata(indexToken()).decimals())
+                            ),
+                        1e30
+                    );
                     _getGmxV2PositionManagerStorage().sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
                     _getGmxV2PositionManagerStorage().pendingPositionFeeUsd = decreaseResult.positionFeeUsd;
                 }
