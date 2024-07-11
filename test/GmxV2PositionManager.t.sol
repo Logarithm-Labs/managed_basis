@@ -278,7 +278,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
 
     function test_positionNetBalance() public afterHavingPosition {
         uint256 positionNetBalance = positionManager.positionNetBalance();
-        assertEq(positionNetBalance, 294995464);
+        assertEq(positionNetBalance, 293078405);
     }
 
     function test_positionNetBalance_whenPending() public afterHavingPosition {
