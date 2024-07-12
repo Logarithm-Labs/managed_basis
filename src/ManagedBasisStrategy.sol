@@ -92,7 +92,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     }
     // mapping(bytes32 => RequestParams) positionRequests;
 
-    uint256 public constant FLOAT_PRECISION = 1e18;
+    uint256 public constant PRECISION = 1e18;
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedBasisStrategyStorage")) - 1)) & ~bytes32(uint256(0xff))
@@ -258,7 +258,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             $.totalPendingWithdraw -= assets;
         } else {
             uint256 assetsToDeposit = assets - totalPendingWithdraw_;
-            uint256 assetsToHedge = assetsToDeposit.mulDiv(FLOAT_PRECISION, FLOAT_PRECISION + $.targetLeverage);
+            uint256 assetsToHedge = assetsToDeposit.mulDiv(PRECISION, PRECISION + $.targetLeverage);
             uint256 assetsToSpot = assetsToDeposit - assetsToHedge;
             if (totalPendingWithdraw_ > 0) {
                 // if there are some pending withdrawals which are less then deposited assets we reallocate assets
@@ -302,7 +302,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         uint256 idle = idleAssets();
         if (idle >= assets) {
-            uint256 assetsWithdrawnFromSpot = assets.mulDiv($.targetLeverage, FLOAT_PRECISION + $.targetLeverage);
+            uint256 assetsWithdrawnFromSpot = assets.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
             uint256 assetsWithdrawnFromHedge = assets - assetsWithdrawnFromSpot;
 
             // update pending states, prevent underflow
@@ -342,7 +342,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
             uint256 totalPendingWithdraw_ = $.totalPendingWithdraw + (requestedAmount - idle);
             uint256 pendingDeutilizationInAsset_ =
-                totalPendingWithdraw_.mulDiv($.targetLeverage, FLOAT_PRECISION + $.targetLeverage);
+                totalPendingWithdraw_.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
             uint256 pendingDeutilization_ =
                 $.oracle.convertTokenAmount(asset(), product(), pendingDeutilizationInAsset_);
             uint256 productBalance = IERC20(product()).balanceOf(address(this));
@@ -388,10 +388,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         emit Claim(msg.sender, requestId, totalExecuted);
     }
 
-    function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
-        return keccak256(abi.encodePacked(address(this), owner, counter));
-    }
-
     /*//////////////////////////////////////////////////////////////
                             ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
@@ -416,13 +412,22 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         (, assets) = assetBalance.trySub($.assetsToClaim + $.assetsToWithdraw);
     }
 
+    // function withdrawingAssets() public view virtual returns (uint256 assets) {
+    //     ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+    //     (, assets) = $.totalPendingWithdraw.trySub($.withdrawingFromHedge);
+    // }
+
+    function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
+        return keccak256(abi.encodePacked(address(this), owner, counter));
+    }
+
     function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         if (totalSupply() == 0) {
             return assets;
         }
         uint256 baseShares = convertToShares(assets);
-        return baseShares.mulDiv(FLOAT_PRECISION - $.entryCost, FLOAT_PRECISION);
+        return baseShares.mulDiv(PRECISION - $.entryCost, PRECISION);
     }
 
     function previewMint(uint256 shares) public view virtual override returns (uint256) {
@@ -431,14 +436,19 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             return shares;
         }
         uint256 baseAssets = convertToAssets(shares);
-        return baseAssets.mulDiv(FLOAT_PRECISION, FLOAT_PRECISION - $.entryCost);
+        return baseAssets.mulDiv(PRECISION, PRECISION - $.entryCost);
     }
 
     /*//////////////////////////////////////////////////////////////
                         OPERATOR LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function utilize(uint256 amount, SwapType swapType, bytes calldata data) public virtual onlyOperator {
+    function utilize(uint256 amount, SwapType swapType, bytes calldata data)
+        public
+        virtual
+        onlyOperator
+        returns (bytes32 requestId)
+    {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
         // can only utilize when the strategy status is IDLE
@@ -453,6 +463,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (pendingUtilization_ == 0) {
             revert Errors.ZeroPendingUtilization();
         }
+
         // actual utilize amount is min of amount, idle assets and pending utilization
         uint256 idle = idleAssets();
         amount = amount > idle ? idle : amount;
@@ -471,6 +482,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 emit SwapFailed();
                 $.strategyStatus = StrategyStatus.IDLE;
                 emit UpdateStrategyStatus(StrategyStatus.IDLE);
+                return bytes32(0);
             }
         } else {
             // TODO: fallback swap
@@ -528,6 +540,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 emit SwapFailed();
                 $.strategyStatus = StrategyStatus.IDLE;
                 emit UpdateStrategyStatus(StrategyStatus.IDLE);
+                return bytes32(0);
             }
         } else {
             // TODO: fallback swap
@@ -741,12 +754,12 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 return (hedgeExposure, false);
             }
         }
-        uint256 hedgeDeviation = hedgeExposure.mulDiv(FLOAT_PRECISION, spotExposure);
-        if (hedgeDeviation > FLOAT_PRECISION + $.hedgeDeviationThreshold) {
+        uint256 hedgeDeviation = hedgeExposure.mulDiv(PRECISION, spotExposure);
+        if (hedgeDeviation > PRECISION + $.hedgeDeviationThreshold) {
             // strategy is overhedged, need to decrease position size
             isIncrease = false;
             hedgeDeviationInTokens = hedgeExposure - spotExposure;
-        } else if (hedgeDeviation < FLOAT_PRECISION - $.hedgeDeviationThreshold) {
+        } else if (hedgeDeviation < PRECISION - $.hedgeDeviationThreshold) {
             // strategy is underhedged, need to increase position size
             isIncrease = true;
             hedgeDeviationInTokens = spotExposure - hedgeExposure;
@@ -761,10 +774,10 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             if (amountExecuted + executionCost > totalPendingWithdraw_) {
                 // if we overshoot with amount executed, reduce amount executed and execution cost proportionally
                 uint256 deltaShare = (amountExecuted + executionCost - totalPendingWithdraw_).mulDiv(
-                    FLOAT_PRECISION, amountExecuted + executionCost
+                    PRECISION, amountExecuted + executionCost
                 );
-                amountExecuted = amountExecuted.mulDiv(FLOAT_PRECISION - deltaShare, FLOAT_PRECISION);
-                executionCost = executionCost.mulDiv(FLOAT_PRECISION - deltaShare, FLOAT_PRECISION);
+                amountExecuted = amountExecuted.mulDiv(PRECISION - deltaShare, PRECISION);
+                executionCost = executionCost.mulDiv(PRECISION - deltaShare, PRECISION);
 
                 // dust goes to costs
                 executionCost = totalPendingWithdraw_ - amountExecuted;
@@ -868,7 +881,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 $.totalPendingWithdraw = totalPendingWithdraw_;
 
                 uint256 pendingDeutilizationInAsset_ =
-                    totalPendingWithdraw_.mulDiv($.targetLeverage, FLOAT_PRECISION + $.targetLeverage);
+                    totalPendingWithdraw_.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
                 uint256 pendingDeutilization_ =
                     $.oracle.convertTokenAmount(asset(), product(), pendingDeutilizationInAsset_);
                 $.pendingDeutilization = pendingDeutilization_;
@@ -969,7 +982,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (status == StrategyStatus.WITHDRAWING) {
             uint256 indexPrecision = 10 ** uint256(IERC20Metadata(product()).decimals());
             uint256 sizeDeltaInAsset = params.executionPrice.mulDiv(params.sizeDeltaInTokens, indexPrecision);
-            uint256 amountExecuted = sizeDeltaInAsset.mulDiv(FLOAT_PRECISION, $.targetLeverage);
+            uint256 amountExecuted = sizeDeltaInAsset.mulDiv(PRECISION, $.targetLeverage);
 
             // calculate exit cost
             uint256 executionCost;
@@ -982,7 +995,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 executionCost_ += params.executionCost.toInt256();
                 executionCost = executionCost_ > int256(0) ? uint256(executionCost_) : uint256(0);
             } else {
-                executionCost = sizeDeltaInAsset.mulDiv($.exitCost, FLOAT_PRECISION);
+                executionCost = sizeDeltaInAsset.mulDiv($.exitCost, PRECISION);
             }
             _processActiveWithdrawRequests(amountExecuted, executionCost);
         } else if (status == StrategyStatus.REBALANCING_DOWN) {
