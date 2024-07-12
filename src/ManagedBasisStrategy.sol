@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {IOffChainPositionManager} from "src/interfaces/IOffChainPositionManager.sol";
+import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import "src/interfaces/IManagedBasisStrategy.sol";
 import {IManagedBasisCallbackReceiver} from "src/interfaces/IManagedBasisCallbackReceiver.sol";
 
@@ -18,7 +18,7 @@ import {InchAggregatorV6Logic} from "src/libraries/InchAggregatorV6Logic.sol";
 
 import {IOracle} from "src/interfaces/IOracle.sol";
 
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
 import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
 
@@ -116,10 +116,11 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         address _operator,
         uint256 _targetLeverage,
         uint256 _entryCost,
-        uint256 _exitCost
+        uint256 _exitCost,
+        string memory _name,
+        string memory _symbol
     ) external initializer {
-        __ERC4626_init(IERC20(_asset));
-        __LogBaseVault_init(IERC20(_product));
+        __LogBaseVault_init(IERC20(_asset), IERC20(_product), _name, _symbol);
         __Ownable_init(msg.sender);
         __ManagedBasisStrategy_init(_oracle, _operator, _targetLeverage, _entryCost, _exitCost);
     }
@@ -401,7 +402,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     function utilizedAssets() public view virtual returns (uint256 assets) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 productBalance = IERC20(product()).balanceOf(address(this));
-        uint256 positionNetBalance = IOffChainPositionManager($.positionManager).positionNetBalance();
+        uint256 positionNetBalance = IPositionManager($.positionManager).positionNetBalance();
         uint256 productValueInAsset = $.oracle.convertTokenAmount(product(), asset(), productBalance);
         assets = productValueInAsset + positionNetBalance;
     }
@@ -496,7 +497,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             IERC20(asset()).safeTransfer($.positionManager, collateralDeltaAmount);
             pendingIncreaseCollateral_ -= collateralDeltaAmount;
         }
-        IOffChainPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
+        IPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
         $.spotExecutionPrice = amount.mulDiv(10 ** IERC20Metadata(product()).decimals(), amountOut, Math.Rounding.Ceil);
         $.pendingIncreaseCollateral = pendingIncreaseCollateral_;
         $.pendingUtilization = pendingUtilization_ - amount;
@@ -556,7 +557,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             $.withdrawnFromSpot += amountOut;
         }
 
-        IOffChainPositionManager($.positionManager).adjustPosition(amount, 0, false);
+        IPositionManager($.positionManager).adjustPosition(amount, 0, false);
 
         emit Deutilize(msg.sender, amount, amountOut);
     }
@@ -714,16 +715,16 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
         if (hedgeDeviationInTokens > 0) {
             if (isIncrease) {
-                IOffChainPositionManager($.positionManager).adjustPosition(hedgeDeviationInTokens, 0, true);
+                IPositionManager($.positionManager).adjustPosition(hedgeDeviationInTokens, 0, true);
             } else {
-                IOffChainPositionManager($.positionManager).adjustPosition(
+                IPositionManager($.positionManager).adjustPosition(
                     hedgeDeviationInTokens, pendingDecreaseCollateral_, false
                 );
             }
             $.strategyStatus = StrategyStatus.KEEPING;
             emit UpdateStrategyStatus(StrategyStatus.KEEPING);
         } else if (pendingDecreaseCollateral_ > 0) {
-            IOffChainPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
+            IPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
             $.strategyStatus = StrategyStatus.KEEPING;
             emit UpdateStrategyStatus(StrategyStatus.KEEPING);
         } else {
@@ -746,7 +747,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     function _checkHedgeDeviation() internal view returns (uint256 hedgeDeviationInTokens, bool isIncrease) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 spotExposure = IERC20(product()).balanceOf(address(this));
-        uint256 hedgeExposure = IOffChainPositionManager($.positionManager).positionSizeInTokens();
+        uint256 hedgeExposure = IPositionManager($.positionManager).positionSizeInTokens();
         if (spotExposure == 0) {
             if (hedgeExposure == 0) {
                 return (0, false);
@@ -1077,9 +1078,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     //         // TODO: fallback swap
     //         revert Errors.UnsupportedSwapType();
     //     }
-    //     uint256 positionSizeInTokens = IOffChainPositionManager($.positionManager).positionSizeInTokens();
-    //     uint256 positionNetBalance = IOffChainPositionManager($.positionManager).positionNetBalance();
-    //     IOffChainPositionManager($.positionManager).adjustPosition(positionSizeInTokens, positionNetBalance, false);
+    //     uint256 positionSizeInTokens = IPositionManager($.positionManager).positionSizeInTokens();
+    //     uint256 positionNetBalance = IPositionManager($.positionManager).positionNetBalance();
+    //     IPositionManager($.positionManager).adjustPosition(positionSizeInTokens, positionNetBalance, false);
     // }
 
     // function wipeStrategy() external onlyOwner {

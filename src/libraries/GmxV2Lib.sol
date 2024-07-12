@@ -22,7 +22,7 @@ import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
 import {IOracle} from "src/interfaces/IOracle.sol";
-import {Errors} from "./Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 
 library GmxV2Lib {
     using Math for uint256;

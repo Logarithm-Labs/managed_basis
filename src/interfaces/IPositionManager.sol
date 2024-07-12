@@ -2,17 +2,19 @@
 pragma solidity ^0.8.0;
 
 interface IPositionManager {
-    function initialize(address strategy, address keeper) external;
-
-    function apiVersion() external view returns (string memory);
+    function initialize(
+        address strategy,
+        address agent,
+        address oracle,
+        address indexToken,
+        address collateralToken,
+        uint256 targetLeverage,
+        bool isLong
+    ) external;
 
     function positionNetBalance() external view returns (uint256);
 
-    function increasePositionCollateral(uint256 collateralAmount) external;
+    function positionSizeInTokens() external view returns (uint256);
 
-    function decreasePositionCollateral(uint256 collateralAmount) external;
-
-    function increasePositionSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice) external;
-
-    function decreasePositionSize(uint256 sizeDeltaInTokens, uint256 spotExecutionPrice) external;
+    function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease) external;
 }

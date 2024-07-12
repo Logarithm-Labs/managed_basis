@@ -10,6 +10,8 @@ import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC2
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
+import {Constants} from "src/libraries/utils/Constants.sol";
+
 abstract contract LogBaseVaultUpgradeable is Initializable, ERC4626Upgradeable {
     using Math for uint256;
 
@@ -41,5 +43,9 @@ abstract contract LogBaseVaultUpgradeable is Initializable, ERC4626Upgradeable {
     function product() public view virtual returns (address) {
         BaseVaultStorage storage $ = _getBaseVaultStorage();
         return address($._product);
+    }
+
+    function _decimalsOffset() internal pure virtual override returns (uint8) {
+        return Constants.DECIMAL_OFFSET;
     }
 }

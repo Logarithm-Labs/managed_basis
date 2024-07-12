@@ -12,8 +12,10 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {DepositorLogic} from "src/libraries/logic/DepositorLogic.sol";
+import {AccountingLogic} from "src/libraries/logic/AccountingLogic.sol";
 
-import {Errors} from "src/libraries/Errors.sol";
+import {Constants} from "src/libraries/utils/Constants.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 
 contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, OwnableUpgradeable {
     using SafeERC20 for IERC20;
@@ -192,17 +194,23 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                         STATE TRANSITIONS   
     //////////////////////////////////////////////////////////////*/
 
-    function getStrategyAddresses() public view returns (StrategyAddresses memory addresses) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        addresses.asset = asset();
-        addresses.product = product();
-        addresses.oracle = $.oracle;
-        addresses.operator = $.operator;
-        addresses.positionManager = $.positionManager;
+    function _getStrategyAddresses(ManagedBasisStrategyStorage storage $)
+        internal
+        view
+        returns (StrategyAddresses memory addr)
+    {
+        addr.asset = asset();
+        addr.product = product();
+        addr.oracle = $.oracle;
+        addr.operator = $.operator;
+        addr.positionManager = $.positionManager;
     }
 
-    function getStrategyStateCache() public view returns (StrategyStateChache memory cache) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+    function _getStrategyStateCache(ManagedBasisStrategyStorage storage $)
+        internal
+        view
+        returns (StrategyStateChache memory cache)
+    {
         cache.assetsToClaim = $.assetsToClaim;
         cache.assetsToWithdraw = $.assetsToWithdraw;
         cache.pendingUtilization = $.pendingUtilization;
@@ -216,9 +224,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         cache.spotExecutionPrice = $.spotExecutionPrice;
     }
 
-    function updateStrategyState(StrategyStateChache memory cache) internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-
+    function _updateStrategyState(ManagedBasisStrategyStorage storage $, StrategyStateChache memory cache) internal {
         if ($.pendingUtilization != cache.pendingUtilization) {
             emit UpdatePendingUtilization(cache.pendingUtilization);
         }
@@ -239,8 +245,11 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         $.spotExecutionPrice = cache.spotExecutionPrice;
     }
 
-    function updateWithdrawState(bytes32 withdrawId, WithdrawState memory withdrawState) internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+    function _updateWithdrawState(
+        ManagedBasisStrategyStorage storage $,
+        bytes32 withdrawId,
+        WithdrawState memory withdrawState
+    ) internal {
         $.withdrawRequests[withdrawId] = withdrawState;
     }
 
@@ -249,33 +258,30 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Deposit/mint common workflow.
-    function _deposit(address caller, address receiver, uint256 assets, uint256 shares)
-        internal
-        virtual
-        returns (uint256)
-    {
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
         IERC20(asset()).safeTransferFrom(caller, address(this), assets);
-        StrategyStateChache memory cache = getStrategyStateCache();
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        StrategyStateChache memory cache = _getStrategyStateCache($);
         DepositorLogic.DepositParams memory params = DepositorLogic.DepositParams({
             caller: msg.sender,
             receiver: receiver,
             assets: assets,
             shares: shares,
+            targetLeverage: $.targetLeverage,
             cache: cache
         });
-        cache = DepositorLogic.executeDeposit(msg.sender, receiver, assets, shares);
-        updateStrategyState(cache);
+        cache = DepositorLogic.executeDeposit(params);
+        _updateStrategyState($, cache);
 
         _mint(receiver, shares);
         emit Deposit(caller, receiver, assets, shares);
-
-        return shares;
     }
 
     /// @dev Withdraw/redeem common workflow.
     function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
         internal
         virtual
+        override
     {
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
@@ -290,62 +296,58 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         _burn(owner, shares);
 
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 idle = idleAssets();
 
-        if (idle >= assets) {
-            // update pending states, prevent underflow
-            (, $.pendingUtilization) = $.pendingUtilization.trySub(assetsWithdrawnFromSpot);
-            (, $.pendingIncreaseCollateral) = $.pendingIncreaseCollateral.trySub(assets - assetsWithdrawnFromSpot);
-
-            IERC20(asset()).safeTransfer(receiver, assets);
+        StrategyStateChache memory cache = _getStrategyStateCache($);
+        StrategyAddresses memory addr = _getStrategyAddresses($);
+        address asset_ = asset();
+        bytes32 withdrawId;
+        WithdrawState memory withdrawState;
+        uint256 requestedAmount;
+        DepositorLogic.WithdrawParams memory params = DepositorLogic.WithdrawParams({
+            caller: msg.sender,
+            receiver: receiver,
+            owner: owner,
+            callbackTarget: address(0),
+            assets: assets,
+            shares: shares,
+            requestCounter: $.requestCounter[owner],
+            targetLeverage: $.targetLeverage,
+            addr: addr,
+            cache: cache,
+            callbackData: ""
+        });
+        (withdrawId, requestedAmount, cache, withdrawState) = DepositorLogic.executeWithdraw(params);
+        if (withdrawId == bytes32(0)) {
+            // empty withdrawId means withdraw was executed immediately against idle assets
+            // no need to create a withdraw request, withdrawing assets should be transferred to receiver
+            IERC20(asset_).safeTransfer(receiver, assets);
         } else {
-            StrategyStateChache memory cache = getStrategyStateCache();
-            bytes32 withdrawId;
-            WithdrawState memory withdrawState;
-            uint256 requestedAmount;
-            DepositorLogic.WithdrawParams memory params = DepositorLogic.WithdrawParams({
-                asset: asset(),
-                product: product(),
-                caller: msg.sender,
-                receiver: receiver,
-                owner: owner,
-                callbackTarget: address(0),
-                oralce: $.oracle,
-                assets: assets,
-                shares: shares,
-                totalAssets: totalAssets(),
-                idleAssets: idle,
-                requestCounter: $.requestCounter[owner],
-                targetLeverage: $.targetLeverage,
-                cache: cache,
-                callbackData: ""
-            });
-            (withdrawId, requestedAmount, cache, withdrawState) = DepositorLogic.executeWithdraw(params);
-            updateStrategyState(cache);
-            $.withdrawRequests[withdrawId] = withdrawState;
+            _updateWithdrawState($, withdrawId, withdrawState);
             $.activeWithdrawRequests.push(withdrawId);
             $.requestCounter[owner]++;
 
             emit WithdrawRequest(caller, receiver, owner, withdrawId, requestedAmount);
         }
 
+        _updateStrategyState($, cache);
+
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
     function claim(bytes32 requestId) external virtual returns (uint256 executedAmount) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        StrategyStateChache memory cache = _getStrategyStateCache($);
         WithdrawState memory withdrawState = $.withdrawRequests[requestId];
-        StrategyStateChache memory cache = getStrategyStateCache();
         DepositorLogic.ClaimParams memory params =
             DepositorLogic.ClaimParams({caller: msg.sender, withdrawState: withdrawState, cache: cache});
-        (executedAmount, cache, state) = DepositorLogic.executeClaim(params);
+        (executedAmount, cache, withdrawState) = DepositorLogic.executeClaim(params);
 
-        updateStrategyState(cache);
-        updateWithdrawState(requestId, state);
+        _updateStrategyState($, cache);
+        _updateWithdrawState($, requestId, withdrawState);
 
-        IERC20(asset()).safeTransfer(msg.sender, totalExecuted);
+        IERC20(asset()).safeTransfer(msg.sender, executedAmount);
 
-        emit Claim(msg.sender, requestId, totalExecuted);
+        emit Claim(msg.sender, requestId, executedAmount);
     }
 
     function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
@@ -356,20 +358,48 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                             ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function totalAssets() public view virtual returns (uint256) {
-        StrategyAddresses memory addresses = getStrategyAddresses();
-        StrategyStateChache memory cache = getStrategyStateCache();
-        return AccountingLogic.getTotalAssets(addresses, cache);
+    function totalAssets() public view virtual override returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        StrategyAddresses memory addr = _getStrategyAddresses($);
+        StrategyStateChache memory cache = _getStrategyStateCache($);
+        return AccountingLogic.getTotalAssets(addr, cache);
     }
 
     function utilizedAssets() public view virtual returns (uint256) {
-        StrategyAddresses memory addresses = getStrategyAddresses();
-        StrategyStateChache memory cache = getStrategyStateCache();
-        return AccountingLogic.getUtilizedAssets(addresses, cache);
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        StrategyAddresses memory addr = _getStrategyAddresses($);
+        return AccountingLogic.getUtilizedAssets(addr);
     }
 
     function idleAssets() public view virtual returns (uint256) {
-        StrategyStateChache memory cache = getStrategyStateCache();
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        StrategyStateChache memory cache = _getStrategyStateCache($);
         return AccountingLogic.getIdleAssets(asset(), cache);
+    }
+
+    function previewDeposit(uint256 assets) public view virtual override returns (uint256 shares) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return AccountingLogic.getPreviewDeposit(
+            AccountingLogic.PreviewParams({
+                assetsOrShares: assets,
+                entryFee: $.entryFee,
+                totalSupply: totalSupply(),
+                addr: _getStrategyAddresses($),
+                cache: _getStrategyStateCache($)
+            })
+        );
+    }
+
+    function previewMint(uint256 shares) public view virtual override returns (uint256 assets) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return AccountingLogic.getPreviewMint(
+            AccountingLogic.PreviewParams({
+                assetsOrShares: shares,
+                entryFee: $.entryFee,
+                totalSupply: totalSupply(),
+                addr: _getStrategyAddresses($),
+                cache: _getStrategyStateCache($)
+            })
+        );
     }
 }

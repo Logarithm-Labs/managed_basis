@@ -10,7 +10,7 @@ import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.s
 
 import {IGmxV2PositionManager} from "src/interfaces/IGmxV2PositionManager.sol";
 
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 
 contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepUpgradeable {
     /*//////////////////////////////////////////////////////////////

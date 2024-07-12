@@ -5,13 +5,17 @@ import {AccountingLogic} from "src/libraries/logic/AccountingLogic.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {InchAggregatorV6Logic} from "src/libraries/InchAggregatorV6Logic.sol";
+import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 import {CompactBasisStrategy} from "src/CompactBasisStrategy.sol";
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 library OperatorLogic {
+    using Math for uint256;
+    using SafeERC20 for IERC20;
+
     struct UtilizeParams {
         uint256 amount;
         CompactBasisStrategy.StrategyStatus status;
@@ -52,11 +56,12 @@ library OperatorLogic {
                 IERC20(params.addr.asset).safeTransfer(params.addr.positionManager, collateralDeltaAmount);
                 params.cache.pendingIncreaseCollateral -= collateralDeltaAmount;
             }
-            IOffChainPositionManager(params.addr.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
+            IPositionManager(params.addr.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
             params.cache.spotExecutionPrice = params.amount.mulDiv(
                 10 ** IERC20Metadata(params.addr.product).decimals(), amountOut, Math.Rounding.Ceil
             );
             params.cache.pendingUtilization -= params.amount;
         }
+        return (success, params.cache);
     }
 }

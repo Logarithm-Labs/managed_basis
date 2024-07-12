@@ -3,19 +3,29 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
-import {IOffChainPositionManager} from "src/interfaces/IOffChainPositionManager.sol";
+import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 import {CompactBasisStrategy} from "src/CompactBasisStrategy.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
+import {Constants} from "src/libraries/utils/Constants.sol";
+
 library AccountingLogic {
     using Math for uint256;
+
+    struct PreviewParams {
+        uint256 assetsOrShares; // assets in case of previewDeposit, shares in case of previewMint
+        uint256 entryFee;
+        uint256 totalSupply;
+        CompactBasisStrategy.StrategyAddresses addr;
+        CompactBasisStrategy.StrategyStateChache cache;
+    }
 
     function getTotalAssets(
         CompactBasisStrategy.StrategyAddresses memory addr,
         CompactBasisStrategy.StrategyStateChache memory cache
-    ) external view returns (uint256) {
-        uint256 utilizedAssets = getUtilizedAssets(addr, cache);
+    ) public view returns (uint256) {
+        uint256 utilizedAssets = getUtilizedAssets(addr);
         uint256 idleAssets = getIdleAssets(addr.asset, cache);
 
         // In the scenario where user tries to withdraw all of the remaining assets the volatility
@@ -26,13 +36,10 @@ library AccountingLogic {
         return totalAssets;
     }
 
-    function getUtilizedAssets(
-        CompactBasisStrategy.StrategyAddresses memory addr,
-        CompactBasisStrategy.StrategyStateChache memory cache
-    ) public view returns (uint256) {
+    function getUtilizedAssets(CompactBasisStrategy.StrategyAddresses memory addr) public view returns (uint256) {
         uint256 productBalance = IERC20(addr.product).balanceOf(address(this));
         uint256 productValueInAsset = IOracle(addr.oracle).convertTokenAmount(addr.product, addr.asset, productBalance);
-        return productValueInAsset + IOffChainPositionManager(addr.positionManager).positionNetBalance();
+        return productValueInAsset + IPositionManager(addr.positionManager).positionNetBalance();
     }
 
     function getIdleAssets(address asset, CompactBasisStrategy.StrategyStateChache memory cache)
@@ -41,5 +48,71 @@ library AccountingLogic {
         returns (uint256)
     {
         return IERC20(asset).balanceOf(address(this)) - (cache.assetsToClaim + cache.assetsToWithdraw);
+    }
+
+    function getPreviewDeposit(PreviewParams memory params) external view returns (uint256 shares) {
+        if (params.totalSupply == 0) {
+            return params.assetsOrShares;
+        }
+
+        // calculate the amount of assets that will be utilized
+        (, uint256 assetsToUtilize) = params.assetsOrShares.trySub(params.cache.totalPendingWithdraw);
+        uint256 totalAssets = getTotalAssets(params.addr, params.cache);
+
+        // apply entry fee only to the portion of assets that will be utilized
+        if (assetsToUtilize > 0) {
+            uint256 feeAmount = assetsToUtilize.mulDiv(params.entryFee, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
+            params.assetsOrShares -= feeAmount;
+        }
+        shares = _convertToShares(params.assetsOrShares, totalAssets, params.totalSupply, Math.Rounding.Floor);
+    }
+
+    function getPreviewMint(PreviewParams memory params) external view returns (uint256 assets) {
+        if (params.totalSupply == 0) {
+            return params.assetsOrShares;
+        }
+
+        // calculate amount of assets before applying entry fee
+        uint256 totalAssets = getTotalAssets(params.addr, params.cache);
+        assets = _convertToAssets(params.assetsOrShares, totalAssets, params.totalSupply, Math.Rounding.Ceil);
+
+        // calculate amount of assets that will be utilized
+        (, uint256 assetsToUtilize) = assets.trySub(params.cache.totalPendingWithdraw);
+
+        // apply entry fee only to the portion of assets that will be utilized
+        if (assetsToUtilize > 0) {
+            uint256 feeAmount = assetsToUtilize.mulDiv(params.entryFee, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
+            assets -= feeAmount;
+        }
+    }
+
+    function getPreviewWithdraw(PreviewParams memory params) external view returns (uint256 shares) {
+        // TODO
+    }
+
+    function getPreviewRedeem(PreviewParams memory params) external view returns (uint256 assets) {
+        // TODO
+    }
+
+    /**
+     * @dev Internal conversion function (from assets to shares) with support for rounding direction.
+     */
+    function _convertToShares(uint256 assets, uint256 totalAssets, uint256 totalSupply, Math.Rounding rounding)
+        internal
+        pure
+        returns (uint256)
+    {
+        return assets.mulDiv(totalSupply + 10 ** Constants.DECIMAL_OFFSET, totalAssets + 1, rounding);
+    }
+
+    /**
+     * @dev Internal conversion function (from shares to assets) with support for rounding direction.
+     */
+    function _convertToAssets(uint256 shares, uint256 totalAssets, uint256 totalSupply, Math.Rounding rounding)
+        internal
+        pure
+        returns (uint256)
+    {
+        return shares.mulDiv(totalAssets + 1, totalSupply + 10 ** Constants.DECIMAL_OFFSET, rounding);
     }
 }
