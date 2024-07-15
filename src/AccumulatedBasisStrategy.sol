@@ -315,40 +315,53 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
             uint256 totalAssets_ = totalAssets();
             uint256 requestedAmount = assets > totalAssets_ ? totalAssets_ : assets;
-            bytes32 withdrawId = getWithdrawId(owner, counter);
-            $.withdrawRequests[withdrawId] = WithdrawState({
-                requestTimestamp: uint128(block.timestamp),
-                requestedAmount: requestedAmount,
-                executedFromSpot: 0,
-                executedFromIdle: 0,
-                executedFromHedge: 0,
-                executionCost: 0,
-                receiver: receiver,
-                callbackTarget: address(0),
-                isExecuted: false,
-                isClaimed: false,
-                callbackData: ""
-            });
+            // bytes32 withdrawId = getWithdrawId(owner, counter);
+            // $.withdrawRequests[withdrawId] = WithdrawState({
+            //     requestTimestamp: uint128(block.timestamp),
+            //     requestedAmount: requestedAmount,
+            //     executedFromSpot: 0,
+            //     executedFromIdle: 0,
+            //     executedFromHedge: 0,
+            //     executionCost: 0,
+            //     receiver: receiver,
+            //     callbackTarget: address(0),
+            //     isExecuted: false,
+            //     isClaimed: false,
+            //     callbackData: ""
+            // });
 
             // if all idle assets are withdrawn, set pending states to zero
             $.pendingUtilization = 0;
             $.pendingIncreaseCollateral = 0;
-            $.withdrawnFromIdle += idle;
+            $.assetsToClaim += idle;
             emit UpdatePendingUtilization(0);
 
-            uint256 totalPendingWithdraw_ = $.totalPendingWithdraw + (requestedAmount - idle);
+            (, uint256 pendingWithdraw) = requestedAmount.trySub(idle);
+
+            uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
+            _accRequestedWithdrawAssets += pendingWithdraw;
+            $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
+            bytes32 withdrawId = getWithdrawId(owner, counter);
+            $.withdrawRequests[withdrawId] = WithdrawRequest({
+                requestedAmount: requestedAmount,
+                accRequestedWithdrawAssets: _accRequestedWithdrawAssets
+            });
+
+            uint256 totalPendingWithdraw_ = totalPendingWithdraw();
             uint256 pendingDeutilizationInAsset_ =
                 totalPendingWithdraw_.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
             uint256 pendingDeutilization_ =
                 $.oracle.convertTokenAmount(asset(), product(), pendingDeutilizationInAsset_);
             uint256 productBalance = IERC20(product()).balanceOf(address(this));
-            $.pendingDeutilization = pendingDeutilization_ > productBalance ? productBalance : pendingDeutilization_;
-            $.totalPendingWithdraw = totalPendingWithdraw_;
-            $.assetsToWithdraw += idle;
-            $.activeWithdrawRequests.push(withdrawId);
+            pendingDeutilization_ = pendingDeutilization_ > productBalance ? productBalance : pendingDeutilization_;
+            $.pendingDeutilization = pendingDeutilization_;
+            // $.totalPendingWithdraw = totalPendingWithdraw_;
+            // $.assetsToWithdraw += idle;
+            // $.activeWithdrawRequests.push(withdrawId);
+
             $.requestCounter[owner]++;
 
-            emit UpdatePendingDeutilization($.pendingDeutilization);
+            emit UpdatePendingDeutilization(pendingDeutilization_);
 
             emit WithdrawRequest(caller, receiver, owner, withdrawId, requestedAmount);
         }
@@ -1194,7 +1207,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     function totalPendingWithdraw() external view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.totalPendingWithdraw;
+        return $.accRequestedWithdrawAssets - $.proccessedWithdrawAssets;
     }
 
     function withdrawingFromHedge() external view returns (uint256) {
