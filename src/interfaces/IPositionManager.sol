@@ -2,6 +2,12 @@
 pragma solidity ^0.8.0;
 
 interface IPositionManager {
+    struct AdjustPositionParams {
+        uint256 sizeDeltaInTokens;
+        uint256 collateralDeltaAmount;
+        bool isIncrease;
+    }
+
     function initialize(
         address strategy,
         address agent,
@@ -16,5 +22,5 @@ interface IPositionManager {
 
     function positionSizeInTokens() external view returns (uint256);
 
-    function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease) external;
+    function adjustPosition(AdjustPositionParams memory params) external;
 }

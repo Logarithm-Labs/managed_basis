@@ -14,7 +14,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {InchAggregatorV6Logic} from "src/libraries/InchAggregatorV6Logic.sol";
+import {InchAggregatorV6Logic} from "src/libraries/logic/InchAggregatorV6Logic.sol";
 
 import {IOracle} from "src/interfaces/IOracle.sol";
 
@@ -497,7 +497,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             IERC20(asset()).safeTransfer($.positionManager, collateralDeltaAmount);
             pendingIncreaseCollateral_ -= collateralDeltaAmount;
         }
-        IPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
+        // IPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
         $.spotExecutionPrice = amount.mulDiv(10 ** IERC20Metadata(product()).decimals(), amountOut, Math.Rounding.Ceil);
         $.pendingIncreaseCollateral = pendingIncreaseCollateral_;
         $.pendingUtilization = pendingUtilization_ - amount;
@@ -557,7 +557,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             $.withdrawnFromSpot += amountOut;
         }
 
-        IPositionManager($.positionManager).adjustPosition(amount, 0, false);
+        // IPositionManager($.positionManager).adjustPosition(amount, 0, false);
 
         emit Deutilize(msg.sender, amount, amountOut);
     }
@@ -715,16 +715,16 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
         if (hedgeDeviationInTokens > 0) {
             if (isIncrease) {
-                IPositionManager($.positionManager).adjustPosition(hedgeDeviationInTokens, 0, true);
+                // IPositionManager($.positionManager).adjustPosition(hedgeDeviationInTokens, 0, true);
             } else {
-                IPositionManager($.positionManager).adjustPosition(
-                    hedgeDeviationInTokens, pendingDecreaseCollateral_, false
-                );
+                // IPositionManager($.positionManager).adjustPosition(
+                //     hedgeDeviationInTokens, pendingDecreaseCollateral_, false
+                // );
             }
             $.strategyStatus = StrategyStatus.KEEPING;
             emit UpdateStrategyStatus(StrategyStatus.KEEPING);
         } else if (pendingDecreaseCollateral_ > 0) {
-            IPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
+            // IPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
             $.strategyStatus = StrategyStatus.KEEPING;
             emit UpdateStrategyStatus(StrategyStatus.KEEPING);
         } else {

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.25;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
@@ -11,68 +12,18 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {DepositorLogic} from "src/libraries/logic/DepositorLogic.sol";
 import {AccountingLogic} from "src/libraries/logic/AccountingLogic.sol";
+import {DepositorLogic} from "src/libraries/logic/DepositorLogic.sol";
+import {OperatorLogic} from "src/libraries/logic/OperatorLogic.sol";
 
 import {Constants} from "src/libraries/utils/Constants.sol";
+import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
 contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, OwnableUpgradeable {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using Math for uint256;
-
-    enum SwapType {
-        MANUAL,
-        INCH_V6
-    }
-
-    enum StrategyStatus {
-        IDLE,
-        NEED_KEEP,
-        KEEPING,
-        DEPOSITING,
-        WITHDRAWING,
-        REBALANCING_UP, // increase leverage
-        REBALANCING_DOWN // decrease leverage
-
-    }
-
-    struct WithdrawState {
-        uint256 requestTimestamp;
-        uint256 requestedAmount;
-        uint256 executedFromSpot;
-        uint256 executedFromIdle;
-        uint256 executedFromHedge;
-        uint256 executionCost;
-        address receiver;
-        address callbackTarget;
-        bool isExecuted;
-        bool isClaimed;
-        bytes callbackData;
-    }
-
-    struct StrategyStateChache {
-        uint256 assetsToClaim;
-        uint256 assetsToWithdraw;
-        uint256 pendingUtilization;
-        uint256 pendingDeutilization;
-        uint256 pendingIncreaseCollateral;
-        uint256 pendingDecreaseCollateral;
-        uint256 totalPendingWithdraw;
-        uint256 withdrawnFromSpot;
-        uint256 withdrawnFromIdle;
-        uint256 withdrawingFromHedge;
-        uint256 spotExecutionPrice;
-    }
-
-    struct StrategyAddresses {
-        address asset;
-        address product;
-        address oracle;
-        address operator;
-        address positionManager;
-    }
 
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
@@ -113,9 +64,9 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         bytes32[] activeWithdrawRequests;
         bytes32[] closedWithdrawRequests;
         mapping(address => uint128) requestCounter;
-        mapping(bytes32 => WithdrawState) withdrawRequests;
+        mapping(bytes32 => DataTypes.WithdrawState) withdrawRequests;
         // status state
-        StrategyStatus strategyStatus;
+        DataTypes.StrategyStatus strategyStatus;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedBasisStrategyStorageV1")) - 1)) & ~bytes32(uint256(0xff))
@@ -190,6 +141,24 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     event UpdatePendingDeutilization(uint256 amount);
 
+    event Utilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
+
+    event Deutilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
+
+    event SwapFailed();
+
+    /*//////////////////////////////////////////////////////////////
+                            MODIFIERS
+    //////////////////////////////////////////////////////////////*/
+
+    modifier onlyOperator() {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (msg.sender != $.operator) {
+            revert Errors.CallerNotOperator();
+        }
+        _;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         STATE TRANSITIONS   
     //////////////////////////////////////////////////////////////*/
@@ -197,7 +166,8 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     function _getStrategyAddresses(ManagedBasisStrategyStorage storage $)
         internal
         view
-        returns (StrategyAddresses memory addr)
+        virtual
+        returns (DataTypes.StrategyAddresses memory addr)
     {
         addr.asset = asset();
         addr.product = product();
@@ -209,7 +179,8 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     function _getStrategyStateCache(ManagedBasisStrategyStorage storage $)
         internal
         view
-        returns (StrategyStateChache memory cache)
+        virtual
+        returns (DataTypes.StrategyStateChache memory cache)
     {
         cache.assetsToClaim = $.assetsToClaim;
         cache.assetsToWithdraw = $.assetsToWithdraw;
@@ -224,7 +195,10 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         cache.spotExecutionPrice = $.spotExecutionPrice;
     }
 
-    function _updateStrategyState(ManagedBasisStrategyStorage storage $, StrategyStateChache memory cache) internal {
+    function _updateStrategyState(ManagedBasisStrategyStorage storage $, DataTypes.StrategyStateChache memory cache)
+        internal
+        virtual
+    {
         if ($.pendingUtilization != cache.pendingUtilization) {
             emit UpdatePendingUtilization(cache.pendingUtilization);
         }
@@ -248,9 +222,19 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     function _updateWithdrawState(
         ManagedBasisStrategyStorage storage $,
         bytes32 withdrawId,
-        WithdrawState memory withdrawState
-    ) internal {
+        DataTypes.WithdrawState memory withdrawState
+    ) internal virtual {
         $.withdrawRequests[withdrawId] = withdrawState;
+    }
+
+    function _executeAdjustPosition(address positionManager, IPositionManager.AdjustPositionParams memory params)
+        internal
+        virtual
+    {
+        if (params.isIncrease && params.collateralDeltaAmount > 0) {
+            IERC20(asset()).safeTransfer(positionManager, params.collateralDeltaAmount);
+        }
+        IPositionManager(positionManager).adjustPosition(params);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -261,7 +245,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
         IERC20(asset()).safeTransferFrom(caller, address(this), assets);
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        StrategyStateChache memory cache = _getStrategyStateCache($);
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
         DepositorLogic.DepositParams memory params = DepositorLogic.DepositParams({
             caller: msg.sender,
             receiver: receiver,
@@ -297,11 +281,11 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-        StrategyStateChache memory cache = _getStrategyStateCache($);
-        StrategyAddresses memory addr = _getStrategyAddresses($);
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        DataTypes.StrategyAddresses memory addr = _getStrategyAddresses($);
         address asset_ = asset();
         bytes32 withdrawId;
-        WithdrawState memory withdrawState;
+        DataTypes.WithdrawState memory withdrawState;
         uint256 requestedAmount;
         DepositorLogic.WithdrawParams memory params = DepositorLogic.WithdrawParams({
             caller: msg.sender,
@@ -336,8 +320,8 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     function claim(bytes32 requestId) external virtual returns (uint256 executedAmount) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        StrategyStateChache memory cache = _getStrategyStateCache($);
-        WithdrawState memory withdrawState = $.withdrawRequests[requestId];
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        DataTypes.WithdrawState memory withdrawState = $.withdrawRequests[requestId];
         DepositorLogic.ClaimParams memory params =
             DepositorLogic.ClaimParams({caller: msg.sender, withdrawState: withdrawState, cache: cache});
         (executedAmount, cache, withdrawState) = DepositorLogic.executeClaim(params);
@@ -358,22 +342,22 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                             ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function totalAssets() public view virtual override returns (uint256) {
+    function totalAssets() public view virtual override returns (uint256 assets) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        StrategyAddresses memory addr = _getStrategyAddresses($);
-        StrategyStateChache memory cache = _getStrategyStateCache($);
-        return AccountingLogic.getTotalAssets(addr, cache);
+        DataTypes.StrategyAddresses memory addr = _getStrategyAddresses($);
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        (,, assets) = AccountingLogic.getTotalAssets(addr, cache);
     }
 
     function utilizedAssets() public view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        StrategyAddresses memory addr = _getStrategyAddresses($);
+        DataTypes.StrategyAddresses memory addr = _getStrategyAddresses($);
         return AccountingLogic.getUtilizedAssets(addr);
     }
 
     function idleAssets() public view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        StrategyStateChache memory cache = _getStrategyStateCache($);
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
         return AccountingLogic.getIdleAssets(asset(), cache);
     }
 
@@ -382,7 +366,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         return AccountingLogic.getPreviewDeposit(
             AccountingLogic.PreviewParams({
                 assetsOrShares: assets,
-                entryFee: $.entryFee,
+                fee: $.entryFee,
                 totalSupply: totalSupply(),
                 addr: _getStrategyAddresses($),
                 cache: _getStrategyStateCache($)
@@ -395,11 +379,99 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         return AccountingLogic.getPreviewMint(
             AccountingLogic.PreviewParams({
                 assetsOrShares: shares,
-                entryFee: $.entryFee,
+                fee: $.entryFee,
                 totalSupply: totalSupply(),
                 addr: _getStrategyAddresses($),
                 cache: _getStrategyStateCache($)
             })
         );
+    }
+
+    function previewWithdraw(uint256 assets) public view virtual override returns (uint256 shares) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return AccountingLogic.getPreviewWithdraw(
+            AccountingLogic.PreviewParams({
+                assetsOrShares: assets,
+                fee: $.exitFee,
+                totalSupply: totalSupply(),
+                addr: _getStrategyAddresses($),
+                cache: _getStrategyStateCache($)
+            })
+        );
+    }
+
+    function previewRedeem(uint256 shares) public view virtual override returns (uint256 assets) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return AccountingLogic.getPreviewRedeem(
+            AccountingLogic.PreviewParams({
+                assetsOrShares: shares,
+                fee: $.exitFee,
+                totalSupply: totalSupply(),
+                addr: _getStrategyAddresses($),
+                cache: _getStrategyStateCache($)
+            })
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            OPERATOR LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    function utilize(uint256 amount, DataTypes.SwapType swapType, bytes calldata swapData)
+        external
+        virtual
+        onlyOperator
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        bool success;
+        uint256 amountOut;
+        IPositionManager.AdjustPositionParams memory adjustPositionParams;
+        (success, amountOut, cache, adjustPositionParams) = OperatorLogic.executeUtilize(
+            OperatorLogic.UtilizeParams({
+                amount: amount,
+                status: $.strategyStatus,
+                swapType: swapType,
+                addr: _getStrategyAddresses($),
+                cache: cache,
+                swapData: swapData
+            })
+        );
+        if (success) {
+            _updateStrategyState($, cache);
+            _executeAdjustPosition($.positionManager, adjustPositionParams);
+            emit Utilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);
+        } else {
+            emit SwapFailed();
+        }
+    }
+
+    function deutilize(uint256 amount, DataTypes.SwapType swapType, bytes calldata swapData)
+        external
+        virtual
+        onlyOperator
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        bool success;
+        uint256 amountOut;
+        IPositionManager.AdjustPositionParams memory adjustPositionParams;
+        (success, amountOut, cache, adjustPositionParams) = OperatorLogic.executeDeutilize(
+            OperatorLogic.UtilizeParams({
+                amount: amount,
+                status: $.strategyStatus,
+                swapType: swapType,
+                addr: _getStrategyAddresses($),
+                cache: cache,
+                swapData: swapData
+            })
+        );
+        if (success) {
+            _updateStrategyState($, cache);
+            _executeAdjustPosition($.positionManager, adjustPositionParams);
+            emit Deutilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);
+        } else {
+            emit SwapFailed();
+        }
     }
 }

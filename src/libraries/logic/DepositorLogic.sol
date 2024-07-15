@@ -7,8 +7,9 @@ import {IOracle} from "src/interfaces/IOracle.sol";
 import {CompactBasisStrategy} from "src/CompactBasisStrategy.sol";
 
 import {AccountingLogic} from "src/libraries/logic/AccountingLogic.sol";
-import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
+import {DataTypes} from "src/libraries/utils/DataTypes.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 
 library DepositorLogic {
     using Math for uint256;
@@ -19,7 +20,7 @@ library DepositorLogic {
         uint256 assets;
         uint256 shares;
         uint256 targetLeverage;
-        CompactBasisStrategy.StrategyStateChache cache;
+        DataTypes.StrategyStateChache cache;
     }
 
     struct WithdrawParams {
@@ -31,22 +32,18 @@ library DepositorLogic {
         uint256 shares;
         uint256 requestCounter;
         uint256 targetLeverage;
-        CompactBasisStrategy.StrategyAddresses addr;
-        CompactBasisStrategy.StrategyStateChache cache;
+        DataTypes.StrategyAddresses addr;
+        DataTypes.StrategyStateChache cache;
         bytes callbackData;
     }
 
     struct ClaimParams {
         address caller;
-        CompactBasisStrategy.WithdrawState withdrawState;
-        CompactBasisStrategy.StrategyStateChache cache;
+        DataTypes.WithdrawState withdrawState;
+        DataTypes.StrategyStateChache cache;
     }
 
-    function executeDeposit(DepositParams memory params)
-        external
-        pure
-        returns (CompactBasisStrategy.StrategyStateChache memory)
-    {
+    function executeDeposit(DepositParams memory params) external pure returns (DataTypes.StrategyStateChache memory) {
         if (params.cache.totalPendingWithdraw >= params.assets) {
             params.cache.assetsToWithdraw += params.assets;
             params.cache.withdrawnFromIdle += params.assets;
@@ -73,17 +70,12 @@ library DepositorLogic {
     function executeWithdraw(WithdrawParams memory params)
         external
         view
-        returns (
-            bytes32,
-            uint256,
-            CompactBasisStrategy.StrategyStateChache memory,
-            CompactBasisStrategy.WithdrawState memory
-        )
+        returns (bytes32, uint256, DataTypes.StrategyStateChache memory, DataTypes.WithdrawState memory)
     {
-        uint256 idleAssets = AccountingLogic.getIdleAssets(params.addr.asset, params.cache);
+        (, uint256 idleAssets, uint256 totalAssets) = AccountingLogic.getTotalAssets(params.addr, params.cache);
         bytes32 withdrawId;
         uint256 requestedAmount;
-        CompactBasisStrategy.WithdrawState memory withdrawState;
+        DataTypes.WithdrawState memory withdrawState;
         if (idleAssets >= params.assets) {
             uint256 assetsWithdrawnFromSpot =
                 params.assets.mulDiv(params.targetLeverage, Constants.FLOAT_PRECISION + params.targetLeverage);
@@ -91,10 +83,9 @@ library DepositorLogic {
             (, params.cache.pendingIncreaseCollateral) =
                 params.cache.pendingIncreaseCollateral.trySub(params.assets - assetsWithdrawnFromSpot);
         } else {
-            uint256 totalAssets = AccountingLogic.getTotalAssets(params.addr, params.cache);
             requestedAmount = params.assets > totalAssets ? totalAssets : params.assets;
             withdrawId = getWithdrawId(params.owner, params.requestCounter);
-            withdrawState = CompactBasisStrategy.WithdrawState({
+            withdrawState = DataTypes.WithdrawState({
                 requestTimestamp: uint128(block.timestamp),
                 requestedAmount: requestedAmount,
                 executedFromSpot: 0,
@@ -131,7 +122,7 @@ library DepositorLogic {
     function executeClaim(ClaimParams memory params)
         external
         view
-        returns (uint256, CompactBasisStrategy.StrategyStateChache memory, CompactBasisStrategy.WithdrawState memory)
+        returns (uint256, DataTypes.StrategyStateChache memory, DataTypes.WithdrawState memory)
     {
         if (params.withdrawState.receiver != params.caller) {
             revert Errors.UnauthorizedClaimer(msg.sender, params.withdrawState.receiver);

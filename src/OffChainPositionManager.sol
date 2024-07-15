@@ -32,12 +32,6 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         uint256 timestamp;
     }
 
-    struct RequestInfo {
-        uint256 sizeDeltaInTokens;
-        uint256 collateralDeltaAmount;
-        bool isIncrease;
-    }
-
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -57,7 +51,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         bytes32 activeRequestId;
         uint256 pendingCollateralIncrease;
         mapping(uint256 => PositionState) positionStates;
-        mapping(uint256 => RequestInfo) requests;
+        mapping(uint256 => AdjustPositionParams) requests;
     }
 
     uint256 private constant PRECISION = 1e18;
@@ -135,7 +129,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
                         POSITION MANAGEMENT
     //////////////////////////////////////////////////////////////*/
 
-    function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease) external {
+    function adjustPosition(AdjustPositionParams memory params) external {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
         if (msg.sender != $.strategy) {
@@ -144,25 +138,25 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
 
         uint256 round = $.currentRound + 1;
 
-        $.requests[round] = RequestInfo({
-            sizeDeltaInTokens: sizeDeltaInTokens,
-            collateralDeltaAmount: collateralDeltaAmount,
-            isIncrease: isIncrease
+        $.requests[round] = AdjustPositionParams({
+            sizeDeltaInTokens: params.sizeDeltaInTokens,
+            collateralDeltaAmount: params.collateralDeltaAmount,
+            isIncrease: params.isIncrease
         });
 
-        if (isIncrease) {
-            if (collateralDeltaAmount > 0) {
-                emit RequestIncreasePositionCollateral(collateralDeltaAmount, round);
+        if (params.isIncrease) {
+            if (params.collateralDeltaAmount > 0) {
+                emit RequestIncreasePositionCollateral(params.collateralDeltaAmount, round);
             }
-            if (sizeDeltaInTokens > 0) {
-                emit RequestIncreasePositionSize(sizeDeltaInTokens, round);
+            if (params.sizeDeltaInTokens > 0) {
+                emit RequestIncreasePositionSize(params.sizeDeltaInTokens, round);
             }
         } else {
-            if (collateralDeltaAmount > 0) {
-                emit RequestDecreasePositionCollateral(collateralDeltaAmount, round);
+            if (params.collateralDeltaAmount > 0) {
+                emit RequestDecreasePositionCollateral(params.collateralDeltaAmount, round);
             }
-            if (sizeDeltaInTokens > 0) {
-                emit RequestDecreasePositionSize(sizeDeltaInTokens, round);
+            if (params.sizeDeltaInTokens > 0) {
+                emit RequestDecreasePositionSize(params.sizeDeltaInTokens, round);
             }
         }
 
@@ -213,7 +207,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
             revert Errors.CallerNotAgent();
         }
 
-        RequestInfo memory request = $.requests[$.currentRound];
+        AdjustPositionParams memory request = $.requests[$.currentRound];
         if (!request.isIncrease || request.collateralDeltaAmount == 0) {
             revert Errors.InvalidActiveRequestType();
         }
@@ -310,7 +304,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         return $.pendingCollateralIncrease;
     }
 
-    function requests(uint256 round) external view returns (RequestInfo memory) {
+    function requests(uint256 round) external view returns (AdjustPositionParams memory) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.requests[round];
     }

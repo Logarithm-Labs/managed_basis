@@ -5,26 +5,27 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
-import {CompactBasisStrategy} from "src/CompactBasisStrategy.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {Constants} from "src/libraries/utils/Constants.sol";
+import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 
 library AccountingLogic {
     using Math for uint256;
 
     struct PreviewParams {
         uint256 assetsOrShares; // assets in case of previewDeposit, shares in case of previewMint
-        uint256 entryFee;
+        uint256 fee; // entryFee for previewDeposit & previewMing, exitFee for previewWithdraw & previewRedeem
         uint256 totalSupply;
-        CompactBasisStrategy.StrategyAddresses addr;
-        CompactBasisStrategy.StrategyStateChache cache;
+        DataTypes.StrategyAddresses addr;
+        DataTypes.StrategyStateChache cache;
     }
 
-    function getTotalAssets(
-        CompactBasisStrategy.StrategyAddresses memory addr,
-        CompactBasisStrategy.StrategyStateChache memory cache
-    ) public view returns (uint256) {
+    function getTotalAssets(DataTypes.StrategyAddresses memory addr, DataTypes.StrategyStateChache memory cache)
+        public
+        view
+        returns (uint256, uint256, uint256)
+    {
         uint256 utilizedAssets = getUtilizedAssets(addr);
         uint256 idleAssets = getIdleAssets(addr.asset, cache);
 
@@ -33,20 +34,16 @@ library AccountingLogic {
         // idle and utilized assets. In this case we will return 0 as total assets.
         (, uint256 totalAssets) =
             (utilizedAssets + idleAssets).trySub(cache.totalPendingWithdraw + cache.withdrawingFromHedge);
-        return totalAssets;
+        return (utilizedAssets, idleAssets, totalAssets);
     }
 
-    function getUtilizedAssets(CompactBasisStrategy.StrategyAddresses memory addr) public view returns (uint256) {
+    function getUtilizedAssets(DataTypes.StrategyAddresses memory addr) public view returns (uint256) {
         uint256 productBalance = IERC20(addr.product).balanceOf(address(this));
         uint256 productValueInAsset = IOracle(addr.oracle).convertTokenAmount(addr.product, addr.asset, productBalance);
         return productValueInAsset + IPositionManager(addr.positionManager).positionNetBalance();
     }
 
-    function getIdleAssets(address asset, CompactBasisStrategy.StrategyStateChache memory cache)
-        public
-        view
-        returns (uint256)
-    {
+    function getIdleAssets(address asset, DataTypes.StrategyStateChache memory cache) public view returns (uint256) {
         return IERC20(asset).balanceOf(address(this)) - (cache.assetsToClaim + cache.assetsToWithdraw);
     }
 
@@ -57,11 +54,11 @@ library AccountingLogic {
 
         // calculate the amount of assets that will be utilized
         (, uint256 assetsToUtilize) = params.assetsOrShares.trySub(params.cache.totalPendingWithdraw);
-        uint256 totalAssets = getTotalAssets(params.addr, params.cache);
+        (,, uint256 totalAssets) = getTotalAssets(params.addr, params.cache);
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            uint256 feeAmount = assetsToUtilize.mulDiv(params.entryFee, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
+            uint256 feeAmount = assetsToUtilize.mulDiv(params.fee, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
             params.assetsOrShares -= feeAmount;
         }
         shares = _convertToShares(params.assetsOrShares, totalAssets, params.totalSupply, Math.Rounding.Floor);
@@ -73,7 +70,7 @@ library AccountingLogic {
         }
 
         // calculate amount of assets before applying entry fee
-        uint256 totalAssets = getTotalAssets(params.addr, params.cache);
+        (,, uint256 totalAssets) = getTotalAssets(params.addr, params.cache);
         assets = _convertToAssets(params.assetsOrShares, totalAssets, params.totalSupply, Math.Rounding.Ceil);
 
         // calculate amount of assets that will be utilized
@@ -81,17 +78,37 @@ library AccountingLogic {
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            uint256 feeAmount = assetsToUtilize.mulDiv(params.entryFee, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
-            assets -= feeAmount;
+            uint256 feeAmount = assetsToUtilize.mulDiv(params.fee, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
+            assets += feeAmount;
         }
     }
 
     function getPreviewWithdraw(PreviewParams memory params) external view returns (uint256 shares) {
-        // TODO
+        // get idle assets
+        (, uint256 idleAssets, uint256 totalAssets) = getTotalAssets(params.addr, params.cache);
+
+        // calc the amount of assets that can not be withdrawn via idle
+        (, uint256 assetsToDeutilize) = params.assetsOrShares.trySub(idleAssets);
+        if (assetsToDeutilize > 0) {
+            // apply exit fee to assets that should be deutilized and add exit fee amount the asset amount
+            uint256 feeAmount = assetsToDeutilize.mulDiv(params.fee, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
+            params.assetsOrShares += feeAmount;
+        }
+        shares = _convertToShares(params.assetsOrShares, totalAssets, params.totalSupply, Math.Rounding.Ceil);
     }
 
     function getPreviewRedeem(PreviewParams memory params) external view returns (uint256 assets) {
-        // TODO
+        // calculate the amount of assets before applying exit fee
+        (, uint256 idleAssets, uint256 totalAssets) = getTotalAssets(params.addr, params.cache);
+        assets = _convertToAssets(params.assetsOrShares, totalAssets, params.totalSupply, Math.Rounding.Floor);
+
+        // calculate the amount of assets that will be deutilized
+        (, uint256 assetsToDeutilize) = assets.trySub(idleAssets);
+        if (assetsToDeutilize > 0) {
+            // aply exit fee to the portion of assets that will be deutilized
+            uint256 feeAmount = assetsToDeutilize.mulDiv(params.fee, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
+            assets -= feeAmount;
+        }
     }
 
     /**
