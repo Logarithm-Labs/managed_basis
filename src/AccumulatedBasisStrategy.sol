@@ -373,7 +373,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 productBalance = IERC20(product()).balanceOf(address(this));
         uint256 positionNetBalance = IOffChainPositionManager($.positionManager).positionNetBalance();
         uint256 productValueInAsset = $.oracle.convertTokenAmount(product(), asset(), productBalance);
-        assets = productValueInAsset + positionNetBalance;
+        assets = productValueInAsset + positionNetBalance + $.assetsToWithdraw;
     }
 
     function idleAssets() public view virtual returns (uint256 assets) {
