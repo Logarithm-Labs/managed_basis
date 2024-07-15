@@ -1083,14 +1083,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         if (status == StrategyStatus.KEEPING) {
             // processing withdraw requests
-            uint256 assetsToWithdraw_ = $.assetsToWithdraw + params.collateralDeltaAmount;
-            uint256 totalAvailableAmount = assetsToWithdraw_ + params.executionCost;
-            $.assetsToWithdraw = assetsToWithdraw_;
-
-            _processClosedWithdrawRequests(totalAvailableAmount, params.executionCost);
-
-            $.pendingDecreaseCollateral -= params.collateralDeltaAmount;
-            $.withdrawingFromHedge -= params.collateralDeltaAmount;
+            _processWithdrawRequests(params.collateralDeltaAmount);
+            uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
+            (, $.pendingDecreaseCollateral) = _pendingDecreaseCollateral.trySub(params.collateralDeltaAmount);
         } else if (status == StrategyStatus.REBALANCING_DOWN) {
             // processing rebalance request
             // TODO:impelement
