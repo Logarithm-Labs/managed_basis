@@ -52,7 +52,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     struct WithdrawRequest {
         address receiver;
         uint256 requestedAssets;
-        uint256 claimableAssets;
         uint256 accRequestedWithdrawAssets;
     }
 
@@ -283,12 +282,11 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         // Conclusion: we need to do the transfer after the burn so that any reentrancy would happen after the
         // shares are burned and after the assets are transferred, which is a valid state.
         _burn(owner, shares);
-        uint256 claimableAssets = assets.mulDiv(PRECISION - $.exitCost, PRECISION);
 
         uint256 idle = idleAssets();
-        if (idle >= claimableAssets) {
-            uint256 assetsWithdrawnFromSpot = claimableAssets.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
-            uint256 assetsWithdrawnFromHedge = claimableAssets - assetsWithdrawnFromSpot;
+        if (idle >= assets) {
+            uint256 assetsWithdrawnFromSpot = assets.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
+            uint256 assetsWithdrawnFromHedge = assets - assetsWithdrawnFromSpot;
 
             // update pending states, prevent underflow
             (, uint256 pendingUtilization_) = $.pendingUtilization.trySub(assetsWithdrawnFromSpot);
@@ -298,7 +296,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
             emit UpdatePendingUtilization(pendingUtilization_);
 
-            IERC20(asset()).safeTransfer(receiver, claimableAssets);
+            IERC20(asset()).safeTransfer(receiver, assets);
         } else {
             // if all idle assets are withdrawn, set pending states to zero
             $.pendingUtilization = 0;
@@ -306,7 +304,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             $.assetsToClaim += idle;
             emit UpdatePendingUtilization(0);
 
-            (, uint256 pendingWithdraw) = claimableAssets.trySub(idle);
+            (, uint256 pendingWithdraw) = assets.trySub(idle);
 
             uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
             _accRequestedWithdrawAssets += pendingWithdraw;
@@ -317,7 +315,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             $.withdrawRequests[withdrawId] = WithdrawRequest({
                 receiver: receiver,
                 requestedAssets: assets,
-                claimableAssets: claimableAssets,
                 accRequestedWithdrawAssets: _accRequestedWithdrawAssets
             });
 
@@ -354,12 +351,12 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             revert Errors.RequestNotExecuted();
         }
 
-        $.assetsToClaim -= withdrawRequest.claimableAssets;
-        IERC20(asset()).safeTransfer(msg.sender, withdrawRequest.claimableAssets);
+        $.assetsToClaim -= withdrawRequest.requestedAssets;
+        IERC20(asset()).safeTransfer(msg.sender, withdrawRequest.requestedAssets);
 
         delete $.withdrawRequests[requestKey];
 
-        emit Claim(msg.sender, requestKey, withdrawRequest.claimableAssets);
+        emit Claim(msg.sender, requestKey, withdrawRequest.requestedAssets);
     }
 
     /*//////////////////////////////////////////////////////////////
