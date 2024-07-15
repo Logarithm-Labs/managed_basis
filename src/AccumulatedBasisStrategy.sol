@@ -49,6 +49,11 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
 
+    struct WithdrawRequest {
+        uint256 requestedAmount;
+        uint256 accRequestedWithdrawAssets;
+    }
+
     struct WithdrawState {
         uint256 requestTimestamp;
         uint256 requestedAmount;
@@ -76,19 +81,22 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 assetsToClaim; // asset balance that is ready to claim
         uint256 assetsToWithdraw; // asset balance that is processed for withdrawals
         uint256 pendingUtilization;
-        uint256 pendingDeutilization;
+        // uint256 pendingDeutilization;
         uint256 pendingIncreaseCollateral;
         uint256 pendingDecreaseCollateral;
-        uint256 totalPendingWithdraw; // total amount of asset that remains to be withdrawn
-        uint256 withdrawnFromSpot; // asset amount withdrawn from spot that is not yet processed
-        uint256 withdrawnFromIdle; // asset amount withdrawn from idle that is not yet processed
-        uint256 withdrawingFromHedge; // asset amount that is ready to be withdrawn from hedge
-        uint256 spotExecutionPrice;
-        bytes32[] activeWithdrawRequests;
-        bytes32[] closedWithdrawRequests;
+        // uint256 totalPendingWithdraw; // total amount of asset that remains to be withdrawn
+        // uint256 withdrawnFromSpot; // asset amount withdrawn from spot that is not yet processed
+        // uint256 withdrawnFromIdle; // asset amount withdrawn from idle that is not yet processed
+        // uint256 withdrawingFromHedge; // asset amount that is ready to be withdrawn from hedge
+        // uint256 spotExecutionPrice;
+        // bytes32[] activeWithdrawRequests;
+        // bytes32[] closedWithdrawRequests;
+        uint256 accRequestedWithdrawAssets;
+        uint256 proccessedWithdrawAssets;
         StrategyStatus strategyStatus;
         mapping(address => uint128) requestCounter;
-        mapping(bytes32 => WithdrawState) withdrawRequests;
+        // mapping(bytes32 => WithdrawState) withdrawRequests;
+        mapping(bytes32 => WithdrawRequest) withdrawRequests;
     }
     // mapping(bytes32 => RequestParams) positionRequests;
 
@@ -148,7 +156,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event WithdrawRequest(
+    event WithdrawRequested(
         address indexed caller, address indexed receiver, address indexed owner, bytes32 withdrawId, uint256 amount
     );
 
@@ -764,6 +772,39 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             isIncrease = true;
             hedgeDeviationInTokens = spotExposure - hedgeExposure;
         }
+    }
+
+    /// @dev process withdraw request
+    /// Note: should be called whenever assets come to this vault
+    /// including user's deposit and system's deutilizing
+    ///
+    /// @return remaining assets which goes to idle
+    function _processWithdrawRequests(uint256 assets) private returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        uint256 _proccessedWithdrawAssets = $.proccessedWithdrawAssets;
+        uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
+
+        // check if there is neccessarity to process withdraw requests
+        if (_proccessedWithdrawAssets < _accRequestedWithdrawAssets) {
+            uint256 remainingAssets;
+            uint256 proccessedWithdrawAssetsAfter = _proccessedWithdrawAssets + assets;
+
+            // if proccessedWithdrawAssets overshoots accRequestedWithdrawAssets,
+            // then cap it by accRequestedWithdrawAssets
+            // so that the remaining asset goes to idle
+            if (proccessedWithdrawAssetsAfter > _accRequestedWithdrawAssets) {
+                remainingAssets = proccessedWithdrawAssetsAfter - _accRequestedWithdrawAssets;
+                proccessedWithdrawAssetsAfter = _accRequestedWithdrawAssets;
+                assets = proccessedWithdrawAssetsAfter - _proccessedWithdrawAssets;
+            }
+
+            $.assetsToClaim += assets;
+            $.proccessedWithdrawAssets = proccessedWithdrawAssetsAfter;
+
+            return remainingAssets;
+        }
+
+        return assets;
     }
 
     function _processActiveWithdrawRequests(uint256 amountExecuted, uint256 executionCost) internal {
