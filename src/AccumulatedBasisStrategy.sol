@@ -507,7 +507,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             pendingIncreaseCollateral_ -= collateralDeltaAmount;
         }
         IOffChainPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
-        $.spotExecutionPrice = amount.mulDiv(10 ** IERC20Metadata(product()).decimals(), amountOut, Math.Rounding.Ceil);
+        // $.spotExecutionPrice = amount.mulDiv(10 ** IERC20Metadata(product()).decimals(), amountOut, Math.Rounding.Ceil);
         $.pendingIncreaseCollateral = pendingIncreaseCollateral_;
         $.pendingUtilization = pendingUtilization_ - amount;
 
@@ -557,13 +557,13 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             revert Errors.UnsupportedSwapType();
         }
 
-        $.spotExecutionPrice = amountOut.mulDiv(10 ** IERC20Metadata(product()).decimals(), amount, Math.Rounding.Ceil);
+        // $.spotExecutionPrice = amountOut.mulDiv(10 ** IERC20Metadata(product()).decimals(), amount, Math.Rounding.Ceil);
 
         if ($.strategyStatus == StrategyStatus.WITHDRAWING) {
             // processing withdraw requests
             $.assetsToWithdraw += amountOut;
-            $.totalPendingWithdraw -= amountOut;
-            $.withdrawnFromSpot += amountOut;
+            // $.totalPendingWithdraw -= amountOut;
+            // $.withdrawnFromSpot += amountOut;
         }
 
         IOffChainPositionManager($.positionManager).adjustPosition(amount, 0, false);
@@ -1023,24 +1023,26 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
         if (status == StrategyStatus.WITHDRAWING) {
-            uint256 indexPrecision = 10 ** uint256(IERC20Metadata(product()).decimals());
-            uint256 sizeDeltaInAsset = params.executionPrice.mulDiv(params.sizeDeltaInTokens, indexPrecision);
+            // uint256 indexPrecision = 10 ** uint256(IERC20Metadata(product()).decimals());
+            // uint256 sizeDeltaInAsset = params.executionPrice.mulDiv(params.sizeDeltaInTokens, indexPrecision);
             uint256 amountExecuted = sizeDeltaInAsset.mulDiv(PRECISION, $.targetLeverage);
-
-            // calculate exit cost
-            uint256 executionCost;
-            if ($.exitCost == 0) {
-                // if no exit cost use manual calculation
-                int256 executionSpread = int256(params.executionPrice) - int256($.spotExecutionPrice);
-                int256 executionCost_ = executionSpread > 0
-                    ? (uint256(executionSpread).mulDiv(params.sizeDeltaInTokens, indexPrecision)).toInt256()
-                    : -(uint256(-executionSpread).mulDiv(params.sizeDeltaInTokens, indexPrecision)).toInt256();
-                executionCost_ += params.executionCost.toInt256();
-                executionCost = executionCost_ > int256(0) ? uint256(executionCost_) : uint256(0);
-            } else {
-                executionCost = sizeDeltaInAsset.mulDiv($.exitCost, PRECISION);
-            }
-            _processActiveWithdrawRequests(amountExecuted, executionCost);
+            $.pendingDecreaseCollateral += amountExecuted;
+            // // calculate exit cost
+            // uint256 executionCost;
+            // if ($.exitCost == 0) {
+            //     // if no exit cost use manual calculation
+            //     int256 executionSpread = int256(params.executionPrice) - int256($.spotExecutionPrice);
+            //     int256 executionCost_ = executionSpread > 0
+            //         ? (uint256(executionSpread).mulDiv(params.sizeDeltaInTokens, indexPrecision)).toInt256()
+            //         : -(uint256(-executionSpread).mulDiv(params.sizeDeltaInTokens, indexPrecision)).toInt256();
+            //     executionCost_ += params.executionCost.toInt256();
+            //     executionCost = executionCost_ > int256(0) ? uint256(executionCost_) : uint256(0);
+            // } else {
+            //     executionCost = sizeDeltaInAsset.mulDiv($.exitCost, PRECISION);
+            // }
+            uint256 _assetsToWithdraw = $.assetsToWithdraw;
+            $.assetsToWithdraw = 0;
+            _processWithdrawRequests(_assetsToWithdraw);
         } else if (status == StrategyStatus.REBALANCING_DOWN) {
             //TODO: implement
             // processing rebalance request
