@@ -638,6 +638,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             }
         }
 
+        $.strategyStatus = StrategyStatus.IDLE;
+        emit UpdateStrategyStatus(StrategyStatus.IDLE);
+
         _checkStrategyStatus();
 
         emit AfterAdjustPosition(
@@ -651,31 +654,33 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         bool statusKeep;
         bool hedgeDeviation;
         bool decreaseCollateral;
-        bool activeRequests;
-        bool closedRequests;
+
+        upkeepNeeded = _checkUpkeep();
         if ($.strategyStatus == StrategyStatus.NEED_KEEP) {
-            upkeepNeeded = true;
             statusKeep = true;
         }
 
         (uint256 hedgeDeviationInTokens, /* bool isIncrease */ ) = _checkHedgeDeviation();
         if (hedgeDeviationInTokens > 0) {
-            upkeepNeeded = true;
             hedgeDeviation = true;
         }
 
         uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
         if (pendingDecreaseCollateral_ > 0) {
-            upkeepNeeded = true;
             decreaseCollateral = true;
         }
 
-        return
-            (upkeepNeeded, abi.encode(statusKeep, hedgeDeviation, decreaseCollateral, activeRequests, closedRequests));
+        return (upkeepNeeded, abi.encode(statusKeep, hedgeDeviation, decreaseCollateral));
     }
 
     function _checkUpkeep() internal view virtual returns (bool upkeepNeeded) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        // when strategy is in operation, should return false
+        if ($.strategyStatus != StrategyStatus.IDLE) {
+            return false;
+        }
+
         if ($.strategyStatus == StrategyStatus.NEED_KEEP) {
             return true;
         }
@@ -689,6 +694,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (pendingDecreaseCollateral_ > 0) {
             return true;
         }
+
+        return false;
     }
 
     //TODO: accomodate for Chainlink interface
@@ -722,9 +729,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (upkeepNeeded) {
             $.strategyStatus = StrategyStatus.NEED_KEEP;
             emit UpdateStrategyStatus(StrategyStatus.NEED_KEEP);
-        } else {
-            $.strategyStatus = StrategyStatus.IDLE;
-            emit UpdateStrategyStatus(StrategyStatus.IDLE);
         }
     }
 
