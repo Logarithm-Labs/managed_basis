@@ -160,9 +160,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         address indexed caller, address indexed receiver, address indexed owner, bytes32 withdrawId, uint256 amount
     );
 
-    event ExecuteWithdraw(bytes32 requestId, uint256 requestedAmount, uint256 executedAmount);
+    event ExecuteWithdraw(bytes32 requestKey, uint256 requestedAmount, uint256 executedAmount);
 
-    event Claim(address indexed claimer, bytes32 requestId, uint256 amount);
+    event Claim(address indexed claimer, bytes32 requestKey, uint256 amount);
 
     event UpdatePendingUtilization(uint256 amount);
 
@@ -311,10 +311,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
             IERC20(asset()).safeTransfer(receiver, assets);
         } else {
-            uint128 counter = $.requestCounter[owner];
-
-            uint256 totalAssets_ = totalAssets();
-            uint256 requestedAmount = assets > totalAssets_ ? totalAssets_ : assets;
+            // uint256 totalAssets_ = totalAssets();
+            // uint256 requestedAmount = assets > totalAssets_ ? totalAssets_ : assets;
             // bytes32 withdrawId = getWithdrawId(owner, counter);
             // $.withdrawRequests[withdrawId] = WithdrawState({
             //     requestTimestamp: uint128(block.timestamp),
@@ -336,16 +334,16 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             $.assetsToClaim += idle;
             emit UpdatePendingUtilization(0);
 
-            (, uint256 pendingWithdraw) = requestedAmount.trySub(idle);
+            (, uint256 pendingWithdraw) = assets.trySub(idle);
 
             uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
             _accRequestedWithdrawAssets += pendingWithdraw;
             $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
+
+            uint128 counter = $.requestCounter[owner];
             bytes32 withdrawId = getWithdrawId(owner, counter);
-            $.withdrawRequests[withdrawId] = WithdrawRequest({
-                requestedAmount: requestedAmount,
-                accRequestedWithdrawAssets: _accRequestedWithdrawAssets
-            });
+            $.withdrawRequests[withdrawId] =
+                WithdrawRequest({requestedAmount: assets, accRequestedWithdrawAssets: _accRequestedWithdrawAssets});
 
             uint256 totalPendingWithdraw_ = totalPendingWithdraw();
             uint256 pendingDeutilizationInAsset_ =
@@ -370,31 +368,28 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
-    function claim(bytes32 requestId) external virtual {
+    function claim(bytes32 requestKey) external virtual {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        WithdrawState memory requestData = $.withdrawRequests[requestId];
+        WithdrawRequest memory withdrawRequest = $.withdrawRequests[requestKey];
 
         // validate claim
-        if (requestData.receiver != msg.sender) {
-            revert Errors.UnauthorizedClaimer(msg.sender, requestData.receiver);
-        }
-        if (!requestData.isExecuted) {
-            revert Errors.RequestNotExecuted();
-        }
-        if (requestData.isClaimed) {
+        if (requestData.receiver == address(0)) {
             revert Errors.RequestAlreadyClaimed();
         }
 
-        uint256 totalExecuted =
-            requestData.executedFromSpot + requestData.executedFromIdle + requestData.executedFromHedge;
-        $.assetsToClaim -= totalExecuted;
-        $.withdrawRequests[requestId].isClaimed = true;
-        IERC20 asset_ = IERC20(asset());
-        asset_.safeTransfer(msg.sender, totalExecuted);
+        if (requestData.receiver != msg.sender) {
+            revert Errors.UnauthorizedClaimer(msg.sender, requestData.receiver);
+        }
+        if (!isClaimable(requestKey)) {
+            revert Errors.RequestNotExecuted();
+        }
 
-        delete $.withdrawRequests[requestId];
+        $.assetsToClaim -= withdrawRequest.requestedAmount;
+        IERC20(asset()).safeTransfer(msg.sender, withdrawRequest.requestedAmount);
 
-        emit Claim(msg.sender, requestId, totalExecuted);
+        delete $.withdrawRequests[requestKey];
+
+        emit Claim(msg.sender, requestKey, withdrawRequest.requestedAmount);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -448,6 +443,12 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         return baseAssets.mulDiv(PRECISION, PRECISION - $.entryCost);
     }
 
+    function isClaimable(bytes32 requestKey) public view returns (bool) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        WithdrawRequest memory withdrawRequest = $.withdrawRequests[requestKey];
+        return withdrawRequest.accRequestedWithdrawAssets <= $.proccessedWithdrawAssets;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         OPERATOR LOGIC
     //////////////////////////////////////////////////////////////*/
@@ -456,7 +457,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         public
         virtual
         onlyOperator
-        returns (bytes32 requestId)
+        returns (bytes32 requestKey)
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
@@ -519,7 +520,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         public
         virtual
         onlyOperator
-        returns (bytes32 requestId)
+        returns (bytes32 requestKey)
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
@@ -833,8 +834,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             uint256 index;
 
             while (amountAvailable > 0 && index < $.activeWithdrawRequests.length) {
-                bytes32 requestId0 = $.activeWithdrawRequests[index];
-                WithdrawState memory request0 = $.withdrawRequests[requestId0];
+                bytes32 requestKey0 = $.activeWithdrawRequests[index];
+                WithdrawState memory request0 = $.withdrawRequests[requestKey0];
                 uint256 remainingAmount = request0.requestedAmount
                     - (
                         request0.executedFromSpot + request0.executedFromIdle + request0.executedFromHedge
@@ -876,7 +877,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                     totalPendingWithdraw_ -= (allocationOfHedge + allocationOfCost);
                     withdrawingFromHedge_ += allocationOfHedge;
                     // if requested amount is fulfilled push to it closed
-                    $.closedWithdrawRequests.push(requestId0);
+                    $.closedWithdrawRequests.push(requestKey0);
 
                     index++;
                 } else {
@@ -894,7 +895,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 }
 
                 // update request storage state
-                $.withdrawRequests[requestId0] = request0;
+                $.withdrawRequests[requestKey0] = request0;
             }
 
             // recalculate pendingDeutilization based on the new oracle price
@@ -1255,8 +1256,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         return $.requestCounter[owner];
     }
 
-    function withdrawRequests(bytes32 requestId) external view returns (WithdrawState memory) {
+    function withdrawRequests(bytes32 requestKey) external view returns (WithdrawState memory) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.withdrawRequests[requestId];
+        return $.withdrawRequests[requestKey];
     }
 }
