@@ -401,7 +401,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            // feeAmount / assetsToUtilize = entryCost
             uint256 feeAmount = assetsToUtilize.mulDiv($.entryCost, PRECISION, Math.Rounding.Ceil);
             assets -= feeAmount;
         }
@@ -421,15 +420,41 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            // feeAmount / (assetsToUtilize + feeAmount) = entryCost
-            // feeAmount = assetsToUtilize * entryCost / (1-entryCost)
-            uint256 _entryCost = $.entryCost;
-            uint256 feeAmount = assetsToUtilize.mulDiv(_entryCost, PRECISION - _entryCost, Math.Rounding.Ceil);
+            uint256 feeAmount = assetsToUtilize.mulDiv($.entryCost, PRECISION, Math.Rounding.Ceil);
             assets += feeAmount;
         }
         return assets;
     }
 
+    function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        // calc the amount of assets that can not be withdrawn via idle
+        (, uint256 assetsToDeutilize) = assets.trySub(idleAssets());
+
+        // apply exit fee to assets that should be deutilized and add exit fee amount the asset amount
+        if (assetsToDeutilize > 0) {
+            // feeAmount / assetsToDeutilize = exitCost
+            uint256 feeAmount = assetsToDeutilize.mulDiv($.exitCost, PRECISION, Math.Rounding.Ceil);
+            assets += feeAmount;
+        }
+
+        return _convertToShares(assets, Math.Rounding.Ceil);
+    }
+
+    function previewRedeem(uint256 shares) public view virtual override returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        uint256 assets = _convertToAssets(shares, Math.Rounding.Floor);
+
+        // calculate the amount of assets that will be deutilized
+        (, uint256 assetsToDeutilize) = assets.trySub(idleAssets);
+
+        // apply exit fee to the portion of assets that will be deutilized
+        if (assetsToDeutilize > 0) {
+            uint256 feeAmount = assetsToDeutilize.mulDiv($.exitCost, PRECISION, Math.Rounding.Ceil);
+            assets -= feeAmount;
+        }
+
+        return assets;
     }
 
     function isClaimable(bytes32 requestKey) public view returns (bool) {
