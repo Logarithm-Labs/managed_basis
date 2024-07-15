@@ -396,8 +396,17 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (totalSupply() == 0) {
             return assets;
         }
-        uint256 baseShares = convertToShares(assets);
-        return baseShares.mulDiv(PRECISION - $.entryCost, PRECISION);
+        // calculate the amount of assets that will be utilized
+        (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
+
+        // apply entry fee only to the portion of assets that will be utilized
+        if (assetsToUtilize > 0) {
+            // feeAmount / assetsToUtilize = entryCost
+            uint256 feeAmount = assetsToUtilize.mulDiv($.entryCost, PRECISION, Math.Rounding.Ceil);
+            assets -= feeAmount;
+        }
+
+        return _convertToShares(assets, Math.Rounding.Floor);
     }
 
     function previewMint(uint256 shares) public view virtual override returns (uint256) {
@@ -405,8 +414,22 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (totalSupply() == 0) {
             return shares;
         }
-        uint256 baseAssets = convertToAssets(shares);
-        return baseAssets.mulDiv(PRECISION, PRECISION - $.entryCost);
+        uint256 assets = _convertToAssets(shares, Math.Rounding.Ceil);
+
+        // calculate the amount of assets that will be utilized
+        (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
+
+        // apply entry fee only to the portion of assets that will be utilized
+        if (assetsToUtilize > 0) {
+            // feeAmount / (assetsToUtilize + feeAmount) = entryCost
+            // feeAmount = assetsToUtilize * entryCost / (1-entryCost)
+            uint256 _entryCost = $.entryCost;
+            uint256 feeAmount = assetsToUtilize.mulDiv(_entryCost, PRECISION - _entryCost, Math.Rounding.Ceil);
+            assets += feeAmount;
+        }
+        return assets;
+    }
+
     }
 
     function isClaimable(bytes32 requestKey) public view returns (bool) {
