@@ -258,23 +258,11 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         IERC20 _asset = IERC20(asset());
         _asset.safeTransferFrom(caller, address(this), assets);
 
-        uint256 totalPendingWithdraw_ = $.totalPendingWithdraw;
-        if (totalPendingWithdraw_ >= assets) {
-            // if total pending withdraw is greater than assets we reallocate all deposited assets for withdrawal
-            $.assetsToWithdraw += assets;
-            $.withdrawnFromIdle += assets;
-            $.totalPendingWithdraw -= assets;
-        } else {
-            uint256 assetsToDeposit = assets - totalPendingWithdraw_;
+        uint256 assetsToDeposit = _processWithdrawRequests(assets);
+
+        if (assetsToDeposit > 0) {
             uint256 assetsToHedge = assetsToDeposit.mulDiv(PRECISION, PRECISION + $.targetLeverage);
             uint256 assetsToSpot = assetsToDeposit - assetsToHedge;
-            if (totalPendingWithdraw_ > 0) {
-                // if there are some pending withdrawals which are less then deposited assets we reallocate assets
-                // to cover pending withdrawals and increase pending utilization for remaining assets
-                $.assetsToWithdraw += totalPendingWithdraw_;
-                $.withdrawnFromIdle += totalPendingWithdraw_;
-                $.totalPendingWithdraw = 0;
-            }
             $.pendingUtilization += assetsToSpot;
             $.pendingIncreaseCollateral += assetsToHedge;
 
