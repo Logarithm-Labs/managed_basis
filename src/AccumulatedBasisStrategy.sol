@@ -446,7 +446,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 assets = _convertToAssets(shares, Math.Rounding.Floor);
 
         // calculate the amount of assets that will be deutilized
-        (, uint256 assetsToDeutilize) = assets.trySub(idleAssets);
+        (, uint256 assetsToDeutilize) = assets.trySub(idleAssets());
 
         // apply exit fee to the portion of assets that will be deutilized
         if (assetsToDeutilize > 0) {
