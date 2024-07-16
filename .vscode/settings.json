@@ -4,5 +4,8 @@
         "editor.defaultFormatter": "JuanBlanco.solidity" 
     },
     "solidity.formatter": "forge",
-    "editor.foldingImportsByDefault": true
+    "editor.foldingImportsByDefault": true,
+    "inline-bookmarks.default.words.red": "@fixme, @fix, @FIXME, @FIX",
+    "inline-bookmarks.default.words.blue": "@todo, @TODO",
+    "inline-bookmarks.default.words.green": "@audit\\-ok[\\s]"
 }
