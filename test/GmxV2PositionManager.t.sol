@@ -276,6 +276,11 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         );
     }
 
+    function test_positionNetBalance_withoutPositionOpened() public {
+        uint256 positionNetBalance = positionManager.positionNetBalance();
+        assertEq(positionNetBalance, 0);
+    }
+
     function test_positionNetBalance() public afterHavingPosition {
         uint256 positionNetBalance = positionManager.positionNetBalance();
         assertEq(positionNetBalance, 293078405);

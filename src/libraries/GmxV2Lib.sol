@@ -270,6 +270,12 @@ library GmxV2Lib {
     ) external view returns (uint256, uint256) {
         MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
         ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
+
+        if (positionInfo.position.addresses.collateralToken == address(0)) {
+            // no position opened
+            return (0, 0);
+        }
+
         uint256 collateralTokenPrice = IOracle(oracle).getAssetPrice(positionInfo.position.addresses.collateralToken);
         uint256 claimableUsd = positionInfo.fees.funding.claimableLongTokenAmount * prices.longTokenPrice.min
             + positionInfo.fees.funding.claimableShortTokenAmount * prices.shortTokenPrice.min;
@@ -400,9 +406,16 @@ library GmxV2Lib {
         MarketUtils.MarketPrices memory prices,
         address referralStorage
     ) private view returns (ReaderUtils.PositionInfo memory) {
+        ReaderUtils.PositionInfo memory positionInfo;
+
         bytes32 positionKey =
             _getPositionKey(params.account, params.market.marketToken, params.collateralToken, params.isLong);
-        ReaderUtils.PositionInfo memory positionInfo = IReader(params.reader).getPositionInfo(
+        Position.Props memory position = IReader(params.reader).getPosition(IDataStore(params.dataStore), positionKey);
+        if (position.numbers.sizeInUsd == 0) {
+            return positionInfo;
+        }
+
+        positionInfo = IReader(params.reader).getPositionInfo(
             IDataStore(params.dataStore),
             IReferralStorage(referralStorage),
             positionKey,
