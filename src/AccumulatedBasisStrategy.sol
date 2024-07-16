@@ -311,7 +311,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
 
             uint128 counter = $.requestCounter[owner];
-            bytes32 withdrawId = getWithdrawId(owner, counter);
+            bytes32 withdrawId = getWithdrawKey(owner, counter);
             $.withdrawRequests[withdrawId] = WithdrawRequest({
                 receiver: receiver,
                 requestedAssets: assets,
@@ -387,7 +387,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     //     (, assets) = $.totalPendingWithdraw.trySub($.withdrawingFromHedge);
     // }
 
-    function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
+    function getWithdrawKey(address owner, uint128 counter) public view virtual returns (bytes32) {
         return keccak256(abi.encodePacked(address(this), owner, counter));
     }
 
@@ -799,6 +799,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             return remainingAssets;
         }
 
+        emit UpdatePendingDeutilization(pendingDeutilization());
+
         return assets;
     }
 
@@ -1015,5 +1017,13 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function withdrawRequests(bytes32 requestKey) external view returns (WithdrawRequest memory) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         return $.withdrawRequests[requestKey];
+    }
+
+    function accRequestedWithdrawAssets() external view returns (uint256) {
+        return _getManagedBasisStrategyStorage().accRequestedWithdrawAssets;
+    }
+
+    function proccessedWithdrawAssets() external view returns (uint256) {
+        return _getManagedBasisStrategyStorage().proccessedWithdrawAssets;
     }
 }
