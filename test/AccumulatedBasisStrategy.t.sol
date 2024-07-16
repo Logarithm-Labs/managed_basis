@@ -155,13 +155,20 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
         IERC20(asset).transfer(user2, 10_000_000 * 1e6);
     }
 
-    modifier afterDeposit() {
+    modifier afterDeposited() {
         _deposit(user1, TEN_THOUSANDS_USDC);
         _;
     }
 
     modifier afterPartialUtilized() {
         _deposit(user1, TEN_THOUSANDS_USDC);
+        _utilize(strategy.pendingUtilization() / 2);
+        _;
+    }
+
+    modifier afterFullUtilized() {
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        _utilize(strategy.pendingUtilization());
         _;
     }
 
@@ -175,6 +182,15 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
         uint256 assets = strategy.previewMint(shares);
         IERC20(asset).approve(address(strategy), assets);
         strategy.mint(shares, from);
+    }
+
+    function _utilize(uint256 amount) private {
+        bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
+        vm.startPrank(operator);
+        strategy.utilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
+        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.DEPOSITING));
+        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.IDLE));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -201,20 +217,58 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
         assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC);
     }
 
-    function test_previewDepositMint_whenNotUtilized() public afterDeposit {
+    function test_previewDepositMint_whenNotUtilized() public afterDeposited {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC);
         uint256 assets = strategy.previewMint(shares);
         assertEq(shares, TEN_THOUSANDS_USDC * (1 ether - entryCost) / 1 ether);
         assertEq(assets, TEN_THOUSANDS_USDC);
     }
 
-    function test_deposit_whenNotUtilized() public afterDeposit {
+    function test_deposit_whenNotUtilized() public afterDeposited {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _deposit(user2, TEN_THOUSANDS_USDC / 2);
         assertEq(strategy.balanceOf(user2), shares);
     }
 
-    function test_mint_whenNotUtilized() public afterDeposit {
+    function test_mint_whenNotUtilized() public afterDeposited {
+        uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
+        _mint(user2, shares);
+        assertEq(strategy.balanceOf(user2), shares);
+        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC * 3 / 2);
+    }
+
+    function test_previewDepositMint_whenPartialUtilized() public afterPartialUtilized {
+        uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC);
+        uint256 assets = strategy.previewMint(shares);
+        assertEq(assets, TEN_THOUSANDS_USDC);
+    }
+
+    function test_deposit_whenPartialUtilized() public afterPartialUtilized {
+        uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
+        _deposit(user2, TEN_THOUSANDS_USDC / 2);
+        assertEq(strategy.balanceOf(user2), shares);
+    }
+
+    function test_mint_whenPartialUtilized() public afterPartialUtilized {
+        uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
+        _mint(user2, shares);
+        assertEq(strategy.balanceOf(user2), shares);
+        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC * 3 / 2);
+    }
+
+    function test_previewDepositMint_whenFullUtilized() public afterFullUtilized {
+        uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC);
+        uint256 assets = strategy.previewMint(shares);
+        assertEq(assets, TEN_THOUSANDS_USDC);
+    }
+
+    function test_deposit_whenFullUtilized() public afterFullUtilized {
+        uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
+        _deposit(user2, TEN_THOUSANDS_USDC / 2);
+        assertEq(strategy.balanceOf(user2), shares);
+    }
+
+    function test_mint_whenFullUtilized() public afterFullUtilized {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _mint(user2, shares);
         assertEq(strategy.balanceOf(user2), shares);
@@ -225,19 +279,32 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
                         UTILIZE TEST
     //////////////////////////////////////////////////////////////*/
 
-    function test_utilize() public afterDeposit {
+    function test_utilize_partialDepositing() public afterDeposited {
         uint256 pendingUtilization = strategy.pendingUtilization();
         uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         assertEq(pendingUtilization, pendingIncreaseCollateral * targetLeverage / 1 ether);
-        uint256 amount = pendingUtilization / 2;
-        bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
-        vm.startPrank(operator);
-        strategy.utilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        _utilize(pendingUtilization / 2);
         uint256 totalAssets = strategy.totalAssets();
-        console.log("totalAssets", totalAssets);
+        assertApproxEqRel(totalAssets, TEN_THOUSANDS_USDC, 0.99 ether);
+        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC / 2);
+        assertEq(IERC20(asset).balanceOf(address(positionManager)), 0);
         pendingUtilization = strategy.pendingUtilization();
         pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         assertEq(pendingUtilization, pendingIncreaseCollateral * targetLeverage / 1 ether);
+    }
+
+    function test_utilize_fullDepositing() public afterDeposited {
+        uint256 pendingUtilization = strategy.pendingUtilization();
+        uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
+        assertEq(pendingUtilization, pendingIncreaseCollateral * targetLeverage / 1 ether);
+        _utilize(pendingUtilization);
+        uint256 totalAssets = strategy.totalAssets();
+        assertApproxEqRel(totalAssets, TEN_THOUSANDS_USDC, 0.99 ether);
+        assertEq(IERC20(asset).balanceOf(address(strategy)), 0);
+        assertEq(IERC20(asset).balanceOf(address(positionManager)), 0);
+        pendingUtilization = strategy.pendingUtilization();
+        pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
+        assertEq(pendingUtilization, 0);
+        assertEq(pendingIncreaseCollateral, 0);
     }
 }

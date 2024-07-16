@@ -187,7 +187,7 @@ contract ManagedBasisStrategyTest is Test {
 
         // get inch calldata
         string[] memory inputs = new string[](4);
-        inputs[0] = "python3";
+        inputs[0] = "python";
         inputs[1] = inchPyLocation;
         inputs[2] = "--json_data_file";
         inputs[3] = pathLocation;
