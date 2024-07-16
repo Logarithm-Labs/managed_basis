@@ -552,6 +552,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         // actual deutilize amount is min of amount, product balance and pending deutilization
         uint256 _pendingDeutilization = pendingDeutilization();
+        // @fixme don't need below one line
         amount = amount > productBalance ? productBalance : amount;
         amount = amount > _pendingDeutilization ? _pendingDeutilization : amount;
 
@@ -578,10 +579,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         // $.spotExecutionPrice = amountOut.mulDiv(10 ** IERC20Metadata(product()).decimals(), amount, Math.Rounding.Ceil);
 
         if ($.strategyStatus == StrategyStatus.WITHDRAWING) {
-            // processing withdraw requests
             $.assetsToWithdraw += amountOut;
-            // $.totalPendingWithdraw -= amountOut;
-            // $.withdrawnFromSpot += amountOut;
         }
 
         IOffChainPositionManager($.positionManager).adjustPosition(amount, 0, false);
@@ -701,7 +699,17 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     //TODO: accomodate for Chainlink interface
     function performUpkeep(bytes calldata) public {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        StrategyStatus status = $.strategyStatus;
+
+        if (status != StrategyStatus.NEED_KEEP && status != StrategyStatus.IDLE) {
+            return;
+        }
+
+        // process withdraw requests with assetsToWithdraw first,
+        // and then with idle assets
+        $.assetsToWithdraw = _processWithdrawRequests($.assetsToWithdraw);
         _processWithdrawRequests(idleAssets());
+
         (uint256 hedgeDeviationInTokens, bool isIncrease) = _checkHedgeDeviation();
         uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
         if (hedgeDeviationInTokens > 0) {
@@ -759,7 +767,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     /// Note: should be called whenever assets come to this vault
     /// including user's deposit and system's deutilizing
     ///
-    /// @return remaining assets which goes to idle
+    /// @return remaining assets which goes to idle or assetsToWithdraw
     function _processWithdrawRequests(uint256 assets) private returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 _proccessedWithdrawAssets = $.proccessedWithdrawAssets;
@@ -812,22 +820,10 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             uint256 sizeDeltaInAsset = params.executionPrice.mulDiv(params.sizeDeltaInTokens, indexPrecision);
             uint256 amountExecuted = sizeDeltaInAsset.mulDiv(PRECISION, $.targetLeverage);
             $.pendingDecreaseCollateral += amountExecuted;
-            // // calculate exit cost
-            // uint256 executionCost;
-            // if ($.exitCost == 0) {
-            //     // if no exit cost use manual calculation
-            //     int256 executionSpread = int256(params.executionPrice) - int256($.spotExecutionPrice);
-            //     int256 executionCost_ = executionSpread > 0
-            //         ? (uint256(executionSpread).mulDiv(params.sizeDeltaInTokens, indexPrecision)).toInt256()
-            //         : -(uint256(-executionSpread).mulDiv(params.sizeDeltaInTokens, indexPrecision)).toInt256();
-            //     executionCost_ += params.executionCost.toInt256();
-            //     executionCost = executionCost_ > int256(0) ? uint256(executionCost_) : uint256(0);
-            // } else {
-            //     executionCost = sizeDeltaInAsset.mulDiv($.exitCost, PRECISION);
-            // }
+
             uint256 _assetsToWithdraw = $.assetsToWithdraw;
-            $.assetsToWithdraw = 0;
-            _processWithdrawRequests(_assetsToWithdraw);
+            // don't make remainingAssets go to idle because it has execution cost
+            $.assetsToWithdraw = _processWithdrawRequests(_assetsToWithdraw);
         } else if (status == StrategyStatus.REBALANCING_DOWN) {
             //TODO: implement
             // processing rebalance request
@@ -868,7 +864,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         if (status == StrategyStatus.KEEPING) {
             // processing withdraw requests
-            _processWithdrawRequests(params.collateralDeltaAmount);
+            // don't increase idle asset by the remaining amount
+            $.assetsToWithdraw += _processWithdrawRequests(params.collateralDeltaAmount);
             uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
             (, $.pendingDecreaseCollateral) = _pendingDecreaseCollateral.trySub(params.collateralDeltaAmount);
         } else if (status == StrategyStatus.REBALANCING_DOWN) {
