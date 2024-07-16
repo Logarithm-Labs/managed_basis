@@ -171,6 +171,17 @@ library MarketUtils {
         return longToken == shortToken ? 2 : 1;
     }
 
+    // @dev get the max position impact factor for liquidations
+    // @param dataStore DataStore
+    // @param market the market to check
+    function getMaxPositionImpactFactorForLiquidations(IDataStore dataStore, address market)
+        internal
+        view
+        returns (uint256)
+    {
+        return dataStore.getUint(Keys.maxPositionImpactFactorForLiquidationsKey(market));
+    }
+
     // @dev get the min collateral factor
     // @param dataStore DataStore
     // @param market the market to check

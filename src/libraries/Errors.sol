@@ -52,10 +52,12 @@ library Errors {
     error UnsupportedSwapType();
 
     // @notice upkeep validation
-    error UnAuthorizedForwarder(address fowarder);
+    error UnauthorizedForwarder(address fowarder);
 
-    // @notice there is no positive when decrease collateral
-    error NotPositivePnl();
+    // @notice there is not enough positive pnl when decrease collateral
+    error NotEnoughPnl();
+
+    error NotEnoughCollateral();
 
     error ActiveRequestIsNotClosed(bytes32 requestId);
 
@@ -81,5 +83,7 @@ library Errors {
 
     error CallerNotOperator();
 
+    error InvalidAdjustmentParams();
+    
     error InvalidStrategyStatus(uint8 status);
 }
