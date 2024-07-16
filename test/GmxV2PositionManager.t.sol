@@ -257,6 +257,11 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         );
     }
 
+    function test_positionNetBalance_withoutPositionOpened() public {
+        uint256 positionNetBalance = positionManager.positionNetBalance();
+        assertEq(positionNetBalance, 0);
+    }
+
     function test_positionNetBalance() public afterHavingPosition {
         uint256 positionNetBalance = positionManager.positionNetBalance();
         assertEq(positionNetBalance, 293078405);
