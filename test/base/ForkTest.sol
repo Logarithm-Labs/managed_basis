@@ -20,7 +20,7 @@ contract ForkTest is Test {
     function _forkArbitrum() internal {
         uint256 arbitrumFork = vm.createFork(vm.rpcUrl("arbitrum_one"));
         vm.selectFork(arbitrumFork);
-        vm.rollFork(213168025);
+        // vm.rollFork(213168025);
 
         // L2 contracts explicitly reference 0x64 for the ArbSys precompile
         // and 0x6C for the ArbGasInfo precompile

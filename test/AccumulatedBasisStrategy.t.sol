@@ -33,6 +33,7 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
     uint256 constant USD_PRECISION = 1e30;
 
     uint256 public TEN_THOUSANDS_USDC = 10_000 * 1e6;
+    uint256 public THOUSAND_USDC = 1_000 * 1e6;
 
     address constant asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // USDC
     address constant product = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH
@@ -172,6 +173,31 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
         _;
     }
 
+    modifier afterWithdrawRequestCreated() {
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        _utilize(strategy.pendingUtilization() / 2);
+        uint256 redeemShares = strategy.balanceOf(user1) * 2 / 3;
+        vm.startPrank(user1);
+        strategy.redeem(redeemShares, user1, user1);
+        _;
+    }
+
+    modifier afterMultipleWithdrawRequestCreated() {
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        _utilize(strategy.pendingUtilization());
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        _utilize(strategy.pendingUtilization());
+
+        uint256 redeemShares1 = strategy.balanceOf(user1) / 5;
+        vm.startPrank(user1);
+        strategy.redeem(redeemShares1, user1, user1);
+
+        uint256 redeemShares2 = strategy.balanceOf(user2) / 4;
+        vm.startPrank(user2);
+        strategy.redeem(redeemShares2, user2, user2);
+        _;
+    }
+
     function _deposit(address from, uint256 assets) private {
         vm.startPrank(from);
         IERC20(asset).approve(address(strategy), assets);
@@ -193,11 +219,39 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
         assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.IDLE));
     }
 
+    function _deutilize(uint256 amount) private {
+        bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
+        vm.startPrank(operator);
+        strategy.deutilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
+        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.WITHDRAWING));
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.NEED_KEEP));
+    }
+
+    function _performUpkeep() private {
+        (, bytes memory performData) = strategy.checkUpkeep("");
+        (, bool hedgeDeviation, bool decreaseCollateral) = abi.decode(performData, (bool, bool, bool));
+        if (hedgeDeviation) {
+            strategy.performUpkeep("");
+            assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.KEEPING));
+            _executeOrder(positionManager.pendingDecreaseOrderKey());
+            _executeOrder(positionManager.pendingIncreaseOrderKey());
+        }
+
+        if (decreaseCollateral) {
+            strategy.performUpkeep("");
+            assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.KEEPING));
+            _executeOrder(positionManager.pendingDecreaseOrderKey());
+        }
+
+        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.IDLE));
+    }
+
     /*//////////////////////////////////////////////////////////////
                         DEPOSIT/MINT TEST
     //////////////////////////////////////////////////////////////*/
 
-    function test_previewDepositMint_first() public {
+    function test_previewDepositMint_first() public view {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC);
         assertEq(shares, TEN_THOUSANDS_USDC);
         uint256 assets = strategy.previewMint(shares);
@@ -275,8 +329,35 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
         assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC * 3 / 2);
     }
 
+    function test_previewDepositMint_withPendingWithdraw() public afterWithdrawRequestCreated {
+        uint256 shares = strategy.previewDeposit(THOUSAND_USDC);
+        uint256 assets = strategy.previewMint(shares);
+        assertEq(assets, THOUSAND_USDC);
+    }
+
+    function test_deposit_withPendingWithdraw_smallerThanTotalPendingWithdraw() public afterWithdrawRequestCreated {
+        uint256 pendingWithdrawBefore = strategy.totalPendingWithdraw();
+        uint256 shares = strategy.previewDeposit(THOUSAND_USDC);
+        _deposit(user2, THOUSAND_USDC);
+        assertEq(strategy.balanceOf(user2), shares);
+        uint256 pendingWithdrawAfter = strategy.totalPendingWithdraw();
+        assertEq(pendingWithdrawAfter + THOUSAND_USDC, pendingWithdrawBefore);
+        assertFalse(strategy.isClaimable(strategy.getWithdrawKey(user1, 0)));
+    }
+
+    function test_deposit_withPendingWithdraw_biggerThanTotalPendingWithdraw() public afterWithdrawRequestCreated {
+        uint256 pendingWithdrawBefore = strategy.totalPendingWithdraw();
+        uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC);
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        assertEq(strategy.balanceOf(user2), shares);
+        uint256 pendingWithdrawAfter = strategy.totalPendingWithdraw();
+        assertEq(pendingWithdrawAfter, 0);
+        assertTrue(strategy.isClaimable(strategy.getWithdrawKey(user1, 0)));
+        assertEq(strategy.idleAssets(), TEN_THOUSANDS_USDC - pendingWithdrawBefore);
+    }
+
     /*//////////////////////////////////////////////////////////////
-                        UTILIZE TEST
+                            UTILIZE TEST
     //////////////////////////////////////////////////////////////*/
 
     function test_utilize_partialDepositing() public afterDeposited {
@@ -307,4 +388,56 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
         assertEq(pendingUtilization, 0);
         assertEq(pendingIncreaseCollateral, 0);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        REDEEM/WITHDRAW TEST
+    //////////////////////////////////////////////////////////////*/
+
+    function test_previewWithdrawRedeem_whenIdleEnough() public afterDeposited {
+        uint256 totalShares = strategy.balanceOf(user1);
+        uint256 assets = strategy.previewRedeem(totalShares / 2);
+        uint256 shares = strategy.previewWithdraw(assets);
+        assertEq(shares, totalShares / 2);
+    }
+
+    function test_withdraw_whenIdleEnough() public afterDeposited {
+        uint256 user1BalanceBefore = IERC20(asset).balanceOf(user1);
+        uint256 totalShares = strategy.balanceOf(user1);
+        uint256 assets = strategy.previewRedeem(totalShares / 2);
+        uint256 shares = strategy.previewWithdraw(assets);
+        strategy.withdraw(assets, user1, user1);
+        uint256 user1BalanceAfter = IERC20(asset).balanceOf(user1);
+        uint256 sharesAfter = strategy.balanceOf(user1);
+        assertEq(user1BalanceAfter, user1BalanceBefore + assets);
+        assertEq(sharesAfter, totalShares - shares);
+    }
+
+    function test_previewWithdrawRedeem_whenIdleNotEnough() public afterPartialUtilized {
+        uint256 totalShares = strategy.balanceOf(user1);
+        uint256 redeemShares = totalShares * 2 / 3;
+        uint256 assets = strategy.previewRedeem(redeemShares);
+        uint256 shares = strategy.previewWithdraw(assets);
+        assertEq(shares, redeemShares);
+    }
+
+    function test_withdraw_whenIdleNotEnough() public afterPartialUtilized {
+        uint256 totalShares = strategy.balanceOf(user1);
+        uint256 redeemShares = totalShares * 2 / 3;
+        uint256 assets = strategy.previewRedeem(redeemShares);
+        vm.expectEmit();
+        emit AccumulatedBasisStrategy.UpdatePendingUtilization(0);
+        vm.startPrank(user1);
+        strategy.redeem(redeemShares, user1, user1);
+        bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
+        AccumulatedBasisStrategy.WithdrawRequest memory withdrawRequest = strategy.withdrawRequests(requestKey);
+        assertFalse(strategy.isClaimable(requestKey));
+        assertEq(withdrawRequest.requestedAssets, assets);
+        assertEq(withdrawRequest.receiver, user1);
+        assertEq(withdrawRequest.accRequestedWithdrawAssets, assets - TEN_THOUSANDS_USDC / 2);
+        assertEq(strategy.idleAssets(), 0);
+        assertEq(strategy.assetsToClaim(), TEN_THOUSANDS_USDC / 2);
+        assertEq(strategy.proccessedWithdrawAssets(), 0);
+        assertEq(withdrawRequest.accRequestedWithdrawAssets, strategy.accRequestedWithdrawAssets());
+    }
+
 }
