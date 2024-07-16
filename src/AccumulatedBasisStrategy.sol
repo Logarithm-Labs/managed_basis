@@ -453,7 +453,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         // apply exit fee to the portion of assets that will be deutilized
         if (assetsToDeutilize > 0) {
-            uint256 feeAmount = assetsToDeutilize.mulDiv($.exitCost, PRECISION, Math.Rounding.Ceil);
+            // feeAmount / (assetsToDeutilize - feeAmount) = exitCost
+            // feeAmount = (assetsToDeutilize * exitCost) / (1 + exitCost)
+            uint256 _exitCost = $.exitCost;
+            uint256 feeAmount = assetsToDeutilize.mulDiv(_exitCost, PRECISION + _exitCost, Math.Rounding.Ceil);
             assets -= feeAmount;
         }
 
