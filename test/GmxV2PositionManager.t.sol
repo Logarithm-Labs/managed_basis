@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
-import {StdInvariant} from "forge-std/StdInvariant.sol";
+import {GmxV2Test} from "./base/GmxV2Test.sol";
+
 import {console} from "forge-std/console.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
@@ -14,14 +14,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
-import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 
-import {ArbGasInfoMock} from "./mock/ArbGasInfoMock.sol";
-import {ArbSysMock} from "./mock/ArbSysMock.sol";
-import {MockPriceFeed} from "./mock/MockPriceFeed.sol";
 import {MockStrategy} from "./mock/MockStrategy.sol";
 
-import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
 import {Config} from "src/Config.sol";
 import {ConfigKeys} from "src/libraries/ConfigKeys.sol";
@@ -29,24 +24,11 @@ import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {Keeper} from "src/Keeper.sol";
 import {Errors} from "src/libraries/Errors.sol";
 
-contract GmxV2PositionManagerTest is StdInvariant, Test {
+contract GmxV2PositionManagerTest is GmxV2Test {
     address owner = makeAddr("owner");
     address user = makeAddr("user");
 
     uint256 constant USD_PRECISION = 1e30;
-    uint256 constant USDC_PRECISION = 1e6;
-
-    address constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
-
-    address constant USDC_WHALE = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
-    address constant WETH_WHALE = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
-    address constant GMX_KEEPER = 0xE47b36382DC50b90bCF6176Ddb159C4b9333A7AB;
-    address constant GMX_DATA_STORE = 0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8;
-    address constant GMX_EXCHANGE_ROUTER = 0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8;
-    address constant GMX_ORDER_HANDLER = 0x352f684ab9e97a6321a13CF03A61316B681D9fD2;
-    address constant GMX_ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
-    address constant GMX_READER = 0xdA5A70c885187DaA71E7553ca9F728464af8d2ad;
-    address constant GMX_ETH_USDC_MARKET = 0x70d95587d40A2caf56bd97485aB3Eec10Bee6336;
 
     address constant asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // USDC
     address constant product = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH
@@ -58,7 +40,6 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
 
     uint256 constant targetLeverage = 3 ether;
 
-    GmxV2PositionManager positionManager;
     MockStrategy strategy;
     LogarithmOracle oracle;
     Keeper keeper;
@@ -185,7 +166,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         positionManager.adjustPosition(1 ether, 300 * USDC_PRECISION, true);
         bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
-        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(address(oracle));
         assertApproxEqRel(positionInfo.position.numbers.sizeInTokens, 1 ether, 0.99999 ether);
         assertEq(positionInfo.position.numbers.collateralAmount, 297826210);
         assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
@@ -198,7 +179,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         positionManager.adjustPosition(1 ether, 200 * USDC_PRECISION, true);
         bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
-        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(address(oracle));
         assertApproxEqRel(positionInfo.position.numbers.sizeInTokens, 1 ether, 0.99999 ether);
         assertEq(positionInfo.position.numbers.collateralAmount, 297826210);
     }
@@ -226,10 +207,10 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
 
     function test_adjustPosition_decreasePositionSize() public afterHavingPosition {
         vm.startPrank(address(strategy));
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         positionManager.adjustPosition(0.5 ether, 0, false);
         _executeOrder(positionManager.pendingDecreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         assertEq(
             positionInfoAfter.position.numbers.sizeInTokens,
             positionInfoBefore.position.numbers.sizeInTokens - 0.5 ether
@@ -237,12 +218,12 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
     }
 
     function test_adjustPosition_afterIncreasePositionSize() public afterHavingPosition {
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(0.5 ether, 0, true);
         bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         assertEq(
             strategy.sizeDeltaInTokens(),
             positionInfoAfter.position.numbers.sizeInTokens - positionInfoBefore.position.numbers.sizeInTokens
@@ -250,14 +231,14 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
     }
 
     function test_adjustPosition_afterIncreasePositionCollateral() public afterHavingPosition {
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         vm.startPrank(USDC_WHALE);
         IERC20(USDC).transfer(address(positionManager), 200 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(0, 200 * USDC_PRECISION, true);
         bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         assertEq(
             strategy.collateralDelta(),
             positionInfoAfter.position.numbers.collateralAmount - positionInfoBefore.position.numbers.collateralAmount
@@ -265,11 +246,11 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
     }
 
     function test_adjustPosition_afterDecreasePositionSize() public afterHavingPosition {
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(0.5 ether, 0, false);
         _executeOrder(positionManager.pendingDecreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         assertEq(
             strategy.sizeDeltaInTokens(),
             positionInfoBefore.position.numbers.sizeInTokens - positionInfoAfter.position.numbers.sizeInTokens
@@ -302,14 +283,14 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         uint256 collateralDelta = 200 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(0, collateralDelta, false);
         _executeOrder(positionManager.pendingDecreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertEq(positionInfoAfter.position.numbers.sizeInUsd, positionInfoBefore.position.numbers.sizeInUsd);
@@ -328,7 +309,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         uint256 collateralDelta = 200 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
@@ -337,7 +318,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
         assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertEq(positionInfoAfter.position.numbers.sizeInUsd, positionInfoBefore.position.numbers.sizeInUsd);
@@ -356,7 +337,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         uint256 collateralDelta = 300 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
@@ -366,7 +347,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         _executeOrder(positionManager.pendingIncreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertApproxEqRel(
@@ -391,7 +372,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         uint256 collateralDelta = 400 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
@@ -401,7 +382,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         _executeOrder(positionManager.pendingIncreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertApproxEqRel(
@@ -423,7 +404,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         uint256 collateralDelta = 200 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 1001 / 1000);
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd < 0);
@@ -433,7 +414,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         _executeOrder(positionManager.pendingIncreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
 
@@ -456,7 +437,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         uint256 collateralDelta = 200 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         console.log("-------before-------");
@@ -472,7 +453,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
         assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         console.log("-------after-------");
@@ -504,7 +485,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         uint256 collateralDelta = 300 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
@@ -513,7 +494,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
         assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertEq(
@@ -533,7 +514,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         uint256 collateralDelta = 200 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 1001 / 1000);
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd < 0);
@@ -543,7 +524,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         _executeOrder(positionManager.pendingIncreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertEq(
@@ -564,7 +545,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         uint256 collateralDelta = 600 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
-        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
@@ -581,7 +562,7 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         _executeOrder(positionManager.pendingIncreaseOrderKey());
-        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo();
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         console.log("-------after-------");
@@ -720,80 +701,10 @@ contract GmxV2PositionManagerTest is StdInvariant, Test {
         assertTrue(claimableShortAmount == 0);
     }
 
-    function _forkArbitrum() internal {
-        uint256 arbitrumFork = vm.createFork(vm.rpcUrl("arbitrum_one"));
-        vm.selectFork(arbitrumFork);
-        vm.rollFork(213168025);
-
-        // L2 contracts explicitly reference 0x64 for the ArbSys precompile
-        // and 0x6C for the ArbGasInfo precompile
-        // We'll replace it with the mock
-        address _arbsys = address(new ArbSysMock());
-        address _arbgasinfo = address(new ArbGasInfoMock());
-        vm.etch(address(100), _arbsys.code);
-        vm.etch(address(108), _arbgasinfo.code);
-    }
-
-    function _mockChainlinkPriceFeed(address priceFeed) internal {
-        (uint80 roundID, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound) =
-            IPriceFeed(priceFeed).latestRoundData();
-        uint8 decimals = IPriceFeed(priceFeed).decimals();
-        address mockPriceFeed = address(new MockPriceFeed());
-        vm.etch(priceFeed, mockPriceFeed.code);
-        MockPriceFeed(priceFeed).setOracleData(roundID, answer, startedAt, updatedAt, answeredInRound, decimals);
-    }
-
-    function _mockChainlinkPriceFeedAnswer(address priceFeed, int256 answer) internal {
-        MockPriceFeed(priceFeed).updatePrice(answer);
-    }
-
     function _moveTimestamp(uint256 deltaTime) internal {
-        uint256 targetTimestamp = vm.getBlockTimestamp() + deltaTime;
-        vm.warp(targetTimestamp);
-        MockPriceFeed(assetPriceFeed).setUpdatedAt(targetTimestamp);
-        MockPriceFeed(productPriceFeed).setUpdatedAt(targetTimestamp);
-    }
-
-    function _executeOrder(bytes32 key) internal {
-        if (key != bytes32(0)) {
-            IOrderHandler.SetPricesParams memory oracleParams;
-            address indexToken = positionManager.indexToken();
-            address longToken = positionManager.longToken();
-            address shortToken = positionManager.shortToken();
-            if (indexToken == longToken) {
-                address[] memory tokens = new address[](2);
-                tokens[0] = indexToken;
-                tokens[1] = shortToken;
-                oracleParams.priceFeedTokens = tokens;
-            } else {
-                address[] memory tokens = new address[](3);
-                tokens[0] = indexToken;
-                tokens[1] = longToken;
-                tokens[2] = shortToken;
-                oracleParams.priceFeedTokens = tokens;
-            }
-            vm.startPrank(GMX_KEEPER);
-            IOrderHandler(0x352f684ab9e97a6321a13CF03A61316B681D9fD2).executeOrder(key, oracleParams);
-        }
-    }
-
-    function _getPositionInfo() internal view returns (ReaderUtils.PositionInfo memory) {
-        return GmxV2Lib.getPositionInfo(
-            GmxV2Lib.GmxParams({
-                market: Market.Props({
-                    marketToken: positionManager.marketToken(),
-                    indexToken: positionManager.indexToken(),
-                    longToken: positionManager.longToken(),
-                    shortToken: positionManager.shortToken()
-                }),
-                dataStore: GMX_DATA_STORE,
-                reader: GMX_READER,
-                account: address(positionManager),
-                collateralToken: positionManager.collateralToken(),
-                isLong: positionManager.isLong()
-            }),
-            address(oracle),
-            IOrderHandler(GMX_ORDER_HANDLER).referralStorage()
-        );
+        address[] memory priceFeeds = new address[](2);
+        priceFeeds[0] = assetPriceFeed;
+        priceFeeds[1] = productPriceFeed;
+        _moveTimestamp(deltaTime, priceFeeds);
     }
 }
