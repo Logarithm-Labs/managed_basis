@@ -15,7 +15,7 @@ contract ForkTest is Test {
     address constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
 
     address constant USDC_WHALE = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
-    address constant WETH_WHALE = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
+    address constant WETH_WHALE = 0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8;
 
     function _forkArbitrum() internal {
         uint256 arbitrumFork = vm.createFork(vm.rpcUrl("arbitrum_one"));

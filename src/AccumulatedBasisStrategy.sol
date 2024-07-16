@@ -24,7 +24,7 @@ import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
-contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, OwnableUpgradeable {
+contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, OwnableUpgradeable {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using Math for uint256;
@@ -420,7 +420,10 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            uint256 feeAmount = assetsToUtilize.mulDiv($.entryCost, PRECISION, Math.Rounding.Ceil);
+            // feeAmount / (assetsToUtilize + feeAmount) = entryCost
+            // feeAmount = (assetsToUtilize * entryCost) / (1 - entryCost)
+            uint256 _entryCost = $.entryCost;
+            uint256 feeAmount = assetsToUtilize.mulDiv(_entryCost, PRECISION - _entryCost, Math.Rounding.Ceil);
             assets += feeAmount;
         }
         return assets;
