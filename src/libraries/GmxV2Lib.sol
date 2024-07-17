@@ -163,10 +163,11 @@ library GmxV2Lib {
         if (collateralDeltaAmount > result.initialCollateralDeltaAmount) {
             // fill the reducing collateral with realized pnl
             collateralDeltaAmount -= result.initialCollateralDeltaAmount;
-            if (totalPositionPnlUsd <= collateralDeltaAmount.toInt256()) {
+            // assuming totalPositionPnlUsd is positive, otherwise will revert with SafeCastOverflowedIntToUint
+            uint256 totalPositionPnlAmount = totalPositionPnlUsd.toUint256() / collateralTokenPrice;
+            if (totalPositionPnlAmount <= collateralDeltaAmount) {
                 revert Errors.NotEnoughPnl();
             }
-            uint256 totalPositionPnlAmount = totalPositionPnlUsd.toUint256() / collateralTokenPrice;
             uint256 sizeDeltaInTokensToBeRealized =
                 collateralDeltaAmount.mulDiv(position.numbers.sizeInTokens, totalPositionPnlAmount);
             result.sizeDeltaUsdToDecrease += _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokensToBeRealized);
