@@ -3,8 +3,7 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {IOffChainPositionManager} from "src/interfaces/IOffChainPositionManager.sol";
-import "src/interfaces/IManagedBasisStrategy.sol";
+import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IManagedBasisCallbackReceiver} from "src/interfaces/IManagedBasisCallbackReceiver.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -371,7 +370,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function utilizedAssets() public view virtual returns (uint256 assets) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 productBalance = IERC20(product()).balanceOf(address(this));
-        uint256 positionNetBalance = IOffChainPositionManager($.positionManager).positionNetBalance();
+        uint256 positionNetBalance = IPositionManager($.positionManager).positionNetBalance();
         uint256 productValueInAsset = $.oracle.convertTokenAmount(product(), asset(), productBalance);
         assets = productValueInAsset + positionNetBalance + $.assetsToWithdraw;
     }
@@ -529,7 +528,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             IERC20(asset()).safeTransfer($.positionManager, collateralDeltaAmount);
             pendingIncreaseCollateral_ -= collateralDeltaAmount;
         }
-        IOffChainPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
+        IPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
         // $.spotExecutionPrice = amount.mulDiv(10 ** IERC20Metadata(product()).decimals(), amountOut, Math.Rounding.Ceil);
         $.pendingIncreaseCollateral = pendingIncreaseCollateral_;
         $.pendingUtilization = pendingUtilization_ - amount;
@@ -588,7 +587,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             $.assetsToWithdraw += amountOut;
         }
 
-        IOffChainPositionManager($.positionManager).adjustPosition(amount, 0, false);
+        IPositionManager($.positionManager).adjustPosition(amount, 0, false);
 
         emit Deutilize(msg.sender, amount, amountOut);
     }
@@ -720,16 +719,16 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
         if (hedgeDeviationInTokens > 0) {
             if (isIncrease) {
-                IOffChainPositionManager($.positionManager).adjustPosition(hedgeDeviationInTokens, 0, true);
+                IPositionManager($.positionManager).adjustPosition(hedgeDeviationInTokens, 0, true);
             } else {
-                IOffChainPositionManager($.positionManager).adjustPosition(
+                IPositionManager($.positionManager).adjustPosition(
                     hedgeDeviationInTokens, pendingDecreaseCollateral_, false
                 );
             }
             $.strategyStatus = StrategyStatus.KEEPING;
             emit UpdateStrategyStatus(StrategyStatus.KEEPING);
         } else if (pendingDecreaseCollateral_ > 0) {
-            IOffChainPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
+            IPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
             $.strategyStatus = StrategyStatus.KEEPING;
             emit UpdateStrategyStatus(StrategyStatus.KEEPING);
         } else {
@@ -749,7 +748,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function _checkHedgeDeviation() internal view returns (uint256 hedgeDeviationInTokens, bool isIncrease) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 spotExposure = IERC20(product()).balanceOf(address(this));
-        uint256 hedgeExposure = IOffChainPositionManager($.positionManager).positionSizeInTokens();
+        uint256 hedgeExposure = IPositionManager($.positionManager).positionSizeInTokens();
         if (spotExposure == 0) {
             if (hedgeExposure == 0) {
                 return (0, false);
@@ -907,9 +906,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     //         // TODO: fallback swap
     //         revert Errors.UnsupportedSwapType();
     //     }
-    //     uint256 positionSizeInTokens = IOffChainPositionManager($.positionManager).positionSizeInTokens();
-    //     uint256 positionNetBalance = IOffChainPositionManager($.positionManager).positionNetBalance();
-    //     IOffChainPositionManager($.positionManager).adjustPosition(positionSizeInTokens, positionNetBalance, false);
+    //     uint256 positionSizeInTokens = IPositionManager($.positionManager).positionSizeInTokens();
+    //     uint256 positionNetBalance = IPositionManager($.positionManager).positionNetBalance();
+    //     IPositionManager($.positionManager).adjustPosition(positionSizeInTokens, positionNetBalance, false);
     // }
 
     // function wipeStrategy() external onlyOwner {
