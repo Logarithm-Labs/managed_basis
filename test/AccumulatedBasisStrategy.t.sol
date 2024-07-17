@@ -440,4 +440,96 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
         assertEq(withdrawRequest.accRequestedWithdrawAssets, strategy.accRequestedWithdrawAssets());
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        DEUTILIZE/UPKEEP TEST
+    //////////////////////////////////////////////////////////////*/
+
+    function test_deutilize_partial_withSingleRequest() public afterWithdrawRequestCreated {
+        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        _deutilize(pendingDeutilization / 2);
+        _performUpkeep();
+
+        bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
+        assertFalse(strategy.isClaimable(requestKey));
+        vm.expectRevert(Errors.RequestNotExecuted.selector);
+        vm.startPrank(user1);
+        strategy.claim(requestKey);
+    }
+
+    function test_deutilize_full_withSingleRequest() public afterWithdrawRequestCreated {
+        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        _deutilize(pendingDeutilization);
+        _performUpkeep();
+
+        bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
+        assertTrue(strategy.isClaimable(requestKey));
+
+        AccumulatedBasisStrategy.WithdrawRequest memory withdrawRequest = strategy.withdrawRequests(requestKey);
+        uint256 balanceBefore = IERC20(asset).balanceOf(user1);
+        vm.startPrank(user1);
+        strategy.claim(requestKey);
+        uint256 balanceAfter = IERC20(asset).balanceOf(user1);
+        assertEq(balanceBefore + withdrawRequest.requestedAssets, balanceAfter);
+    }
+
+    function test_deutilize_partial_withMultipleRequest() public afterMultipleWithdrawRequestCreated {
+        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        _deutilize(pendingDeutilization / 2);
+        _performUpkeep();
+
+        bytes32 requestKey1 = strategy.getWithdrawKey(user1, 0);
+        assertTrue(strategy.isClaimable(requestKey1));
+
+        bytes32 requestKey2 = strategy.getWithdrawKey(user2, 0);
+        assertFalse(strategy.isClaimable(requestKey2));
+
+        AccumulatedBasisStrategy.WithdrawRequest memory withdrawRequest1 = strategy.withdrawRequests(requestKey1);
+        uint256 balanceBefore = IERC20(asset).balanceOf(user1);
+        vm.startPrank(user1);
+        strategy.claim(requestKey1);
+        uint256 balanceAfter = IERC20(asset).balanceOf(user1);
+        assertEq(balanceBefore + withdrawRequest1.requestedAssets, balanceAfter);
+    }
+
+    function test_deutilize_full_withMultipleRequest() public afterMultipleWithdrawRequestCreated {
+        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        _deutilize(pendingDeutilization);
+        _performUpkeep();
+
+        pendingDeutilization = strategy.pendingDeutilization();
+        console.log("pendingDeutilization", pendingDeutilization);
+
+        if (pendingDeutilization > 0) {
+            _deutilize(pendingDeutilization);
+            _performUpkeep();
+        }
+
+        pendingDeutilization = strategy.pendingDeutilization();
+        console.log("pendingDeutilization", pendingDeutilization);
+
+        if (pendingDeutilization > 0) {
+            _deutilize(pendingDeutilization);
+            _performUpkeep();
+        }
+
+        bytes32 requestKey1 = strategy.getWithdrawKey(user1, 0);
+        assertTrue(strategy.isClaimable(requestKey1));
+
+        bytes32 requestKey2 = strategy.getWithdrawKey(user2, 0);
+        assertTrue(strategy.isClaimable(requestKey2));
+
+        AccumulatedBasisStrategy.WithdrawRequest memory withdrawRequest1 = strategy.withdrawRequests(requestKey1);
+        uint256 balanceBefore1 = IERC20(asset).balanceOf(user1);
+        vm.startPrank(user1);
+        strategy.claim(requestKey1);
+        uint256 balanceAfter1 = IERC20(asset).balanceOf(user1);
+        assertEq(balanceBefore1 + withdrawRequest1.requestedAssets, balanceAfter1);
+
+        AccumulatedBasisStrategy.WithdrawRequest memory withdrawRequest2 = strategy.withdrawRequests(requestKey2);
+        uint256 balanceBefore2 = IERC20(asset).balanceOf(user2);
+        vm.startPrank(user2);
+        strategy.claim(requestKey2);
+        uint256 balanceAfter2 = IERC20(asset).balanceOf(user2);
+        assertEq(balanceBefore2 + withdrawRequest2.requestedAssets, balanceAfter2);
+    }
 }
