@@ -558,7 +558,6 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         // actual deutilize amount is min of amount, product balance and pending deutilization
         uint256 _pendingDeutilization = pendingDeutilization();
-        // @fixme don't need below one line
         amount = amount > productBalance ? productBalance : amount;
         amount = amount > _pendingDeutilization ? _pendingDeutilization : amount;
 
