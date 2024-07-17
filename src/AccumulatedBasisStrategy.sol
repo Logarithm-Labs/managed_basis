@@ -262,6 +262,20 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         emit Deposit(caller, receiver, assets, shares);
     }
 
+    // @review Numa:
+    // in withdraw workflow we should try to accomodate for the specifi workflow of priority withdraws
+    // the idea is that for our meta strategies (notional reversion strategies with aave, portfolio strategies that
+    // rebalance their capital between different base strategies, etc) we should be able to prioritize their withdrawals
+    // and put them in the begining of the queue.
+    //
+    // I was thinking that it can be done via specifi priorityWithdraw() / priorityRedeem() functions that would have
+    // a different logic then a common withdraw() / redeem(). Only contracts, that a registeres in some sort of factory contract
+    // as Logarithm contracts can access the priorityWithdraw workflow.
+    //
+    // In your accum withdraw workflow this can potentially be done by creating a separate accumulator for priority withdraws.
+    // When processWithdrawRequests happen we can first try to fill in priority witdraw requests and only switch to regular
+    // withdraw requests only when all priority withdraws are completed
+
     /**
      * @dev Withdraw/redeem common workflow.
      */
@@ -338,6 +352,11 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function claim(bytes32 requestKey) external virtual {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[requestKey];
+
+        // @review Numa:
+        // I would prefer to keep all hisotrical withdraw Ids in storage without deleting them for transparrency purposes
+        // We can validate if the withdrawId was claime by adding isClaimed variable to the WithdrawRequest struct
+        // and chage it to true if the withdraw was claimed
 
         // validate claim
         if (withdrawRequest.receiver == address(0)) {
@@ -592,6 +611,12 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             $.pendingDecreaseCollateral += collateralDeltaToDecrease;
         }
 
+        // @review Numa:
+        // we can't always decrease collateral when the deutilize is called
+        // the reason for that is for example in Hyperliquid we have a fixed 1 USDC fee for withdrawing USDC from Hyperliquid
+        // we can basically have a separate $.minCollateralDecrease which we can set for Hyperliquid at 1000 USDC, so that the
+        // cost for withdrawal would be less then 0.1%
+
         // @TODO decrease collateral at the same time
         IPositionManager($.positionManager).adjustPosition(amount, 0, false);
 
@@ -716,6 +741,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             return;
         }
 
+        // @review Numa:
+        // why can't we make a single call _processWithdrawRequests($.assetsToWithdraw + idleAssets())?
+
         // process withdraw requests with assetsToWithdraw first,
         // and then with idle assets
         $.assetsToWithdraw = _processWithdrawRequests($.assetsToWithdraw);
@@ -827,6 +855,11 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         internal
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        // @review Numa:
+        // during _afterDecreasePositionSizeSuccess() new assets are not received by the strategy
+        // why do we call _processWithdrawRequests() if there are no changes in strategy asset balance?
+        // can we call it directly during deutilize when we swap product for asset?
 
         if (status == StrategyStatus.WITHDRAWING) {
             uint256 _assetsToWithdraw = $.assetsToWithdraw;
@@ -977,6 +1010,14 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         return $.pendingUtilization;
     }
+
+    // @review Numa:
+    // I was thinking that we can also switch pendingUtilization from state variable to function as you proposed earlier.
+    // My initial thinking that we need to manage pendingUtilization a little bit different then just simply utilizing all idel.
+    // The reason for that was the strategy capacity and the idea that in some cases we don't want to utilize all the idle assets
+    // if we reach strategy capacity. We can actually manage it by $.strategyCapacity state variable. When we check for
+    // pendingUtilization() we calculate remainingCapacity as ($.strategyCapaccity - utilizedAssets()) and set pedingUtilizaton
+    // equal to remainingCapacity
 
     /// @notice product amount to be deutilized to process the totalPendingWithdraw amount
     ///
