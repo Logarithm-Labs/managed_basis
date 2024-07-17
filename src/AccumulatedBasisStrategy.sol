@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {PositionManagerCallbackParams} from "src/interfaces/IManagedBasisStrategy.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IManagedBasisCallbackReceiver} from "src/interfaces/IManagedBasisCallbackReceiver.sol";
 
@@ -585,8 +586,14 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         if ($.strategyStatus == StrategyStatus.WITHDRAWING) {
             $.assetsToWithdraw += amountOut;
+            address _positionManager = $.positionManager;
+            uint256 positionNetBalance = IPositionManager(_positionManager).positionNetBalance();
+            uint256 positionSizeInTokens = IPositionManager(_positionManager).positionSizeInTokens();
+            uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
+            $.pendingDecreaseCollateral += collateralDeltaToDecrease;
         }
 
+        // @TODO decrease collateral at the same time
         IPositionManager($.positionManager).adjustPosition(amount, 0, false);
 
         emit Deutilize(msg.sender, amount, amountOut);
@@ -823,11 +830,6 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
         if (status == StrategyStatus.WITHDRAWING) {
-            uint256 indexPrecision = 10 ** uint256(IERC20Metadata(product()).decimals());
-            uint256 sizeDeltaInAsset = params.executionPrice.mulDiv(params.sizeDeltaInTokens, indexPrecision);
-            uint256 amountExecuted = sizeDeltaInAsset.mulDiv(PRECISION, $.targetLeverage);
-            $.pendingDecreaseCollateral += amountExecuted;
-
             uint256 _assetsToWithdraw = $.assetsToWithdraw;
             // don't make remainingAssets go to idle because it has execution cost
             $.assetsToWithdraw = _processWithdrawRequests(_assetsToWithdraw);
@@ -977,15 +979,40 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         return $.pendingUtilization;
     }
 
+    /// @notice product amount to be deutilized to process the totalPendingWithdraw amount
+    ///
+    /// @dev the following equations are guaranteed when deutilizing to withdraw
+    /// pendingDeutilizationInAsset + collateralDeltaToDecrease = totalPendingWithdraw
+    /// collateralDeltaToDecrease = positionNetBalance * pendingDeutilization / positionSizeInTokens
+    /// pendingDeutilizationInAsset + positionNetBalance * pendingDeutilization / positionSizeInTokens = totalPendingWithdraw
+    /// pendingDeutilizationInAsset = pendingDeutilization * productPrice / assetPrice
+    /// pendingDeutilization * productPrice / assetPrice + positionNetBalance * pendingDeutilization / positionSizeInTokens =
+    /// = totalPendingWithdraw
+    /// pendingDeutilization * (productPrice / assetPrice + positionNetBalance / positionSizeInTokens) = totalPendingWithdraw
+    /// pendingDeutilization * (productPrice * positionSizeInTokens + assetPrice * positionNetBalance) /
+    /// / (assetPrice * positionSizeInTokens) = totalPendingWithdraw
+    /// pendingDeutilization * (positionSizeUsd + positionNetBalanceUsd) / (assetPrice * positionSizeInTokens) = totalPendingWithdraw
+    /// pendingDeutilization = totalPendingWithdraw * assetPrice * positionSizeInTokens / (positionSizeUsd + positionNetBalanceUsd)
+    /// pendingDeutilization = positionSizeInTokens * totalPendingWithdrawUsd / (positionSizeUsd + positionNetBalanceUsd)
     function pendingDeutilization() public view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        IOracle _oracle = $.oracle;
+        address positionManager_ = $.positionManager;
+
+        uint256 assetPrice = _oracle.getAssetPrice(asset());
+        uint256 productPrice = _oracle.getAssetPrice(product());
+
         uint256 totalPendingWithdraw_ = totalPendingWithdraw();
-        uint256 pendingDeutilizationInAsset_ =
-            totalPendingWithdraw_.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
-        uint256 pendingDeutilization_ = $.oracle.convertTokenAmount(asset(), product(), pendingDeutilizationInAsset_);
-        uint256 productBalance = IERC20(product()).balanceOf(address(this));
-        pendingDeutilization_ = pendingDeutilization_ > productBalance ? productBalance : pendingDeutilization_;
-        return pendingDeutilization_;
+        uint256 positionNetBalance = IPositionManager(positionManager_).positionNetBalance();
+        uint256 positionSizeInTokens = IPositionManager(positionManager_).positionSizeInTokens();
+
+        uint256 totalPendingWithdrawUsd = totalPendingWithdraw_ * assetPrice;
+        uint256 positionSizeUsd = positionSizeInTokens * productPrice;
+        uint256 positionNetBalanceUsd = positionNetBalance * assetPrice;
+
+        if (positionSizeUsd == 0 && positionNetBalanceUsd == 0) return 0;
+
+        return positionSizeInTokens.mulDiv(totalPendingWithdrawUsd, positionSizeUsd + positionNetBalanceUsd);
     }
 
     function pendingIncreaseCollateral() external view returns (uint256) {
