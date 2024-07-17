@@ -17,11 +17,10 @@ contract ForkTest is Test {
     address constant USDC_WHALE = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
     address constant WETH_WHALE = 0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8;
 
-    function _forkArbitrum() internal {
+    function _forkArbitrum(uint256 blockNumber) internal {
         uint256 arbitrumFork = vm.createFork(vm.rpcUrl("arbitrum_one"));
         vm.selectFork(arbitrumFork);
-        // vm.rollFork(213168025);
-
+        if (blockNumber > 0) vm.rollFork(blockNumber); //213168025
         // L2 contracts explicitly reference 0x64 for the ArbSys precompile
         // and 0x6C for the ArbGasInfo precompile
         // We'll replace it with the mock

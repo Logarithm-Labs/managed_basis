@@ -52,7 +52,7 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
     uint256 decreaseFee;
 
     function setUp() public {
-        _forkArbitrum();
+        _forkArbitrum(0);
         vm.startPrank(owner);
         // deploy oracle
         address oracleImpl = address(new LogarithmOracle());

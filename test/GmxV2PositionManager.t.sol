@@ -47,7 +47,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     uint256 decreaseFee;
 
     function setUp() public {
-        _forkArbitrum();
+        _forkArbitrum(213168025);
         vm.startPrank(owner);
         // deploy oracle
         address oracleImpl = address(new LogarithmOracle());
