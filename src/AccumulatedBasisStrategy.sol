@@ -304,7 +304,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             $.assetsToClaim += idle;
             emit UpdatePendingUtilization(0);
 
-            (, uint256 pendingWithdraw) = assets.trySub(idle);
+            uint256 pendingWithdraw = assets - idle;
 
             uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
             _accRequestedWithdrawAssets += pendingWithdraw;
