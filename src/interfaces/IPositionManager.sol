@@ -6,6 +6,8 @@ interface IPositionManager {
 
     function positionNetBalance() external view returns (uint256);
 
+    function currentLeverage() external view returns (uint256);
+
     function positionSizeInTokens() external view returns (uint256);
 
     function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease) external;

@@ -504,6 +504,16 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
             + _getGmxV2PositionManagerStorage().pendingCollateralAmount;
     }
 
+    /// @notice current leverage of position that is based on gmx's calculation
+    function currentLeverage() external view returns (uint256) {
+        address _config = config();
+        return GmxV2Lib.getCurrentLeverage(
+            _getGmxParams(_config),
+            IConfig(_config).getAddress(ConfigKeys.ORACLE),
+            IConfig(_config).getAddress(ConfigKeys.GMX_REFERRAL_STORAGE)
+        );
+    }
+
     /// @notice position size in index token
     function positionSizeInTokens() external view returns (uint256) {
         return GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));

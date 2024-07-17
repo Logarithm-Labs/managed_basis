@@ -263,12 +263,31 @@ library GmxV2Lib {
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
+    /// @dev current leverage that is calculated by gmx
+    function getCurrentLeverage(GmxParams calldata params, address oracle, address referralStorage)
+        external
+        view
+        returns (uint256)
+    {
+        uint256 positionSizeInUsd = _getPosition(params).numbers.sizeInUsd;
+        if (positionSizeInUsd == 0) return 0;
+
+        (uint256 remainingCollateral,) =
+            getRemainingCollateralAndClaimableFundingAmount(params, oracle, referralStorage);
+        uint256 collateralTokenPrice = IOracle(oracle).getAssetPrice(params.collateralToken);
+        uint256 remainingCollateralUsd = remainingCollateral * collateralTokenPrice;
+
+        if (remainingCollateralUsd == 0) return type(uint256).max;
+
+        return positionSizeInUsd / remainingCollateralUsd;
+    }
+
     /// @dev returns remainingCollateral and claimable funding amount in collateral token
     function getRemainingCollateralAndClaimableFundingAmount(
         GmxParams calldata params,
         address oracle,
         address referralStorage
-    ) external view returns (uint256, uint256) {
+    ) public view returns (uint256, uint256) {
         MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
         ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
 
