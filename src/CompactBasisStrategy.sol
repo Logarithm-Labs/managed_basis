@@ -51,8 +51,6 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 assetsToClaim; // asset balance that is ready to claim
         uint256 assetsToWithdraw; // asset balance that is processed for withdrawals
         // pending state
-        uint256 pendingUtilization;
-        uint256 pendingDeutilization;
         uint256 pendingIncreaseCollateral;
         uint256 pendingDecreaseCollateral;
         uint256 totalPendingWithdraw; // total amount of asset that remains to be withdrawn
@@ -411,6 +409,19 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 cache: _getStrategyStateCache($)
             })
         );
+    }
+
+    function pendingUtilization() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        return AccountingLogic.getPendingUtilization(asset(), cache, $.targetLeverage);
+    }
+
+    function pendingDeutilization() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        DataTypes.StrategyAddresses memory addr = _getStrategyAddresses($);
+        return AccountingLogic.getPendingDeutilization(addr, cache);
     }
 
     /*//////////////////////////////////////////////////////////////
