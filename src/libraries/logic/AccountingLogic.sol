@@ -32,8 +32,7 @@ library AccountingLogic {
         // In the scenario where user tries to withdraw all of the remaining assets the volatility
         // of oracle price can create a situation where pending withdraw is greater then the sum of
         // idle and utilized assets. In this case we will return 0 as total assets.
-        (, uint256 totalAssets) =
-            (utilizedAssets + idleAssets).trySub(cache.totalPendingWithdraw + cache.withdrawingFromHedge);
+        (, uint256 totalAssets) = (utilizedAssets + idleAssets).trySub(_getTotalPendingWithdraw(cache));
         return (utilizedAssets, idleAssets, totalAssets);
     }
 
@@ -54,7 +53,7 @@ library AccountingLogic {
         }
 
         // calculate the amount of assets that will be utilized
-        (, uint256 assetsToUtilize) = params.assetsOrShares.trySub(params.cache.totalPendingWithdraw);
+        (, uint256 assetsToUtilize) = params.assetsOrShares.trySub(_getTotalPendingWithdraw(params.cache));
         (,, uint256 totalAssets) = getTotalAssets(params.addr, params.cache);
 
         // apply entry fee only to the portion of assets that will be utilized
@@ -75,13 +74,14 @@ library AccountingLogic {
         assets = _convertToAssets(params.assetsOrShares, totalAssets, params.totalSupply, Math.Rounding.Ceil);
 
         // calculate amount of assets that will be utilized
-        (, uint256 assetsToUtilize) = assets.trySub(params.cache.totalPendingWithdraw);
+        (, uint256 assetsToUtilize) = assets.trySub(_getTotalPendingWithdraw(params.cache));
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
             // feeAmount / (assetsToUtilize + feeAmount) = entryCost
             // feeAmount = (assetsToUtilize * entryCost) / (1 - entryCost)
-            uint256 feeAmount = assetsToUtilize.mulDiv(params.fee, Constants.FLOAT_PRECISION - params.fee, Math.Rounding.Ceil);
+            uint256 feeAmount =
+                assetsToUtilize.mulDiv(params.fee, Constants.FLOAT_PRECISION - params.fee, Math.Rounding.Ceil);
             assets += feeAmount;
         }
     }
@@ -114,47 +114,10 @@ library AccountingLogic {
         if (assetsToDeutilize > 0) {
             // feeAmount / (assetsToDeutilize - feeAmount) = exitCost
             // feeAmount = (assetsToDeutilize * exitCost) / (1 + exitCost)
-            uint256 feeAmount = assetsToDeutilize.mulDiv(params.fee, Constants.FLOAT_PRECISION + params.fee, Math.Rounding.Ceil);
+            uint256 feeAmount =
+                assetsToDeutilize.mulDiv(params.fee, Constants.FLOAT_PRECISION + params.fee, Math.Rounding.Ceil);
             assets -= feeAmount;
         }
-    }
-
-    function getPendingUtilization(address asset, DataTypes.StrategyStateChache memory cache, uint256 targetLeverage) external view returns (uint256) {
-        uint256 idleAssets = getIdleAssets(asset, cache);
-        return idleAssets.mulDiv(targetLeverage, Constants.FLOAT_PRECISION + targetLeverage);
-    }
-
-    /// @notice product amount to be deutilized to process the totalPendingWithdraw amount
-    ///
-    /// @dev the following equations are guaranteed when deutilizing to withdraw
-    /// pendingDeutilizationInAsset + collateralDeltaToDecrease = totalPendingWithdraw
-    /// collateralDeltaToDecrease = positionNetBalance * pendingDeutilization / positionSizeInTokens
-    /// pendingDeutilizationInAsset + positionNetBalance * pendingDeutilization / positionSizeInTokens = totalPendingWithdraw
-    /// pendingDeutilizationInAsset = pendingDeutilization * productPrice / assetPrice
-    /// pendingDeutilization * productPrice / assetPrice + positionNetBalance * pendingDeutilization / positionSizeInTokens =
-    /// = totalPendingWithdraw
-    /// pendingDeutilization * (productPrice / assetPrice + positionNetBalance / positionSizeInTokens) = totalPendingWithdraw
-    /// pendingDeutilization * (productPrice * positionSizeInTokens + assetPrice * positionNetBalance) /
-    /// / (assetPrice * positionSizeInTokens) = totalPendingWithdraw
-    /// pendingDeutilization * (positionSizeUsd + positionNetBalanceUsd) / (assetPrice * positionSizeInTokens) = totalPendingWithdraw
-    /// pendingDeutilization = totalPendingWithdraw * assetPrice * positionSizeInTokens / (positionSizeUsd + positionNetBalanceUsd)
-    /// pendingDeutilization = positionSizeInTokens * totalPendingWithdrawUsd / (positionSizeUsd + positionNetBalanceUsd)
-    /// pendingDeutilization = positionSizeInTokens *
-    /// * (totalPendingWithdrawUsd/assetPrice) / (positionSizeUsd/assetPrice + positionNetBalanceUsd/assetPrice)
-    /// pendingDeutilization = positionSizeInTokens * totalPendingWithdraw / (positionSizeInAssets + positionNetBalance)
-    function getPendingDeutilization(DataTypes.StrategyAddresses memory addr, DataTypes.StrategyStateChache memory cache) external view returns (uint256) {
-        uint256 positionNetBalance = IPositionManager(addr.positionManager).positionNetBalance();
-        uint256 positionSizeInTokens = IPositionManager(addr.positionManager).positionSizeInTokens();
-        uint256 positionSizeInAssets = IOracle(addr.oracle).convertTokenAmount(addr.product, addr.asset, positionSizeInTokens);
-
-        if (positionSizeInAssets == 0 && positionNetBalance == 0) return 0;
-
-        return positionSizeInTokens.mulDiv(cache.totalPendingWithdraw, positionSizeInAssets + positionNetBalance);
-    }
-
-    function  getPendingIncreaseCollateral(address asset, uint256 targetLeverage, DataTypes.StrategyStateChache memory cache) external view returns (uint256) {
-        uint256 idleAssets = getIdleAssets(asset, cache);
-        return idleAssets.mulDiv(Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + targetLeverage, Math.Rounding.Ceil);
     }
 
     /**
@@ -177,5 +140,9 @@ library AccountingLogic {
         returns (uint256)
     {
         return shares.mulDiv(totalAssets + 1, totalSupply + 10 ** Constants.DECIMAL_OFFSET, rounding);
+    }
+
+    function _getTotalPendingWithdraw(DataTypes.StrategyStateChache memory cache) internal pure returns (uint256) {
+        return cache.accRequestedWithdrawAssets - cache.proccessedWithdrawAssets;
     }
 }

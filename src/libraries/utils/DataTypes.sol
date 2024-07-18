@@ -26,32 +26,18 @@ library DataTypes {
                         STRATEGY DATATYPES   
     //////////////////////////////////////////////////////////////*/
 
-    struct WithdrawState {
-        uint256 requestTimestamp;
-        uint256 requestedAmount;
-        uint256 executedFromSpot;
-        uint256 executedFromIdle;
-        uint256 executedFromHedge;
-        uint256 executionCost;
-        address receiver;
-        address callbackTarget;
-        bool isExecuted;
-        bool isClaimed;
-        bytes callbackData;
-    }
 
     struct StrategyStateChache {
         uint256 assetsToClaim;
         uint256 assetsToWithdraw;
-        uint256 pendingUtilization;
-        uint256 pendingDeutilization;
-        uint256 pendingIncreaseCollateral;
-        uint256 pendingDecreaseCollateral;
-        uint256 totalPendingWithdraw;
-        uint256 withdrawnFromSpot;
-        uint256 withdrawnFromIdle;
-        uint256 withdrawingFromHedge;
-        uint256 spotExecutionPrice;
+        uint256 accRequestedWithdrawAssets;
+        uint256 proccessedWithdrawAssets;
+        StrategyStatus status;
+    }
+
+    struct StrategyWithdrawCache {
+        uint256 accRequestedWithdrawAssets;
+        uint256 proccessedWithdrawAssets;
     }
 
     struct StrategyAddresses {
@@ -60,6 +46,15 @@ library DataTypes {
         address oracle;
         address operator;
         address positionManager;
+    }
+
+
+    struct WithdrawRequestState {
+        uint256 requestedAssets;
+        uint256 accRequestedWithdrawAssets;
+        uint256 requestTimestamp;
+        address receiver;
+        bool isClaimed;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -91,7 +86,7 @@ library DataTypes {
 
     struct ClaimParams {
         address caller;
-        WithdrawState withdrawState;
+        WithdrawRequestState withdrawState;
         StrategyStateChache cache;
     }
 }

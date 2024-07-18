@@ -15,131 +15,95 @@ library DepositorLogic {
     using Math for uint256;
 
     struct DepositParams {
-        address caller;
-        address receiver;
+        address asset;
         uint256 assets;
-        uint256 shares;
-        uint256 targetLeverage;
         DataTypes.StrategyStateChache cache;
     }
 
     struct WithdrawParams {
-        address caller;
+        address asset;
         address receiver;
         address owner;
-        address callbackTarget;
-        uint256 assets;
-        uint256 shares;
         uint256 requestCounter;
-        uint256 targetLeverage;
-        DataTypes.StrategyAddresses addr;
+        uint256 assets;
         DataTypes.StrategyStateChache cache;
-        bytes callbackData;
     }
 
     struct ClaimParams {
         address caller;
-        DataTypes.WithdrawState withdrawState;
+        DataTypes.WithdrawRequestState withdrawState;
         DataTypes.StrategyStateChache cache;
     }
 
-    function executeDeposit(DepositParams memory params) external pure returns (DataTypes.StrategyStateChache memory) {
-        if (params.cache.totalPendingWithdraw >= params.assets) {
-            params.cache.assetsToWithdraw += params.assets;
-            params.cache.withdrawnFromIdle += params.assets;
-            params.cache.totalPendingWithdraw -= params.assets;
-        } else {
-            uint256 assetsToDeposit = params.assets - params.cache.totalPendingWithdraw;
-            uint256 assetsToHedge =
-                assetsToDeposit.mulDiv(Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + params.targetLeverage);
-            uint256 assetsToSpot = assetsToDeposit - assetsToHedge;
-
-            if (params.cache.totalPendingWithdraw > 0) {
-                params.cache.assetsToWithdraw += params.cache.totalPendingWithdraw;
-                params.cache.withdrawnFromIdle += params.cache.totalPendingWithdraw;
-                params.cache.totalPendingWithdraw = 0;
-            }
-
-            params.cache.pendingUtilization += assetsToSpot;
-            params.cache.pendingIncreaseCollateral += assetsToHedge;
-        }
-
-        return params.cache;
+    function executeDeposit(DepositParams memory params)
+        external
+        pure
+        returns (DataTypes.StrategyStateChache memory cache)
+    {
+        uint256 idleAssets = AccountingLogic.getIdleAssets(params.asset, params.cache);
+        (, cache) = processWithdrawRequests(idleAssets, params.cache);
     }
 
     function executeWithdraw(WithdrawParams memory params)
         external
         view
-        returns (bytes32, uint256, DataTypes.StrategyStateChache memory, DataTypes.WithdrawState memory)
+        returns (
+            bytes32 withdrawId,
+            DataTypes.StrategyStateChache memory,
+            DataTypes.WithdrawRequestState memory withdrawState
+        )
     {
-        (, uint256 idleAssets, uint256 totalAssets) = AccountingLogic.getTotalAssets(params.addr, params.cache);
-        bytes32 withdrawId;
-        uint256 requestedAmount;
-        DataTypes.WithdrawState memory withdrawState;
+        uint256 idleAssets = AccountingLogic.getIdleAssets(params.asset, params.cache);
         if (idleAssets >= params.assets) {
-            uint256 assetsWithdrawnFromSpot =
-                params.assets.mulDiv(params.targetLeverage, Constants.FLOAT_PRECISION + params.targetLeverage);
-            (, params.cache.pendingUtilization) = params.cache.pendingUtilization.trySub(assetsWithdrawnFromSpot);
-            (, params.cache.pendingIncreaseCollateral) =
-                params.cache.pendingIncreaseCollateral.trySub(params.assets - assetsWithdrawnFromSpot);
+            withdrawId = bytes32(0);
         } else {
-            requestedAmount = params.assets > totalAssets ? totalAssets : params.assets;
+            uint256 pendingWithdraw = params.assets - idleAssets;
+            params.cache.accRequestedWithdrawAssets += pendingWithdraw;
             withdrawId = getWithdrawId(params.owner, params.requestCounter);
-            withdrawState = DataTypes.WithdrawState({
-                requestTimestamp: uint128(block.timestamp),
-                requestedAmount: requestedAmount,
-                executedFromSpot: 0,
-                executedFromIdle: 0,
-                executedFromHedge: 0,
-                executionCost: 0,
+            withdrawState = DataTypes.WithdrawRequestState({
+                requestedAssets: params.assets,
+                accRequestedWithdrawAssets: params.cache.accRequestedWithdrawAssets,
+                requestTimestamp: block.timestamp,
                 receiver: params.receiver,
-                callbackTarget: address(0),
-                isExecuted: false,
-                isClaimed: false,
-                callbackData: ""
+                isClaimed: false
             });
-
-            params.cache.pendingUtilization = 0;
-            params.cache.pendingIncreaseCollateral = 0;
-            params.cache.withdrawnFromIdle += idleAssets;
-            params.cache.totalPendingWithdraw += (requestedAmount - idleAssets);
-
-            uint256 pendingDeutilizationInAsset = params.cache.totalPendingWithdraw.mulDiv(
-                params.targetLeverage, Constants.FLOAT_PRECISION + params.targetLeverage
-            );
-            uint256 pendingDeutilization = IOracle(params.addr.oracle).convertTokenAmount(
-                params.addr.asset, params.addr.product, pendingDeutilizationInAsset
-            );
-            uint256 productBalance = IERC20(params.addr.product).balanceOf(address(this));
-
-            params.cache.pendingDeutilization =
-                pendingDeutilization > productBalance ? productBalance : pendingDeutilization;
-            params.cache.assetsToWithdraw += idleAssets;
         }
-        return (withdrawId, requestedAmount, params.cache, withdrawState);
+        return (withdrawId, params.cache, withdrawState);
     }
 
-    function executeClaim(ClaimParams memory params)
-        external
-        view
-        returns (uint256, DataTypes.StrategyStateChache memory, DataTypes.WithdrawState memory)
+    /// @dev process withdraw request
+    /// Note: should be called whenever assets come to this vault
+    /// including user's deposit and system's deutilizing
+    ///
+    /// @return assets remaining which goes to idle or assetsToWithdraw
+
+    function processWithdrawRequests(uint256 assets, DataTypes.StrategyStateChache memory cache)
+        public
+        returns (uint256, DataTypes.StrategyStateChache memory)
     {
-        if (params.withdrawState.receiver != params.caller) {
-            revert Errors.UnauthorizedClaimer(msg.sender, params.withdrawState.receiver);
-        }
-        if (!params.withdrawState.isExecuted) {
-            revert Errors.RequestNotExecuted();
-        }
-        if (params.withdrawState.isClaimed) {
-            revert Errors.RequestAlreadyClaimed();
+        if (assets == 0) return (0, cache);
+
+        // check if there is neccessarity to process withdraw requests
+        if (cache.proccessedWithdrawAssets < cache.accRequestedWithdrawAssets) {
+            uint256 remainingAssets;
+            uint256 proccessedWithdrawAssetsAfter = cache.proccessedWithdrawAssets + assets;
+
+            // if proccessedWithdrawAssets overshoots accRequestedWithdrawAssets,
+            // then cap it by accRequestedWithdrawAssets
+            // so that the remaining asset goes to idle
+            if (proccessedWithdrawAssetsAfter > cache.accRequestedWithdrawAssets) {
+                remainingAssets = proccessedWithdrawAssetsAfter - cache.accRequestedWithdrawAssets;
+                proccessedWithdrawAssetsAfter = cache.accRequestedWithdrawAssets;
+                assets = proccessedWithdrawAssetsAfter - cache.proccessedWithdrawAssets;
+            }
+
+            cache.assetsToClaim += assets;
+            cache.proccessedWithdrawAssets = proccessedWithdrawAssetsAfter;
         }
 
-        uint256 executedAmount = params.withdrawState.executedFromSpot + params.withdrawState.executedFromIdle
-            + params.withdrawState.executedFromHedge;
-        params.cache.assetsToClaim -= executedAmount;
-        params.withdrawState.isClaimed = true;
+        // @todo: should update pending deutilization
 
-        return (executedAmount, params.cache, params.withdrawState);
+        return (assets, cache);
     }
 
     function getWithdrawId(address owner, uint256 counter) public view returns (bytes32) {
