@@ -424,6 +424,12 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         return AccountingLogic.getPendingDeutilization(addr, cache);
     }
 
+    function pendingIncreaseCollateral() external view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        return AccountingLogic.getPendingIncreaseCollateral(asset(), $.targetLeverage, cache);
+    }
+
     /*//////////////////////////////////////////////////////////////
                             OPERATOR LOGIC
     //////////////////////////////////////////////////////////////*/
