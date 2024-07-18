@@ -296,7 +296,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         if (idle >= assets) {
             IERC20(asset()).safeTransfer(receiver, assets);
 
-            emit UpdatePendingUtilization(_pendingUtilization(idle, $.targetLeverage));
+            emit UpdatePendingUtilization(_pendingUtilization(idle - assets, $.targetLeverage));
         } else {
             $.assetsToClaim += idle;
             emit UpdatePendingUtilization(0);
