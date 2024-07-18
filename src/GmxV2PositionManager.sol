@@ -585,6 +585,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
             IBaseOrderUtils.CreateOrderParams({
                 addresses: IBaseOrderUtils.CreateOrderParamsAddresses({
                     receiver: address(this), // the receiver of reduced collateral
+                    cancellationReceiver: address(0),
                     callbackContract: address(this),
                     uiFeeReceiver: address(0),
                     market: marketToken(),
@@ -604,6 +605,7 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
                 decreasePositionSwapType: Order.DecreasePositionSwapType.NoSwap,
                 isLong: params.isLong,
                 shouldUnwrapNativeToken: false,
+                autoCancel: true,
                 referralCode: params.referralCode
             })
         );
