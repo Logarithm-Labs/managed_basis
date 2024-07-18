@@ -521,7 +521,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         }
         IPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
 
-        emit UpdatePendingUtilization(pendingUtilization());
+        // @issue by Hunter
+        // should be called within the callback func after utilizing is successful
+        // emit UpdatePendingUtilization(pendingUtilization());
 
         emit Utilize(msg.sender, amount, amountOut);
     }
@@ -809,8 +811,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function _afterIncreasePositionSizeSuccess(
         PositionManagerCallbackParams memory, /* params */
         StrategyStatus /* status */
-    ) internal pure {
-        // TODO: implement
+    ) internal {
+        emit UpdatePendingUtilization(pendingUtilization());
     }
 
     function _afterIncreasePositionSizeRevert(
