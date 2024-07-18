@@ -1004,25 +1004,21 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     /// pendingDeutilization * (positionSizeUsd + positionNetBalanceUsd) / (assetPrice * positionSizeInTokens) = totalPendingWithdraw
     /// pendingDeutilization = totalPendingWithdraw * assetPrice * positionSizeInTokens / (positionSizeUsd + positionNetBalanceUsd)
     /// pendingDeutilization = positionSizeInTokens * totalPendingWithdrawUsd / (positionSizeUsd + positionNetBalanceUsd)
+    /// pendingDeutilization = positionSizeInTokens *
+    /// * (totalPendingWithdrawUsd/assetPrice) / (positionSizeUsd/assetPrice + positionNetBalanceUsd/assetPrice)
+    /// pendingDeutilization = positionSizeInTokens * totalPendingWithdraw / (positionSizeInAssets + positionNetBalance)
     function pendingDeutilization() public view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         IOracle _oracle = $.oracle;
         address positionManager_ = $.positionManager;
 
-        uint256 assetPrice = _oracle.getAssetPrice(asset());
-        uint256 productPrice = _oracle.getAssetPrice(product());
-
-        uint256 totalPendingWithdraw_ = totalPendingWithdraw();
         uint256 positionNetBalance = IPositionManager(positionManager_).positionNetBalance();
         uint256 positionSizeInTokens = IPositionManager(positionManager_).positionSizeInTokens();
+        uint256 positionSizeInAssets = _oracle.convertTokenAmount(product(), asset(), positionSizeInTokens);
 
-        uint256 totalPendingWithdrawUsd = totalPendingWithdraw_ * assetPrice;
-        uint256 positionSizeUsd = positionSizeInTokens * productPrice;
-        uint256 positionNetBalanceUsd = positionNetBalance * assetPrice;
+        if (positionSizeInAssets == 0 && positionNetBalance == 0) return 0;
 
-        if (positionSizeUsd == 0 && positionNetBalanceUsd == 0) return 0;
-
-        return positionSizeInTokens.mulDiv(totalPendingWithdrawUsd, positionSizeUsd + positionNetBalanceUsd);
+        return positionSizeInTokens.mulDiv(totalPendingWithdraw(), positionSizeInAssets + positionNetBalance);
     }
 
     function pendingIncreaseCollateral() public view returns (uint256) {
