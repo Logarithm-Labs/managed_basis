@@ -78,7 +78,9 @@ library AccountingLogic {
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            uint256 feeAmount = assetsToUtilize.mulDiv(params.fee, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
+            // feeAmount / (assetsToUtilize + feeAmount) = entryCost
+            // feeAmount = (assetsToUtilize * entryCost) / (1 - entryCost)
+            uint256 feeAmount = assetsToUtilize.mulDiv(params.fee, Constants.FLOAT_PRECISION - params.fee, Math.Rounding.Ceil);
             assets += feeAmount;
         }
     }
@@ -89,8 +91,10 @@ library AccountingLogic {
 
         // calc the amount of assets that can not be withdrawn via idle
         (, uint256 assetsToDeutilize) = params.assetsOrShares.trySub(idleAssets);
+
+        // apply exit fee to assets that should be deutilized and add exit fee amount the asset amount
         if (assetsToDeutilize > 0) {
-            // apply exit fee to assets that should be deutilized and add exit fee amount the asset amount
+            // feeAmount / assetsToDeutilize = exitCost
             uint256 feeAmount = assetsToDeutilize.mulDiv(params.fee, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
             params.assetsOrShares += feeAmount;
         }
@@ -104,9 +108,12 @@ library AccountingLogic {
 
         // calculate the amount of assets that will be deutilized
         (, uint256 assetsToDeutilize) = assets.trySub(idleAssets);
+
+        // aply exit fee to the portion of assets that will be deutilized
         if (assetsToDeutilize > 0) {
-            // aply exit fee to the portion of assets that will be deutilized
-            uint256 feeAmount = assetsToDeutilize.mulDiv(params.fee, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
+            // feeAmount / (assetsToDeutilize - feeAmount) = exitCost
+            // feeAmount = (assetsToDeutilize * exitCost) / (1 + exitCost)
+            uint256 feeAmount = assetsToDeutilize.mulDiv(params.fee, Constants.FLOAT_PRECISION + params.fee, Math.Rounding.Ceil);
             assets -= feeAmount;
         }
     }
