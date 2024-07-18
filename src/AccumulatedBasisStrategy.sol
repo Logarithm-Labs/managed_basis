@@ -486,6 +486,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         if (pendingUtilization_ == 0) {
             revert Errors.ZeroPendingUtilization();
         }
+        // should be called before swap
+        uint256 pendingIncreaseCollateral_ = pendingIncreaseCollateral();
 
         // actual utilize amount is min of amount, idle assets and pending utilization
         uint256 idle = idleAssets();
@@ -512,12 +514,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             revert Errors.UnsupportedSwapType();
         }
 
-        uint256 pendingIncreaseCollateral_ = pendingIncreaseCollateral();
         uint256 collateralDeltaAmount;
         if (pendingIncreaseCollateral_ > 0) {
             collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization_);
             IERC20(asset()).safeTransfer($.positionManager, collateralDeltaAmount);
-            pendingIncreaseCollateral_ -= collateralDeltaAmount;
         }
         IPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
 
