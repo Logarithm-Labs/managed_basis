@@ -50,6 +50,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     //////////////////////////////////////////////////////////////*/
 
     struct WithdrawRequest {
+        bool isClaimed;
         address receiver;
         uint256 requestedAssets;
         uint256 accRequestedWithdrawAssets;
@@ -307,6 +308,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             uint128 counter = $.requestCounter[owner];
             bytes32 withdrawId = getWithdrawKey(owner, counter);
             $.withdrawRequests[withdrawId] = WithdrawRequest({
+                isClaimed: false,
                 receiver: receiver,
                 requestedAssets: assets,
                 accRequestedWithdrawAssets: _accRequestedWithdrawAssets
@@ -333,21 +335,21 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         // and chage it to true if the withdraw was claimed
 
         // validate claim
-        if (withdrawRequest.receiver == address(0)) {
+        if (withdrawRequest.isClaimed) {
             revert Errors.RequestAlreadyClaimed();
         }
-
         if (withdrawRequest.receiver != msg.sender) {
             revert Errors.UnauthorizedClaimer(msg.sender, withdrawRequest.receiver);
         }
-        if (!_isClaimable(withdrawRequest)) {
+        if (!_isWithdrawRequestExecuted(withdrawRequest)) {
             revert Errors.RequestNotExecuted();
         }
 
+        withdrawRequest.isClaimed = true;
         $.assetsToClaim -= withdrawRequest.requestedAssets;
         IERC20(asset()).safeTransfer(msg.sender, withdrawRequest.requestedAssets);
 
-        delete $.withdrawRequests[requestKey];
+        $.withdrawRequests[requestKey] = withdrawRequest;
 
         emit Claim(msg.sender, requestKey, withdrawRequest.requestedAssets);
     }
@@ -453,10 +455,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
     function isClaimable(bytes32 requestKey) public view returns (bool) {
         WithdrawRequest memory withdrawRequest = _getManagedBasisStrategyStorage().withdrawRequests[requestKey];
-        return _isClaimable(withdrawRequest);
+        return _isWithdrawRequestExecuted(withdrawRequest) && !withdrawRequest.isClaimed;
     }
 
-    function _isClaimable(WithdrawRequest memory withdrawRequest) private view returns (bool) {
+    function _isWithdrawRequestExecuted(WithdrawRequest memory withdrawRequest) private view returns (bool) {
         return withdrawRequest.accRequestedWithdrawAssets <= _getManagedBasisStrategyStorage().proccessedWithdrawAssets;
     }
 
