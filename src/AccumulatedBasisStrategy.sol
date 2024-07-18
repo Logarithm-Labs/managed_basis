@@ -67,9 +67,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 strategyDepostLimit;
         uint256 assetsToClaim; // asset balance that is ready to claim
         uint256 assetsToWithdraw; // asset balance that is processed for withdrawals
-        uint256 pendingUtilization;
+        // uint256 pendingUtilization;
         // uint256 pendingDeutilization;
-        uint256 pendingIncreaseCollateral;
+        // uint256 pendingIncreaseCollateral;
         uint256 pendingDecreaseCollateral;
         // uint256 totalPendingWithdraw; // total amount of asset that remains to be withdrawn
         // uint256 withdrawnFromSpot; // asset amount withdrawn from spot that is not yet processed
@@ -241,20 +241,12 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
      * @dev Deposit/mint common workflow.
      */
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         IERC20 _asset = IERC20(asset());
         _asset.safeTransferFrom(caller, address(this), assets);
 
-        uint256 assetsToDeposit = _processWithdrawRequests(assets);
+        _processWithdrawRequests(idleAssets());
 
-        if (assetsToDeposit > 0) {
-            uint256 assetsToHedge = assetsToDeposit.mulDiv(PRECISION, PRECISION + $.targetLeverage);
-            uint256 assetsToSpot = assetsToDeposit - assetsToHedge;
-            $.pendingUtilization += assetsToSpot;
-            $.pendingIncreaseCollateral += assetsToHedge;
-
-            emit UpdatePendingUtilization($.pendingUtilization);
-        }
+        emit UpdatePendingUtilization(pendingUtilization());
 
         _checkStrategyStatus();
         _mint(receiver, shares);
@@ -299,22 +291,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         uint256 idle = idleAssets();
         if (idle >= assets) {
-            uint256 assetsWithdrawnFromSpot = assets.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
-            uint256 assetsWithdrawnFromHedge = assets - assetsWithdrawnFromSpot;
-
-            // update pending states, prevent underflow
-            (, uint256 pendingUtilization_) = $.pendingUtilization.trySub(assetsWithdrawnFromSpot);
-            (, uint256 pendingIncreaseCollateral_) = $.pendingIncreaseCollateral.trySub(assetsWithdrawnFromHedge);
-            $.pendingUtilization = pendingUtilization_;
-            $.pendingIncreaseCollateral = pendingIncreaseCollateral_;
-
-            emit UpdatePendingUtilization(pendingUtilization_);
-
             IERC20(asset()).safeTransfer(receiver, assets);
+
+            emit UpdatePendingUtilization(pendingUtilization());
         } else {
-            // if all idle assets are withdrawn, set pending states to zero
-            $.pendingUtilization = 0;
-            $.pendingIncreaseCollateral = 0;
             $.assetsToClaim += idle;
             emit UpdatePendingUtilization(0);
 
@@ -332,15 +312,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 accRequestedWithdrawAssets: _accRequestedWithdrawAssets
             });
 
-            uint256 pendingDeutilization_ = pendingDeutilization();
-            // $.pendingDeutilization = pendingDeutilization_;
-            // $.totalPendingWithdraw = totalPendingWithdraw_;
-            // $.assetsToWithdraw += idle;
-            // $.activeWithdrawRequests.push(withdrawId);
-
             $.requestCounter[owner]++;
 
-            emit UpdatePendingDeutilization(pendingDeutilization_);
+            emit UpdatePendingDeutilization(pendingDeutilization());
 
             emit WithdrawRequested(caller, receiver, owner, withdrawId, assets);
         }
@@ -400,11 +374,6 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
         (, assets) = assetBalance.trySub($.assetsToClaim + $.assetsToWithdraw);
     }
-
-    // function withdrawingAssets() public view virtual returns (uint256 assets) {
-    //     ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-    //     (, assets) = $.totalPendingWithdraw.trySub($.withdrawingFromHedge);
-    // }
 
     function getWithdrawKey(address owner, uint128 counter) public view virtual returns (bytes32) {
         return keccak256(abi.encodePacked(address(this), owner, counter));
@@ -511,7 +480,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         emit UpdateStrategyStatus(StrategyStatus.DEPOSITING);
 
         // can only utilize when pending utilization is positive
-        uint256 pendingUtilization_ = $.pendingUtilization;
+        uint256 pendingUtilization_ = pendingUtilization();
         if (pendingUtilization_ == 0) {
             revert Errors.ZeroPendingUtilization();
         }
@@ -541,7 +510,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             revert Errors.UnsupportedSwapType();
         }
 
-        uint256 pendingIncreaseCollateral_ = $.pendingIncreaseCollateral;
+        uint256 pendingIncreaseCollateral_ = pendingIncreaseCollateral();
         uint256 collateralDeltaAmount;
         if (pendingIncreaseCollateral_ > 0) {
             collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization_);
@@ -549,11 +518,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             pendingIncreaseCollateral_ -= collateralDeltaAmount;
         }
         IPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
-        // $.spotExecutionPrice = amount.mulDiv(10 ** IERC20Metadata(product()).decimals(), amountOut, Math.Rounding.Ceil);
-        $.pendingIncreaseCollateral = pendingIncreaseCollateral_;
-        $.pendingUtilization = pendingUtilization_ - amount;
 
-        emit UpdatePendingUtilization($.pendingUtilization);
+        emit UpdatePendingUtilization(pendingUtilization());
 
         emit Utilize(msg.sender, amount, amountOut);
     }
@@ -1006,9 +972,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         return $.assetsToWithdraw;
     }
 
-    function pendingUtilization() external view returns (uint256) {
+    function pendingUtilization() public view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.pendingUtilization;
+        uint256 _targetLeverage = $.targetLeverage;
+        return idleAssets().mulDiv(_targetLeverage, PRECISION + _targetLeverage);
     }
 
     // @review Numa:
@@ -1055,9 +1022,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         return positionSizeInTokens.mulDiv(totalPendingWithdrawUsd, positionSizeUsd + positionNetBalanceUsd);
     }
 
-    function pendingIncreaseCollateral() external view returns (uint256) {
+    function pendingIncreaseCollateral() public view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.pendingIncreaseCollateral;
+        return idleAssets().mulDiv(PRECISION, PRECISION + $.targetLeverage, Math.Rounding.Ceil);
     }
 
     function pendingDecreaseCollateral() external view returns (uint256) {
