@@ -774,6 +774,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     ///
     /// @return remaining assets which goes to idle or assetsToWithdraw
     function _processWithdrawRequests(uint256 assets) private returns (uint256) {
+        if (assets == 0) return 0;
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 _proccessedWithdrawAssets = $.proccessedWithdrawAssets;
         uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
