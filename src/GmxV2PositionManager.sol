@@ -13,6 +13,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
 import {IBaseOrderUtils} from "src/externals/gmx-v2/interfaces/IBaseOrderUtils.sol";
 import {IOrderCallbackReceiver} from "src/externals/gmx-v2/interfaces/IOrderCallbackReceiver.sol";
+import {IGasFeeCallbackReceiver} from "src/externals/gmx-v2/interfaces/IGasFeeCallbackReceiver.sol";
 import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
 import {EventUtils} from "src/externals/gmx-v2/libraries/EventUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
@@ -30,7 +31,13 @@ import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
 
 /// @title A gmx position manager
 /// @author Logarithm Labs
-contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initializable, OwnableUpgradeable {
+contract GmxV2PositionManager is
+    IPositionManager,
+    IOrderCallbackReceiver,
+    IGasFeeCallbackReceiver,
+    Initializable,
+    OwnableUpgradeable
+{
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -164,12 +171,6 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
     /*//////////////////////////////////////////////////////////////
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    /// @dev send back eth to the strategy
-    receive() external payable {
-        (bool success,) = keeper().call{value: msg.value}("");
-        assert(success);
-    }
 
     function renounceOwnership() public pure override {
         revert();
@@ -472,6 +473,12 @@ contract GmxV2PositionManager is IPositionManager, IOrderCallbackReceiver, Initi
         EventUtils.EventLogData memory /* eventData */
     ) external pure override {
         revert(); // fronzen is not supported for market increase/decrease orders
+    }
+
+    /// @inheritdoc IGasFeeCallbackReceiver
+    function refundExecutionFee(bytes32, /* key */ EventUtils.EventLogData memory /* eventData */ ) external payable {
+        (bool success,) = keeper().call{value: msg.value}("");
+        assert(success);
     }
 
     /*//////////////////////////////////////////////////////////////
