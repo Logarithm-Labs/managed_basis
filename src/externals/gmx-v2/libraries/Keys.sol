@@ -31,6 +31,9 @@ library Keys {
     // @dev key for claimable funding amount
     bytes32 public constant CLAIMABLE_FUNDING_AMOUNT = keccak256(abi.encode("CLAIMABLE_FUNDING_AMOUNT"));
 
+    // @dev key for oracle provider for token
+    bytes32 public constant ORACLE_PROVIDER_FOR_TOKEN = keccak256(abi.encode("ORACLE_PROVIDER_FOR_TOKEN"));
+
     // @dev key for the max position impact factor for liquidations
     // @param market the market address to check
     // @return key for the max position impact factor
@@ -82,5 +85,12 @@ library Keys {
         returns (bytes32)
     {
         return keccak256(abi.encode(CLAIMABLE_FUNDING_AMOUNT, market, token, account));
+    }
+
+    // @dev key for oracle provider for token
+    // @param token the token
+    // @return key for oracle provider for token
+    function oracleProviderForTokenKey(address token) internal pure returns (bytes32) {
+        return keccak256(abi.encode(ORACLE_PROVIDER_FOR_TOKEN, token));
     }
 }

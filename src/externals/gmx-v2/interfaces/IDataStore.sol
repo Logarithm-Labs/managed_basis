@@ -12,4 +12,5 @@ interface IDataStore {
     function containsAddress(bytes32 setKey, address value) external view returns (bool);
     function addAddress(bytes32 setKey, address value) external;
     function getAddressValuesAt(bytes32 setKey, uint256 start, uint256 end) external view returns (address[] memory);
+    function setAddress(bytes32 key, address value) external returns (address);
 }
