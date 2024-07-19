@@ -71,6 +71,8 @@ library Position {
         uint256 shortTokenClaimableFundingAmountPerSize;
         uint256 increasedAtBlock;
         uint256 decreasedAtBlock;
+        uint256 increasedAtTime;
+        uint256 decreasedAtTime;
     }
 
     // @param isLong whether the position is a long or short
