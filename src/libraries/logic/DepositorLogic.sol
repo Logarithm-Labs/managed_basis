@@ -37,7 +37,7 @@ library DepositorLogic {
 
     function executeDeposit(DepositParams memory params)
         external
-        pure
+        view
         returns (DataTypes.StrategyStateChache memory cache)
     {
         uint256 idleAssets = AccountingLogic.getIdleAssets(params.asset, params.cache);
@@ -61,7 +61,7 @@ library DepositorLogic {
             params.cache.accRequestedWithdrawAssets += pendingWithdraw;
             withdrawId = getWithdrawId(params.owner, params.requestCounter);
             withdrawState = DataTypes.WithdrawRequestState({
-                requestedAssets: params.assets,
+                requestedAmount: params.assets,
                 accRequestedWithdrawAssets: params.cache.accRequestedWithdrawAssets,
                 requestTimestamp: block.timestamp,
                 receiver: params.receiver,
@@ -79,6 +79,7 @@ library DepositorLogic {
 
     function processWithdrawRequests(uint256 assets, DataTypes.StrategyStateChache memory cache)
         public
+        pure
         returns (uint256, DataTypes.StrategyStateChache memory)
     {
         if (assets == 0) return (0, cache);

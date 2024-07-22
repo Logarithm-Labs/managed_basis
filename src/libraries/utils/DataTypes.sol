@@ -26,7 +26,6 @@ library DataTypes {
                         STRATEGY DATATYPES   
     //////////////////////////////////////////////////////////////*/
 
-
     struct StrategyStateChache {
         uint256 assetsToClaim;
         uint256 assetsToWithdraw;
@@ -48,9 +47,8 @@ library DataTypes {
         address positionManager;
     }
 
-
     struct WithdrawRequestState {
-        uint256 requestedAssets;
+        uint256 requestedAmount;
         uint256 accRequestedWithdrawAssets;
         uint256 requestTimestamp;
         address receiver;

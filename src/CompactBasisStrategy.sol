@@ -139,6 +139,8 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     event SwapFailed();
 
+    event UpdateStrategyStatus(DataTypes.StrategyStatus status);
+
     /*//////////////////////////////////////////////////////////////
                             MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -267,7 +269,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         (withdrawId, cache, withdrawState) = DepositorLogic.executeWithdraw(
             DepositorLogic.WithdrawParams({
                 asset: asset_,
-                recevier: receiver,
+                receiver: receiver,
                 owner: owner,
                 requestCounter: $.requestCounter[owner],
                 assets: assets,
@@ -291,7 +293,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
-    function claim(bytes32 requestId) external virtual returns (uint256 executedAmount) {
+    function claim(bytes32 requestId) external virtual {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         DataTypes.WithdrawRequestState memory withdrawState = $.withdrawRequests[requestId];
 
@@ -307,7 +309,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         withdrawState.isClaimed = true;
         $.withdrawRequests[requestId] = withdrawState;
-        $.assetsToClaim -= withdrawState.requestedAssets;
+        $.assetsToClaim -= withdrawState.requestedAmount;
 
         IERC20(asset()).safeTransfer(msg.sender, withdrawState.requestedAmount);
 
@@ -442,6 +444,10 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+
+        $.strategyStatus = DataTypes.StrategyStatus.DEPOSITING;
+        emit UpdateStrategyStatus(DataTypes.StrategyStatus.DEPOSITING);
+
         bool success;
         uint256 amountOut;
         IPositionManager.AdjustPositionParams memory adjustPositionParams;
@@ -478,6 +484,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         (success, amountOut, cache, adjustPositionParams) = OperatorLogic.executeDeutilize(
             OperatorLogic.UtilizeParams({
                 amount: amount,
+                targetLeverage: $.targetLeverage,
                 status: $.strategyStatus,
                 swapType: swapType,
                 addr: _getStrategyAddresses($),

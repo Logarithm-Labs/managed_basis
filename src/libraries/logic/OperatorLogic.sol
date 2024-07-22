@@ -42,6 +42,7 @@ library OperatorLogic {
     {
         uint256 idleAssets = AccountingLogic.getIdleAssets(params.addr.asset, params.cache);
         uint256 pendingUtilization = getPendingUtilization(params.addr.asset, params.cache, params.targetLeverage);
+
         params.amount = params.amount > pendingUtilization ? pendingUtilization : params.amount;
         params.amount = params.amount > idleAssets ? idleAssets : params.amount;
 
@@ -59,19 +60,21 @@ library OperatorLogic {
         }
 
         IPositionManager.AdjustPositionParams memory adjustPositionParams;
-        if (success) {
-            uint256 collateralDeltaAmount;
-            if (params.cache.pendingIncreaseCollateral > 0) {
-                collateralDeltaAmount = params.cache.pendingIncreaseCollateral.mulDiv(params.amount, pendingUtilization);
-                params.cache.pendingIncreaseCollateral -= collateralDeltaAmount;
-            }
-            params.cache.pendingUtilization -= params.amount;
-            adjustPositionParams = IPositionManager.AdjustPositionParams({
-                sizeDeltaInTokens: amountOut,
-                collateralDeltaAmount: collateralDeltaAmount,
-                isIncrease: true
-            });
-        }
+        // if (success) {
+        //     uint256 collateralDeltaAmount;
+        //     if (params.cache.pendingIncreaseCollateral > 0) {
+        //         collateralDeltaAmount = getPendingIncreaseCollateral(
+        //             params.addr.asset, params.targetLeverage, params.cache
+        //         ).mulDiv(params.amount, pendingUtilization);
+        //         params.cache.pendingIncreaseCollateral -= collateralDeltaAmount;
+        //     }
+        //     params.cache.pendingUtilization -= params.amount;
+        //     adjustPositionParams = IPositionManager.AdjustPositionParams({
+        //         sizeDeltaInTokens: amountOut,
+        //         collateralDeltaAmount: collateralDeltaAmount,
+        //         isIncrease: true
+        //     });
+        // }
         return (success, amountOut, params.cache, adjustPositionParams);
     }
 
@@ -84,44 +87,45 @@ library OperatorLogic {
             IPositionManager.AdjustPositionParams memory
         )
     {
-        uint256 productBalance = IERC20(params.addr.product).balanceOf(address(this));
+        //     uint256 productBalance = IERC20(params.addr.product).balanceOf(address(this));
 
-        // actual deutilize amount is min of amount, product balance and pending deutilization
-        params.amount =
-            params.amount > params.cache.pendingDeutilization ? params.cache.pendingDeutilization : params.amount;
-        params.amount = params.amount > productBalance ? productBalance : params.amount;
+        //     // actual deutilize amount is min of amount, product balance and pending deutilization
+        //     params.amount =
+        //         params.amount > params.cache.pendingDeutilization ? params.cache.pendingDeutilization : params.amount;
+        //     params.amount = params.amount > productBalance ? productBalance : params.amount;
 
-        // can only deutilize when amount is positive
-        if (params.amount == 0) {
-            revert Errors.ZeroAmountUtilization();
-        }
+        //     // can only deutilize when amount is positive
+        //     if (params.amount == 0) {
+        //         revert Errors.ZeroAmountUtilization();
+        //     }
 
-        if (params.swapType == DataTypes.SwapType.INCH_V6) {
-            (amountOut, success) = InchAggregatorV6Logic.executeSwap(
-                params.amount, params.addr.asset, params.addr.product, true, params.swapData
-            );
-        } else {
-            // @consider: fallback swap
-            revert Errors.UnsupportedSwapType();
-        }
+        //     if (params.swapType == DataTypes.SwapType.INCH_V6) {
+        //         (amountOut, success) = InchAggregatorV6Logic.executeSwap(
+        //             params.amount, params.addr.asset, params.addr.product, true, params.swapData
+        //         );
+        //     } else {
+        //         // @consider: fallback swap
+        //         revert Errors.UnsupportedSwapType();
+        //     }
 
         IPositionManager.AdjustPositionParams memory adjustPositionParams;
-        if (success) {
-            if (params.status == DataTypes.StrategyStatus.IDLE) {
-                params.cache.assetsToWithdraw += amountOut;
-                params.cache.totalPendingWithdraw -= amountOut;
-                params.cache.withdrawnFromSpot += amountOut;
-                adjustPositionParams = IPositionManager.AdjustPositionParams({
-                    sizeDeltaInTokens: params.amount,
-                    collateralDeltaAmount: 0,
-                    isIncrease: false
-                });
-            }
-        }
+        //     if (success) {
+        //         if (params.status == DataTypes.StrategyStatus.IDLE) {
+        //             params.cache.assetsToWithdraw += amountOut;
+        //             params.cache.totalPendingWithdraw -= amountOut;
+        //             params.cache.withdrawnFromSpot += amountOut;
+        //             adjustPositionParams = IPositionManager.AdjustPositionParams({
+        //                 sizeDeltaInTokens: params.amount,
+        //                 collateralDeltaAmount: 0,
+        //                 isIncrease: false
+        //             });
+        //         }
+        //     }
+        return (success, amountOut, params.cache, adjustPositionParams);
     }
 
     function getPendingUtilization(address asset, DataTypes.StrategyStateChache memory cache, uint256 targetLeverage)
-        external
+        public
         view
         returns (uint256)
     {
@@ -165,7 +169,7 @@ library OperatorLogic {
         address asset,
         uint256 targetLeverage,
         DataTypes.StrategyStateChache memory cache
-    ) external view returns (uint256) {
+    ) public view returns (uint256) {
         uint256 idleAssets = AccountingLogic.getIdleAssets(asset, cache);
         return
             idleAssets.mulDiv(Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + targetLeverage, Math.Rounding.Ceil);
