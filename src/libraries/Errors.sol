@@ -12,6 +12,8 @@ library Errors {
     error InchInvalidReceiver();
     error InchInvalidAmount(uint256 requestedAmountIn, uint256 unpackedAmountIn);
 
+    error SwapAmountExceedsBalance(uint256 swapAmount, uint256 balance);
+
     error IncosistentParamsLength();
     /// @notice only callable by factory
     error CallerNotFactory();
@@ -84,6 +86,6 @@ library Errors {
     error CallerNotOperator();
 
     error InvalidAdjustmentParams();
-    
+
     error InvalidStrategyStatus(uint8 status);
 }

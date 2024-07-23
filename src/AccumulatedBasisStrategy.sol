@@ -15,6 +15,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {InchAggregatorV6Logic} from "src/libraries/InchAggregatorV6Logic.sol";
+import {ManualSwapLogic} from "src/libraries/ManualSwapLogic.sol";
 
 import {IOracle} from "src/interfaces/IOracle.sol";
 
@@ -68,6 +69,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 strategyDepostLimit;
         uint256 assetsToClaim; // asset balance that is ready to claim
         uint256 assetsToWithdraw; // asset balance that is processed for withdrawals
+        uint256 pendingUtilizedProducts;
+        uint256 pendingDeutilizedAssets;
         // uint256 pendingUtilization;
         // uint256 pendingDeutilization;
         // uint256 pendingIncreaseCollateral;
@@ -85,6 +88,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         mapping(address => uint128) requestCounter;
         // mapping(bytes32 => WithdrawState) withdrawRequests;
         mapping(bytes32 => WithdrawRequest) withdrawRequests;
+        // manual swap
+        mapping(address => mapping(address => address)) swapPool;
+        mapping(address tokenIn => mapping(address tokenOut => address[] path)) swapPath;
     }
     // mapping(bytes32 => RequestParams) positionRequests;
 
@@ -509,6 +515,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 emit UpdateStrategyStatus(StrategyStatus.IDLE);
                 return bytes32(0);
             }
+            $.pendingUtilizedProducts = amountOut;
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
@@ -566,6 +573,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 emit UpdateStrategyStatus(StrategyStatus.IDLE);
                 return bytes32(0);
             }
+            $.pendingDeutilizedAssets = amountOut;
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
@@ -741,6 +749,35 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         }
     }
 
+    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
+        require(amount0Delta > 0 || amount1Delta > 0); // swaps entirely within 0-liquidity regions are not supported
+        if (data.length != 96) {
+            revert Errors.InvalidCallback();
+        }
+        (address tokenIn, address tokenOut, address payer) = abi.decode(data, (address, address, address));
+        _verifyCallback(tokenIn, tokenOut);
+
+        uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
+        if (payer == address(this)) {
+            IERC20(tokenIn).safeTransfer(msg.sender, amountToPay);
+        } else {
+            IERC20(tokenIn).safeTransferFrom(payer, msg.sender, amountToPay);
+        }
+    }
+
+    function _verifyCallback(address tokenIn, address tokenOut) internal view {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        address pool = $.swapPool[tokenIn][tokenOut];
+        if (msg.sender != pool) {
+            revert Errors.InvalidCallback();
+        }
+    }
+
+    function _manualSwap(address tokenIn, address tokenOut, uint256 amountIn) internal {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        ManualSwapLogic.swap(tokenIn, amountIn, address(this), $.swapPath[tokenIn][tokenOut]);
+    }
+
     function _checkStrategyStatus() internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         bool upkeepNeeded = _checkUpkeep();
@@ -828,7 +865,11 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function _afterIncreasePositionSizeRevert(
         PositionManagerCallbackParams memory, /* params */
         StrategyStatus /* status */
-    ) internal pure {}
+    ) internal {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        _manualSwap(product(), asset(), $.pendingUtilizedProducts);
+        delete $.pendingUtilizedProducts;
+    }
 
     function _afterIncreasePositionCollateralRevert(PositionManagerCallbackParams memory params, StrategyStatus status)
         internal
@@ -887,8 +928,12 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function _afterDecreasePositionSizeRevert(
         PositionManagerCallbackParams memory, /* params */
         StrategyStatus /* status */
-    ) internal pure {
-        // TODO: implement
+    ) internal {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        uint256 pendingDeutilizedAssets_ = $.pendingDeutilizedAssets;
+        _manualSwap(asset(), product(), pendingDeutilizedAssets_);
+        delete $.pendingDeutilizedAssets;
+        $.assetsToWithdraw -= pendingDeutilizedAssets_;
     }
 
     function _afterDecreasePositionCollateralRevert(
