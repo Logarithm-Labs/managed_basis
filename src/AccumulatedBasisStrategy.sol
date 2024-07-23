@@ -360,23 +360,30 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                             ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    // TODO: account for pendings
+    // @review Numa. When during processWithdrawRequests() we convert $.assetsToWithdraw to $.assetsToClaim totalAssets()
+    // will stay the same.
+    // idleAssets() will stay the same as $.assetsToWithdraw just migrates to $.assetsToClaim
+    // totalPendingWithdaw() will stay the same as $.totalPendingWithdraw would be set to zero and $.proccessedWithdrawAssets
+    // would be increase by $.totalAssetsToWithdraw
     function totalAssets() public view virtual override returns (uint256 assets) {
         (, assets) = (utilizedAssets() + idleAssets()).trySub(totalPendingWithdraw());
     }
 
+    // @review Numa: why do we have $.assetsToWithdraw in utilizedAssets?
     function utilizedAssets() public view virtual returns (uint256 assets) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 productBalance = IERC20(product()).balanceOf(address(this));
         uint256 positionNetBalance = IPositionManager($.positionManager).positionNetBalance();
         uint256 productValueInAsset = $.oracle.convertTokenAmount(product(), asset(), productBalance);
-        assets = productValueInAsset + positionNetBalance + $.assetsToWithdraw;
+        assets = productValueInAsset + positionNetBalance; /*  + $.assetsToWithdraw */
     }
 
+    // @review Numa: there should be no scenarios where ($.assetsToClaim + $.assetsToWithdraw) > assetBalance
+    // as we only increase this state variables where asset hits the strategy address, thus should remove trySub
     function idleAssets() public view virtual returns (uint256 assets) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
-        (, assets) = assetBalance.trySub($.assetsToClaim + $.assetsToWithdraw);
+        assets = assetBalance - ($.assetsToClaim + $.assetsToWithdraw);
     }
 
     function getWithdrawKey(address owner, uint128 counter) public view virtual returns (bytes32) {
@@ -573,25 +580,36 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         // $.spotExecutionPrice = amountOut.mulDiv(10 ** IERC20Metadata(product()).decimals(), amount, Math.Rounding.Ceil);
 
+        uint256 collateralDeltaAmount;
         if ($.strategyStatus == StrategyStatus.WITHDRAWING) {
             $.assetsToWithdraw += amountOut;
-            address _positionManager = $.positionManager;
-            uint256 positionNetBalance = IPositionManager(_positionManager).positionNetBalance();
-            uint256 positionSizeInTokens = IPositionManager(_positionManager).positionSizeInTokens();
-            uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
-            $.pendingDecreaseCollateral += collateralDeltaToDecrease;
+            if (amount == _pendingDeutilization) {
+                (, collateralDeltaAmount) = $.accRequestedWithdrawAssets.trySub($.proccessedWithdrawAssets + amountOut);
+                $.pendingDecreaseCollateral = collateralDeltaAmount;
+            } else {
+                address _positionManager = $.positionManager;
+                uint256 positionNetBalance = IPositionManager(_positionManager).positionNetBalance();
+                uint256 positionSizeInTokens = IPositionManager(_positionManager).positionSizeInTokens();
+                uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
+                $.pendingDecreaseCollateral += collateralDeltaToDecrease;
+            }
         }
 
-        // @review Numa:
-        // we can't always decrease collateral when the deutilize is called
-        // the reason for that is for example in Hyperliquid we have a fixed 1 USDC fee for withdrawing USDC from Hyperliquid
-        // we can basically have a separate $.minCollateralDecrease which we can set for Hyperliquid at 1000 USDC, so that the
-        // cost for withdrawal would be less then 0.1%
-
-        // @TODO decrease collateral at the same time
-        IPositionManager($.positionManager).adjustPosition(amount, 0, false);
+        IPositionManager($.positionManager).adjustPosition(amount, collateralDeltaAmount, false);
 
         emit Deutilize(msg.sender, amount, amountOut);
+    }
+
+    // note: for testing
+    function forcedDecreaseCollateral() external onlyOperator {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if ($.strategyStatus != StrategyStatus.IDLE) {
+            revert Errors.InvalidStrategyStatus(uint8($.strategyStatus));
+        }
+        $.strategyStatus = StrategyStatus.WITHDRAWING;
+        emit UpdateStrategyStatus(StrategyStatus.WITHDRAWING);
+
+        IPositionManager($.positionManager).adjustPosition(0, $.pendingDecreaseCollateral, false);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -670,10 +688,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             hedgeDeviation = true;
         }
 
-        uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
-        if (pendingDecreaseCollateral_ > 0) {
-            decreaseCollateral = true;
-        }
+        // uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
+        // if (pendingDecreaseCollateral_ > 0) {
+        //     decreaseCollateral = true;
+        // }
 
         return (upkeepNeeded, abi.encode(statusKeep, hedgeDeviation, decreaseCollateral));
     }
@@ -695,10 +713,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             return true;
         }
 
-        uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
-        if (pendingDecreaseCollateral_ > 0) {
-            return true;
-        }
+        // uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
+        // if (pendingDecreaseCollateral_ > 0) {
+        //     return true;
+        // }
 
         return false;
     }
@@ -1029,7 +1047,12 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         if (positionSizeInAssets == 0 && positionNetBalance == 0) return 0;
 
-        return positionSizeInTokens.mulDiv(totalPendingWithdraw(), positionSizeInAssets + positionNetBalance);
+        // note: if we do not decrease collateral after every deutilization and do not adjust totalPendingWithdraw and
+        // position net balance for $.pendingDecreaseCollateral the return value for pendingDeutilization would be invalid
+        return positionSizeInTokens.mulDiv(
+            totalPendingWithdraw() - $.pendingDecreaseCollateral,
+            positionSizeInAssets + positionNetBalance - $.pendingDecreaseCollateral
+        );
     }
 
     function pendingIncreaseCollateral() external view returns (uint256) {
@@ -1041,9 +1064,14 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         return $.pendingDecreaseCollateral;
     }
 
-    function totalPendingWithdraw() public view returns (uint256) {
+    // review Numa: totalPendingWithdraw is used in preview functions. When we sell product for asset during deutilize
+    // amountOut is translated to $.assetsToWithdraw, but it is only accounted in $.proccessedWithdrawAssets after
+    // we call _processWithdrawRequests(). This creates a situation where if user call preview function before strategy
+    // receives callback, he will get a different number when comparing to calling function after callback.
+    // Thus $.assetsToWithdraw should decrease totalPendingWithdraw()
+    function totalPendingWithdraw() public view returns (uint256 pendingWithdraw) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.accRequestedWithdrawAssets - $.proccessedWithdrawAssets;
+        (, pendingWithdraw) = $.accRequestedWithdrawAssets.trySub($.proccessedWithdrawAssets + $.assetsToWithdraw);
     }
 
     function strategyStatus() external view returns (StrategyStatus) {

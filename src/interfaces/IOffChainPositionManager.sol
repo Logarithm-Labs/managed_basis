@@ -2,19 +2,26 @@
 pragma solidity ^0.8.0;
 
 interface IOffChainPositionManager {
+    struct RequestParams {
+        uint256 sizeDeltaInTokens;
+        uint256 collateralDeltaAmount;
+        bool isIncrease;
+    }
+
     function initialize(
         address strategy,
         address agent,
         address oracle,
         address indexToken,
         address collateralToken,
-        uint256 targetLeverage,
         bool isLong
     ) external;
 
     function positionNetBalance() external view returns (uint256);
 
+    function currentLeverage() external view returns (uint256);
+
     function positionSizeInTokens() external view returns (uint256);
 
-    function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease) external;
+    function adjustPosition(RequestParams memory params) external;
 }
