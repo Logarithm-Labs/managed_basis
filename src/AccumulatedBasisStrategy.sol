@@ -750,59 +750,6 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         }
     }
 
-    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
-        require(amount0Delta > 0 || amount1Delta > 0); // swaps entirely within 0-liquidity regions are not supported
-        if (data.length != 96) {
-            revert Errors.InvalidCallback();
-        }
-        (address tokenIn, address tokenOut, address payer) = abi.decode(data, (address, address, address));
-        _verifyCallback(tokenIn, tokenOut);
-
-        uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
-        if (payer == address(this)) {
-            IERC20(tokenIn).safeTransfer(msg.sender, amountToPay);
-        } else {
-            IERC20(tokenIn).safeTransferFrom(payer, msg.sender, amountToPay);
-        }
-    }
-
-    function _verifyCallback(address tokenIn, address tokenOut) internal view {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        address pool = $.swapPool[tokenIn][tokenOut];
-        if (msg.sender != pool) {
-            revert Errors.InvalidCallback();
-        }
-    }
-
-    function _manualSwap(address tokenIn, address tokenOut, uint256 amountIn) internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        ManualSwapLogic.swap(amountIn, $.swapPath[tokenIn][tokenOut]);
-    }
-
-    function setSwapPath(address _tokenA, address _tokenB, address[] memory path) external onlyOwner {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 length = path.length;
-        address[] memory reversePath = new address[](length);
-
-        for (uint256 i = 0; i < length; i++) {
-            reversePath[i] = path[length - i - 1];
-            if (i % 2 != 0) {
-                address tokenIn = path[i - 1];
-                address tokenOut = path[i + 1];
-                address pool = path[i];
-                address token0 = IUniswapV3Pool(pool).token0();
-                address token1 = IUniswapV3Pool(pool).token1();
-                if ((tokenIn != token0 && tokenIn != token1) || (tokenOut != token0 && tokenOut != token1)) {
-                    revert Errors.InvalidPath(tokenIn, tokenOut, pool);
-                }
-                $.swapPool[tokenIn][tokenOut] = pool;
-                $.swapPool[tokenOut][tokenIn] = pool;
-            }
-        }
-        $.swapPath[_tokenA][_tokenB] = path;
-        $.swapPath[_tokenB][_tokenA] = reversePath;
-    }
-
     function _checkStrategyStatus() internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         bool upkeepNeeded = _checkUpkeep();
@@ -966,6 +913,63 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         StrategyStatus /* status */
     ) internal pure {
         // TODO implement
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        MANUAL SWAP
+    //////////////////////////////////////////////////////////////*/
+
+    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
+        require(amount0Delta > 0 || amount1Delta > 0); // swaps entirely within 0-liquidity regions are not supported
+        if (data.length != 96) {
+            revert Errors.InvalidCallback();
+        }
+        (address tokenIn, address tokenOut, address payer) = abi.decode(data, (address, address, address));
+        _verifyCallback(tokenIn, tokenOut);
+
+        uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
+        if (payer == address(this)) {
+            IERC20(tokenIn).safeTransfer(msg.sender, amountToPay);
+        } else {
+            IERC20(tokenIn).safeTransferFrom(payer, msg.sender, amountToPay);
+        }
+    }
+
+    function _verifyCallback(address tokenIn, address tokenOut) internal view {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        address pool = $.swapPool[tokenIn][tokenOut];
+        if (msg.sender != pool) {
+            revert Errors.InvalidCallback();
+        }
+    }
+
+    function _manualSwap(address tokenIn, address tokenOut, uint256 amountIn) internal {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        ManualSwapLogic.swap(amountIn, $.swapPath[tokenIn][tokenOut]);
+    }
+
+    function setSwapPath(address _tokenA, address _tokenB, address[] memory path) external onlyOwner {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        uint256 length = path.length;
+        address[] memory reversePath = new address[](length);
+
+        for (uint256 i = 0; i < length; i++) {
+            reversePath[i] = path[length - i - 1];
+            if (i % 2 != 0) {
+                address tokenIn = path[i - 1];
+                address tokenOut = path[i + 1];
+                address pool = path[i];
+                address token0 = IUniswapV3Pool(pool).token0();
+                address token1 = IUniswapV3Pool(pool).token1();
+                if ((tokenIn != token0 && tokenIn != token1) || (tokenOut != token0 && tokenOut != token1)) {
+                    revert Errors.InvalidPath(tokenIn, tokenOut, pool);
+                }
+                $.swapPool[tokenIn][tokenOut] = pool;
+                $.swapPool[tokenOut][tokenIn] = pool;
+            }
+        }
+        $.swapPath[_tokenA][_tokenB] = path;
+        $.swapPath[_tokenB][_tokenA] = reversePath;
     }
 
     function _pendingUtilization(uint256 _idleAssets, uint256 _targetLeverage) private pure returns (uint256) {
