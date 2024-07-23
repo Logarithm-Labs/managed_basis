@@ -572,10 +572,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         }
 
         // $.spotExecutionPrice = amountOut.mulDiv(10 ** IERC20Metadata(product()).decimals(), amount, Math.Rounding.Ceil);
+        address _positionManager = $.positionManager;
 
         if ($.strategyStatus == StrategyStatus.WITHDRAWING) {
             $.assetsToWithdraw += amountOut;
-            address _positionManager = $.positionManager;
             uint256 positionNetBalance = IPositionManager(_positionManager).positionNetBalance();
             uint256 positionSizeInTokens = IPositionManager(_positionManager).positionSizeInTokens();
             uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
@@ -589,7 +589,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         // cost for withdrawal would be less then 0.1%
 
         // @TODO decrease collateral at the same time
-        IPositionManager($.positionManager).adjustPosition(amount, 0, false);
+        IPositionManager(_positionManager).adjustPosition(amount, 0, false);
 
         emit Deutilize(msg.sender, amount, amountOut);
     }
