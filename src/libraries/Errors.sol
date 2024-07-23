@@ -13,6 +13,7 @@ library Errors {
     error InchInvalidAmount(uint256 requestedAmountIn, uint256 unpackedAmountIn);
 
     error SwapAmountExceedsBalance(uint256 swapAmount, uint256 balance);
+    error InvalidPath(address tokenIn, address tokenOut, address pool);
 
     error IncosistentParamsLength();
     /// @notice only callable by factory

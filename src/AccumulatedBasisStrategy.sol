@@ -6,6 +6,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {PositionManagerCallbackParams} from "src/interfaces/IManagedBasisStrategy.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IManagedBasisCallbackReceiver} from "src/interfaces/IManagedBasisCallbackReceiver.sol";
+import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -776,6 +777,30 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function _manualSwap(address tokenIn, address tokenOut, uint256 amountIn) internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         ManualSwapLogic.swap(tokenIn, amountIn, $.swapPath[tokenIn][tokenOut]);
+    }
+
+    function setSwapPath(address _tokenA, address _tokenB, address[] memory path) external onlyOwner {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        uint256 length = path.length;
+        address[] memory reversePath = new address[](length);
+
+        for (uint256 i = 0; i < length; i++) {
+            reversePath[i] = path[length - i - 1];
+            if (i % 2 != 0) {
+                address tokenIn = path[i - 1];
+                address tokenOut = path[i + 1];
+                address pool = path[i];
+                address token0 = IUniswapV3Pool(pool).token0();
+                address token1 = IUniswapV3Pool(pool).token1();
+                if ((tokenIn != token0 && tokenIn != token1) || (tokenOut != token0 && tokenOut != token1)) {
+                    revert Errors.InvalidPath(tokenIn, tokenOut, pool);
+                }
+                $.swapPool[tokenIn][tokenOut] = pool;
+                $.swapPool[tokenOut][tokenIn] = pool;
+            }
+        }
+        $.swapPath[_tokenA][_tokenB] = path;
+        $.swapPath[_tokenB][_tokenA] = reversePath;
     }
 
     function _checkStrategyStatus() internal {
