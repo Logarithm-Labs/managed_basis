@@ -9,9 +9,11 @@ solc = '0.8.25'
 ffi = true
 yul = true
 via_ir = true
-fs_permissions = [{ access = "write", path = "./" }]
+fs_permissions = [{ access = "read-write", path = "./" }]
 evm_version = 'shanghai'
 gas_reports = ["GmxV2PositionManager"]
+show_progress = true
+threads = 1
 
 [rpc_endpoints]
 # All available network keywords:
