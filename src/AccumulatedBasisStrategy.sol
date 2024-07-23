@@ -818,11 +818,25 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         );
     }
 
-    function _afterIncreasePositionSizeRevert(
+    function _afterIncreasePositionCollateralSuccess(
         PositionManagerCallbackParams memory, /* params */
         StrategyStatus /* status */
     ) internal pure {
         // TODO: implement
+    }
+
+    function _afterIncreasePositionSizeRevert(
+        PositionManagerCallbackParams memory, /* params */
+        StrategyStatus /* status */
+    ) internal pure {}
+
+    function _afterIncreasePositionCollateralRevert(PositionManagerCallbackParams memory params, StrategyStatus status)
+        internal
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (status == StrategyStatus.DEPOSITING) {
+            IERC20(asset()).safeTransferFrom($.positionManager, address(this), params.collateralDeltaAmount);
+        }
     }
 
     function _afterDecreasePositionSizeSuccess(PositionManagerCallbackParams memory params, StrategyStatus status)
@@ -850,29 +864,6 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         }
     }
 
-    function _afterDecreasePositionSizeRevert(
-        PositionManagerCallbackParams memory, /* params */
-        StrategyStatus /* status */
-    ) internal pure {
-        // TODO: implement
-    }
-
-    function _afterIncreasePositionCollateralSuccess(
-        PositionManagerCallbackParams memory, /* params */
-        StrategyStatus /* status */
-    ) internal pure {
-        // TODO: implement
-    }
-
-    function _afterIncreasePositionCollateralRevert(PositionManagerCallbackParams memory params, StrategyStatus status)
-        internal
-    {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if (status == StrategyStatus.DEPOSITING) {
-            IERC20(asset()).safeTransferFrom($.positionManager, address(this), params.collateralDeltaAmount);
-        }
-    }
-
     function _afterDecreasePositionCollateralSuccess(PositionManagerCallbackParams memory params, StrategyStatus status)
         internal
     {
@@ -891,6 +882,13 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         } else {
             revert Errors.InvalidStrategyStatus(uint8(status));
         }
+    }
+
+    function _afterDecreasePositionSizeRevert(
+        PositionManagerCallbackParams memory, /* params */
+        StrategyStatus /* status */
+    ) internal pure {
+        // TODO: implement
     }
 
     function _afterDecreasePositionCollateralRevert(
