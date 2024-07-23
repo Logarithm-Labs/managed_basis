@@ -864,11 +864,13 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         // TODO: implement
     }
 
-    function _afterIncreasePositionCollateralRevert(
-        PositionManagerCallbackParams memory, /* params */
-        StrategyStatus /* status */
-    ) internal pure {
-        // TODO: implement
+    function _afterIncreasePositionCollateralRevert(PositionManagerCallbackParams memory params, StrategyStatus status)
+        internal
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (status == StrategyStatus.DEPOSITING) {
+            IERC20(asset()).safeTransferFrom($.positionManager, address(this), params.collateralDeltaAmount);
+        }
     }
 
     function _afterDecreasePositionCollateralSuccess(PositionManagerCallbackParams memory params, StrategyStatus status)
