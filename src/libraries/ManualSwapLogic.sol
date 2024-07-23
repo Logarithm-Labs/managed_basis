@@ -13,25 +13,17 @@ import {Errors} from "src/libraries/Errors.sol";
 library ManualSwapLogic {
     using SafeCast for uint256;
 
-    function swap(address tokenIn, uint256 amountIn, address recipient, address[] memory path)
-        external
-        returns (uint256 amountOut)
-    {
+    function swap(address tokenIn, uint256 amountIn, address[] memory path) external returns (uint256 amountOut) {
         uint256 balance = IERC20(tokenIn).balanceOf(address(this));
         if (balance < amountIn) {
             revert Errors.SwapAmountExceedsBalance(amountIn, balance);
         }
 
         uint256 amountInCached = amountIn;
-        address payer = address(this);
         for (uint256 i = 0; i <= path.length / 2; i += 2) {
             address pool = path[i + 1];
             amountIn = exactInputInternal(
-                amountIn,
-                i == path.length - 3 ? recipient : address(this),
-                pool,
-                path[i] < path[i + 2],
-                abi.encode(path[i], path[i + 2], payer)
+                amountIn, address(this), pool, path[i] < path[i + 2], abi.encode(path[i], path[i + 2], address(this))
             );
         }
         amountOut = amountIn;

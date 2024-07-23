@@ -775,7 +775,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
     function _manualSwap(address tokenIn, address tokenOut, uint256 amountIn) internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        ManualSwapLogic.swap(tokenIn, amountIn, address(this), $.swapPath[tokenIn][tokenOut]);
+        ManualSwapLogic.swap(tokenIn, amountIn, $.swapPath[tokenIn][tokenOut]);
     }
 
     function _checkStrategyStatus() internal {
