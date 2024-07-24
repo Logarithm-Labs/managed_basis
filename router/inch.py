@@ -14,8 +14,8 @@ if __name__ == '__main__':
 
     args = argparse.parse_args()
 
-    with open(args.json_data_file) as f:
-        data = json.load(f)
+    with open(args.json_data_file, 'r') as f:
+        data = json.loads(f.read())
 
     if not data:
         raise ValueError("Invalid json data")
