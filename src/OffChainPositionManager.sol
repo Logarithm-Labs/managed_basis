@@ -116,9 +116,7 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
         uint256 sizeDeltaInTokens,
         uint256 collateralDeltaAmount,
         bool isIncrease,
-        bool isSuccess,
-        uint256 executionPrice,
-        uint256 executionCost
+        bool isSuccess
     );
 
     event RequestIncreasePositionSize(uint256 sizeDeltaInTokens, uint256 round);
@@ -272,9 +270,7 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
             params.sizeDeltaInTokens,
             params.collateralDeltaAmount,
             params.isIncrease,
-            params.isSuccess,
-            params.executionPrice,
-            params.executionCost
+            params.isSuccess
         );
     }
 

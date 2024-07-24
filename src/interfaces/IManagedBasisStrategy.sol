@@ -4,8 +4,6 @@ pragma solidity ^0.8.0;
 struct PositionManagerCallbackParams {
     uint256 sizeDeltaInTokens;
     uint256 collateralDeltaAmount;
-    uint256 executionPrice;
-    uint256 executionCost;
     bool isIncrease;
     bool isSuccess;
 }

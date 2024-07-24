@@ -41,7 +41,7 @@ contract OffChainTest is ForkTest {
         vm.startPrank(agent);
         OffChainPositionManager.RequestParams memory request = _getRequest();
         OffChainPositionManager.RequestParams memory response = _executeRequest(request);
-        _reportState(request, response);
+        _reportState(response);
         vm.stopPrank();
     }
 
@@ -73,20 +73,11 @@ contract OffChainTest is ForkTest {
         }
     }
 
-    function _reportState(
-        OffChainPositionManager.RequestParams memory request,
-        OffChainPositionManager.RequestParams memory response
-    ) internal {
-        (uint256 executionPrice, uint256 executionCost) = _getExecutionParams(request.sizeDeltaInTokens);
-        if (response.collateralDeltaAmount < request.collateralDeltaAmount) {
-            executionCost += request.collateralDeltaAmount - response.collateralDeltaAmount;
-        }
+    function _reportState(OffChainPositionManager.RequestParams memory response) internal {
         uint256 markPrice = _getMarkPrice();
         PositionManagerCallbackParams memory params = PositionManagerCallbackParams({
             sizeDeltaInTokens: response.sizeDeltaInTokens,
             collateralDeltaAmount: response.collateralDeltaAmount,
-            executionPrice: executionPrice,
-            executionCost: executionCost,
             isIncrease: response.isIncrease,
             isSuccess: true
         });
