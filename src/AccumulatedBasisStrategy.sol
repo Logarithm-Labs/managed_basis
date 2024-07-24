@@ -591,9 +591,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             $.assetsToWithdraw += amountOut;
             if (amount == _pendingDeutilization) {
                 (, collateralDeltaAmount) = $.accRequestedWithdrawAssets.trySub($.proccessedWithdrawAssets + amountOut);
-                // @note collateralDeltaAmount should be added to the current $.pendingDecreaseCollateral
-                // because  _pendingDeutilization is derivated after accounting $.pendingDecreaseCollateral
-                $.pendingDecreaseCollateral += collateralDeltaAmount;
+                $.pendingDecreaseCollateral = collateralDeltaAmount;
             } else {
                 address _positionManager = $.positionManager;
                 uint256 positionNetBalance = IOffChainPositionManager(_positionManager).positionNetBalance();
