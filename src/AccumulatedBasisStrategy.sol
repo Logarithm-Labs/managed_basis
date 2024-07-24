@@ -90,8 +90,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         // mapping(bytes32 => WithdrawState) withdrawRequests;
         mapping(bytes32 => WithdrawRequest) withdrawRequests;
         // manual swap
-        mapping(address => mapping(address => address)) swapPool;
-        mapping(address tokenIn => mapping(address tokenOut => address[] path)) swapPath;
+        mapping(address => bool) isSwapPool;
+        address[] productToAssetSwapPath;
+        address[] assetToProductSwapPath;
     }
     // mapping(bytes32 => RequestParams) positionRequests;
 
@@ -119,22 +120,30 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         address _operator,
         uint256 _targetLeverage,
         uint256 _entryCost,
-        uint256 _exitCost
+        uint256 _exitCost,
+        address[] calldata _assetToProductSwapPath
     ) external initializer {
         __ERC4626_init(IERC20(_asset));
         __LogBaseVault_init(IERC20(_product));
         __Ownable_init(msg.sender);
-        __ManagedBasisStrategy_init(_oracle, _operator, _targetLeverage, _entryCost, _exitCost);
+        __ManagedBasisStrategy_init(
+            _asset, _product, _oracle, _operator, _targetLeverage, _entryCost, _exitCost, _assetToProductSwapPath
+        );
     }
 
     function __ManagedBasisStrategy_init(
+        address _asset,
+        address _product,
         address _oracle,
         address _operator,
         uint256 _targetLeverage,
         uint256 _entryCost,
-        uint256 _exitCost
+        uint256 _exitCost,
+        address[] calldata _assetToProductSwapPath
     ) public initializer {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        // validation oracle
+        if (IOracle(_oracle).getAssetPrice(_asset) == 0 || IOracle(_oracle).getAssetPrice(_product) == 0) revert();
         $.oracle = IOracle(_oracle);
         $.operator = _operator;
         $.entryCost = _entryCost;
@@ -143,6 +152,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         $.userDepositLimit = type(uint256).max;
         $.strategyDepostLimit = type(uint256).max;
         $.hedgeDeviationThreshold = 1e16; // 1%
+        _setManualSwapPath(_assetToProductSwapPath);
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
@@ -839,7 +849,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         StrategyStatus /* status */
     ) internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        _manualSwap(product(), asset(), $.pendingUtilizedProducts);
+        _manualSwap($.pendingUtilizedProducts, false);
         delete $.pendingUtilizedProducts;
     }
 
@@ -903,7 +913,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     ) internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 pendingDeutilizedAssets_ = $.pendingDeutilizedAssets;
-        _manualSwap(asset(), product(), pendingDeutilizedAssets_);
+        _manualSwap(pendingDeutilizedAssets_, true);
         delete $.pendingDeutilizedAssets;
         $.assetsToWithdraw -= pendingDeutilizedAssets_;
     }
@@ -924,9 +934,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         if (data.length != 96) {
             revert Errors.InvalidCallback();
         }
-        (address tokenIn, address tokenOut, address payer) = abi.decode(data, (address, address, address));
-        _verifyCallback(tokenIn, tokenOut);
-
+        _verifyCallback();
+        (address tokenIn,, address payer) = abi.decode(data, (address, address, address));
         uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
         if (payer == address(this)) {
             IERC20(tokenIn).safeTransfer(msg.sender, amountToPay);
@@ -935,41 +944,52 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         }
     }
 
-    function _verifyCallback(address tokenIn, address tokenOut) internal view {
+    function _verifyCallback() internal view {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        address pool = $.swapPool[tokenIn][tokenOut];
-        if (msg.sender != pool) {
+        if (!$.isSwapPool[msg.sender]) {
             revert Errors.InvalidCallback();
         }
     }
 
-    function _manualSwap(address tokenIn, address tokenOut, uint256 amountIn) internal {
+    function _manualSwap(uint256 amountIn, bool isAssetToProduct) internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        ManualSwapLogic.swap(amountIn, $.swapPath[tokenIn][tokenOut]);
+        if (isAssetToProduct) {
+            ManualSwapLogic.swap(amountIn, $.assetToProductSwapPath);
+        } else {
+            ManualSwapLogic.swap(amountIn, $.productToAssetSwapPath);
+        }
     }
 
-    function setSwapPath(address _tokenA, address _tokenB, address[] memory path) external onlyOwner {
+    function _setManualSwapPath(address[] calldata _assetToProductSwapPath) private {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 length = path.length;
-        address[] memory reversePath = new address[](length);
+        uint256 length = _assetToProductSwapPath.length;
+        if (
+            length % 2 == 0 || _assetToProductSwapPath[0] != asset() || _assetToProductSwapPath[length - 1] != product()
+        ) {
+            // length should be odd
+            // the first element should be asset
+            // the last element should be product
+            revert Errors.InvalidPath();
+        }
 
-        for (uint256 i = 0; i < length; i++) {
-            reversePath[i] = path[length - i - 1];
+        address[] memory _productToAssetSwapPath = new address[](length);
+        for (uint256 i; i < length; i++) {
+            _productToAssetSwapPath[i] = _assetToProductSwapPath[length - i - 1];
             if (i % 2 != 0) {
-                address tokenIn = path[i - 1];
-                address tokenOut = path[i + 1];
-                address pool = path[i];
+                // odd index element of path should be swap pool address
+                address pool = _assetToProductSwapPath[i];
+                address tokenIn = _assetToProductSwapPath[i - 1];
+                address tokenOut = _assetToProductSwapPath[i + 1];
                 address token0 = IUniswapV3Pool(pool).token0();
                 address token1 = IUniswapV3Pool(pool).token1();
-                if ((tokenIn != token0 && tokenIn != token1) || (tokenOut != token0 && tokenOut != token1)) {
-                    revert Errors.InvalidPath(tokenIn, tokenOut, pool);
+                if ((tokenIn != token0 || tokenOut != token1) && (tokenOut != token0 || tokenIn != token1)) {
+                    revert Errors.InvalidPath();
                 }
-                $.swapPool[tokenIn][tokenOut] = pool;
-                $.swapPool[tokenOut][tokenIn] = pool;
+                $.isSwapPool[pool] = true;
             }
         }
-        $.swapPath[_tokenA][_tokenB] = path;
-        $.swapPath[_tokenB][_tokenA] = reversePath;
+        $.assetToProductSwapPath = _assetToProductSwapPath;
+        $.productToAssetSwapPath = _productToAssetSwapPath;
     }
 
     function _pendingUtilization(uint256 _idleAssets, uint256 _targetLeverage) private pure returns (uint256) {
