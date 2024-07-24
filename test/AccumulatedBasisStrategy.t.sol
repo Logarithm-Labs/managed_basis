@@ -21,6 +21,7 @@ import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {Keeper} from "src/Keeper.sol";
 import {Errors} from "src/libraries/Errors.sol";
 import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
+import {PositionManagerCallbackParams} from "src/interfaces/IManagedBasisStrategy.sol";
 
 import {console} from "forge-std/console.sol";
 
@@ -93,6 +94,11 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
         config.setUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT, 2_000_000);
         vm.label(address(config), "config");
 
+        address[] memory pathWeth = new address[](3);
+        pathWeth[0] = USDC;
+        pathWeth[1] = UNISWAPV3_WETH_USDC;
+        pathWeth[2] = WETH;
+
         // deploy strategy
         address strategyImpl = address(new AccumulatedBasisStrategy());
         address strategyProxy = address(
@@ -106,7 +112,8 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
                     operator,
                     targetLeverage,
                     entryCost,
-                    exitCost
+                    exitCost,
+                    pathWeth
                 )
             )
         );
@@ -531,5 +538,68 @@ contract AccumulatedBasisStrategyTest is InchTest, GmxV2Test {
         strategy.claim(requestKey2);
         uint256 balanceAfter2 = IERC20(asset).balanceOf(user2);
         assertEq(balanceBefore2 + withdrawRequest2.requestedAssets, balanceAfter2);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        REVERT TEST
+    //////////////////////////////////////////////////////////////*/
+
+    function test_afterAdjustPosition_revert_whenUtilizing() public afterDeposited {
+        uint256 pendingUtilization = strategy.pendingUtilization();
+        uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
+
+        uint256 amount = pendingUtilization / 2;
+        bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
+        vm.startPrank(operator);
+        strategy.utilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
+
+        // position manager increase reversion
+        vm.startPrank(GMX_ORDER_VAULT);
+        IERC20(asset).transfer(address(positionManager), pendingIncreaseCollateral / 2);
+        vm.startPrank(address(positionManager));
+        strategy.afterAdjustPosition(
+            PositionManagerCallbackParams({
+                sizeDeltaInTokens: IERC20(product).balanceOf(address(strategy)),
+                collateralDeltaAmount: pendingIncreaseCollateral / 2,
+                executionPrice: 0,
+                executionCost: 0,
+                isIncrease: true,
+                isSuccess: false
+            })
+        );
+
+        assertEq(IERC20(asset).balanceOf(address(positionManager)), 0);
+        assertEq(IERC20(product).balanceOf(address(strategy)), 0);
+        assertApproxEqRel(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC, 0.9999 ether);
+    }
+
+    function test_afterAdjustPosition_revert_whenDetilizing() public afterWithdrawRequestCreated {
+        uint256 productBefore = IERC20(product).balanceOf(address(strategy));
+        uint256 assetsToWithdrawBefore = strategy.assetsToWithdraw();
+        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        bytes memory data = _generateInchCallData(product, asset, pendingDeutilization, address(strategy));
+        vm.startPrank(operator);
+        strategy.deutilize(pendingDeutilization, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
+
+        vm.startPrank(address(positionManager));
+        strategy.afterAdjustPosition(
+            PositionManagerCallbackParams({
+                sizeDeltaInTokens: pendingDeutilization,
+                collateralDeltaAmount: 0,
+                executionPrice: 0,
+                executionCost: 0,
+                isIncrease: false,
+                isSuccess: false
+            })
+        );
+
+        bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
+        assertFalse(strategy.isClaimable(requestKey));
+
+        uint256 productAfter = IERC20(product).balanceOf(address(strategy));
+        uint256 assetsToWithdrawAfter = strategy.assetsToWithdraw();
+
+        assertEq(assetsToWithdrawAfter, assetsToWithdrawBefore);
+        assertApproxEqRel(productAfter, productBefore, 0.9999 ether);
     }
 }
