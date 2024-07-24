@@ -343,17 +343,30 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         if (withdrawRequest.receiver != msg.sender) {
             revert Errors.UnauthorizedClaimer(msg.sender, withdrawRequest.receiver);
         }
-        if (!_isWithdrawRequestExecuted(withdrawRequest)) {
+        (bool claimbale, bool isLast) = _isWithdrawRequestExecuted(withdrawRequest);
+        if (!claimbale) {
             revert Errors.RequestNotExecuted();
         }
 
         withdrawRequest.isClaimed = true;
-        $.assetsToClaim -= withdrawRequest.requestedAssets;
-        IERC20(asset()).safeTransfer(msg.sender, withdrawRequest.requestedAssets);
+
+        // separate workflow for last redeem
+        uint256 executedAmount;
+        if (isLast) {
+            executedAmount = withdrawRequest.requestedAssets
+                - (withdrawRequest.accRequestedWithdrawAssets - $.proccessedWithdrawAssets);
+            $.proccessedWithdrawAssets = $.accRequestedWithdrawAssets;
+            $.pendingDecreaseCollateral = 0;
+        } else {
+            executedAmount = withdrawRequest.requestedAssets;
+        }
+
+        $.assetsToClaim -= executedAmount;
+        IERC20(asset()).safeTransfer(msg.sender, executedAmount);
 
         $.withdrawRequests[requestKey] = withdrawRequest;
 
-        emit Claim(msg.sender, requestKey, withdrawRequest.requestedAssets);
+        emit Claim(msg.sender, requestKey, executedAmount);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -464,11 +477,29 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
     function isClaimable(bytes32 requestKey) public view returns (bool) {
         WithdrawRequest memory withdrawRequest = _getManagedBasisStrategyStorage().withdrawRequests[requestKey];
-        return _isWithdrawRequestExecuted(withdrawRequest) && !withdrawRequest.isClaimed;
+        (bool claimable,) = _isWithdrawRequestExecuted(withdrawRequest);
+        return claimable && !withdrawRequest.isClaimed;
     }
 
-    function _isWithdrawRequestExecuted(WithdrawRequest memory withdrawRequest) private view returns (bool) {
-        return withdrawRequest.accRequestedWithdrawAssets <= _getManagedBasisStrategyStorage().proccessedWithdrawAssets;
+    function _isWithdrawRequestExecuted(WithdrawRequest memory withdrawRequest)
+        private
+        view
+        returns (bool claimable, bool isLast)
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        uint256 _proccessedWithdrawAssets = $.proccessedWithdrawAssets;
+
+        // separate worflow for last withdraw
+        // check if current withdrawRequest is last withdraw
+        if (totalSupply() == 0 && withdrawRequest.accRequestedWithdrawAssets == $.accRequestedWithdrawAssets) {
+            isLast = true;
+        }
+        if (isLast) {
+            // last withdraw is claimable when deutilization is complete
+            claimable = pendingDeutilization() == 0 && $.strategyStatus == StrategyStatus.IDLE;
+        } else {
+            claimable = withdrawRequest.accRequestedWithdrawAssets <= _proccessedWithdrawAssets;
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1064,7 +1095,11 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     /// pendingDeutilization = positionSizeInTokens *
     /// * (totalPendingWithdrawUsd/assetPrice) / (positionSizeUsd/assetPrice + positionNetBalanceUsd/assetPrice)
     /// pendingDeutilization = positionSizeInTokens * totalPendingWithdraw / (positionSizeInAssets + positionNetBalance)
-    function pendingDeutilization() public view returns (uint256) {
+    function pendingDeutilization() public view returns (uint256 deutilization) {
+        // if we need to redeem last shares we should deutilize all product balance
+        uint256 productBalance = IERC20(product()).balanceOf(address(this));
+        if (totalSupply() == 0) return productBalance;
+
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         IOracle _oracle = $.oracle;
         address positionManager_ = $.positionManager;
@@ -1074,13 +1109,24 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 positionSizeInAssets = _oracle.convertTokenAmount(product(), asset(), positionSizeInTokens);
 
         if (positionSizeInAssets == 0 && positionNetBalance == 0) return 0;
+        uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
+        uint256 _totalPendingWithdraw = totalPendingWithdraw();
+
+        // prevents underflow
+        if (
+            _pendingDecreaseCollateral > _totalPendingWithdraw
+                || _pendingDecreaseCollateral > (positionSizeInAssets + positionNetBalance)
+        ) {
+            return 0;
+        }
 
         // note: if we do not decrease collateral after every deutilization and do not adjust totalPendingWithdraw and
         // position net balance for $.pendingDecreaseCollateral the return value for pendingDeutilization would be invalid
-        return positionSizeInTokens.mulDiv(
-            totalPendingWithdraw() - $.pendingDecreaseCollateral,
-            positionSizeInAssets + positionNetBalance - $.pendingDecreaseCollateral
+        deutilization = positionSizeInTokens.mulDiv(
+            _totalPendingWithdraw - _pendingDecreaseCollateral,
+            positionSizeInAssets + positionNetBalance - _pendingDecreaseCollateral
         );
+        deutilization = deutilization > productBalance ? productBalance : deutilization;
     }
 
     function pendingIncreaseCollateral() external view returns (uint256) {

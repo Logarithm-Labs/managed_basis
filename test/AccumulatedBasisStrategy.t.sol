@@ -195,6 +195,13 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.IDLE));
     }
 
+    function _deutilizeWithoutExecution(uint256 amount) private {
+        bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
+        vm.startPrank(operator);
+        strategy.deutilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
+        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.WITHDRAWING));
+    }
+
     function _performUpkeep() private {
         (, bytes memory performData) = strategy.checkUpkeep("");
         (, bool hedgeDeviation, bool decreaseCollateral) = abi.decode(performData, (bool, bool, bool));
@@ -506,5 +513,43 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         strategy.claim(requestKey2);
         uint256 balanceAfter2 = IERC20(asset).balanceOf(user2);
         assertEq(balanceBefore2 + withdrawRequest2.requestedAssets, balanceAfter2);
+    }
+
+    function test_lastRedeemBelowRequestedAmount() public afterFullUtilized {
+        // make last redeem
+        uint256 userShares = IERC20(address(strategy)).balanceOf(address(user1));
+        vm.startPrank(user1);
+        strategy.redeem(userShares, user1, user1);
+
+        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        _deutilizeWithoutExecution(pendingDeutilization);
+
+        // manually decrease margin
+        uint256 netBalance = positionManager.positionNetBalance();
+        uint256 marginDecrease = netBalance / 10;
+        vm.startPrank(address(this));
+        IERC20(asset).transfer(USDC_WHALE, marginDecrease);
+        positionNetBalance -= marginDecrease;
+        vm.startPrank(agent);
+        _reportState();
+
+        _fullOffChainExecute();
+
+        bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
+        assertTrue(strategy.proccessedWithdrawAssets() < strategy.accRequestedWithdrawAssets());
+        assertTrue(strategy.isClaimable(requestKey));
+
+        uint256 requestedAmount = strategy.withdrawRequests(requestKey).requestedAssets;
+        uint256 balBefore = IERC20(asset).balanceOf(user1);
+
+        assertGt(strategy.accRequestedWithdrawAssets(), strategy.proccessedWithdrawAssets());
+
+        vm.startPrank(user1);
+        strategy.claim(requestKey);
+        uint256 balDelta = IERC20(asset).balanceOf(user1) - balBefore;
+
+        assertGt(requestedAmount, balDelta);
+        assertEq(strategy.pendingDecreaseCollateral(), 0);
+        assertEq(strategy.accRequestedWithdrawAssets(), strategy.proccessedWithdrawAssets());
     }
 }

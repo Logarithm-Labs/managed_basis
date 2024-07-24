@@ -174,11 +174,11 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
                 emit RequestIncreasePositionSize(params.sizeDeltaInTokens, round);
             }
         } else {
-            if (params.collateralDeltaAmount > 0) {
-                emit RequestDecreasePositionCollateral(params.collateralDeltaAmount, round);
-            }
             if (params.sizeDeltaInTokens > 0) {
                 emit RequestDecreasePositionSize(params.sizeDeltaInTokens, round);
+            }
+            if (params.collateralDeltaAmount > 0) {
+                emit RequestDecreasePositionCollateral(params.collateralDeltaAmount, round);
             }
         }
 
