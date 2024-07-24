@@ -716,16 +716,16 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         return (upkeepNeeded, abi.encode(statusKeep, hedgeDeviation, decreaseCollateral));
     }
 
-    function _checkUpkeep() internal view virtual returns (bool upkeepNeeded) {
+    function _checkUpkeep() internal view virtual returns (bool) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        if ($.strategyStatus == StrategyStatus.NEED_KEEP) {
+            return true;
+        }
 
         // when strategy is in operation, should return false
         if ($.strategyStatus != StrategyStatus.IDLE) {
             return false;
-        }
-
-        if ($.strategyStatus == StrategyStatus.NEED_KEEP) {
-            return true;
         }
 
         (uint256 hedgeDeviationInTokens, /* bool isIncrease */ ) = _checkHedgeDeviation();
