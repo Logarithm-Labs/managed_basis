@@ -88,10 +88,6 @@ contract GmxV2PositionManager is
         bytes32 pendingIncreaseOrderKey;
         bytes32 pendingDecreaseOrderKey;
         uint256 pendingCollateralAmount;
-        // state for calcuating execution cost
-        uint256 pendingPositionFeeUsd;
-        // the decimal is 30 - product.decimal()
-        uint256 hedgeExecutionPrice;
         // this value is set only when changing position sizes
         uint256 sizeInTokensBefore;
         uint256 decreasingCollateralDeltaAmount;
@@ -241,20 +237,7 @@ contract GmxV2PositionManager is
                     gmxParams, _oracle, params.sizeDeltaInTokens, collateralDeltaAmount
                 );
                 if (params.sizeDeltaInTokens > 0) {
-                    // decimal of gmx executionPrice = 30 - decimal of indexToken
-                    // decimal of hedgeExecutionPrice should be the same as collateral token
-                    // as a result, hedgeExecutionPrice = executionPrice * 10^(decimal of collateral + decimal of index - 30)
-                    uint256 sumTokenDecimals =
-                        IERC20Metadata(_collateralToken).decimals() + IERC20Metadata(indexToken()).decimals();
-                    if (sumTokenDecimals < 30) {
-                        _getGmxV2PositionManagerStorage().hedgeExecutionPrice =
-                            decreaseResult.executionPrice / 10 ^ (30 - sumTokenDecimals);
-                    } else {
-                        _getGmxV2PositionManagerStorage().hedgeExecutionPrice =
-                            decreaseResult.executionPrice * 10 ^ (sumTokenDecimals - 30);
-                    }
                     _getGmxV2PositionManagerStorage().sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
-                    _getGmxV2PositionManagerStorage().pendingPositionFeeUsd = decreaseResult.positionFeeUsd;
                 }
                 _createOrder(
                     InternalCreateOrderParams({
@@ -726,9 +709,7 @@ contract GmxV2PositionManager is
     }
 
     function _wipeExecutionCostCalcInfo() private {
-        _getGmxV2PositionManagerStorage().hedgeExecutionPrice = 0;
         _getGmxV2PositionManagerStorage().sizeInTokensBefore = 0;
-        _getGmxV2PositionManagerStorage().pendingPositionFeeUsd = 0;
     }
 
     /*//////////////////////////////////////////////////////////////
