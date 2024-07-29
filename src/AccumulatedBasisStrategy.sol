@@ -61,6 +61,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     struct ManagedBasisStrategyStorage {
         IOracle oracle;
         address operator;
+        address forwarder;
         address positionManager;
         uint256 targetLeverage;
         uint256 maxLeverage;
@@ -542,7 +543,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         StrategyStatus strategyStatus_ = $.strategyStatus;
 
         if (_checkUpkeep(strategyStatus_)) {
-            Errors.UpkeepNeeded();
+            revert Errors.UpkeepNeeded();
         }
 
         // can only utilize when the strategy status is IDLE
@@ -622,7 +623,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         StrategyStatus strategyStatus_ = $.strategyStatus;
 
         if (_checkUpkeep(strategyStatus_)) {
-            Errors.UpkeepNeeded();
+            revert Errors.UpkeepNeeded();
         }
 
         bool needRebalanceDown = strategyStatus_ == StrategyStatus.NEED_REBLANCE_DOWN;
@@ -791,6 +792,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         return (rebalanceUpNeeded, rebalanceDownNeeded);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            UPKEEP
+    //////////////////////////////////////////////////////////////*/
+
     //TODO: accomodate for Chainlink interface
     function checkUpkeep(bytes calldata) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
@@ -843,6 +848,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function performUpkeep(bytes calldata performData) public {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         StrategyStatus status = $.strategyStatus;
+
+        if (msg.sender != $.forwarder) {
+            revert Errors.UnauthorizedForwarder(msg.sender);
+        }
 
         if (status != StrategyStatus.IDLE) {
             return;
