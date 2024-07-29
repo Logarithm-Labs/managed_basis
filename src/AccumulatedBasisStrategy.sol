@@ -1316,10 +1316,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 positionSizeInAssets = _oracle.convertTokenAmount(product(), asset(), positionSizeInTokens);
 
         if (needRebalanceDownWithDeutilizing) {
-            // currentLeverage > maxLeverage is guarranteed, so there is no math error
+            // currentLeverage > targetLeverage is guarranteed, so there is no math error
             // deltaSizeToDecrease =  positionSize - targetLeverage * positionSize / currentLeverage
             deutilization = positionSizeInTokens
-                - positionSizeInAssets.mulDiv($.maxLeverage, IPositionManager(positionManager_).currentLeverage());
+                - positionSizeInTokens.mulDiv($.targetLeverage, IPositionManager(positionManager_).currentLeverage());
         } else {
             if (positionSizeInAssets == 0 && positionNetBalance == 0) return 0;
             uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
