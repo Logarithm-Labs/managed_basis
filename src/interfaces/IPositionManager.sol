@@ -2,6 +2,12 @@
 pragma solidity ^0.8.0;
 
 interface IPositionManager {
+    struct RequestParams {
+        uint256 sizeDeltaInTokens;
+        uint256 collateralDeltaAmount;
+        bool isIncrease;
+    }
+
     function apiVersion() external view returns (string memory);
 
     function positionNetBalance() external view returns (uint256);
@@ -10,9 +16,9 @@ interface IPositionManager {
 
     function positionSizeInTokens() external view returns (uint256);
 
-    function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease) external;
-
     function keep() external;
 
     function needKeep() external view returns (bool);
+
+    function adjustPosition(RequestParams memory params) external;
 }

@@ -181,12 +181,8 @@ contract GmxV2PositionManager is
         _getGmxV2PositionManagerStorage().maxClaimableFundingShare = _maxClaimableFundingShare;
     }
 
-    function adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease)
-        external
-        onlyStrategy
-        whenNotPending
-    {
-        if (sizeDeltaInTokens == 0 && collateralDeltaAmount == 0) {
+    function adjustPosition(RequestParams calldata params) external onlyStrategy whenNotPending {
+        if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount == 0) {
             revert Errors.InvalidAdjustmentParams();
         }
         address _config = config();
@@ -194,8 +190,8 @@ contract GmxV2PositionManager is
         address _oracle = IConfig(_config).getAddress(ConfigKeys.ORACLE);
         address _collateralToken = collateralToken();
         uint256 idleCollateralAmount = IERC20(_collateralToken).balanceOf(address(this));
-        if (isIncrease) {
-            if (collateralDeltaAmount > idleCollateralAmount) {
+        if (params.isIncrease) {
+            if (params.collateralDeltaAmount > idleCollateralAmount) {
                 revert Errors.NotEnoughCollateral();
             }
             if (idleCollateralAmount > 0) {
@@ -204,10 +200,10 @@ contract GmxV2PositionManager is
                 );
             }
             uint256 sizeDeltaUsd;
-            if (sizeDeltaInTokens > 0) {
+            if (params.sizeDeltaInTokens > 0) {
                 // record sizeInTokens
                 _getGmxV2PositionManagerStorage().sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
-                sizeDeltaUsd = GmxV2Lib.getSizeDeltaUsdForIncrease(gmxParams, _oracle, sizeDeltaInTokens);
+                sizeDeltaUsd = GmxV2Lib.getSizeDeltaUsdForIncrease(gmxParams, _oracle, params.sizeDeltaInTokens);
             }
             _createOrder(
                 InternalCreateOrderParams({
@@ -224,25 +220,27 @@ contract GmxV2PositionManager is
             );
             _getGmxV2PositionManagerStorage().status = Status.INCREASE;
         } else {
-            if (sizeDeltaInTokens == 0 && collateralDeltaAmount <= idleCollateralAmount) {
+            if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount <= idleCollateralAmount) {
                 IManagedBasisStrategy(strategy()).afterAdjustPosition(
                     PositionManagerCallbackParams({
                         sizeDeltaInTokens: 0,
-                        collateralDeltaAmount: collateralDeltaAmount,
+                        collateralDeltaAmount: params.collateralDeltaAmount,
                         isIncrease: false,
                         isSuccess: true
                     })
                 );
             } else {
+                uint256 collateralDeltaAmount = params.collateralDeltaAmount;
                 if (collateralDeltaAmount > 0) {
                     _getGmxV2PositionManagerStorage().decreasingCollateralDeltaAmount = collateralDeltaAmount;
                 }
                 if (idleCollateralAmount > 0) {
-                    (, collateralDeltaAmount) = collateralDeltaAmount.trySub(idleCollateralAmount);
+                    (, collateralDeltaAmount) = params.collateralDeltaAmount.trySub(idleCollateralAmount);
                 }
-                GmxV2Lib.DecreasePositionResult memory decreaseResult =
-                    GmxV2Lib.getDecreasePositionResult(gmxParams, _oracle, sizeDeltaInTokens, collateralDeltaAmount);
-                if (sizeDeltaInTokens > 0) {
+                GmxV2Lib.DecreasePositionResult memory decreaseResult = GmxV2Lib.getDecreasePositionResult(
+                    gmxParams, _oracle, params.sizeDeltaInTokens, collateralDeltaAmount
+                );
+                if (params.sizeDeltaInTokens > 0) {
                     // decimal of gmx executionPrice = 30 - decimal of indexToken
                     // decimal of hedgeExecutionPrice should be the same as collateral token
                     // as a result, hedgeExecutionPrice = executionPrice * 10^(decimal of collateral + decimal of index - 30)
