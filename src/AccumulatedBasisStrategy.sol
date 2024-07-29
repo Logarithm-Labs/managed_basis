@@ -42,6 +42,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         KEEPING,
         DEPOSITING,
         WITHDRAWING,
+        NEED_REBLANCE_DOWN,
         REBALANCING_UP, // increase leverage
         REBALANCING_DOWN // decrease leverage
 
@@ -63,6 +64,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         address operator;
         address positionManager;
         uint256 targetLeverage;
+        uint256 maxLeverage;
+        uint256 minLeverage;
         uint256 entryCost;
         uint256 exitCost;
         uint256 hedgeDeviationThreshold;
@@ -599,18 +602,26 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-        // can only deutilize when the strategy status is IDLE
-        if ($.strategyStatus != StrategyStatus.IDLE) {
-            revert Errors.InvalidStrategyStatus(uint8($.strategyStatus));
-        }
-        $.strategyStatus = StrategyStatus.WITHDRAWING;
-        emit UpdateStrategyStatus(StrategyStatus.WITHDRAWING);
+        StrategyStatus strategyStatus_ = $.strategyStatus;
+        bool needRebalanceDown = strategyStatus_ == StrategyStatus.NEED_REBLANCE_DOWN;
 
-        uint256 productBalance = IERC20(product()).balanceOf(address(this));
+        // can only deutilize when the strategy status is IDLE or NEED_REBLANCE_DOWN
+        if (needRebalanceDown) {
+            $.strategyStatus = StrategyStatus.REBALANCING_DOWN;
+            emit UpdateStrategyStatus(StrategyStatus.REBALANCING_DOWN);
+        } else if (strategyStatus_ != StrategyStatus.IDLE) {
+            revert Errors.InvalidStrategyStatus(uint8($.strategyStatus));
+        } else {
+            $.strategyStatus = StrategyStatus.WITHDRAWING;
+            emit UpdateStrategyStatus(StrategyStatus.WITHDRAWING);
+        }
+
+        // uint256 productBalance = IERC20(product()).balanceOf(address(this));
 
         // actual deutilize amount is min of amount, product balance and pending deutilization
-        uint256 _pendingDeutilization = pendingDeutilization();
-        amount = amount > productBalance ? productBalance : amount;
+        uint256 _pendingDeutilization = _pendingDeutilization(needRebalanceDown);
+        // @note productBalance is already checked within _pendingDeutilization()
+        // amount = amount > productBalance ? productBalance : amount;
         amount = amount > _pendingDeutilization ? _pendingDeutilization : amount;
 
         // can only deutilize when amount is positive
@@ -638,7 +649,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         address _positionManager = $.positionManager;
 
         uint256 collateralDeltaAmount;
-        if ($.strategyStatus == StrategyStatus.WITHDRAWING) {
+        if (!needRebalanceDown) {
             $.assetsToWithdraw += amountOut;
             if (amount == _pendingDeutilization) {
                 (, collateralDeltaAmount) = $.accRequestedWithdrawAssets.trySub($.proccessedWithdrawAssets + amountOut);
@@ -740,6 +751,54 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         );
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            REBALANCE
+    //////////////////////////////////////////////////////////////*/
+
+    function _checkRebalance() private view returns (bool rebalanceUpNeeded, bool rebalanceDownNeeded) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        uint256 currentLeverage = IOffChainPositionManager($.positionManager).currentLeverage();
+
+        if (currentLeverage > $.maxLeverage) {
+            rebalanceDownNeeded = true;
+        }
+
+        if (currentLeverage != 0 && currentLeverage < $.minLeverage) {
+            rebalanceUpNeeded = true;
+        }
+
+        return (rebalanceUpNeeded, rebalanceDownNeeded);
+    }
+
+    function _needRebalanceDownWithDeutilizing() private view returns (bool) {
+        (, bool rebalanceDownNeeded) = _checkRebalance();
+        return rebalanceDownNeeded && idleAssets() == 0;
+    }
+
+    /// RELBALANCE DOWN && idle = 0
+    ///
+    /// currentLeverage = positionSizeUsd / collateralUsd
+    /// collateralUsd = positionSizeUsd / currentLeverage
+    ///
+    /// targetLeverage = targetPositionSizeUsd / collateralUsd
+    /// targetPositionSizeUsd = targetLeverage * collateralUsd
+    /// targetPositionSize = targetLeverage * positionSize / currentLeverage
+    /// deltaSizeToDecrease =  positionSize - targetLeverage * positionSize / currentLeverage
+    ///
+    /// RELBALANCE DOWN && idle != 0
+    ///
+    /// targetLeverage = positionSizeUsd / (collateralUsd + deltaCollateralUsdToIncrease)
+    /// deltaCollateralUsdToIncrease = positionSizeUsd / targetLeverage - collateralUsd
+    ///
+    /// REBALANCE UP
+    /// currentLeverage = positionSizeUsd / collateralUsd
+    /// collateralUsd = positionSizeUsd / currentLeverage
+    ///
+    /// targetLeverage = positionSizeUsd / targetCollateralUsd
+    /// targetCollateralUsd = positionSizeUsd / targetLeverage
+    ///
+    /// collateralDeltaUsd = positionSizeUsd / targetLeverage - positionSizeUsd / currentLeverage
+
     //TODO: accomodate for Chainlink interface
     function checkUpkeep(bytes calldata) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
@@ -796,6 +855,53 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function performUpkeep(bytes calldata) public {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         StrategyStatus status = $.strategyStatus;
+        address positionManager_ = $.positionManager;
+
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded) = _checkRebalance();
+
+        if (rebalanceUpNeeded) {
+            $.strategyStatus = StrategyStatus.REBALANCING_UP;
+            uint256 positionSizeInAssets = $.oracle.convertTokenAmount(
+                product(), asset(), IOffChainPositionManager(positionManager_).positionSizeInTokens()
+            );
+            uint256 targetCollateral = positionSizeInAssets / $.targetLeverage;
+            (, uint256 deltaCollateralToDecrease) =
+                IOffChainPositionManager(positionManager_).positionNetBalance().trySub(targetCollateral);
+            IOffChainPositionManager(positionManager_).adjustPosition(
+                IOffChainPositionManager.RequestParams({
+                    sizeDeltaInTokens: 0,
+                    collateralDeltaAmount: deltaCollateralToDecrease,
+                    isIncrease: false
+                })
+            );
+            return;
+        }
+
+        if (rebalanceDownNeeded) {
+            uint256 idle = idleAssets();
+            if (idle == 0) {
+                $.strategyStatus = StrategyStatus.NEED_REBLANCE_DOWN;
+                emit UpdateStrategyStatus(StrategyStatus.NEED_REBLANCE_DOWN);
+                emit UpdatePendingDeutilization(_pendingDeutilization(true));
+                return;
+            } else {
+                $.strategyStatus = StrategyStatus.REBALANCING_DOWN;
+                uint256 positionSizeInAssets = $.oracle.convertTokenAmount(
+                    product(), asset(), IOffChainPositionManager(positionManager_).positionSizeInTokens()
+                );
+                uint256 targetCollateral = positionSizeInAssets / $.targetLeverage;
+                (, uint256 deltaCollateralToIncrease) =
+                    targetCollateral.trySub(IOffChainPositionManager(positionManager_).positionNetBalance());
+                IOffChainPositionManager(positionManager_).adjustPosition(
+                    IOffChainPositionManager.RequestParams({
+                        sizeDeltaInTokens: 0,
+                        collateralDeltaAmount: idle > deltaCollateralToIncrease ? deltaCollateralToIncrease : idle,
+                        isIncrease: true
+                    })
+                );
+                return;
+            }
+        }
 
         if (status != StrategyStatus.NEED_KEEP && status != StrategyStatus.IDLE) {
             return;
@@ -951,12 +1057,11 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
         if (status == StrategyStatus.WITHDRAWING) {
-            uint256 _assetsToWithdraw = $.assetsToWithdraw;
             // don't make remainingAssets go to idle because it has execution cost
-            $.assetsToWithdraw = _processWithdrawRequests(_assetsToWithdraw);
+            $.assetsToWithdraw = _processWithdrawRequests($.assetsToWithdraw);
         } else if (status == StrategyStatus.REBALANCING_DOWN) {
-            //TODO: implement
-            // processing rebalance request
+            $.assetsToWithdraw = _processWithdrawRequests($.assetsToWithdraw);
+            _processWithdrawRequests(idleAssets());
         } else if (status == StrategyStatus.KEEPING) {
             // TODO: implement
             // processing keep request
@@ -1164,6 +1269,11 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         return _pendingUtilization(idleAssets(), _getManagedBasisStrategyStorage().targetLeverage);
     }
 
+    function pendingDeutilization() public view returns (uint256) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        _pendingDeutilization($.strategyStatus == StrategyStatus.NEED_REBLANCE_DOWN);
+    }
+
     // @review Numa:
     // I was thinking that we can also switch pendingUtilization from state variable to function as you proposed earlier.
     // My initial thinking that we need to manage pendingUtilization a little bit different then just simply utilizing all idel.
@@ -1190,7 +1300,11 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     /// pendingDeutilization = positionSizeInTokens *
     /// * (totalPendingWithdrawUsd/assetPrice) / (positionSizeUsd/assetPrice + positionNetBalanceUsd/assetPrice)
     /// pendingDeutilization = positionSizeInTokens * totalPendingWithdraw / (positionSizeInAssets + positionNetBalance)
-    function pendingDeutilization() public view returns (uint256 deutilization) {
+    function _pendingDeutilization(bool needRebalanceDownWithDeutilizing)
+        private
+        view
+        returns (uint256 deutilization)
+    {
         // if we need to redeem last shares we should deutilize all product balance
         uint256 productBalance = IERC20(product()).balanceOf(address(this));
         if (totalSupply() == 0) return productBalance;
@@ -1203,25 +1317,34 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 positionSizeInTokens = IOffChainPositionManager(positionManager_).positionSizeInTokens();
         uint256 positionSizeInAssets = _oracle.convertTokenAmount(product(), asset(), positionSizeInTokens);
 
-        if (positionSizeInAssets == 0 && positionNetBalance == 0) return 0;
-        uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
-        uint256 _totalPendingWithdraw = totalPendingWithdraw();
+        if (needRebalanceDownWithDeutilizing) {
+            // currentLeverage > maxLeverage is guarranteed, so there is no math error
+            // deltaSizeToDecrease =  positionSize - targetLeverage * positionSize / currentLeverage
+            deutilization = positionSizeInTokens
+                - positionSizeInAssets.mulDiv($.maxLeverage, IOffChainPositionManager(positionManager_).currentLeverage());
+        } else {
+            if (positionSizeInAssets == 0 && positionNetBalance == 0) return 0;
+            uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
+            uint256 _totalPendingWithdraw = totalPendingWithdraw();
 
-        // prevents underflow
-        if (
-            _pendingDecreaseCollateral > _totalPendingWithdraw
-                || _pendingDecreaseCollateral > (positionSizeInAssets + positionNetBalance)
-        ) {
-            return 0;
+            // prevents underflow
+            if (
+                _pendingDecreaseCollateral > _totalPendingWithdraw
+                    || _pendingDecreaseCollateral >= (positionSizeInAssets + positionNetBalance)
+            ) {
+                return 0;
+            }
+
+            // note: if we do not decrease collateral after every deutilization and do not adjust totalPendingWithdraw and
+            // position net balance for $.pendingDecreaseCollateral the return value for pendingDeutilization would be invalid
+            deutilization = positionSizeInTokens.mulDiv(
+                _totalPendingWithdraw - _pendingDecreaseCollateral,
+                positionSizeInAssets + positionNetBalance - _pendingDecreaseCollateral
+            );
         }
 
-        // note: if we do not decrease collateral after every deutilization and do not adjust totalPendingWithdraw and
-        // position net balance for $.pendingDecreaseCollateral the return value for pendingDeutilization would be invalid
-        deutilization = positionSizeInTokens.mulDiv(
-            _totalPendingWithdraw - _pendingDecreaseCollateral,
-            positionSizeInAssets + positionNetBalance - _pendingDecreaseCollateral
-        );
         deutilization = deutilization > productBalance ? productBalance : deutilization;
+        return deutilization;
     }
 
     function pendingIncreaseCollateral() external view returns (uint256) {
