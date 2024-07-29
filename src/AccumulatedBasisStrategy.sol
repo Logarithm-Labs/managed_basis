@@ -619,10 +619,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         // uint256 productBalance = IERC20(product()).balanceOf(address(this));
 
         // actual deutilize amount is min of amount, product balance and pending deutilization
-        uint256 _pendingDeutilization = _pendingDeutilization(needRebalanceDown);
+        uint256 pendingDeutilization_ = _pendingDeutilization(needRebalanceDown);
         // @note productBalance is already checked within _pendingDeutilization()
         // amount = amount > productBalance ? productBalance : amount;
-        amount = amount > _pendingDeutilization ? _pendingDeutilization : amount;
+        amount = amount > pendingDeutilization_ ? pendingDeutilization_ : amount;
 
         // can only deutilize when amount is positive
         if (amount == 0) {
@@ -646,12 +646,11 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         }
 
         // $.spotExecutionPrice = amountOut.mulDiv(10 ** IERC20Metadata(product()).decimals(), amount, Math.Rounding.Ceil);
-        address _positionManager = $.positionManager;
 
         uint256 collateralDeltaAmount;
         if (!needRebalanceDown) {
             $.assetsToWithdraw += amountOut;
-            if (amount == _pendingDeutilization) {
+            if (amount == pendingDeutilization_) {
                 (, collateralDeltaAmount) = $.accRequestedWithdrawAssets.trySub($.proccessedWithdrawAssets + amountOut);
                 $.pendingDecreaseCollateral = collateralDeltaAmount;
             } else {
@@ -774,30 +773,6 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         (, bool rebalanceDownNeeded) = _checkRebalance();
         return rebalanceDownNeeded && idleAssets() == 0;
     }
-
-    /// RELBALANCE DOWN && idle = 0
-    ///
-    /// currentLeverage = positionSizeUsd / collateralUsd
-    /// collateralUsd = positionSizeUsd / currentLeverage
-    ///
-    /// targetLeverage = targetPositionSizeUsd / collateralUsd
-    /// targetPositionSizeUsd = targetLeverage * collateralUsd
-    /// targetPositionSize = targetLeverage * positionSize / currentLeverage
-    /// deltaSizeToDecrease =  positionSize - targetLeverage * positionSize / currentLeverage
-    ///
-    /// RELBALANCE DOWN && idle != 0
-    ///
-    /// targetLeverage = positionSizeUsd / (collateralUsd + deltaCollateralUsdToIncrease)
-    /// deltaCollateralUsdToIncrease = positionSizeUsd / targetLeverage - collateralUsd
-    ///
-    /// REBALANCE UP
-    /// currentLeverage = positionSizeUsd / collateralUsd
-    /// collateralUsd = positionSizeUsd / currentLeverage
-    ///
-    /// targetLeverage = positionSizeUsd / targetCollateralUsd
-    /// targetCollateralUsd = positionSizeUsd / targetLeverage
-    ///
-    /// collateralDeltaUsd = positionSizeUsd / targetLeverage - positionSizeUsd / currentLeverage
 
     //TODO: accomodate for Chainlink interface
     function checkUpkeep(bytes calldata) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
@@ -1271,7 +1246,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
     function pendingDeutilization() public view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        _pendingDeutilization($.strategyStatus == StrategyStatus.NEED_REBLANCE_DOWN);
+        return _pendingDeutilization($.strategyStatus == StrategyStatus.NEED_REBLANCE_DOWN);
     }
 
     // @review Numa:
