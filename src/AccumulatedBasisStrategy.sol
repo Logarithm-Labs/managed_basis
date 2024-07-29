@@ -219,6 +219,13 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         _getManagedBasisStrategyStorage().positionManager = _positionManager;
     }
 
+    function setForwarder(address _forwarder) external onlyOwner {
+        if (_forwarder == address(0)) {
+            revert Errors.ZeroAddress();
+        }
+        _getManagedBasisStrategyStorage().forwarder = _forwarder;
+    }
+
     function setEntryExitCosts(uint256 _entryCost, uint256 _exitCost) external onlyOperator {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         $.entryCost = _entryCost;
