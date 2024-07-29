@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionManagerCallbackParams} from "src/interfaces/IManagedBasisStrategy.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IOffChainPositionManager} from "src/interfaces/IOffChainPositionManager.sol";
 import {IManagedBasisCallbackReceiver} from "src/interfaces/IManagedBasisCallbackReceiver.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
@@ -360,40 +360,60 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         if (withdrawRequest.receiver != msg.sender) {
             revert Errors.UnauthorizedClaimer(msg.sender, withdrawRequest.receiver);
         }
-        if (!_isWithdrawRequestExecuted(withdrawRequest)) {
+        (bool claimbale, bool isLast) = _isWithdrawRequestExecuted(withdrawRequest);
+        if (!claimbale) {
             revert Errors.RequestNotExecuted();
         }
 
         withdrawRequest.isClaimed = true;
-        $.assetsToClaim -= withdrawRequest.requestedAssets;
-        IERC20(asset()).safeTransfer(msg.sender, withdrawRequest.requestedAssets);
+
+        // separate workflow for last redeem
+        uint256 executedAmount;
+        if (isLast) {
+            executedAmount = withdrawRequest.requestedAssets
+                - (withdrawRequest.accRequestedWithdrawAssets - $.proccessedWithdrawAssets);
+            $.proccessedWithdrawAssets = $.accRequestedWithdrawAssets;
+            $.pendingDecreaseCollateral = 0;
+        } else {
+            executedAmount = withdrawRequest.requestedAssets;
+        }
+
+        $.assetsToClaim -= executedAmount;
+        IERC20(asset()).safeTransfer(msg.sender, executedAmount);
 
         $.withdrawRequests[requestKey] = withdrawRequest;
 
-        emit Claim(msg.sender, requestKey, withdrawRequest.requestedAssets);
+        emit Claim(msg.sender, requestKey, executedAmount);
     }
 
     /*//////////////////////////////////////////////////////////////
                             ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    // TODO: account for pendings
+    // @review Numa. When during processWithdrawRequests() we convert $.assetsToWithdraw to $.assetsToClaim totalAssets()
+    // will stay the same.
+    // idleAssets() will stay the same as $.assetsToWithdraw just migrates to $.assetsToClaim
+    // totalPendingWithdaw() will stay the same as $.totalPendingWithdraw would be set to zero and $.proccessedWithdrawAssets
+    // would be increase by $.totalAssetsToWithdraw
     function totalAssets() public view virtual override returns (uint256 assets) {
         (, assets) = (utilizedAssets() + idleAssets()).trySub(totalPendingWithdraw());
     }
 
+    // @review Numa: why do we have $.assetsToWithdraw in utilizedAssets?
     function utilizedAssets() public view virtual returns (uint256 assets) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 productBalance = IERC20(product()).balanceOf(address(this));
-        uint256 positionNetBalance = IPositionManager($.positionManager).positionNetBalance();
+        uint256 positionNetBalance = IOffChainPositionManager($.positionManager).positionNetBalance();
         uint256 productValueInAsset = $.oracle.convertTokenAmount(product(), asset(), productBalance);
-        assets = productValueInAsset + positionNetBalance + $.assetsToWithdraw;
+        assets = productValueInAsset + positionNetBalance; /*  + $.assetsToWithdraw */
     }
 
+    // @review Numa: there should be no scenarios where ($.assetsToClaim + $.assetsToWithdraw) > assetBalance
+    // as we only increase this state variables where asset hits the strategy address, thus should remove trySub
     function idleAssets() public view virtual returns (uint256 assets) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
-        (, assets) = assetBalance.trySub($.assetsToClaim + $.assetsToWithdraw);
+        assets = assetBalance - ($.assetsToClaim + $.assetsToWithdraw);
     }
 
     function getWithdrawKey(address owner, uint128 counter) public view virtual returns (bytes32) {
@@ -474,11 +494,29 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
     function isClaimable(bytes32 requestKey) public view returns (bool) {
         WithdrawRequest memory withdrawRequest = _getManagedBasisStrategyStorage().withdrawRequests[requestKey];
-        return _isWithdrawRequestExecuted(withdrawRequest) && !withdrawRequest.isClaimed;
+        (bool claimable,) = _isWithdrawRequestExecuted(withdrawRequest);
+        return claimable && !withdrawRequest.isClaimed;
     }
 
-    function _isWithdrawRequestExecuted(WithdrawRequest memory withdrawRequest) private view returns (bool) {
-        return withdrawRequest.accRequestedWithdrawAssets <= _getManagedBasisStrategyStorage().proccessedWithdrawAssets;
+    function _isWithdrawRequestExecuted(WithdrawRequest memory withdrawRequest)
+        private
+        view
+        returns (bool claimable, bool isLast)
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        uint256 _proccessedWithdrawAssets = $.proccessedWithdrawAssets;
+
+        // separate worflow for last withdraw
+        // check if current withdrawRequest is last withdraw
+        if (totalSupply() == 0 && withdrawRequest.accRequestedWithdrawAssets == $.accRequestedWithdrawAssets) {
+            isLast = true;
+        }
+        if (isLast) {
+            // last withdraw is claimable when deutilization is complete
+            claimable = pendingDeutilization() == 0 && $.strategyStatus == StrategyStatus.IDLE;
+        } else {
+            claimable = withdrawRequest.accRequestedWithdrawAssets <= _proccessedWithdrawAssets;
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -538,7 +576,13 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization_);
             IERC20(asset()).safeTransfer($.positionManager, collateralDeltaAmount);
         }
-        IPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
+        IOffChainPositionManager($.positionManager).adjustPosition(
+            IOffChainPositionManager.RequestParams({
+                sizeDeltaInTokens: amountOut,
+                collateralDeltaAmount: collateralDeltaAmount,
+                isIncrease: true
+            })
+        );
 
         // @issue by Hunter
         // should be called within the callback func after utilizing is successful
@@ -593,24 +637,48 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         // $.spotExecutionPrice = amountOut.mulDiv(10 ** IERC20Metadata(product()).decimals(), amount, Math.Rounding.Ceil);
         address _positionManager = $.positionManager;
 
+        uint256 collateralDeltaAmount;
         if ($.strategyStatus == StrategyStatus.WITHDRAWING) {
             $.assetsToWithdraw += amountOut;
-            uint256 positionNetBalance = IPositionManager(_positionManager).positionNetBalance();
-            uint256 positionSizeInTokens = IPositionManager(_positionManager).positionSizeInTokens();
-            uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
-            $.pendingDecreaseCollateral += collateralDeltaToDecrease;
+            if (amount == _pendingDeutilization) {
+                (, collateralDeltaAmount) = $.accRequestedWithdrawAssets.trySub($.proccessedWithdrawAssets + amountOut);
+                $.pendingDecreaseCollateral = collateralDeltaAmount;
+            } else {
+                address _positionManager = $.positionManager;
+                uint256 positionNetBalance = IOffChainPositionManager(_positionManager).positionNetBalance();
+                uint256 positionSizeInTokens = IOffChainPositionManager(_positionManager).positionSizeInTokens();
+                uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
+                $.pendingDecreaseCollateral += collateralDeltaToDecrease;
+            }
         }
 
-        // @review Numa:
-        // we can't always decrease collateral when the deutilize is called
-        // the reason for that is for example in Hyperliquid we have a fixed 1 USDC fee for withdrawing USDC from Hyperliquid
-        // we can basically have a separate $.minCollateralDecrease which we can set for Hyperliquid at 1000 USDC, so that the
-        // cost for withdrawal would be less then 0.1%
-
-        // @TODO decrease collateral at the same time
-        IPositionManager(_positionManager).adjustPosition(amount, 0, false);
+        IOffChainPositionManager($.positionManager).adjustPosition(
+            IOffChainPositionManager.RequestParams({
+                sizeDeltaInTokens: amount,
+                collateralDeltaAmount: collateralDeltaAmount,
+                isIncrease: false
+            })
+        );
 
         emit Deutilize(msg.sender, amount, amountOut);
+    }
+
+    // note: for testing
+    function forcedDecreaseCollateral() external onlyOperator {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if ($.strategyStatus != StrategyStatus.IDLE) {
+            revert Errors.InvalidStrategyStatus(uint8($.strategyStatus));
+        }
+        $.strategyStatus = StrategyStatus.WITHDRAWING;
+        emit UpdateStrategyStatus(StrategyStatus.WITHDRAWING);
+
+        IOffChainPositionManager($.positionManager).adjustPosition(
+            IOffChainPositionManager.RequestParams({
+                sizeDeltaInTokens: 0,
+                collateralDeltaAmount: $.pendingDecreaseCollateral,
+                isIncrease: false
+            })
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -689,24 +757,26 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             hedgeDeviation = true;
         }
 
-        uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
-        if (pendingDecreaseCollateral_ > 0) {
-            decreaseCollateral = true;
-        }
+        // TODO: rebalance
+
+        // uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
+        // if (pendingDecreaseCollateral_ > 0) {
+        //     decreaseCollateral = true;
+        // }
 
         return (upkeepNeeded, abi.encode(statusKeep, hedgeDeviation, decreaseCollateral));
     }
 
-    function _checkUpkeep() internal view virtual returns (bool upkeepNeeded) {
+    function _checkUpkeep() internal view virtual returns (bool) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        if ($.strategyStatus == StrategyStatus.NEED_KEEP) {
+            return true;
+        }
 
         // when strategy is in operation, should return false
         if ($.strategyStatus != StrategyStatus.IDLE) {
             return false;
-        }
-
-        if ($.strategyStatus == StrategyStatus.NEED_KEEP) {
-            return true;
         }
 
         (uint256 hedgeDeviationInTokens, /* bool isIncrease */ ) = _checkHedgeDeviation();
@@ -714,10 +784,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             return true;
         }
 
-        uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
-        if (pendingDecreaseCollateral_ > 0) {
-            return true;
-        }
+        // uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
+        // if (pendingDecreaseCollateral_ > 0) {
+        //     return true;
+        // }
 
         return false;
     }
@@ -731,9 +801,6 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             return;
         }
 
-        // @review Numa:
-        // why can't we make a single call _processWithdrawRequests($.assetsToWithdraw + idleAssets())?
-
         // process withdraw requests with assetsToWithdraw first,
         // and then with idle assets
         $.assetsToWithdraw = _processWithdrawRequests($.assetsToWithdraw);
@@ -743,16 +810,32 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
         if (hedgeDeviationInTokens > 0) {
             if (isIncrease) {
-                IPositionManager($.positionManager).adjustPosition(hedgeDeviationInTokens, 0, true);
+                IOffChainPositionManager($.positionManager).adjustPosition(
+                    IOffChainPositionManager.RequestParams({
+                        sizeDeltaInTokens: hedgeDeviationInTokens,
+                        collateralDeltaAmount: 0,
+                        isIncrease: true
+                    })
+                );
             } else {
-                IPositionManager($.positionManager).adjustPosition(
-                    hedgeDeviationInTokens, pendingDecreaseCollateral_, false
+                IOffChainPositionManager($.positionManager).adjustPosition(
+                    IOffChainPositionManager.RequestParams({
+                        sizeDeltaInTokens: hedgeDeviationInTokens,
+                        collateralDeltaAmount: pendingDecreaseCollateral_,
+                        isIncrease: false
+                    })
                 );
             }
             $.strategyStatus = StrategyStatus.KEEPING;
             emit UpdateStrategyStatus(StrategyStatus.KEEPING);
         } else if (pendingDecreaseCollateral_ > 0) {
-            IPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
+            IOffChainPositionManager($.positionManager).adjustPosition(
+                IOffChainPositionManager.RequestParams({
+                    sizeDeltaInTokens: 0,
+                    collateralDeltaAmount: pendingDecreaseCollateral_,
+                    isIncrease: false
+                })
+            );
             $.strategyStatus = StrategyStatus.KEEPING;
             emit UpdateStrategyStatus(StrategyStatus.KEEPING);
         } else {
@@ -772,7 +855,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function _checkHedgeDeviation() internal view returns (uint256 hedgeDeviationInTokens, bool isIncrease) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 spotExposure = IERC20(product()).balanceOf(address(this));
-        uint256 hedgeExposure = IPositionManager($.positionManager).positionSizeInTokens();
+        uint256 hedgeExposure = IOffChainPositionManager($.positionManager).positionSizeInTokens();
         if (spotExposure == 0) {
             if (hedgeExposure == 0) {
                 return (0, false);
@@ -867,11 +950,6 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-        // @review Numa:
-        // during _afterDecreasePositionSizeSuccess() new assets are not received by the strategy
-        // why do we call _processWithdrawRequests() if there are no changes in strategy asset balance?
-        // can we call it directly during deutilize when we swap product for asset?
-
         if (status == StrategyStatus.WITHDRAWING) {
             uint256 _assetsToWithdraw = $.assetsToWithdraw;
             // don't make remainingAssets go to idle because it has execution cost
@@ -893,7 +971,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         IERC20(asset()).safeTransferFrom($.positionManager, address(this), params.collateralDeltaAmount);
 
-        if (status == StrategyStatus.KEEPING) {
+        if (status == StrategyStatus.WITHDRAWING) {
             // processing withdraw requests
             // don't increase idle asset by the remaining amount
             $.assetsToWithdraw += _processWithdrawRequests(params.collateralDeltaAmount);
@@ -1016,9 +1094,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     //         // TODO: fallback swap
     //         revert Errors.UnsupportedSwapType();
     //     }
-    //     uint256 positionSizeInTokens = IPositionManager($.positionManager).positionSizeInTokens();
-    //     uint256 positionNetBalance = IPositionManager($.positionManager).positionNetBalance();
-    //     IPositionManager($.positionManager).adjustPosition(positionSizeInTokens, positionNetBalance, false);
+    //     uint256 positionSizeInTokens = IOffChainPositionManager($.positionManager).positionSizeInTokens();
+    //     uint256 positionNetBalance = IOffChainPositionManager($.positionManager).positionNetBalance();
+    //     IOffChainPositionManager($.positionManager).adjustPosition(positionSizeInTokens, positionNetBalance, false);
     // }
 
     // function wipeStrategy() external onlyOwner {
@@ -1112,18 +1190,38 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     /// pendingDeutilization = positionSizeInTokens *
     /// * (totalPendingWithdrawUsd/assetPrice) / (positionSizeUsd/assetPrice + positionNetBalanceUsd/assetPrice)
     /// pendingDeutilization = positionSizeInTokens * totalPendingWithdraw / (positionSizeInAssets + positionNetBalance)
-    function pendingDeutilization() public view returns (uint256) {
+    function pendingDeutilization() public view returns (uint256 deutilization) {
+        // if we need to redeem last shares we should deutilize all product balance
+        uint256 productBalance = IERC20(product()).balanceOf(address(this));
+        if (totalSupply() == 0) return productBalance;
+
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         IOracle _oracle = $.oracle;
         address positionManager_ = $.positionManager;
 
-        uint256 positionNetBalance = IPositionManager(positionManager_).positionNetBalance();
-        uint256 positionSizeInTokens = IPositionManager(positionManager_).positionSizeInTokens();
+        uint256 positionNetBalance = IOffChainPositionManager(positionManager_).positionNetBalance();
+        uint256 positionSizeInTokens = IOffChainPositionManager(positionManager_).positionSizeInTokens();
         uint256 positionSizeInAssets = _oracle.convertTokenAmount(product(), asset(), positionSizeInTokens);
 
         if (positionSizeInAssets == 0 && positionNetBalance == 0) return 0;
+        uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
+        uint256 _totalPendingWithdraw = totalPendingWithdraw();
 
-        return positionSizeInTokens.mulDiv(totalPendingWithdraw(), positionSizeInAssets + positionNetBalance);
+        // prevents underflow
+        if (
+            _pendingDecreaseCollateral > _totalPendingWithdraw
+                || _pendingDecreaseCollateral > (positionSizeInAssets + positionNetBalance)
+        ) {
+            return 0;
+        }
+
+        // note: if we do not decrease collateral after every deutilization and do not adjust totalPendingWithdraw and
+        // position net balance for $.pendingDecreaseCollateral the return value for pendingDeutilization would be invalid
+        deutilization = positionSizeInTokens.mulDiv(
+            _totalPendingWithdraw - _pendingDecreaseCollateral,
+            positionSizeInAssets + positionNetBalance - _pendingDecreaseCollateral
+        );
+        deutilization = deutilization > productBalance ? productBalance : deutilization;
     }
 
     function pendingIncreaseCollateral() external view returns (uint256) {
@@ -1135,9 +1233,14 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         return $.pendingDecreaseCollateral;
     }
 
-    function totalPendingWithdraw() public view returns (uint256) {
+    // review Numa: totalPendingWithdraw is used in preview functions. When we sell product for asset during deutilize
+    // amountOut is translated to $.assetsToWithdraw, but it is only accounted in $.proccessedWithdrawAssets after
+    // we call _processWithdrawRequests(). This creates a situation where if user call preview function before strategy
+    // receives callback, he will get a different number when comparing to calling function after callback.
+    // Thus $.assetsToWithdraw should decrease totalPendingWithdraw()
+    function totalPendingWithdraw() public view returns (uint256 pendingWithdraw) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.accRequestedWithdrawAssets - $.proccessedWithdrawAssets;
+        (, pendingWithdraw) = $.accRequestedWithdrawAssets.trySub($.proccessedWithdrawAssets + $.assetsToWithdraw);
     }
 
     function strategyStatus() external view returns (StrategyStatus) {

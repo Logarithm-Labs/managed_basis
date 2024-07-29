@@ -21,6 +21,7 @@ contract InchTest is ForkTest {
         vm.serializeAddress(pathObj, "from", from);
         string memory finalPathJson = vm.serializeString(pathObj, "slippage", slippage);
         vm.writeJson(finalPathJson, pathLocation);
+        assertTrue(vm.isFile(pathLocation), "invalid path location");
 
         // get inch calldata
         string[] memory inputs = new string[](4);
@@ -31,5 +32,6 @@ contract InchTest is ForkTest {
 
         data = vm.ffi(inputs);
         vm.sleep(1_000);
+        vm.removeFile(pathLocation);
     }
 }

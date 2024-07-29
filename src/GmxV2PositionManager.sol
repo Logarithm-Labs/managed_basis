@@ -229,8 +229,6 @@ contract GmxV2PositionManager is
                     PositionManagerCallbackParams({
                         sizeDeltaInTokens: 0,
                         collateralDeltaAmount: collateralDeltaAmount,
-                        executionPrice: 0,
-                        executionCost: 0,
                         isIncrease: false,
                         isSuccess: true
                     })
@@ -442,8 +440,6 @@ contract GmxV2PositionManager is
                 PositionManagerCallbackParams({
                     sizeDeltaInTokens: 0,
                     collateralDeltaAmount: 0,
-                    executionPrice: 0,
-                    executionCost: 0,
                     isIncrease: true,
                     isSuccess: false
                 })
@@ -456,8 +452,6 @@ contract GmxV2PositionManager is
                 PositionManagerCallbackParams({
                     sizeDeltaInTokens: 0,
                     collateralDeltaAmount: 0,
-                    executionPrice: 0,
-                    executionCost: 0,
                     isIncrease: false,
                     isSuccess: false
                 })
@@ -642,8 +636,6 @@ contract GmxV2PositionManager is
         PositionManagerCallbackParams memory callbackParams;
         uint256 sizeInTokensBefore = _getGmxV2PositionManagerStorage().sizeInTokensBefore;
         if (sizeInTokensBefore > 0) {
-            callbackParams.executionPrice = _getGmxV2PositionManagerStorage().hedgeExecutionPrice;
-            callbackParams.executionCost = _getGmxV2PositionManagerStorage().pendingPositionFeeUsd;
             uint256 sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));
             (, callbackParams.sizeDeltaInTokens) = sizeInTokensBefore.trySub(sizeInTokensAfter);
             _wipeExecutionCostCalcInfo();
