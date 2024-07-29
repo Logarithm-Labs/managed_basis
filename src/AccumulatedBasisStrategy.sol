@@ -777,62 +777,69 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     //TODO: accomodate for Chainlink interface
     function checkUpkeep(bytes calldata) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        bool statusKeep;
-        bool hedgeDeviation;
-        bool decreaseCollateral;
 
-        upkeepNeeded = _checkUpkeep();
-        if ($.strategyStatus == StrategyStatus.NEED_KEEP) {
-            statusKeep = true;
-        }
+        StrategyStatus status = $.strategyStatus;
 
-        (uint256 hedgeDeviationInTokens, /* bool isIncrease */ ) = _checkHedgeDeviation();
-        if (hedgeDeviationInTokens > 0) {
-            hedgeDeviation = true;
-        }
+        upkeepNeeded = _checkUpkeep(status);
 
-        // TODO: rebalance
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded) = _checkRebalance();
 
-        // uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
-        // if (pendingDecreaseCollateral_ > 0) {
-        //     decreaseCollateral = true;
-        // }
+        int256 hedgeDeviationInTokens = _checkHedgeDeviation();
 
-        return (upkeepNeeded, abi.encode(statusKeep, hedgeDeviation, decreaseCollateral));
+        bool positionManagerNeedKeep = IPositionManager($.positionManager).needKeep();
+
+        performData =
+            abi.encode(rebalanceUpNeeded, rebalanceDownNeeded, hedgeDeviationInTokens, positionManagerNeedKeep);
+
+        return (upkeepNeeded, performData);
     }
 
-    function _checkUpkeep() internal view virtual returns (bool) {
+    function _checkUpkeep(StrategyStatus status) internal view virtual returns (bool) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-        if ($.strategyStatus == StrategyStatus.NEED_KEEP) {
+        if (status == StrategyStatus.NEED_KEEP) {
             return true;
         }
 
         // when strategy is in operation, should return false
-        if ($.strategyStatus != StrategyStatus.IDLE) {
+        if (status != StrategyStatus.IDLE) {
             return false;
         }
 
-        (uint256 hedgeDeviationInTokens, /* bool isIncrease */ ) = _checkHedgeDeviation();
-        if (hedgeDeviationInTokens > 0) {
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded) = _checkRebalance();
+
+        if (rebalanceUpNeeded || rebalanceDownNeeded) {
             return true;
         }
 
-        // uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
-        // if (pendingDecreaseCollateral_ > 0) {
-        //     return true;
-        // }
+        int256 hedgeDeviationInTokens = _checkHedgeDeviation();
+        if (hedgeDeviationInTokens != 0) {
+            return true;
+        }
+
+        if (IPositionManager($.positionManager).needKeep()) {
+            return true;
+        }
+
+        if ($.pendingDecreaseCollateral > 0) {
+            return true;
+        }
 
         return false;
     }
 
     //TODO: accomodate for Chainlink interface
-    function performUpkeep(bytes calldata) public {
+    function performUpkeep(bytes calldata performData) public {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         StrategyStatus status = $.strategyStatus;
         address positionManager_ = $.positionManager;
 
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded) = _checkRebalance();
+        if (status != StrategyStatus.NEED_KEEP && status != StrategyStatus.IDLE) {
+            return;
+        }
+
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, int256 hedgeDeviationInTokens, bool positionManagerNeedKeep)
+        = abi.decode(performData, (bool, bool, int256, bool));
 
         if (rebalanceUpNeeded) {
             $.strategyStatus = StrategyStatus.REBALANCING_UP;
@@ -849,10 +856,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                     isIncrease: false
                 })
             );
-            return;
-        }
-
-        if (rebalanceDownNeeded) {
+        } else if (rebalanceDownNeeded) {
             uint256 idle = idleAssets();
             if (idle == 0) {
                 $.strategyStatus = StrategyStatus.NEED_REBLANCE_DOWN;
@@ -874,26 +878,12 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                         isIncrease: true
                     })
                 );
-                return;
             }
-        }
-
-        if (status != StrategyStatus.NEED_KEEP && status != StrategyStatus.IDLE) {
-            return;
-        }
-
-        // process withdraw requests with assetsToWithdraw first,
-        // and then with idle assets
-        $.assetsToWithdraw = _processWithdrawRequests($.assetsToWithdraw);
-        _processWithdrawRequests(idleAssets());
-
-        (uint256 hedgeDeviationInTokens, bool isIncrease) = _checkHedgeDeviation();
-        uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
-        if (hedgeDeviationInTokens > 0) {
-            if (isIncrease) {
+        } else if (hedgeDeviationInTokens != 0) {
+            if (hedgeDeviationInTokens > 0) {
                 IPositionManager($.positionManager).adjustPosition(
                     IPositionManager.RequestParams({
-                        sizeDeltaInTokens: hedgeDeviationInTokens,
+                        sizeDeltaInTokens: uint256(hedgeDeviationInTokens),
                         collateralDeltaAmount: 0,
                         isIncrease: true
                     })
@@ -901,59 +891,62 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             } else {
                 IPositionManager($.positionManager).adjustPosition(
                     IPositionManager.RequestParams({
-                        sizeDeltaInTokens: hedgeDeviationInTokens,
-                        collateralDeltaAmount: pendingDecreaseCollateral_,
+                        sizeDeltaInTokens: uint256(-hedgeDeviationInTokens),
+                        collateralDeltaAmount: 0,
                         isIncrease: false
                     })
                 );
             }
-            $.strategyStatus = StrategyStatus.KEEPING;
-            emit UpdateStrategyStatus(StrategyStatus.KEEPING);
-        } else if (pendingDecreaseCollateral_ > 0) {
+        } else if (positionManagerNeedKeep) {
+            IPositionManager($.positionManager).keep();
+        } else if ($.pendingDecreaseCollateral > 0) {
+            // @TODO set threshold for decrease collateral amount
             IPositionManager($.positionManager).adjustPosition(
                 IPositionManager.RequestParams({
                     sizeDeltaInTokens: 0,
-                    collateralDeltaAmount: pendingDecreaseCollateral_,
+                    collateralDeltaAmount: $.pendingDecreaseCollateral,
                     isIncrease: false
                 })
             );
-            $.strategyStatus = StrategyStatus.KEEPING;
-            emit UpdateStrategyStatus(StrategyStatus.KEEPING);
-        } else {
-            _checkStrategyStatus();
         }
+
+        // @note should be called within the callback funcs
+        // else {
+        //     _checkStrategyStatus();
+        // }
+
+        $.strategyStatus = StrategyStatus.KEEPING;
+        emit UpdateStrategyStatus(StrategyStatus.KEEPING);
     }
 
     function _checkStrategyStatus() internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        bool upkeepNeeded = _checkUpkeep();
+        bool upkeepNeeded = _checkUpkeep($.strategyStatus);
         if (upkeepNeeded) {
             $.strategyStatus = StrategyStatus.NEED_KEEP;
             emit UpdateStrategyStatus(StrategyStatus.NEED_KEEP);
         }
     }
 
-    function _checkHedgeDeviation() internal view returns (uint256 hedgeDeviationInTokens, bool isIncrease) {
+    /// @dev positive means to increase hedge, negative means to decrease
+    /// 0 means no need
+    function _checkHedgeDeviation() internal view returns (int256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         uint256 spotExposure = IERC20(product()).balanceOf(address(this));
         uint256 hedgeExposure = IPositionManager($.positionManager).positionSizeInTokens();
         if (spotExposure == 0) {
             if (hedgeExposure == 0) {
-                return (0, false);
+                return 0;
             } else {
-                return (hedgeExposure, false);
+                return -hedgeExposure.toInt256();
             }
         }
         uint256 hedgeDeviation = hedgeExposure.mulDiv(PRECISION, spotExposure);
-        if (hedgeDeviation > PRECISION + $.hedgeDeviationThreshold) {
-            // strategy is overhedged, need to decrease position size
-            isIncrease = false;
-            hedgeDeviationInTokens = hedgeExposure - spotExposure;
-        } else if (hedgeDeviation < PRECISION - $.hedgeDeviationThreshold) {
-            // strategy is underhedged, need to increase position size
-            isIncrease = true;
-            hedgeDeviationInTokens = spotExposure - hedgeExposure;
+        uint256 threshold = $.hedgeDeviationThreshold;
+        if (hedgeDeviation > PRECISION + threshold || hedgeDeviation < PRECISION - threshold) {
+            return spotExposure.toInt256() - hedgeExposure.toInt256();
         }
+        return 0;
     }
 
     /// @dev process withdraw request

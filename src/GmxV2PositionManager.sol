@@ -391,6 +391,15 @@ contract GmxV2PositionManager is
                 _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
             }
             _getGmxV2PositionManagerStorage().status = Status.IDLE;
+            // notify strategy that keeping has been done
+            IManagedBasisStrategy(strategy()).afterAdjustPosition(
+                PositionManagerCallbackParams({
+                    sizeDeltaInTokens: 0,
+                    collateralDeltaAmount: 0,
+                    isIncrease: isIncrease,
+                    isSuccess: true
+                })
+            );
             claimFunding();
         } else if (_status == Status.INCREASE) {
             _processIncreasePosition(order.numbers.initialCollateralDeltaAmount, order.numbers.sizeDeltaUsd);
