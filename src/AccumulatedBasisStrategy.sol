@@ -955,7 +955,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 emit UpdateStrategyStatus(StrategyStatus.REBALANCING_DOWN);
 
                 uint256 amount = _pendingDeutilization(true);
-                ManualSwapLogic.swap(amount, $.productToAssetSwapPath);
+                _manualSwap(amount, false);
                 IPositionManager(positionManager_).adjustPosition(
                     IPositionManager.RequestParams({
                         sizeDeltaInTokens: amount,
