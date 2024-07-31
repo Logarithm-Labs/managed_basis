@@ -4,33 +4,37 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IOffChainPositionManager} from "src/interfaces/IOffChainPositionManager.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 import "src/interfaces/IManagedBasisStrategy.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {Errors} from "src/libraries/utils/Errors.sol";
+import {Errors} from "src/libraries/Errors.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {Constants} from "src/libraries/utils/Constants.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
-contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUpgradeable {
+contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, OwnableUpgradeable {
     using SafeCast for uint256;
     using Math for uint256;
-
-    enum RequestType {
-        IncreasePosition,
-        DecreasePosition
-    }
 
     struct PositionState {
         uint256 sizeInTokens;
         uint256 netBalance;
         uint256 markPrice;
         uint256 timestamp;
+    }
+
+    struct RequestInfo {
+        RequestParams request;
+        RequestParams response;
+        uint256 requestTimestamp;
+        uint256 responseRound;
+        uint256 responseTimestamp;
+        bool isReported;
+        bool isSuccess;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -45,14 +49,14 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         address oracle;
         address indexToken;
         address collateralToken;
-        uint256 targetLeverage;
         bool isLong;
         // position state
         uint256 currentRound;
-        bytes32 activeRequestId;
+        uint256 lastRequestRound;
         uint256 pendingCollateralIncrease;
-        mapping(uint256 => PositionState) positionStates;
-        mapping(uint256 => RequestParams) requests;
+        mapping(uint256 round => PositionState) positionStates;
+        mapping(uint256 round => RequestInfo) requests;
+        uint256[] requestRounds;
     }
 
     uint256 private constant PRECISION = 1e18;
@@ -77,7 +81,6 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         address oracle_,
         address indexToken_,
         address collateralToken_,
-        uint256 targetLeverage_,
         bool isLong_
     ) external initializer {
         __Ownable_init(msg.sender);
@@ -87,7 +90,6 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         $.oracle = oracle_;
         $.indexToken = indexToken_;
         $.collateralToken = collateralToken_;
-        $.targetLeverage = targetLeverage_;
         $.isLong = isLong_;
 
         // strategy is trusted
@@ -96,9 +98,26 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
 
+    function setAgent(address agent) external onlyOwner {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        $.agent = agent;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             EVENTS
     //////////////////////////////////////////////////////////////*/
+
+    event CreateRequest(
+        uint256 indexed round, uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease
+    );
+    event ReportRequest(
+        uint256 indexed requestRound,
+        uint256 indexed reportRound,
+        uint256 sizeDeltaInTokens,
+        uint256 collateralDeltaAmount,
+        bool isIncrease,
+        bool isSuccess
+    );
 
     event RequestIncreasePositionSize(uint256 sizeDeltaInTokens, uint256 round);
     event IncreasePositionSize(uint256 sizeDeltaIntokens, int256 executionCost, uint256 round);
@@ -122,23 +141,22 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
 
     modifier onlyAgent() {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-
+        // agent is added to access controll for testing purposes
+        if (msg.sender != $.agent) {
+            revert Errors.CallerNotAgent();
+        }
         _;
     }
 
     /*//////////////////////////////////////////////////////////////
-                        INTERFACE
-    //////////////////////////////////////////////////////////////*/
-
-    function apiVersion() external view returns (string memory) {
-        return "0.0.0";
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        POSITION MANAGEMENT
+                        REQUEST LOGIC 
     //////////////////////////////////////////////////////////////*/
 
     function adjustPosition(RequestParams memory params) external {
+        // increments round
+        // stores position state from the previous round in the current round
+        // stores request in the current round
+        // stores round of the active request
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
         if (msg.sender != $.strategy) {
@@ -147,30 +165,52 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
 
         uint256 round = $.currentRound + 1;
 
-        $.requests[round] = RequestParams({
-            sizeDeltaInTokens: params.sizeDeltaInTokens,
-            collateralDeltaAmount: params.collateralDeltaAmount,
-            isIncrease: params.isIncrease
-        });
-
         if (params.isIncrease) {
             if (params.collateralDeltaAmount > 0) {
+                _transferToAgent(params.collateralDeltaAmount);
                 emit RequestIncreasePositionCollateral(params.collateralDeltaAmount, round);
             }
             if (params.sizeDeltaInTokens > 0) {
                 emit RequestIncreasePositionSize(params.sizeDeltaInTokens, round);
             }
         } else {
-            if (params.collateralDeltaAmount > 0) {
-                emit RequestDecreasePositionCollateral(params.collateralDeltaAmount, round);
-            }
             if (params.sizeDeltaInTokens > 0) {
                 emit RequestDecreasePositionSize(params.sizeDeltaInTokens, round);
             }
+            if (params.collateralDeltaAmount > 0) {
+                emit RequestDecreasePositionCollateral(params.collateralDeltaAmount, round);
+            }
         }
 
+        RequestInfo memory requestInfo;
+        requestInfo.request = params;
+        requestInfo.requestTimestamp = block.timestamp;
+
+        $.requests[round] = requestInfo;
         $.positionStates[round] = $.positionStates[round - 1];
         $.currentRound = round;
+        $.lastRequestRound = round;
+        $.requestRounds.push(round);
+
+        emit CreateRequest(round, params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
+    }
+
+    // TODO: add validation logic
+    function reportState(uint256 sizeInTokens, uint256 netBalance, uint256 markPrice) external onlyAgent {
+        // increments round
+        // stores position state in the current round
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        uint256 round = $.currentRound + 1;
+
+        PositionState memory state;
+        state.sizeInTokens = sizeInTokens;
+        state.netBalance = netBalance;
+        state.markPrice = markPrice;
+        state.timestamp = block.timestamp;
+
+        $.positionStates[round] = state;
+
+        emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
     }
 
     function reportStateAndExecuteRequest(
@@ -179,52 +219,69 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         uint256 markPrice,
         PositionManagerCallbackParams calldata params
     ) external onlyAgent {
-        // TODO: add validation for prices (difference between mark price, execution price and oracle price should be within the threshold)
+        // 1. increments round
+        // 2. stores position state in the current round
+        // 3. updates reques info of the active request round with the response
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
-        uint256 round = $.currentRound;
+        uint256 round = $.currentRound + 1;
+        uint256 requestRound = $.lastRequestRound;
 
-        // if agent submits state without request, it means that it is regular state update
-        // no need to report back to strategy
-        PositionState storage state = $.positionStates[round];
-        state.sizeInTokens = sizeInTokens;
-        state.netBalance = netBalance;
-        state.markPrice = markPrice;
-        state.timestamp = block.timestamp;
-        if (params.isIncrease) {
-            $.pendingCollateralIncrease -= params.collateralDeltaAmount;
-        } else {
-            if (params.collateralDeltaAmount > 0) {
-                _transferFromAgent(params.collateralDeltaAmount);
+        PositionState memory state = PositionState({
+            sizeInTokens: sizeInTokens,
+            netBalance: netBalance,
+            markPrice: markPrice,
+            timestamp: block.timestamp
+        });
+
+        if (params.isSuccess) {
+            if (params.isIncrease) {
+                $.pendingCollateralIncrease -= params.collateralDeltaAmount;
+            } else {
+                if (params.collateralDeltaAmount > 0) {
+                    _transferFromAgent(params.collateralDeltaAmount);
+                }
             }
         }
+
+        RequestParams memory response = RequestParams({
+            sizeDeltaInTokens: params.sizeDeltaInTokens,
+            collateralDeltaAmount: params.collateralDeltaAmount,
+            isIncrease: params.isIncrease
+        });
+
+        RequestInfo storage requestInfo = $.requests[requestRound];
+        requestInfo.response = response;
+        requestInfo.responseRound = round;
+        requestInfo.responseTimestamp = block.timestamp;
+        requestInfo.isReported = true;
+        requestInfo.isSuccess = params.isSuccess;
+
+        $.positionStates[round] = state;
         $.currentRound = round;
 
         IManagedBasisStrategy($.strategy).afterAdjustPosition(params);
 
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
+
+        emit ReportRequest(
+            requestRound,
+            round,
+            params.sizeDeltaInTokens,
+            params.collateralDeltaAmount,
+            params.isIncrease,
+            params.isSuccess
+        );
+    }
+
+    function getLastRequest() external view returns (RequestInfo memory) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.requests[$.lastRequestRound];
     }
 
     /*//////////////////////////////////////////////////////////////
                             AGENT LOGIC
     //////////////////////////////////////////////////////////////*/
-
-    function transferToAgent() external onlyAgent {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-
-        if (msg.sender != $.agent) {
-            revert Errors.CallerNotAgent();
-        }
-
-        RequestParams memory request = $.requests[$.currentRound];
-        if (!request.isIncrease || request.collateralDeltaAmount == 0) {
-            revert Errors.InvalidActiveRequestType();
-        }
-
-        $.pendingCollateralIncrease += request.collateralDeltaAmount;
-
-        _transferToAgent(request.collateralDeltaAmount);
-    }
 
     // TODO: remove function after testing
     function forcedTransferToAgent(uint256 amount) external onlyAgent {
@@ -239,7 +296,8 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
 
     function _transferToAgent(uint256 amount) internal {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        IERC20($.collateralToken).transfer(msg.sender, amount);
+        $.pendingCollateralIncrease += amount;
+        IERC20($.collateralToken).transfer($.agent, amount);
 
         emit AgentTransfer(msg.sender, amount, true);
     }
@@ -257,7 +315,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
 
     function _transferFromAgent(uint256 amount) internal {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        IERC20($.collateralToken).transferFrom(msg.sender, address(this), amount);
+        IERC20($.collateralToken).transferFrom($.agent, address(this), amount);
 
         emit AgentTransfer(msg.sender, amount, false);
     }
@@ -266,22 +324,14 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
                         POSITION STATE LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function positionNetBalance() external view virutal returns (uint256 netBalance) {
-        (netBalance,) = _positionNetBalance();
-    }
-
-    function currentLeverage() external view virtual returns (uint256) {
-        (uint256 netBalance, uint256 positionValue) = _positionNetBalance();
-        return positionValue.mulDiv(y, denominator);
-    }
-
-    function _positionNetBalance() public view virtual returns (uint256 netBalance, uint256 positionValue) {
+    function positionNetBalance() public view virtual override returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         PositionState memory state = $.positionStates[$.currentRound];
         uint256 initialNetBalance =
             state.netBalance + $.pendingCollateralIncrease + IERC20($.collateralToken).balanceOf(address(this));
 
-        positionValue = IOracle($.oracle).convertTokenAmount($.indexToken, $.collateralToken, state.sizeInTokens);
+        uint256 positionValue =
+            IOracle($.oracle).convertTokenAmount($.indexToken, $.collateralToken, state.sizeInTokens);
         uint256 positionSize =
             state.sizeInTokens.mulDiv(state.markPrice, 10 ** uint256(IERC20Metadata($.indexToken).decimals()));
         int256 virtualPnl = $.isLong
@@ -289,11 +339,11 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
             : positionSize.toInt256() - positionValue.toInt256();
 
         if (virtualPnl >= 0) {
-            netBalance = initialNetBalance + uint256(virtualPnl);
+            return initialNetBalance + uint256(virtualPnl);
         } else if (initialNetBalance > uint256(-virtualPnl)) {
-            netBalance = initialNetBalance - uint256(-virtualPnl);
+            return initialNetBalance - uint256(-virtualPnl);
         } else {
-            netBalance = 0;
+            return 0;
         }
     }
 
@@ -302,9 +352,37 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         return $.positionStates[$.currentRound];
     }
 
+    function currentLeverage() public view returns (uint256 leverage) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        PositionState memory state = $.positionStates[$.currentRound];
+        uint256 initialNetBalance =
+            state.netBalance + $.pendingCollateralIncrease + IERC20($.collateralToken).balanceOf(address(this));
+
+        uint256 positionValue =
+            IOracle($.oracle).convertTokenAmount($.indexToken, $.collateralToken, state.sizeInTokens);
+        uint256 positionSize =
+            state.sizeInTokens.mulDiv(state.markPrice, 10 ** uint256(IERC20Metadata($.indexToken).decimals()));
+        int256 virtualPnl = $.isLong
+            ? positionValue.toInt256() - positionSize.toInt256()
+            : positionSize.toInt256() - positionValue.toInt256();
+        uint256 netBalance;
+        if (virtualPnl >= 0) {
+            netBalance = initialNetBalance + uint256(virtualPnl);
+        } else if (initialNetBalance > uint256(-virtualPnl)) {
+            netBalance = initialNetBalance - uint256(-virtualPnl);
+        }
+
+        leverage = netBalance > 0 ? positionValue.mulDiv(PRECISION, netBalance) : 0;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         EXERNAL STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
+
+    function lastRequestRound() external view returns (uint256) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.lastRequestRound;
+    }
 
     function currentRound() external view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
@@ -321,7 +399,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         return $.pendingCollateralIncrease;
     }
 
-    function requests(uint256 round) external view returns (RequestParams memory) {
+    function requests(uint256 round) external view returns (RequestInfo memory) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.requests[round];
     }
@@ -329,9 +407,5 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
     function positionSizeInTokens() external view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.positionStates[$.currentRound].sizeInTokens;
-    }
-
-    function currentLeverage() external view returns (uint256) {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
     }
 }
