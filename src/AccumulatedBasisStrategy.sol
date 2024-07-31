@@ -64,7 +64,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         address forwarder;
         address positionManager;
         uint256 targetLeverage;
-        uint256 liquidatableLeverage;
+        uint256 safeMarginLeverage;
         uint256 maxLeverage;
         uint256 minLeverage;
         uint256 entryCost;
@@ -126,7 +126,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 _targetLeverage,
         uint256 _minLeverage,
         uint256 _maxLeverage,
-        uint256 _liquidatableLeverage,
+        uint256 _safeMarginLeverage,
         uint256 _entryCost,
         uint256 _exitCost,
         address[] calldata _assetToProductSwapPath
@@ -142,7 +142,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             _targetLeverage,
             _minLeverage,
             _maxLeverage,
-            _liquidatableLeverage,
+            _safeMarginLeverage,
             _entryCost,
             _exitCost,
             _assetToProductSwapPath
@@ -157,7 +157,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 _targetLeverage,
         uint256 _minLeverage,
         uint256 _maxLeverage,
-        uint256 _liquidatableLeverage,
+        uint256 _safeMarginLeverage,
         uint256 _entryCost,
         uint256 _exitCost,
         address[] calldata _assetToProductSwapPath
@@ -172,7 +172,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         $.targetLeverage = _targetLeverage;
         $.minLeverage = _minLeverage;
         $.maxLeverage = _maxLeverage;
-        $.liquidatableLeverage = _liquidatableLeverage;
+        $.safeMarginLeverage = _safeMarginLeverage;
         $.userDepositLimit = type(uint256).max;
         $.strategyDepostLimit = type(uint256).max;
         $.hedgeDeviationThreshold = 1e16; // 1%
@@ -785,7 +785,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         if (currentLeverage > $.maxLeverage) {
             rebalanceDownNeeded = true;
-            if (currentLeverage > $.liquidatableLeverage) {
+            if (currentLeverage > $.safeMarginLeverage) {
                 liquidatable = true;
             }
         }
