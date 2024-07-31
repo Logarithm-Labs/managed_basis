@@ -13,6 +13,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Constants} from "src/libraries/utils/Constants.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
@@ -51,7 +52,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         bytes32 activeRequestId;
         uint256 pendingCollateralIncrease;
         mapping(uint256 => PositionState) positionStates;
-        mapping(uint256 => AdjustPositionParams) requests;
+        mapping(uint256 => RequestParams) requests;
     }
 
     uint256 private constant PRECISION = 1e18;
@@ -126,10 +127,18 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
     }
 
     /*//////////////////////////////////////////////////////////////
+                        INTERFACE
+    //////////////////////////////////////////////////////////////*/
+
+    function apiVersion() external view returns (string memory) {
+        return "0.0.0";
+    }
+
+    /*//////////////////////////////////////////////////////////////
                         POSITION MANAGEMENT
     //////////////////////////////////////////////////////////////*/
 
-    function adjustPosition(AdjustPositionParams memory params) external {
+    function adjustPosition(RequestParams memory params) external {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
         if (msg.sender != $.strategy) {
@@ -138,7 +147,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
 
         uint256 round = $.currentRound + 1;
 
-        $.requests[round] = AdjustPositionParams({
+        $.requests[round] = RequestParams({
             sizeDeltaInTokens: params.sizeDeltaInTokens,
             collateralDeltaAmount: params.collateralDeltaAmount,
             isIncrease: params.isIncrease
@@ -207,7 +216,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
             revert Errors.CallerNotAgent();
         }
 
-        AdjustPositionParams memory request = $.requests[$.currentRound];
+        RequestParams memory request = $.requests[$.currentRound];
         if (!request.isIncrease || request.collateralDeltaAmount == 0) {
             revert Errors.InvalidActiveRequestType();
         }
@@ -257,14 +266,22 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
                         POSITION STATE LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function positionNetBalance() public view virtual override returns (uint256) {
+    function positionNetBalance() external view virutal returns (uint256 netBalance) {
+        (netBalance,) = _positionNetBalance();
+    }
+
+    function currentLeverage() external view virtual returns (uint256) {
+        (uint256 netBalance, uint256 positionValue) = _positionNetBalance();
+        return positionValue.mulDiv(y, denominator);
+    }
+
+    function _positionNetBalance() public view virtual returns (uint256 netBalance, uint256 positionValue) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         PositionState memory state = $.positionStates[$.currentRound];
         uint256 initialNetBalance =
             state.netBalance + $.pendingCollateralIncrease + IERC20($.collateralToken).balanceOf(address(this));
 
-        uint256 positionValue =
-            IOracle($.oracle).convertTokenAmount($.indexToken, $.collateralToken, state.sizeInTokens);
+        positionValue = IOracle($.oracle).convertTokenAmount($.indexToken, $.collateralToken, state.sizeInTokens);
         uint256 positionSize =
             state.sizeInTokens.mulDiv(state.markPrice, 10 ** uint256(IERC20Metadata($.indexToken).decimals()));
         int256 virtualPnl = $.isLong
@@ -272,11 +289,11 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
             : positionSize.toInt256() - positionValue.toInt256();
 
         if (virtualPnl >= 0) {
-            return initialNetBalance + uint256(virtualPnl);
+            netBalance = initialNetBalance + uint256(virtualPnl);
         } else if (initialNetBalance > uint256(-virtualPnl)) {
-            return initialNetBalance - uint256(-virtualPnl);
+            netBalance = initialNetBalance - uint256(-virtualPnl);
         } else {
-            return 0;
+            netBalance = 0;
         }
     }
 
@@ -304,7 +321,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         return $.pendingCollateralIncrease;
     }
 
-    function requests(uint256 round) external view returns (AdjustPositionParams memory) {
+    function requests(uint256 round) external view returns (RequestParams memory) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.requests[round];
     }
@@ -312,5 +329,9 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
     function positionSizeInTokens() external view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.positionStates[$.currentRound].sizeInTokens;
+    }
+
+    function currentLeverage() external view returns (uint256) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
     }
 }

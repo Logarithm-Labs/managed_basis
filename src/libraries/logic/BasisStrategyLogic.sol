@@ -232,62 +232,62 @@ library BasisStrategyLogic {
     function executeClaim(ClaimParams memory params)
         external
         view
-        returns (
-            DataTypes.StrategyStateChache memory,
-            DataTypes.WithdrawRequestState memory withdrawState,
-            uint256 executedAmount
-        )
+        returns (DataTypes.StrategyStateChache memory, DataTypes.WithdrawRequestState memory, uint256 executedAmount)
     {
-        if (params.withdrawRequest.isClaimed) {
+        if (params.withdrawState.isClaimed) {
             revert Errors.RequestAlreadyClaimed();
         }
-        if (params.withdrawRequest.receiver != msg.sender) {
-            revert Errors.UnauthorizedClaimer(msg.sender, params.withdrawRequest.receiver);
+        if (params.withdrawState.receiver != msg.sender) {
+            revert Errors.UnauthorizedClaimer(msg.sender, params.withdrawState.receiver);
         }
         (bool isExecuted, bool isLast) = isWithdrawRequestExecuted(
-            params.withdrawRequest, params.addr, params.cache, params.totalSupply, params.maxLeverage
+            params.withdrawState, params.addr, params.cache, params.totalSupply, params.maxLeverage
         );
         if (!isExecuted) {
             revert Errors.RequestNotExecuted();
         }
 
-        withdrawRequest.isClaimed = true;
+        params.withdrawState.isClaimed = true;
 
         // separate workflow for last redeem
         if (isLast) {
-            executedAmount = params.withdrawRequest.requestedAssets
-                - (params.withdrawRequest.accRequestedWithdrawAssets - cache.proccessedWithdrawAssets);
-            cache.proccessedWithdrawAssets = cache.accRequestedWithdrawAssets;
-            cache.pendingDecreaseCollateral = 0;
+            executedAmount = params.withdrawState.requestedAmount
+                - (params.withdrawState.accRequestedWithdrawAssets - params.cache.proccessedWithdrawAssets);
+            params.cache.proccessedWithdrawAssets = params.cache.accRequestedWithdrawAssets;
+            params.cache.pendingDecreaseCollateral = 0;
         } else {
-            executedAmount = params.withdrawRequest.requestedAssets;
+            executedAmount = params.withdrawState.requestedAmount;
         }
 
-        cache.assetsToClaim -= executedAmount;
+        params.cache.assetsToClaim -= executedAmount;
 
-        return (cache, withdrawState, executedAmount);
+        return (params.cache, params.withdrawState, executedAmount);
     }
 
     function isWithdrawRequestExecuted(
-        WithdrawRequest memory withdrawRequest,
+        DataTypes.WithdrawRequestState memory withdrawState,
         DataTypes.StrategyAddresses memory addr,
         DataTypes.StrategyStateChache memory cache,
         uint256 totalSupply,
         uint256 maxLeverage
     ) internal view returns (bool isExecuted, bool isLast) {
         // separate worflow for last withdraw
-        // check if current withdrawRequest is last withdraw
-        if (totalSupply == 0 && withdrawRequest.accRequestedWithdrawAssets == cache.accRequestedWithdrawAssets) {
+        // check if current withdrawState is last withdraw
+        if (totalSupply == 0 && withdrawState.accRequestedWithdrawAssets == cache.accRequestedWithdrawAssets) {
             isLast = true;
         }
         if (isLast) {
             // last withdraw is claimable when deutilization is complete
             uint256 pendingDeutilization = getPendingDeutilization(
-                addr, cache, maxLeverage, cache.status == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
+                addr,
+                cache,
+                totalSupply,
+                maxLeverage,
+                cache.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
             );
             isExecuted = pendingDeutilization == 0 && cache.strategyStatus == DataTypes.StrategyStatus.IDLE;
         } else {
-            isExecuted = withdrawRequest.accRequestedWithdrawAssets <= cache.proccessedWithdrawAssets;
+            isExecuted = withdrawState.accRequestedWithdrawAssets <= cache.proccessedWithdrawAssets;
         }
     }
 
@@ -295,31 +295,32 @@ library BasisStrategyLogic {
     /// Note: should be called whenever assets come to this vault
     /// including user's deposit and system's deutilizing
     ///
-    /// @return assets remaining which goes to idle or assetsToWithdraw
+    /// @return remainingAssets remaining which goes to idle or assetsToWithdraw
 
     function processWithdrawRequests(uint256 assets, DataTypes.StrategyStateChache memory cache)
         public
         pure
-        returns (uint256, DataTypes.StrategyStateChache memory)
+        returns (uint256 remainingAssets, DataTypes.StrategyStateChache memory)
     {
-        if (assets == 0) return (0, cache);
+        if (assets == 0) {
+            remainingAssets = 0;
+        } else {
+            // check if there is neccessarity to process withdraw requests
+            if (cache.proccessedWithdrawAssets < cache.accRequestedWithdrawAssets) {
+                uint256 proccessedWithdrawAssetsAfter = cache.proccessedWithdrawAssets + assets;
 
-        // check if there is neccessarity to process withdraw requests
-        if (cache.proccessedWithdrawAssets < cache.accRequestedWithdrawAssets) {
-            uint256 remainingAssets;
-            uint256 proccessedWithdrawAssetsAfter = cache.proccessedWithdrawAssets + assets;
+                // if proccessedWithdrawAssets overshoots accRequestedWithdrawAssets,
+                // then cap it by accRequestedWithdrawAssets
+                // so that the remaining asset goes to idle
+                if (proccessedWithdrawAssetsAfter > cache.accRequestedWithdrawAssets) {
+                    remainingAssets = proccessedWithdrawAssetsAfter - cache.accRequestedWithdrawAssets;
+                    proccessedWithdrawAssetsAfter = cache.accRequestedWithdrawAssets;
+                    assets = proccessedWithdrawAssetsAfter - cache.proccessedWithdrawAssets;
+                }
 
-            // if proccessedWithdrawAssets overshoots accRequestedWithdrawAssets,
-            // then cap it by accRequestedWithdrawAssets
-            // so that the remaining asset goes to idle
-            if (proccessedWithdrawAssetsAfter > cache.accRequestedWithdrawAssets) {
-                remainingAssets = proccessedWithdrawAssetsAfter - cache.accRequestedWithdrawAssets;
-                proccessedWithdrawAssetsAfter = cache.accRequestedWithdrawAssets;
-                assets = proccessedWithdrawAssetsAfter - cache.proccessedWithdrawAssets;
+                cache.assetsToClaim += assets;
+                cache.proccessedWithdrawAssets = proccessedWithdrawAssetsAfter;
             }
-
-            cache.assetsToClaim += assets;
-            cache.proccessedWithdrawAssets = proccessedWithdrawAssetsAfter;
         }
 
         return (remainingAssets, cache);
@@ -339,7 +340,7 @@ library BasisStrategyLogic {
             bool success,
             uint256 amountOut,
             DataTypes.StrategyStateChache memory,
-            IPositionManager.AdjustPositionParams memory
+            IPositionManager.RequestParams memory
         )
     {
         uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
@@ -361,7 +362,7 @@ library BasisStrategyLogic {
             revert Errors.UnsupportedSwapType();
         }
 
-        IPositionManager.AdjustPositionParams memory adjustPositionParams;
+        IPositionManager.RequestParams memory adjustPositionParams;
         // if (success) {
         //     uint256 collateralDeltaAmount;
         //     if (params.cache.pendingIncreaseCollateral > 0) {
@@ -386,7 +387,7 @@ library BasisStrategyLogic {
             bool success,
             uint256 amountOut,
             DataTypes.StrategyStateChache memory,
-            IPositionManager.AdjustPositionParams memory
+            IPositionManager.RequestParams memory
         )
     {
         //     uint256 productBalance = IERC20(params.addr.product).balanceOf(address(this));
@@ -410,7 +411,7 @@ library BasisStrategyLogic {
         //         revert Errors.UnsupportedSwapType();
         //     }
 
-        IPositionManager.AdjustPositionParams memory adjustPositionParams;
+        IPositionManager.RequestParams memory adjustPositionParams;
         //     if (success) {
         //         if (params.status == DataTypes.StrategyStatus.IDLE) {
         //             params.cache.assetsToWithdraw += amountOut;
@@ -456,11 +457,12 @@ library BasisStrategyLogic {
     function getPendingDeutilization(
         DataTypes.StrategyAddresses memory addr,
         DataTypes.StrategyStateChache memory cache,
+        uint256 totalSupply,
         uint256 maxLeverage,
         bool needRebalanceDownWithDeutilizing
-    ) external view returns (uint256 deutilization) {
+    ) public view returns (uint256 deutilization) {
         uint256 productBalance = IERC20(addr.product).balanceOf(address(this));
-        if (totalSupply() == 0) return productBalance;
+        if (totalSupply == 0) return productBalance;
 
         uint256 positionSizeInTokens = IPositionManager(addr.positionManager).positionSizeInTokens();
 
@@ -471,7 +473,8 @@ library BasisStrategyLogic {
                 - positionSizeInTokens.mulDiv(maxLeverage, IPositionManager(addr.positionManager).currentLeverage());
         } else {
             uint256 positionNetBalance = IPositionManager(addr.positionManager).positionNetBalance();
-            uint256 positionSizeInAssets = _oracle.convertTokenAmount(addr.product, addr.asset, positionSizeInTokens);
+            uint256 positionSizeInAssets =
+                IOracle(addr.oracle).convertTokenAmount(addr.product, addr.asset, positionSizeInTokens);
             if (positionSizeInAssets == 0 && positionNetBalance == 0) return 0;
             uint256 totalPendingWithdraw = _getTotalPendingWithdraw(cache);
 
@@ -503,9 +506,5 @@ library BasisStrategyLogic {
         uint256 idleAssets = getIdleAssets(asset, cache);
         return
             idleAssets.mulDiv(Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + targetLeverage, Math.Rounding.Ceil);
-    }
-
-    function _getTotalPendingWithdraw(DataTypes.StrategyStateChache memory cache) internal pure returns (uint256) {
-        return cache.accRequestedWithdrawAssets - cache.proccessedWithdrawAssets;
     }
 }

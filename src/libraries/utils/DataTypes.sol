@@ -13,10 +13,10 @@ library DataTypes {
 
     enum StrategyStatus {
         IDLE,
-        NEED_KEEP,
         KEEPING,
         DEPOSITING,
         WITHDRAWING,
+        NEED_REBLANCE_DOWN,
         REBALANCING_UP, // increase leverage
         REBALANCING_DOWN // decrease leverage
 
@@ -31,7 +31,8 @@ library DataTypes {
         uint256 assetsToWithdraw;
         uint256 accRequestedWithdrawAssets;
         uint256 proccessedWithdrawAssets;
-        StrategyStatus status;
+        uint256 pendingDecreaseCollateral;
+        StrategyStatus strategyStatus;
     }
 
     struct StrategyWithdrawCache {

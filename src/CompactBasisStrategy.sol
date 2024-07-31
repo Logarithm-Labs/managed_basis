@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
@@ -183,7 +184,8 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             assetsToWithdraw: $.assetsToWithdraw,
             accRequestedWithdrawAssets: $.accRequestedWithdrawAssets,
             proccessedWithdrawAssets: $.proccessedWithdrawAssets,
-            status: $.strategyStatus
+            pendingDecreaseCollateral: $.pendingDecreaseCollateral,
+            strategyStatus: $.strategyStatus
         });
     }
 
@@ -204,6 +206,9 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (cache0.proccessedWithdrawAssets != cache1.proccessedWithdrawAssets) {
             $.proccessedWithdrawAssets = cache1.proccessedWithdrawAssets;
         }
+        if (cache0.pendingDecreaseCollateral != cache1.pendingDecreaseCollateral) {
+            $.pendingDecreaseCollateral = cache1.pendingDecreaseCollateral;
+        }
         if (cache0.status != cache1.status) {
             $.strategyStatus = cache1.status;
         }
@@ -219,7 +224,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         $.withdrawRequests[withdrawId] = withdrawState;
     }
 
-    function _executeAdjustPosition(address positionManager, IPositionManager.AdjustPositionParams memory params)
+    function _executeAdjustPosition(address positionManager, IPositionManager.RequestParams memory params)
         internal
         virtual
     {
@@ -296,7 +301,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             _updateWithdrawRequestState($, withdrawId, withdrawState);
             $.requestCounter[owner]++;
 
-            emit WithdrawRequest(caller, receiver, owner, withdrawId, requestedAmount);
+            emit WithdrawRequest(caller, receiver, owner, withdrawId, withdrawState.requestedAmount);
         }
 
         _updateStrategyState($, cache0, cache1);
@@ -304,41 +309,37 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
-    function claim(bytes32 requestId) external virtual returns (uint256 executedAmont) {
+    function claim(bytes32 withdrawId) external virtual returns (uint256 executedAmount) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        DataTypes.WithdrawRequestState memory withdrawState = $.withdrawRequests[requestId];
+        DataTypes.WithdrawRequestState memory withdrawState = $.withdrawRequests[withdrawId];
         DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
-        DataTypes.WithdrawRequestState memory withdrawState = $.withdrawRequests[withdrawId]
 
         DataTypes.StrategyStateChache memory cache1;
 
-        (cache1, withdrawState, executedAmount) = BasisStrategyLogic.executeClaim(BasisStrategyLogic.ClaimParams({
-            $.maxLeverage,
-            totalSupply(),
-            withdrawState,
-            _getStrategyAddresses($),
-            cache0
-        }));
-        
+        (cache1, withdrawState, executedAmount) = BasisStrategyLogic.executeClaim(
+            BasisStrategyLogic.ClaimParams({
+                maxLeverage: $.maxLeverage,
+                totalSupply: totalSupply(),
+                withdrawState: withdrawState,
+                addr: _getStrategyAddresses($),
+                cache: cache0
+            })
+        );
+
         _updateStrategyState($, cache0, cache1);
         _updateWithdrawRequestState($, withdrawId, withdrawState);
 
         IERC20(asset()).safeTransfer(msg.sender, executedAmount);
 
-        emit Claim(msg.sender, requestId, executedAmount);
+        emit Claim(msg.sender, withdrawId, executedAmount);
     }
 
-    function isClaimable(bytes32 requestId) external view returns (bool) {
+    function isClaimable(bytes32 withdrawId) external view returns (bool) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        DataTypes.WithdrawRequestState memory withdrawRequest =
-            $.withdrawRequests[requestId];
-        (bool isExecuted, ) = BasisStrategyLogic.isWithdrawRequestExecuted(
-            withdrawRequest,
-            _getStrategyAddresses($),
-            _getStrategyStateCache($),
-            totalSupply(),
-            $.maxLeverage
-        )
+        DataTypes.WithdrawRequestState memory withdrawRequest = $.withdrawRequests[withdrawId];
+        (bool isExecuted,) = BasisStrategyLogic.isWithdrawRequestExecuted(
+            withdrawRequest, _getStrategyAddresses($), _getStrategyStateCache($), totalSupply(), $.maxLeverage
+        );
         return isExecuted && !withdrawRequest.isClaimed;
     }
 
@@ -462,7 +463,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         bool success;
         uint256 amountOut;
-        IPositionManager.AdjustPositionParams memory adjustPositionParams;
+        IPositionManager.RequestParams memory adjustPositionParams;
         (success, amountOut, cache, adjustPositionParams) = BasisStrategyLogic.executeUtilize(
             BasisStrategyLogic.UtilizeParams({
                 amount: amount,
@@ -492,7 +493,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
         bool success;
         uint256 amountOut;
-        IPositionManager.AdjustPositionParams memory adjustPositionParams;
+        IPositionManager.RequestParams memory adjustPositionParams;
         (success, amountOut, cache, adjustPositionParams) = BasisStrategyLogic.executeDeutilize(
             BasisStrategyLogic.UtilizeParams({
                 amount: amount,

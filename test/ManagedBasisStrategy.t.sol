@@ -195,9 +195,9 @@ contract ManagedBasisStrategyTest is Test {
         vm.sleep(1_000);
     }
 
-    function _executeRequest(OffChainPositionManager.AdjustPositionParams memory request)
+    function _executeRequest(OffChainPositionManager.RequestParams memory request)
         internal
-        returns (OffChainPositionManager.AdjustPositionParams memory response)
+        returns (OffChainPositionManager.RequestParams memory response)
     {
         if (request.isIncrease) {
             response.isIncrease = true;
@@ -264,8 +264,8 @@ contract ManagedBasisStrategyTest is Test {
     }
 
     function _reportState(
-        OffChainPositionManager.AdjustPositionParams memory request,
-        OffChainPositionManager.AdjustPositionParams memory response
+        OffChainPositionManager.RequestParams memory request,
+        OffChainPositionManager.RequestParams memory response
     ) internal {
         (uint256 executionPrice, uint256 executionCost) = _getExecutionParams(request.sizeDeltaInTokens);
         if (response.collateralDeltaAmount < request.collateralDeltaAmount) {
@@ -313,7 +313,7 @@ contract ManagedBasisStrategyTest is Test {
         console.log("");
     }
 
-    function _logRequest() internal view returns (OffChainPositionManager.AdjustPositionParams memory request) {
+    function _logRequest() internal view returns (OffChainPositionManager.RequestParams memory request) {
         uint256 round = positionManager.currentRound();
         request = positionManager.requests(round);
         console.log("REQUEST STATE");
@@ -483,11 +483,11 @@ contract ManagedBasisStrategyTest is Test {
         positionManager.transferToAgent();
         _logStateTransitions("AFTER TRANSFER TO AGENT");
 
-        OffChainPositionManager.AdjustPositionParams memory request = _logRequest();
+        OffChainPositionManager.RequestParams memory request = _logRequest();
         // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
         // uint256 collateralDelta = IERC20(asset).balanceOf(agent);
 
-        OffChainPositionManager.AdjustPositionParams memory response = _executeRequest(request);
+        OffChainPositionManager.RequestParams memory response = _executeRequest(request);
         _reportState(request, response);
 
         _logStateTransitions("AFTER EXECUTE");
@@ -515,8 +515,8 @@ contract ManagedBasisStrategyTest is Test {
         positionManager.transferToAgent();
         _logStateTransitions("AFTER TRANSFER TO AGENT 1");
 
-        OffChainPositionManager.AdjustPositionParams memory request = _logRequest();
-        OffChainPositionManager.AdjustPositionParams memory response = _executeRequest(request);
+        OffChainPositionManager.RequestParams memory request = _logRequest();
+        OffChainPositionManager.RequestParams memory response = _executeRequest(request);
         _reportState(request, response);
 
         _logStateTransitions("AFTER EXECUTE 1");
@@ -573,8 +573,8 @@ contract ManagedBasisStrategyTest is Test {
         // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
         // uint256 collateralDelta = IERC20(asset).balanceOf(agent);
 
-        OffChainPositionManager.AdjustPositionParams memory request = _logRequest();
-        OffChainPositionManager.AdjustPositionParams memory response = _executeRequest(request);
+        OffChainPositionManager.RequestParams memory request = _logRequest();
+        OffChainPositionManager.RequestParams memory response = _executeRequest(request);
         _reportState(request, response);
 
         _logStateTransitions("STATE BEFORE REDEEM");
@@ -682,8 +682,8 @@ contract ManagedBasisStrategyTest is Test {
         // uint256 sizeDeltaInTokens = IERC20(product).balanceOf(address(strategy));
         // uint256 collateralDelta = IERC20(asset).balanceOf(agent);
 
-        OffChainPositionManager.AdjustPositionParams memory request = _logRequest();
-        OffChainPositionManager.AdjustPositionParams memory response = _executeRequest(request);
+        OffChainPositionManager.RequestParams memory request = _logRequest();
+        OffChainPositionManager.RequestParams memory response = _executeRequest(request);
 
         _reportState(request, response);
         _logStrategyState("STATE BEFORE REDEEM");
@@ -766,8 +766,8 @@ contract ManagedBasisStrategyTest is Test {
         vm.startPrank(agent);
         positionManager.transferToAgent();
 
-        OffChainPositionManager.AdjustPositionParams memory request = _logRequest();
-        OffChainPositionManager.AdjustPositionParams memory response = _executeRequest(request);
+        OffChainPositionManager.RequestParams memory request = _logRequest();
+        OffChainPositionManager.RequestParams memory response = _executeRequest(request);
 
         _reportState(request, response);
         uint256 sharesToRedeem = IERC20(address(strategy)).balanceOf(user1) / 2;
@@ -833,8 +833,8 @@ contract ManagedBasisStrategyTest is Test {
         vm.startPrank(agent);
         positionManager.transferToAgent();
 
-        OffChainPositionManager.AdjustPositionParams memory request = _logRequest();
-        OffChainPositionManager.AdjustPositionParams memory response = _executeRequest(request);
+        OffChainPositionManager.RequestParams memory request = _logRequest();
+        OffChainPositionManager.RequestParams memory response = _executeRequest(request);
 
         _logStateTransitions("STATE AFTER EXECUTE INCREASE SIZE");
 
