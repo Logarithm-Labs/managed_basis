@@ -606,7 +606,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 return bytes32(0);
             }
             $.pendingUtilizedProducts = amountOut;
-        } else if (swapType == SwapType.MANUAL) {} else {
+        } else if (swapType == SwapType.MANUAL) {
+            amountOut = ManualSwapLogic.swap(amount, $.assetToProductSwapPath);
+        } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
@@ -682,6 +684,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 return bytes32(0);
             }
             $.pendingDeutilizedAssets = amountOut;
+        } else if (swapType == SwapType.MANUAL) {
+            amountOut = ManualSwapLogic.swap(amount, $.productToAssetSwapPath);
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
