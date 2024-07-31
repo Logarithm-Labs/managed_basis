@@ -606,7 +606,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 return bytes32(0);
             }
             $.pendingUtilizedProducts = amountOut;
-        } else {
+        } else if (swapType == SwapType.MANUAL) {} else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
@@ -1348,10 +1348,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 positionSizeInTokens = IPositionManager(positionManager_).positionSizeInTokens();
 
         if (needRebalanceDownWithDeutilizing) {
-            // currentLeverage > targetLeverage is guarranteed, so there is no math error
-            // deltaSizeToDecrease =  positionSize - targetLeverage * positionSize / currentLeverage
+            // currentLeverage > maxLeverage is guarranteed, so there is no math error
+            // deltaSizeToDecrease =  positionSize - maxLeverage * positionSize / currentLeverage
             deutilization = positionSizeInTokens
-                - positionSizeInTokens.mulDiv($.targetLeverage, IPositionManager(positionManager_).currentLeverage());
+                - positionSizeInTokens.mulDiv($.maxLeverage, IPositionManager(positionManager_).currentLeverage());
         } else {
             uint256 positionNetBalance = IPositionManager(positionManager_).positionNetBalance();
             uint256 positionSizeInAssets = _oracle.convertTokenAmount(product(), asset(), positionSizeInTokens);
