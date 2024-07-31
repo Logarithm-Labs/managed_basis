@@ -75,6 +75,7 @@ library Order {
     struct Addresses {
         address account;
         address receiver;
+        address cancellationReceiver;
         address callbackContract;
         address uiFeeReceiver;
         address market;
@@ -109,6 +110,7 @@ library Order {
         uint256 callbackGasLimit;
         uint256 minOutputAmount;
         uint256 updatedAtBlock;
+        uint256 updatedAtTime;
     }
 
     // @param isLong whether the order is for a long or short
@@ -119,5 +121,6 @@ library Order {
         bool isLong;
         bool shouldUnwrapNativeToken;
         bool isFrozen;
+        bool autoCancel;
     }
 }
