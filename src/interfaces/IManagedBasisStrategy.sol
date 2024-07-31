@@ -5,7 +5,6 @@ struct PositionManagerCallbackParams {
     uint256 sizeDeltaInTokens;
     uint256 collateralDeltaAmount;
     bool isIncrease;
-    bool isSuccess;
 }
 
 interface IManagedBasisStrategy {

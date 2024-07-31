@@ -221,8 +221,7 @@ contract GmxV2PositionManager is
                     PositionManagerCallbackParams({
                         sizeDeltaInTokens: 0,
                         collateralDeltaAmount: params.collateralDeltaAmount,
-                        isIncrease: false,
-                        isSuccess: true
+                        isIncrease: false
                     })
                 );
             } else {
@@ -393,12 +392,7 @@ contract GmxV2PositionManager is
             _getGmxV2PositionManagerStorage().status = Status.IDLE;
             // notify strategy that keeping has been done
             IManagedBasisStrategy(strategy()).afterAdjustPosition(
-                PositionManagerCallbackParams({
-                    sizeDeltaInTokens: 0,
-                    collateralDeltaAmount: 0,
-                    isIncrease: isIncrease,
-                    isSuccess: true
-                })
+                PositionManagerCallbackParams({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: isIncrease})
             );
             claimFunding();
         } else if (_status == Status.INCREASE) {
@@ -427,24 +421,14 @@ contract GmxV2PositionManager is
         if (_status == Status.INCREASE) {
             // in the case when increase order was failed
             IManagedBasisStrategy(strategy()).afterAdjustPosition(
-                PositionManagerCallbackParams({
-                    sizeDeltaInTokens: 0,
-                    collateralDeltaAmount: 0,
-                    isIncrease: true,
-                    isSuccess: false
-                })
+                PositionManagerCallbackParams({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
             );
         } else if (_status == Status.DECREASE_ONE_STEP || _status == Status.DECREASE_TWO_STEP) {
             // in case when the first order was executed successfully or one step decrease order was failed
             // or in case when the order executed in wrong order by gmx was failed
-            _wipeExecutionCostCalcInfo();
+            _getGmxV2PositionManagerStorage().sizeInTokensBefore = 0;
             IManagedBasisStrategy(strategy()).afterAdjustPosition(
-                PositionManagerCallbackParams({
-                    sizeDeltaInTokens: 0,
-                    collateralDeltaAmount: 0,
-                    isIncrease: false,
-                    isSuccess: false
-                })
+                PositionManagerCallbackParams({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: false})
             );
         }
         _getGmxV2PositionManagerStorage().status = Status.IDLE;
@@ -618,7 +602,6 @@ contract GmxV2PositionManager is
             (, callbackParams.sizeDeltaInTokens) = sizeInTokensAfter.trySub(sizeInTokensBefore);
         }
         callbackParams.isIncrease = true;
-        callbackParams.isSuccess = true;
         IManagedBasisStrategy(strategy()).afterAdjustPosition(callbackParams);
     }
 
@@ -628,7 +611,7 @@ contract GmxV2PositionManager is
         if (sizeInTokensBefore > 0) {
             uint256 sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));
             (, callbackParams.sizeDeltaInTokens) = sizeInTokensBefore.trySub(sizeInTokensAfter);
-            _wipeExecutionCostCalcInfo();
+            _getGmxV2PositionManagerStorage().sizeInTokensBefore = 0;
         }
         uint256 decreasingCollateralDeltaAmount = _getGmxV2PositionManagerStorage().decreasingCollateralDeltaAmount;
         if (decreasingCollateralDeltaAmount > 0) {
@@ -639,7 +622,6 @@ contract GmxV2PositionManager is
             _getGmxV2PositionManagerStorage().decreasingCollateralDeltaAmount = 0;
         }
         callbackParams.isIncrease = false;
-        callbackParams.isSuccess = true;
         IManagedBasisStrategy(strategy()).afterAdjustPosition(callbackParams);
     }
 
@@ -715,10 +697,6 @@ contract GmxV2PositionManager is
         } else {
             $.pendingDecreaseOrderKey = orderKey;
         }
-    }
-
-    function _wipeExecutionCostCalcInfo() private {
-        _getGmxV2PositionManagerStorage().sizeInTokensBefore = 0;
     }
 
     /*//////////////////////////////////////////////////////////////

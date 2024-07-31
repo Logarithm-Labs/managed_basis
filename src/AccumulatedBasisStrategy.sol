@@ -64,7 +64,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         address forwarder;
         address positionManager;
         uint256 targetLeverage;
-        uint256 liquidatableLeverage;
+        uint256 safeMarginLeverage;
         uint256 maxLeverage;
         uint256 minLeverage;
         uint256 entryCost;
@@ -97,6 +97,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         mapping(address => bool) isSwapPool;
         address[] productToAssetSwapPath;
         address[] assetToProductSwapPath;
+        IPositionManager.RequestParams adjustmentRequest;
     }
     // mapping(bytes32 => RequestParams) positionRequests;
 
@@ -125,7 +126,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 _targetLeverage,
         uint256 _minLeverage,
         uint256 _maxLeverage,
-        uint256 _liquidatableLeverage,
+        uint256 _safeMarginLeverage,
         uint256 _entryCost,
         uint256 _exitCost,
         address[] calldata _assetToProductSwapPath
@@ -141,7 +142,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             _targetLeverage,
             _minLeverage,
             _maxLeverage,
-            _liquidatableLeverage,
+            _safeMarginLeverage,
             _entryCost,
             _exitCost,
             _assetToProductSwapPath
@@ -156,7 +157,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 _targetLeverage,
         uint256 _minLeverage,
         uint256 _maxLeverage,
-        uint256 _liquidatableLeverage,
+        uint256 _safeMarginLeverage,
         uint256 _entryCost,
         uint256 _exitCost,
         address[] calldata _assetToProductSwapPath
@@ -171,7 +172,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         $.targetLeverage = _targetLeverage;
         $.minLeverage = _minLeverage;
         $.maxLeverage = _maxLeverage;
-        $.liquidatableLeverage = _liquidatableLeverage;
+        $.safeMarginLeverage = _safeMarginLeverage;
         $.userDepositLimit = type(uint256).max;
         $.strategyDepostLimit = type(uint256).max;
         $.hedgeDeviationThreshold = 1e16; // 1%
@@ -200,9 +201,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
     event Deutilize(address indexed caller, uint256 amountIn, uint256 amountOut);
 
-    event AfterAdjustPosition(
-        uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease, bool isSuccess
-    );
+    event AfterAdjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease);
 
     event UpdateStrategyStatus(StrategyStatus status);
 
@@ -567,18 +566,18 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-        StrategyStatus strategyStatus_ = $.strategyStatus;
-
-        if (_checkUpkeep(strategyStatus_)) {
-            revert Errors.UpkeepNeeded();
+        (bool upkeepNeeded, bytes memory performData) = checkUpkeep("");
+        if (upkeepNeeded) {
+            _performUpkeep(performData);
+            return;
         }
+
+        StrategyStatus strategyStatus_ = $.strategyStatus;
 
         // can only utilize when the strategy status is IDLE
         if (strategyStatus_ != StrategyStatus.IDLE) {
             revert Errors.InvalidStrategyStatus(uint8(strategyStatus_));
         }
-        $.strategyStatus = StrategyStatus.DEPOSITING;
-        emit UpdateStrategyStatus(StrategyStatus.DEPOSITING);
 
         uint256 idle = idleAssets();
         uint256 _targetLeverage = $.targetLeverage;
@@ -607,7 +606,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 return bytes32(0);
             }
             $.pendingUtilizedProducts = amountOut;
-        } else {
+        } else if (swapType == SwapType.MANUAL) {} else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
@@ -618,17 +617,14 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization_);
             IERC20(asset()).safeTransfer($.positionManager, collateralDeltaAmount);
         }
-        IPositionManager($.positionManager).adjustPosition(
-            IPositionManager.RequestParams({
-                sizeDeltaInTokens: amountOut,
-                collateralDeltaAmount: collateralDeltaAmount,
-                isIncrease: true
-            })
-        );
+        _adjustPosition($.positionManager, amountOut, collateralDeltaAmount, true);
 
         // @issue by Hunter
         // should be called within the callback func after utilizing is successful
         // emit UpdatePendingUtilization(pendingUtilization());
+
+        $.strategyStatus = StrategyStatus.DEPOSITING;
+        emit UpdateStrategyStatus(StrategyStatus.DEPOSITING);
 
         emit Utilize(msg.sender, amount, amountOut);
     }
@@ -647,23 +643,19 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-        StrategyStatus strategyStatus_ = $.strategyStatus;
-
-        if (_checkUpkeep(strategyStatus_)) {
-            revert Errors.UpkeepNeeded();
+        (bool upkeepNeeded, bytes memory performData) = checkUpkeep("");
+        if (upkeepNeeded) {
+            _performUpkeep(performData);
+            return;
         }
+
+        StrategyStatus strategyStatus_ = $.strategyStatus;
 
         bool needRebalanceDown = strategyStatus_ == StrategyStatus.NEED_REBLANCE_DOWN;
 
         // can only deutilize when the strategy status is IDLE or NEED_REBLANCE_DOWN
-        if (needRebalanceDown) {
-            $.strategyStatus = StrategyStatus.REBALANCING_DOWN;
-            emit UpdateStrategyStatus(StrategyStatus.REBALANCING_DOWN);
-        } else if (strategyStatus_ != StrategyStatus.IDLE) {
-            revert Errors.InvalidStrategyStatus(uint8($.strategyStatus));
-        } else {
-            $.strategyStatus = StrategyStatus.WITHDRAWING;
-            emit UpdateStrategyStatus(StrategyStatus.WITHDRAWING);
+        if (!needRebalanceDown && strategyStatus_ != StrategyStatus.IDLE) {
+            revert Errors.InvalidStrategyStatus(uint8(strategyStatus_));
         }
 
         // uint256 productBalance = IERC20(product()).balanceOf(address(this));
@@ -696,7 +688,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         }
 
         // $.spotExecutionPrice = amountOut.mulDiv(10 ** IERC20Metadata(product()).decimals(), amount, Math.Rounding.Ceil);
-
+        address _positionManager = $.positionManager;
         uint256 collateralDeltaAmount;
         if (!needRebalanceDown) {
             $.assetsToWithdraw += amountOut;
@@ -704,21 +696,16 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 (, collateralDeltaAmount) = $.accRequestedWithdrawAssets.trySub($.proccessedWithdrawAssets + amountOut);
                 $.pendingDecreaseCollateral = collateralDeltaAmount;
             } else {
-                address _positionManager = $.positionManager;
                 uint256 positionNetBalance = IPositionManager(_positionManager).positionNetBalance();
                 uint256 positionSizeInTokens = IPositionManager(_positionManager).positionSizeInTokens();
                 uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
                 $.pendingDecreaseCollateral += collateralDeltaToDecrease;
             }
         }
+        _adjustPosition(_positionManager, amount, collateralDeltaAmount, false);
 
-        IPositionManager($.positionManager).adjustPosition(
-            IPositionManager.RequestParams({
-                sizeDeltaInTokens: amount,
-                collateralDeltaAmount: collateralDeltaAmount,
-                isIncrease: false
-            })
-        );
+        $.strategyStatus = StrategyStatus.WITHDRAWING;
+        emit UpdateStrategyStatus(StrategyStatus.WITHDRAWING);
 
         emit Deutilize(msg.sender, amount, amountOut);
     }
@@ -732,13 +719,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         $.strategyStatus = StrategyStatus.WITHDRAWING;
         emit UpdateStrategyStatus(StrategyStatus.WITHDRAWING);
 
-        IPositionManager($.positionManager).adjustPosition(
-            IPositionManager.RequestParams({
-                sizeDeltaInTokens: 0,
-                collateralDeltaAmount: $.pendingDecreaseCollateral,
-                isIncrease: false
-            })
-        );
+        _adjustPosition($.positionManager, 0, $.pendingDecreaseCollateral, false);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -753,41 +734,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             revert Errors.InvalidCallback();
         }
         if (params.isIncrease) {
-            // TODO
-            if (params.collateralDeltaAmount > 0) {
-                // afterIncreasePositionCollateral callback
-                if (params.isSuccess) {
-                    _afterIncreasePositionCollateralSuccess(params, status);
-                } else {
-                    _afterIncreasePositionCollateralRevert(params, status);
-                }
-            }
-            if (params.sizeDeltaInTokens > 0) {
-                // afterIncreasePositionSize callback
-                if (params.isSuccess) {
-                    _afterIncreasePositionSizeSuccess(params, status);
-                } else {
-                    _afterIncreasePositionSizeRevert(params, status);
-                }
-            }
+            _afterIncreasePosition(params.sizeDeltaInTokens, params.collateralDeltaAmount, status);
         } else {
-            // TODO
-            if (params.collateralDeltaAmount > 0) {
-                // afterDecreasePositionCollateral callback
-                if (params.isSuccess) {
-                    _afterDecreasePositionCollateralSuccess(params, status);
-                } else {
-                    _afterDecreasePositionCollateralRevert(params, status);
-                }
-            }
-            if (params.sizeDeltaInTokens > 0) {
-                // afterDecreasePositionSize callback
-                if (params.isSuccess) {
-                    _afterDecreasePositionSizeSuccess(params, status);
-                } else {
-                    _afterDecreasePositionSizeRevert(params, status);
-                }
-            }
+            _afterDecreasePosition(params.sizeDeltaInTokens, params.collateralDeltaAmount);
         }
 
         $.strategyStatus = StrategyStatus.IDLE;
@@ -795,9 +744,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         // _checkStrategyStatus();
 
-        emit AfterAdjustPosition(
-            params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease, params.isSuccess
-        );
+        emit AfterAdjustPosition(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -838,7 +785,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         if (currentLeverage > $.maxLeverage) {
             rebalanceDownNeeded = true;
-            if (currentLeverage > $.liquidatableLeverage) {
+            if (currentLeverage > $.safeMarginLeverage) {
                 liquidatable = true;
             }
         }
@@ -858,13 +805,36 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     function checkUpkeep(bytes calldata) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-        upkeepNeeded = _checkUpkeep($.strategyStatus);
+        if ($.strategyStatus != StrategyStatus.IDLE) {
+            return (upkeepNeeded, performData);
+        }
 
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable) = _checkRebalance();
+        bool rebalanceUpNeeded;
+        bool rebalanceDownNeeded;
+        bool liquidatable;
+        int256 hedgeDeviationInTokens;
+        bool positionManagerNeedKeep;
 
-        int256 hedgeDeviationInTokens = _checkHedgeDeviation();
+        (rebalanceUpNeeded, rebalanceDownNeeded, liquidatable) = _checkRebalance();
 
-        bool positionManagerNeedKeep = IPositionManager($.positionManager).needKeep();
+        if (rebalanceUpNeeded || rebalanceDownNeeded) {
+            upkeepNeeded = true;
+        } else {
+            hedgeDeviationInTokens = _checkHedgeDeviation();
+            if (hedgeDeviationInTokens != 0) {
+                upkeepNeeded = true;
+            } else {
+                positionManagerNeedKeep = IPositionManager($.positionManager).needKeep();
+                if (positionManagerNeedKeep) {
+                    upkeepNeeded = true;
+                } else {
+                    // @TODO add minimum amount restriction to decrease
+                    if ($.pendingDecreaseCollateral > 0) {
+                        upkeepNeeded = true;
+                    }
+                }
+            }
+        }
 
         performData = abi.encode(
             rebalanceUpNeeded, rebalanceDownNeeded, liquidatable, hedgeDeviationInTokens, positionManagerNeedKeep
@@ -873,38 +843,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         return (upkeepNeeded, performData);
     }
 
-    function _checkUpkeep(StrategyStatus status) internal view virtual returns (bool) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-
-        // when strategy is in operation, should return false
-        if (status != StrategyStatus.IDLE) {
-            return false;
-        }
-
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded,) = _checkRebalance();
-
-        if (rebalanceUpNeeded || rebalanceDownNeeded) {
-            return true;
-        }
-
-        int256 hedgeDeviationInTokens = _checkHedgeDeviation();
-        if (hedgeDeviationInTokens != 0) {
-            return true;
-        }
-
-        if (IPositionManager($.positionManager).needKeep()) {
-            return true;
-        }
-
-        if ($.pendingDecreaseCollateral > 0) {
-            return true;
-        }
-
-        return false;
-    }
-
     //TODO: accomodate for Chainlink interface
-    function performUpkeep(bytes calldata performData) public {
+    function performUpkeep(bytes calldata performData) external {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         StrategyStatus status = $.strategyStatus;
 
@@ -916,7 +856,11 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             return;
         }
 
-        address positionManager_ = $.positionManager;
+        _performUpkeep(performData);
+    }
+
+    function _performUpkeep(bytes memory performData) private {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
         (
             bool rebalanceUpNeeded,
@@ -926,6 +870,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             bool positionManagerNeedKeep
         ) = abi.decode(performData, (bool, bool, bool, int256, bool));
 
+        address positionManager_ = $.positionManager;
         if (rebalanceUpNeeded) {
             $.strategyStatus = StrategyStatus.REBALANCING_UP;
             uint256 positionSizeInAssets = $.oracle.convertTokenAmount(
@@ -934,13 +879,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             uint256 targetCollateral = positionSizeInAssets / $.targetLeverage;
             (, uint256 deltaCollateralToDecrease) =
                 IPositionManager(positionManager_).positionNetBalance().trySub(targetCollateral);
-            IPositionManager(positionManager_).adjustPosition(
-                IPositionManager.RequestParams({
-                    sizeDeltaInTokens: 0,
-                    collateralDeltaAmount: deltaCollateralToDecrease,
-                    isIncrease: false
-                })
-            );
+            _adjustPosition(positionManager_, 0, deltaCollateralToDecrease, false);
         } else if (rebalanceDownNeeded) {
             uint256 idle = idleAssets();
             uint256 positionSizeInAssets = $.oracle.convertTokenAmount(
@@ -951,69 +890,31 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 targetCollateral.trySub(IPositionManager(positionManager_).positionNetBalance());
 
             if (liquidatable && deltaCollateralToIncrease > idle) {
-                $.strategyStatus = StrategyStatus.REBALANCING_DOWN;
-                emit UpdateStrategyStatus(StrategyStatus.REBALANCING_DOWN);
-
                 uint256 amount = _pendingDeutilization(true);
                 _manualSwap(amount, false);
-                IPositionManager(positionManager_).adjustPosition(
-                    IPositionManager.RequestParams({
-                        sizeDeltaInTokens: amount,
-                        collateralDeltaAmount: 0,
-                        isIncrease: false
-                    })
-                );
+                _adjustPosition(positionManager_, amount, 0, false);
             } else if (!liquidatable && idle == 0) {
                 $.strategyStatus = StrategyStatus.NEED_REBLANCE_DOWN;
                 emit UpdateStrategyStatus(StrategyStatus.NEED_REBLANCE_DOWN);
                 emit UpdatePendingDeutilization(_pendingDeutilization(true));
+                return;
             } else {
-                $.strategyStatus = StrategyStatus.REBALANCING_DOWN;
-                emit UpdateStrategyStatus(StrategyStatus.REBALANCING_DOWN);
-
-                IPositionManager(positionManager_).adjustPosition(
-                    IPositionManager.RequestParams({
-                        sizeDeltaInTokens: 0,
-                        collateralDeltaAmount: idle > deltaCollateralToIncrease ? deltaCollateralToIncrease : idle,
-                        isIncrease: true
-                    })
+                _adjustPosition(
+                    positionManager_, 0, idle > deltaCollateralToIncrease ? deltaCollateralToIncrease : idle, true
                 );
             }
         } else if (hedgeDeviationInTokens != 0) {
             if (hedgeDeviationInTokens > 0) {
-                IPositionManager(positionManager_).adjustPosition(
-                    IPositionManager.RequestParams({
-                        sizeDeltaInTokens: uint256(hedgeDeviationInTokens),
-                        collateralDeltaAmount: 0,
-                        isIncrease: true
-                    })
-                );
+                _adjustPosition(positionManager_, uint256(hedgeDeviationInTokens), 0, true);
             } else {
-                IPositionManager(positionManager_).adjustPosition(
-                    IPositionManager.RequestParams({
-                        sizeDeltaInTokens: uint256(-hedgeDeviationInTokens),
-                        collateralDeltaAmount: 0,
-                        isIncrease: false
-                    })
-                );
+                _adjustPosition(positionManager_, uint256(-hedgeDeviationInTokens), 0, false);
             }
         } else if (positionManagerNeedKeep) {
             IPositionManager(positionManager_).keep();
         } else if ($.pendingDecreaseCollateral > 0) {
             // @TODO set threshold for decrease collateral amount
-            IPositionManager(positionManager_).adjustPosition(
-                IPositionManager.RequestParams({
-                    sizeDeltaInTokens: 0,
-                    collateralDeltaAmount: $.pendingDecreaseCollateral,
-                    isIncrease: false
-                })
-            );
+            _adjustPosition(positionManager_, 0, $.pendingDecreaseCollateral, false);
         }
-
-        // @note should be called within the callback funcs
-        // else {
-        //     _checkStrategyStatus();
-        // }
 
         $.strategyStatus = StrategyStatus.KEEPING;
         emit UpdateStrategyStatus(StrategyStatus.KEEPING);
@@ -1086,6 +987,50 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         emit UpdatePendingDeutilization(pendingDeutilization());
 
         return assets;
+    }
+
+    function _afterIncreasePosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, StrategyStatus status)
+        internal
+        returns (bool isSuccess)
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        IPositionManager.RequestParams memory adjustmentRequest = $.adjustmentRequest;
+
+        if (adjustmentRequest.sizeDeltaInTokens > sizeDeltaInTokens) {
+            // revert spot to make hedge size the same as spot
+            _manualSwap(adjustmentRequest.sizeDeltaInTokens - sizeDeltaInTokens, false);
+        }
+
+        (, uint256 revertCollateralDeltaAmount) = adjustmentRequest.collateralDeltaAmount.trySub(collateralDeltaAmount);
+        if (revertCollateralDeltaAmount > 0) {
+            IERC20(asset()).safeTransferFrom($.positionManager, address(this), revertCollateralDeltaAmount);
+        }
+
+        emit UpdatePendingUtilization(
+            _pendingUtilization(idleAssets(), _getManagedBasisStrategyStorage().targetLeverage)
+        );
+    }
+
+    function _afterDecreasePosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount) internal {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        IPositionManager.RequestParams memory adjustmentRequest = $.adjustmentRequest;
+
+        if (adjustmentRequest.sizeDeltaInTokens > 0) {
+            if (sizeDeltaInTokens == 0) {
+                uint256 pendingDeutilizedAssets_ = $.pendingDeutilizedAssets;
+                _manualSwap(pendingDeutilizedAssets_, true);
+                delete $.pendingDeutilizedAssets;
+                $.assetsToWithdraw -= pendingDeutilizedAssets_;
+            } else {
+                $.assetsToWithdraw = _processWithdrawRequests($.assetsToWithdraw);
+                _processWithdrawRequests(idleAssets());
+            }
+        }
+        if (collateralDeltaAmount > 0) {
+            IERC20(asset()).safeTransferFrom($.positionManager, address(this), collateralDeltaAmount);
+            $.assetsToWithdraw += _processWithdrawRequests(collateralDeltaAmount);
+            (, $.pendingDecreaseCollateral) = $.pendingDecreaseCollateral.trySub(collateralDeltaAmount);
+        }
     }
 
     function _afterIncreasePositionSizeSuccess(
@@ -1282,6 +1227,22 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     //     IERC20(asset_).safeTransfer(msg.sender, IERC20(asset_).balanceOf(address(this)));
     // }
 
+    function _adjustPosition(
+        address positionManager,
+        uint256 sizeDeltaInTokens,
+        uint256 collateralDeltaAmount,
+        bool isIncrease
+    ) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        IPositionManager.RequestParams memory params = IPositionManager.RequestParams({
+            sizeDeltaInTokens: sizeDeltaInTokens,
+            collateralDeltaAmount: collateralDeltaAmount,
+            isIncrease: isIncrease
+        });
+        $.adjustmentRequest = params;
+        IPositionManager(positionManager).adjustPosition(params);
+    }
+
     /*//////////////////////////////////////////////////////////////
                         STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
@@ -1387,10 +1348,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 positionSizeInTokens = IPositionManager(positionManager_).positionSizeInTokens();
 
         if (needRebalanceDownWithDeutilizing) {
-            // currentLeverage > targetLeverage is guarranteed, so there is no math error
-            // deltaSizeToDecrease =  positionSize - targetLeverage * positionSize / currentLeverage
+            // currentLeverage > maxLeverage is guarranteed, so there is no math error
+            // deltaSizeToDecrease =  positionSize - maxLeverage * positionSize / currentLeverage
             deutilization = positionSizeInTokens
-                - positionSizeInTokens.mulDiv($.targetLeverage, IPositionManager(positionManager_).currentLeverage());
+                - positionSizeInTokens.mulDiv($.maxLeverage, IPositionManager(positionManager_).currentLeverage());
         } else {
             uint256 positionNetBalance = IPositionManager(positionManager_).positionNetBalance();
             uint256 positionSizeInAssets = _oracle.convertTokenAmount(product(), asset(), positionSizeInTokens);
