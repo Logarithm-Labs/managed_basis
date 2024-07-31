@@ -15,11 +15,4 @@ interface IBasisStrategy {
         external;
     function afterIncreasePositionCollateral(uint256 collateralAmount, bytes32 requestId, bool isSuccess) external;
     function afterDecreasePositionCollateral(uint256 collateralAmount, bytes32 requestId, bool isSuccess) external;
-
-    // legacy
-    function afterIncreasePositionSize(uint256 amountExecuted, bool isSuccess) external;
-    function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bool isSuccess) external;
-    function afterIncreasePositionCollateral(uint256 collateralAmount, bool isSuccess) external;
-    function afterDecreasePositionCollateral(uint256 collateralAmount, bool isSuccess) external;
-    function afterExecuteRequest(bytes32 requestId) external;
 }

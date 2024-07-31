@@ -29,6 +29,11 @@ contract MockPriceFeed {
         answer = _answer;
     }
 
+    function setUpdatedAt(uint256 _timestamp) external {
+        startedAt = _timestamp;
+        updatedAt = _timestamp;
+    }
+
     function latestRoundData()
         external
         view

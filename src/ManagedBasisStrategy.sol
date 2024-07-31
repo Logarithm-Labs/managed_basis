@@ -1,103 +1,76 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.25;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import "src/interfaces/IManagedBasisStrategy.sol";
-import {IManagedBasisCallbackReceiver} from "src/interfaces/IManagedBasisCallbackReceiver.sol";
+import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {InchAggregatorV6Logic} from "src/libraries/logic/InchAggregatorV6Logic.sol";
+import {BasisStrategyLogic} from "src/libraries/logic/BasisStrategyLogic.sol";
+import {ManualSwapLogic} from "src/libraries/logic/ManualSwapLogic.sol";
 
-import {IOracle} from "src/interfaces/IOracle.sol";
-
+import {Constants} from "src/libraries/utils/Constants.sol";
+import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
-import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
-import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
-
-import {console2 as console} from "forge-std/console2.sol";
 
 contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, OwnableUpgradeable {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
     using Math for uint256;
 
-    enum SwapType {
-        MANUAL,
-        INCH_V6
-    }
-
-    enum StrategyStatus {
-        IDLE,
-        NEED_KEEP,
-        KEEPING,
-        DEPOSITING,
-        WITHDRAWING,
-        REBALANCING_UP, // increase leverage
-        REBALANCING_DOWN // decrease leverage
-
-    }
-
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
 
-    struct WithdrawState {
-        uint256 requestTimestamp;
-        uint256 requestedAmount;
-        uint256 executedFromSpot;
-        uint256 executedFromIdle;
-        uint256 executedFromHedge;
-        uint256 executionCost;
-        address receiver;
-        address callbackTarget;
-        bool isExecuted;
-        bool isClaimed;
-        bytes callbackData;
-    }
-
+    /// @custom:storage-location erc7201:logarithm.storage.ManagedBasisStrategyStorageV1
     struct ManagedBasisStrategyStorage {
-        IOracle oracle;
+        // address state
+        address oracle;
         address operator;
+        address forwarder;
         address positionManager;
+        // leverage state
         uint256 targetLeverage;
+        uint256 minLeverage;
+        uint256 maxLeverage;
+        uint256 safeMarginLeverage;
+        // fee state
         uint256 entryCost;
         uint256 exitCost;
+        // strategy configuration
         uint256 hedgeDeviationThreshold;
         uint256 userDepositLimit;
         uint256 strategyDepostLimit;
+        // asset state
         uint256 assetsToClaim; // asset balance that is ready to claim
         uint256 assetsToWithdraw; // asset balance that is processed for withdrawals
-        uint256 pendingUtilization;
-        uint256 pendingDeutilization;
-        uint256 pendingIncreaseCollateral;
+        uint256 pendingUtilizedProducts;
+        uint256 pendingDeutilizedAssets;
+        // pending state
         uint256 pendingDecreaseCollateral;
-        uint256 totalPendingWithdraw; // total amount of asset that remains to be withdrawn
-        uint256 withdrawnFromSpot; // asset amount withdrawn from spot that is not yet processed
-        uint256 withdrawnFromIdle; // asset amount withdrawn from idle that is not yet processed
-        uint256 withdrawingFromHedge; // asset amount that is ready to be withdrawn from hedge
-        uint256 spotExecutionPrice;
-        bytes32[] activeWithdrawRequests;
-        bytes32[] closedWithdrawRequests;
-        StrategyStatus strategyStatus;
+        // status state
+        DataTypes.StrategyStatus strategyStatus;
+        // withdraw state
+        uint256 accRequestedWithdrawAssets;
+        uint256 proccessedWithdrawAssets;
         mapping(address => uint128) requestCounter;
-        mapping(bytes32 => WithdrawState) withdrawRequests;
+        mapping(bytes32 => DataTypes.WithdrawRequestState) withdrawRequests;
+        mapping(address => bool) isSwapPool;
+        address[] productToAssetSwapPath;
+        address[] assetToProductSwapPath;
+        IPositionManager.RequestParams adjustmentRequest;
     }
-    // mapping(bytes32 => RequestParams) positionRequests;
 
-    uint256 public constant PRECISION = 1e18;
-    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
-
-    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedBasisStrategyStorage")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedBasisStrategyStorageV1")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ManagedBasisStrategyStorageLocation =
-        0xf5ffd60679e080b7c4e308f2409616890be7bc10ba607661a7e13210852af100;
+        0x76bd71a320090dc5d8c5864143521b706fefaa2f93d6b1826cde0a967ebe6100;
 
     function _getManagedBasisStrategyStorage() private pure returns (ManagedBasisStrategyStorage storage $) {
         assembly {
@@ -110,37 +83,62 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     //////////////////////////////////////////////////////////////*/
 
     function initialize(
+        string memory name,
+        string memory symbol,
         address _asset,
         address _product,
         address _oracle,
         address _operator,
         uint256 _targetLeverage,
+        uint256 _minLeverage,
+        uint256 _maxLeverage,
+        uint256 _safeMarginLeverage,
         uint256 _entryCost,
         uint256 _exitCost,
-        string memory _name,
-        string memory _symbol
+        address[] calldata _assetToProductSwapPath
     ) external initializer {
-        __LogBaseVault_init(IERC20(_asset), IERC20(_product), _name, _symbol);
+        __LogBaseVault_init(IERC20(_asset), IERC20(_product), name, symbol);
         __Ownable_init(msg.sender);
-        __ManagedBasisStrategy_init(_oracle, _operator, _targetLeverage, _entryCost, _exitCost);
+        __ManagedBasisStrategy_init(
+            _asset,
+            _product,
+            _oracle,
+            _operator,
+            _targetLeverage,
+            _minLeverage,
+            _maxLeverage,
+            _safeMarginLeverage,
+            _entryCost,
+            _exitCost,
+            _assetToProductSwapPath
+        );
     }
 
     function __ManagedBasisStrategy_init(
+        address _asset,
+        address _product,
         address _oracle,
         address _operator,
         uint256 _targetLeverage,
+        uint256 _minLeverage,
+        uint256 _maxLeverage,
+        uint256 _safeMarginLeverage,
         uint256 _entryCost,
-        uint256 _exitCost
+        uint256 _exitCost,
+        address[] calldata _assetToProductSwapPath
     ) public initializer {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        $.oracle = IOracle(_oracle);
+        $.oracle = _oracle;
         $.operator = _operator;
         $.entryCost = _entryCost;
         $.exitCost = _exitCost;
         $.targetLeverage = _targetLeverage;
+        $.minLeverage = _minLeverage;
+        $.maxLeverage = _maxLeverage;
         $.userDepositLimit = type(uint256).max;
         $.strategyDepostLimit = type(uint256).max;
         $.hedgeDeviationThreshold = 1e16; // 1%
+        _setManualSwapPath(_assetToProductSwapPath);
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
@@ -153,25 +151,17 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         address indexed caller, address indexed receiver, address indexed owner, bytes32 withdrawId, uint256 amount
     );
 
-    event ExecuteWithdraw(bytes32 requestId, uint256 requestedAmount, uint256 executedAmount);
-
     event Claim(address indexed claimer, bytes32 requestId, uint256 amount);
 
-    event UpdatePendingUtilization(uint256 amount);
+    event UpdatePendingUtilization();
 
-    event UpdatePendingDeutilization(uint256 amount);
+    event Utilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
 
-    event Utilize(address indexed caller, uint256 amountIn, uint256 amountOut);
-
-    event Deutilize(address indexed caller, uint256 amountIn, uint256 amountOut);
-
-    event AfterAdjustPosition(
-        uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease, bool isSuccess
-    );
-
-    event UpdateStrategyStatus(StrategyStatus status);
+    event Deutilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
 
     event SwapFailed();
+
+    event UpdateStrategyStatus(DataTypes.StrategyStatus status);
 
     /*//////////////////////////////////////////////////////////////
                             MODIFIERS
@@ -185,110 +175,113 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         _;
     }
 
-    modifier onlyPositionManager() {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if (msg.sender != $.positionManager) {
-            revert Errors.CallerNotPositionManager();
+    /*//////////////////////////////////////////////////////////////
+                        STATE TRANSITIONS   
+    //////////////////////////////////////////////////////////////*/
+
+    function _getStrategyAddresses(ManagedBasisStrategyStorage storage $)
+        internal
+        view
+        virtual
+        returns (DataTypes.StrategyAddresses memory)
+    {
+        return DataTypes.StrategyAddresses({
+            asset: asset(),
+            product: product(),
+            oracle: $.oracle,
+            operator: $.operator,
+            positionManager: $.positionManager
+        });
+    }
+
+    function _getStrategyStateCache(ManagedBasisStrategyStorage storage $)
+        internal
+        view
+        virtual
+        returns (DataTypes.StrategyStateChache memory)
+    {
+        return DataTypes.StrategyStateChache({
+            assetsToClaim: $.assetsToClaim,
+            assetsToWithdraw: $.assetsToWithdraw,
+            accRequestedWithdrawAssets: $.accRequestedWithdrawAssets,
+            proccessedWithdrawAssets: $.proccessedWithdrawAssets,
+            pendingDecreaseCollateral: $.pendingDecreaseCollateral,
+            strategyStatus: $.strategyStatus
+        });
+    }
+
+    function _updateStrategyState(
+        ManagedBasisStrategyStorage storage $,
+        DataTypes.StrategyStateChache memory cache0,
+        DataTypes.StrategyStateChache memory cache1
+    ) internal virtual {
+        if (cache0.assetsToClaim != cache1.assetsToClaim) {
+            $.assetsToClaim = cache1.assetsToClaim;
         }
-        _;
+        if (cache0.assetsToWithdraw != cache1.assetsToWithdraw) {
+            $.assetsToWithdraw = cache1.assetsToWithdraw;
+        }
+        if (cache0.accRequestedWithdrawAssets != cache1.accRequestedWithdrawAssets) {
+            $.accRequestedWithdrawAssets = cache1.accRequestedWithdrawAssets;
+        }
+        if (cache0.proccessedWithdrawAssets != cache1.proccessedWithdrawAssets) {
+            $.proccessedWithdrawAssets = cache1.proccessedWithdrawAssets;
+        }
+        if (cache0.pendingDecreaseCollateral != cache1.pendingDecreaseCollateral) {
+            $.pendingDecreaseCollateral = cache1.pendingDecreaseCollateral;
+        }
+        if (cache0.strategyStatus != cache1.strategyStatus) {
+            $.strategyStatus = cache1.strategyStatus;
+        }
+
+        emit UpdatePendingUtilization();
+    }
+
+    function _updateWithdrawRequestState(
+        ManagedBasisStrategyStorage storage $,
+        bytes32 withdrawId,
+        DataTypes.WithdrawRequestState memory withdrawState
+    ) internal virtual {
+        $.withdrawRequests[withdrawId] = withdrawState;
+    }
+
+    function _executeAdjustPosition(address positionManager, IPositionManager.RequestParams memory params)
+        internal
+        virtual
+    {
+        if (params.isIncrease && params.collateralDeltaAmount > 0) {
+            IERC20(asset()).safeTransfer(positionManager, params.collateralDeltaAmount);
+        }
+        IPositionManager(positionManager).adjustPosition(params);
     }
 
     /*//////////////////////////////////////////////////////////////
-                            CONFIGURATION
+                        DEPOSIT / WITHDRAW LOGIC   
     //////////////////////////////////////////////////////////////*/
 
-    function setPositionManager(address _positionManager) external onlyOwner {
-        if (_positionManager == address(0)) {
-            revert Errors.ZeroAddress();
-        }
-        _getManagedBasisStrategyStorage().positionManager = _positionManager;
-    }
-
-    function setEntryExitCosts(uint256 _entryCost, uint256 _exitCost) external onlyOperator {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        $.entryCost = _entryCost;
-        $.exitCost = _exitCost;
-    }
-
-    function setDepositLimits(uint256 userLimit, uint256 strategyLimit) external onlyOwner {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        $.userDepositLimit = userLimit;
-        $.strategyDepostLimit = strategyLimit;
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        DEPOSIT/WITHDRAWAL LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-    function maxDeposit(address receiver) public view virtual override returns (uint256 allowed) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if ($.userDepositLimit == type(uint256).max && $.strategyDepostLimit == type(uint256).max) {
-            return type(uint256).max;
-        } else {
-            uint256 sharesBalance = balanceOf(receiver);
-            uint256 sharesValue = convertToAssets(sharesBalance);
-            uint256 availableDepositorLimit =
-                $.userDepositLimit == type(uint256).max ? type(uint256).max : $.userDepositLimit - sharesValue;
-            uint256 availableStrategyLimit =
-                $.strategyDepostLimit == type(uint256).max ? type(uint256).max : $.strategyDepostLimit - totalAssets();
-            uint256 userBalance = IERC20(asset()).balanceOf(address(receiver));
-            allowed =
-                availableDepositorLimit < availableStrategyLimit ? availableDepositorLimit : availableStrategyLimit;
-            allowed = userBalance < allowed ? userBalance : allowed;
-        }
-    }
-
-    function maxMint(address receiver) public view virtual override returns (uint256) {
-        uint256 maxAssets = maxDeposit(receiver);
-        return previewDeposit(maxAssets);
-    }
-
-    /**
-     * @dev Deposit/mint common workflow.
-     */
+    /// @dev Deposit/mint common workflow.
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        IERC20(asset()).safeTransferFrom(caller, address(this), assets);
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        IERC20 _asset = IERC20(asset());
-        _asset.safeTransferFrom(caller, address(this), assets);
+        DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
 
-        uint256 totalPendingWithdraw_ = $.totalPendingWithdraw;
-        if (totalPendingWithdraw_ >= assets) {
-            // if total pending withdraw is greater than assets we reallocate all deposited assets for withdrawal
-            $.assetsToWithdraw += assets;
-            $.withdrawnFromIdle += assets;
-            $.totalPendingWithdraw -= assets;
-        } else {
-            uint256 assetsToDeposit = assets - totalPendingWithdraw_;
-            uint256 assetsToHedge = assetsToDeposit.mulDiv(PRECISION, PRECISION + $.targetLeverage);
-            uint256 assetsToSpot = assetsToDeposit - assetsToHedge;
-            if (totalPendingWithdraw_ > 0) {
-                // if there are some pending withdrawals which are less then deposited assets we reallocate assets
-                // to cover pending withdrawals and increase pending utilization for remaining assets
-                $.assetsToWithdraw += totalPendingWithdraw_;
-                $.withdrawnFromIdle += totalPendingWithdraw_;
-                $.totalPendingWithdraw = 0;
-            }
-            $.pendingUtilization += assetsToSpot;
-            $.pendingIncreaseCollateral += assetsToHedge;
+        DataTypes.StrategyStateChache memory cache1 = BasisStrategyLogic.executeDeposit(
+            BasisStrategyLogic.DepositParams({asset: asset(), assets: assets, cache: cache0})
+        );
 
-            emit UpdatePendingUtilization($.pendingUtilization);
-        }
+        _updateStrategyState($, cache0, cache1);
 
-        _checkStrategyStatus();
         _mint(receiver, shares);
 
         emit Deposit(caller, receiver, assets, shares);
     }
 
-    /**
-     * @dev Withdraw/redeem common workflow.
-     */
+    /// @dev Withdraw/redeem common workflow.
     function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
         internal
         virtual
         override
     {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
         }
@@ -301,921 +294,321 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         // shares are burned and after the assets are transferred, which is a valid state.
         _burn(owner, shares);
 
-        uint256 idle = idleAssets();
-        if (idle >= assets) {
-            uint256 assetsWithdrawnFromSpot = assets.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
-            uint256 assetsWithdrawnFromHedge = assets - assetsWithdrawnFromSpot;
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-            // update pending states, prevent underflow
-            (, uint256 pendingUtilization_) = $.pendingUtilization.trySub(assetsWithdrawnFromSpot);
-            (, uint256 pendingIncreaseCollateral_) = $.pendingIncreaseCollateral.trySub(assetsWithdrawnFromHedge);
-            $.pendingUtilization = pendingUtilization_;
-            $.pendingIncreaseCollateral = pendingIncreaseCollateral_;
+        DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
+        address asset_ = asset();
 
-            emit UpdatePendingUtilization(pendingUtilization_);
-
-            IERC20(asset()).safeTransfer(receiver, assets);
-        } else {
-            uint128 counter = $.requestCounter[owner];
-
-            uint256 totalAssets_ = totalAssets();
-            uint256 requestedAmount = assets > totalAssets_ ? totalAssets_ : assets;
-            bytes32 withdrawId = getWithdrawId(owner, counter);
-            $.withdrawRequests[withdrawId] = WithdrawState({
-                requestTimestamp: uint128(block.timestamp),
-                requestedAmount: requestedAmount,
-                executedFromSpot: 0,
-                executedFromIdle: 0,
-                executedFromHedge: 0,
-                executionCost: 0,
+        (
+            bytes32 withdrawId,
+            DataTypes.StrategyStateChache memory cache1,
+            DataTypes.WithdrawRequestState memory withdrawState
+        ) = BasisStrategyLogic.executeWithdraw(
+            BasisStrategyLogic.WithdrawParams({
+                asset: asset_,
                 receiver: receiver,
-                callbackTarget: address(0),
-                isExecuted: false,
-                isClaimed: false,
-                callbackData: ""
-            });
+                owner: owner,
+                requestCounter: $.requestCounter[owner],
+                assets: assets,
+                cache: cache0
+            })
+        );
 
-            // if all idle assets are withdrawn, set pending states to zero
-            $.pendingUtilization = 0;
-            $.pendingIncreaseCollateral = 0;
-            $.withdrawnFromIdle += idle;
-            emit UpdatePendingUtilization(0);
-
-            uint256 totalPendingWithdraw_ = $.totalPendingWithdraw + (requestedAmount - idle);
-            uint256 pendingDeutilizationInAsset_ =
-                totalPendingWithdraw_.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
-            uint256 pendingDeutilization_ =
-                $.oracle.convertTokenAmount(asset(), product(), pendingDeutilizationInAsset_);
-            uint256 productBalance = IERC20(product()).balanceOf(address(this));
-            $.pendingDeutilization = pendingDeutilization_ > productBalance ? productBalance : pendingDeutilization_;
-            $.totalPendingWithdraw = totalPendingWithdraw_;
-            $.assetsToWithdraw += idle;
-            $.activeWithdrawRequests.push(withdrawId);
+        if (withdrawId == bytes32(0)) {
+            // empty withdrawId means withdraw was executed immediately against idle assets
+            // no need to create a withdraw request, withdrawing assets should be transferred to receiver
+            IERC20(asset_).safeTransfer(receiver, assets);
+        } else {
+            _updateWithdrawRequestState($, withdrawId, withdrawState);
             $.requestCounter[owner]++;
 
-            emit UpdatePendingDeutilization($.pendingDeutilization);
-
-            emit WithdrawRequest(caller, receiver, owner, withdrawId, requestedAmount);
+            emit WithdrawRequest(caller, receiver, owner, withdrawId, withdrawState.requestedAmount);
         }
-        _checkStrategyStatus();
+
+        _updateStrategyState($, cache0, cache1);
 
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
-    function claim(bytes32 requestId) external virtual {
+    function claim(bytes32 withdrawId) external virtual returns (uint256 executedAmount) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        WithdrawState memory requestData = $.withdrawRequests[requestId];
+        DataTypes.WithdrawRequestState memory withdrawState = $.withdrawRequests[withdrawId];
+        DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
 
-        // validate claim
-        if (requestData.receiver != msg.sender) {
-            revert Errors.UnauthorizedClaimer(msg.sender, requestData.receiver);
-        }
-        if (!requestData.isExecuted) {
-            revert Errors.RequestNotExecuted();
-        }
-        if (requestData.isClaimed) {
-            revert Errors.RequestAlreadyClaimed();
-        }
+        DataTypes.StrategyStateChache memory cache1;
 
-        uint256 totalExecuted =
-            requestData.executedFromSpot + requestData.executedFromIdle + requestData.executedFromHedge;
-        $.assetsToClaim -= totalExecuted;
-        $.withdrawRequests[requestId].isClaimed = true;
-        IERC20 asset_ = IERC20(asset());
-        asset_.safeTransfer(msg.sender, totalExecuted);
+        (cache1, withdrawState, executedAmount) = BasisStrategyLogic.executeClaim(
+            BasisStrategyLogic.ClaimParams({
+                maxLeverage: $.maxLeverage,
+                totalSupply: totalSupply(),
+                withdrawState: withdrawState,
+                addr: _getStrategyAddresses($),
+                cache: cache0
+            })
+        );
 
-        delete $.withdrawRequests[requestId];
+        _updateStrategyState($, cache0, cache1);
+        _updateWithdrawRequestState($, withdrawId, withdrawState);
 
-        emit Claim(msg.sender, requestId, totalExecuted);
+        IERC20(asset()).safeTransfer(msg.sender, executedAmount);
+
+        emit Claim(msg.sender, withdrawId, executedAmount);
+    }
+
+    function isClaimable(bytes32 withdrawId) external view returns (bool) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        DataTypes.WithdrawRequestState memory withdrawRequest = $.withdrawRequests[withdrawId];
+        (bool isExecuted,) = BasisStrategyLogic.isWithdrawRequestExecuted(
+            withdrawRequest, _getStrategyAddresses($), _getStrategyStateCache($), totalSupply(), $.maxLeverage
+        );
+        return isExecuted && !withdrawRequest.isClaimed;
+    }
+
+    function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
+        return BasisStrategyLogic.getWithdrawId(owner, counter);
     }
 
     /*//////////////////////////////////////////////////////////////
                             ACCOUNTING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    // TODO: account for pendings
     function totalAssets() public view virtual override returns (uint256 assets) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        (, assets) = (utilizedAssets() + idleAssets()).trySub($.totalPendingWithdraw + $.withdrawingFromHedge);
+        DataTypes.StrategyAddresses memory addr = _getStrategyAddresses($);
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        (,, assets) = BasisStrategyLogic.getTotalAssets(addr, cache);
     }
 
-    function utilizedAssets() public view virtual returns (uint256 assets) {
+    function utilizedAssets() external view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 productBalance = IERC20(product()).balanceOf(address(this));
-        uint256 positionNetBalance = IPositionManager($.positionManager).positionNetBalance();
-        uint256 productValueInAsset = $.oracle.convertTokenAmount(product(), asset(), productBalance);
-        assets = productValueInAsset + positionNetBalance;
+        DataTypes.StrategyAddresses memory addr = _getStrategyAddresses($);
+        return BasisStrategyLogic.getUtilizedAssets(addr);
     }
 
-    function idleAssets() public view virtual returns (uint256 assets) {
+    function idleAssets() external view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
-        (, assets) = assetBalance.trySub($.assetsToClaim + $.assetsToWithdraw);
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        return BasisStrategyLogic.getIdleAssets(asset(), cache);
     }
 
-    // function withdrawingAssets() public view virtual returns (uint256 assets) {
-    //     ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-    //     (, assets) = $.totalPendingWithdraw.trySub($.withdrawingFromHedge);
-    // }
-
-    function getWithdrawId(address owner, uint128 counter) public view virtual returns (bytes32) {
-        return keccak256(abi.encodePacked(address(this), owner, counter));
-    }
-
-    function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
+    function totalPendingWithdraw() external view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if (totalSupply() == 0) {
-            return assets;
-        }
-        uint256 baseShares = convertToShares(assets);
-        return baseShares.mulDiv(PRECISION - $.entryCost, PRECISION);
+        return $.accRequestedWithdrawAssets - $.proccessedWithdrawAssets;
     }
 
-    function previewMint(uint256 shares) public view virtual override returns (uint256) {
+    function previewDeposit(uint256 assets) public view virtual override returns (uint256 shares) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if (totalSupply() == 0) {
-            return shares;
-        }
-        uint256 baseAssets = convertToAssets(shares);
-        return baseAssets.mulDiv(PRECISION, PRECISION - $.entryCost);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        OPERATOR LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-    function utilize(uint256 amount, SwapType swapType, bytes calldata data)
-        public
-        virtual
-        onlyOperator
-        returns (bytes32 requestId)
-    {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-
-        // can only utilize when the strategy status is IDLE
-        if ($.strategyStatus != StrategyStatus.IDLE) {
-            revert Errors.InvalidStrategyStatus(uint8($.strategyStatus));
-        }
-        $.strategyStatus = StrategyStatus.DEPOSITING;
-        emit UpdateStrategyStatus(StrategyStatus.DEPOSITING);
-
-        // can only utilize when pending utilization is positive
-        uint256 pendingUtilization_ = $.pendingUtilization;
-        if (pendingUtilization_ == 0) {
-            revert Errors.ZeroPendingUtilization();
-        }
-
-        // actual utilize amount is min of amount, idle assets and pending utilization
-        uint256 idle = idleAssets();
-        amount = amount > idle ? idle : amount;
-        amount = amount > pendingUtilization_ ? pendingUtilization_ : amount;
-
-        // can only utilize when amount is positive
-        if (amount == 0) {
-            revert Errors.ZeroAmountUtilization();
-        }
-
-        uint256 amountOut;
-        bool success;
-        if (swapType == SwapType.INCH_V6) {
-            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, asset(), product(), true, data);
-            if (!success) {
-                emit SwapFailed();
-                $.strategyStatus = StrategyStatus.IDLE;
-                emit UpdateStrategyStatus(StrategyStatus.IDLE);
-                return bytes32(0);
-            }
-        } else {
-            // TODO: fallback swap
-            revert Errors.UnsupportedSwapType();
-        }
-
-        uint256 pendingIncreaseCollateral_ = $.pendingIncreaseCollateral;
-        uint256 collateralDeltaAmount;
-        if (pendingIncreaseCollateral_ > 0) {
-            collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization_);
-            IERC20(asset()).safeTransfer($.positionManager, collateralDeltaAmount);
-            pendingIncreaseCollateral_ -= collateralDeltaAmount;
-        }
-        // IPositionManager($.positionManager).adjustPosition(amountOut, collateralDeltaAmount, true);
-        $.spotExecutionPrice = amount.mulDiv(10 ** IERC20Metadata(product()).decimals(), amountOut, Math.Rounding.Ceil);
-        $.pendingIncreaseCollateral = pendingIncreaseCollateral_;
-        $.pendingUtilization = pendingUtilization_ - amount;
-
-        emit UpdatePendingUtilization($.pendingUtilization);
-
-        emit Utilize(msg.sender, amount, amountOut);
-    }
-
-    function deutilize(uint256 amount, SwapType swapType, bytes calldata data)
-        public
-        virtual
-        onlyOperator
-        returns (bytes32 requestId)
-    {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-
-        // can only deutilize when the strategy status is IDLE
-        if ($.strategyStatus != StrategyStatus.IDLE) {
-            revert Errors.InvalidStrategyStatus(uint8($.strategyStatus));
-        }
-        $.strategyStatus = StrategyStatus.WITHDRAWING;
-        emit UpdateStrategyStatus(StrategyStatus.WITHDRAWING);
-
-        uint256 productBalance = IERC20(product()).balanceOf(address(this));
-
-        // actual deutilize amount is min of amount, product balance and pending deutilization
-        amount = amount > productBalance ? productBalance : amount;
-        amount = amount > $.pendingDeutilization ? $.pendingDeutilization : amount;
-
-        // can only deutilize when amount is positive
-        if (amount == 0) {
-            revert Errors.ZeroAmountUtilization();
-        }
-
-        uint256 amountOut;
-        bool success;
-        if (swapType == SwapType.INCH_V6) {
-            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, asset(), product(), false, data);
-            if (!success) {
-                emit SwapFailed();
-                $.strategyStatus = StrategyStatus.IDLE;
-                emit UpdateStrategyStatus(StrategyStatus.IDLE);
-                return bytes32(0);
-            }
-        } else {
-            // TODO: fallback swap
-            revert Errors.UnsupportedSwapType();
-        }
-
-        $.spotExecutionPrice = amountOut.mulDiv(10 ** IERC20Metadata(product()).decimals(), amount, Math.Rounding.Ceil);
-
-        if ($.strategyStatus == StrategyStatus.WITHDRAWING) {
-            // processing withdraw requests
-            $.assetsToWithdraw += amountOut;
-            $.totalPendingWithdraw -= amountOut;
-            $.withdrawnFromSpot += amountOut;
-        }
-
-        // IPositionManager($.positionManager).adjustPosition(amount, 0, false);
-
-        emit Deutilize(msg.sender, amount, amountOut);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                    POSITION MANAGER CALLBACKS LOGIC
-    //////////////////////////////////////////////////////////////*/
-
-    // callback function dispatcher
-    function afterAdjustPosition(PositionManagerCallbackParams memory params) external onlyPositionManager {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        StrategyStatus status = $.strategyStatus;
-        if (status == StrategyStatus.IDLE) {
-            revert Errors.InvalidCallback();
-        }
-        if (params.isIncrease) {
-            // TODO
-            if (params.collateralDeltaAmount > 0) {
-                // afterIncreasePositionCollateral callback
-                if (params.isSuccess) {
-                    _afterIncreasePositionCollateralSuccess(params, status);
-                } else {
-                    _afterIncreasePositionCollateralRevert(params, status);
-                }
-            }
-            if (params.sizeDeltaInTokens > 0) {
-                // afterIncreasePositionSize callback
-                if (params.isSuccess) {
-                    _afterIncreasePositionSizeSuccess(params, status);
-                } else {
-                    _afterIncreasePositionSizeRevert(params, status);
-                }
-            }
-        } else {
-            // TODO
-            if (params.collateralDeltaAmount > 0) {
-                // afterDecreasePositionCollateral callback
-                if (params.isSuccess) {
-                    _afterDecreasePositionCollateralSuccess(params, status);
-                } else {
-                    _afterDecreasePositionCollateralRevert(params, status);
-                }
-            }
-            if (params.sizeDeltaInTokens > 0) {
-                // afterDecreasePositionSize callback
-                if (params.isSuccess) {
-                    _afterDecreasePositionSizeSuccess(params, status);
-                } else {
-                    _afterDecreasePositionSizeRevert(params, status);
-                }
-            }
-        }
-
-        _checkStrategyStatus();
-
-        emit AfterAdjustPosition(
-            params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease, params.isSuccess
+        return BasisStrategyLogic.getPreviewDeposit(
+            BasisStrategyLogic.PreviewParams({
+                assetsOrShares: assets,
+                fee: $.entryCost,
+                totalSupply: totalSupply(),
+                addr: _getStrategyAddresses($),
+                cache: _getStrategyStateCache($)
+            })
         );
     }
 
-    //TODO: accomodate for Chainlink interface
-    function checkUpkeep(bytes calldata) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
+    function previewMint(uint256 shares) public view virtual override returns (uint256 assets) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        bool statusKeep;
-        bool hedgeDeviation;
-        bool decreaseCollateral;
-        bool activeRequests;
-        bool closedRequests;
-        if ($.strategyStatus == StrategyStatus.NEED_KEEP) {
-            upkeepNeeded = true;
-            statusKeep = true;
-        }
-
-        (uint256 hedgeDeviationInTokens, /* bool isIncrease */ ) = _checkHedgeDeviation();
-        if (hedgeDeviationInTokens > 0) {
-            upkeepNeeded = true;
-            hedgeDeviation = true;
-        }
-
-        uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
-        if (pendingDecreaseCollateral_ > 0) {
-            upkeepNeeded = true;
-            decreaseCollateral = true;
-        }
-
-        if ($.activeWithdrawRequests.length > 0) {
-            uint256 withdrawnFromIdle_ = $.withdrawnFromIdle;
-            uint256 withdrawnFromSpot_ = $.withdrawnFromSpot;
-            WithdrawState memory request0 = $.withdrawRequests[$.activeWithdrawRequests[0]];
-            uint256 remainingAmount = request0.requestedAmount
-                - (
-                    request0.executedFromSpot + request0.executedFromIdle + request0.executedFromHedge
-                        + request0.executionCost
-                );
-            if (withdrawnFromIdle_ + withdrawnFromSpot_ >= remainingAmount) {
-                upkeepNeeded = true;
-                activeRequests = true;
-            }
-        }
-
-        if ($.closedWithdrawRequests.length > 0) {
-            upkeepNeeded = true;
-            closedRequests = true;
-        }
-
-        return
-            (upkeepNeeded, abi.encode(statusKeep, hedgeDeviation, decreaseCollateral, activeRequests, closedRequests));
+        return BasisStrategyLogic.getPreviewMint(
+            BasisStrategyLogic.PreviewParams({
+                assetsOrShares: shares,
+                fee: $.entryCost,
+                totalSupply: totalSupply(),
+                addr: _getStrategyAddresses($),
+                cache: _getStrategyStateCache($)
+            })
+        );
     }
 
-    function _checkUpkeep() internal view virtual returns (bool upkeepNeeded) {
+    function previewWithdraw(uint256 assets) public view virtual override returns (uint256 shares) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if ($.strategyStatus == StrategyStatus.NEED_KEEP) {
-            return true;
-        }
-
-        (uint256 hedgeDeviationInTokens, /* bool isIncrease */ ) = _checkHedgeDeviation();
-        if (hedgeDeviationInTokens > 0) {
-            return true;
-        }
-
-        uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
-        if (pendingDecreaseCollateral_ > 0) {
-            return true;
-        }
-
-        if ($.activeWithdrawRequests.length > 0) {
-            uint256 withdrawnFromIdle_ = $.withdrawnFromIdle;
-            uint256 withdrawnFromSpot_ = $.withdrawnFromSpot;
-            WithdrawState memory request0 = $.withdrawRequests[$.activeWithdrawRequests[0]];
-            uint256 remainingAmount = request0.requestedAmount
-                - (
-                    request0.executedFromSpot + request0.executedFromIdle + request0.executedFromHedge
-                        + request0.executionCost
-                );
-            if (withdrawnFromIdle_ + withdrawnFromSpot_ >= remainingAmount) {
-                return true;
-            }
-        }
-
-        if ($.withdrawnFromIdle > 0 || $.withdrawnFromSpot > 0) {
-            return true;
-        }
-
-        if ($.closedWithdrawRequests.length > 0) {
-            return true;
-        }
+        return BasisStrategyLogic.getPreviewWithdraw(
+            BasisStrategyLogic.PreviewParams({
+                assetsOrShares: assets,
+                fee: $.exitCost,
+                totalSupply: totalSupply(),
+                addr: _getStrategyAddresses($),
+                cache: _getStrategyStateCache($)
+            })
+        );
     }
 
-    //TODO: accomodate for Chainlink interface
-    function performUpkeep(bytes calldata) public {
+    function previewRedeem(uint256 shares) public view virtual override returns (uint256 assets) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        _processActiveWithdrawRequests(0, 0);
-        _processClosedWithdrawRequests($.assetsToWithdraw, 0);
-        (uint256 hedgeDeviationInTokens, bool isIncrease) = _checkHedgeDeviation();
-        uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
-        if (hedgeDeviationInTokens > 0) {
-            if (isIncrease) {
-                // IPositionManager($.positionManager).adjustPosition(hedgeDeviationInTokens, 0, true);
-            } else {
-                // IPositionManager($.positionManager).adjustPosition(
-                //     hedgeDeviationInTokens, pendingDecreaseCollateral_, false
-                // );
-            }
-            $.strategyStatus = StrategyStatus.KEEPING;
-            emit UpdateStrategyStatus(StrategyStatus.KEEPING);
-        } else if (pendingDecreaseCollateral_ > 0) {
-            // IPositionManager($.positionManager).adjustPosition(0, pendingDecreaseCollateral_, false);
-            $.strategyStatus = StrategyStatus.KEEPING;
-            emit UpdateStrategyStatus(StrategyStatus.KEEPING);
-        } else {
-            _checkStrategyStatus();
-        }
-    }
-
-    function _checkStrategyStatus() internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        bool upkeepNeeded = _checkUpkeep();
-        if (upkeepNeeded) {
-            $.strategyStatus = StrategyStatus.NEED_KEEP;
-            emit UpdateStrategyStatus(StrategyStatus.NEED_KEEP);
-        } else {
-            $.strategyStatus = StrategyStatus.IDLE;
-            emit UpdateStrategyStatus(StrategyStatus.IDLE);
-        }
-    }
-
-    function _checkHedgeDeviation() internal view returns (uint256 hedgeDeviationInTokens, bool isIncrease) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 spotExposure = IERC20(product()).balanceOf(address(this));
-        uint256 hedgeExposure = IPositionManager($.positionManager).positionSizeInTokens();
-        if (spotExposure == 0) {
-            if (hedgeExposure == 0) {
-                return (0, false);
-            } else {
-                return (hedgeExposure, false);
-            }
-        }
-        uint256 hedgeDeviation = hedgeExposure.mulDiv(PRECISION, spotExposure);
-        if (hedgeDeviation > PRECISION + $.hedgeDeviationThreshold) {
-            // strategy is overhedged, need to decrease position size
-            isIncrease = false;
-            hedgeDeviationInTokens = hedgeExposure - spotExposure;
-        } else if (hedgeDeviation < PRECISION - $.hedgeDeviationThreshold) {
-            // strategy is underhedged, need to increase position size
-            isIncrease = true;
-            hedgeDeviationInTokens = spotExposure - hedgeExposure;
-        }
-    }
-
-    function _processActiveWithdrawRequests(uint256 amountExecuted, uint256 executionCost) internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if ($.activeWithdrawRequests.length > 0) {
-            uint256 totalPendingWithdraw_ = $.totalPendingWithdraw;
-
-            if (amountExecuted + executionCost > totalPendingWithdraw_) {
-                // if we overshoot with amount executed, reduce amount executed and execution cost proportionally
-                uint256 deltaShare = (amountExecuted + executionCost - totalPendingWithdraw_).mulDiv(
-                    PRECISION, amountExecuted + executionCost
-                );
-                amountExecuted = amountExecuted.mulDiv(PRECISION - deltaShare, PRECISION);
-                executionCost = executionCost.mulDiv(PRECISION - deltaShare, PRECISION);
-
-                // dust goes to costs
-                executionCost = totalPendingWithdraw_ - amountExecuted;
-            }
-
-            uint256 withdrawnFromSpot_ = $.withdrawnFromSpot;
-            uint256 withdrawnFromIdle_ = $.withdrawnFromIdle;
-            uint256 pendingDecreaseCollateral_ = $.pendingDecreaseCollateral;
-            uint256 withdrawingFromHedge_ = $.withdrawingFromHedge;
-            uint256 amountAvailable = withdrawnFromSpot_ + withdrawnFromIdle_ + amountExecuted + executionCost;
-            uint256 index;
-
-            while (amountAvailable > 0 && index < $.activeWithdrawRequests.length) {
-                bytes32 requestId0 = $.activeWithdrawRequests[index];
-                WithdrawState memory request0 = $.withdrawRequests[requestId0];
-                uint256 remainingAmount = request0.requestedAmount
-                    - (
-                        request0.executedFromSpot + request0.executedFromIdle + request0.executedFromHedge
-                            + request0.executionCost
-                    );
-                if (amountAvailable >= remainingAmount) {
-                    // remaining amount is enough fully cover current request
-
-                    // withdrawnFromIdle should first be allocated to the first request in the queue
-                    {
-                        // prevent stack too deep
-                        uint256 allocationOfIdle =
-                            withdrawnFromIdle_ > remainingAmount ? remainingAmount : withdrawnFromIdle_;
-                        remainingAmount -= allocationOfIdle;
-                        amountAvailable -= allocationOfIdle;
-                        withdrawnFromIdle_ -= allocationOfIdle;
-                        request0.executedFromIdle += allocationOfIdle;
-                    }
-
-                    // allocation of withdrawn assets rounded to floor
-                    uint256 allocationOfSpot = withdrawnFromSpot_.mulDiv(remainingAmount, amountAvailable);
-                    uint256 allocationOfHedge = amountExecuted.mulDiv(remainingAmount, amountAvailable);
-                    uint256 allocationOfCost = executionCost.mulDiv(remainingAmount, amountAvailable);
-                    uint256 allocatedAmount = allocationOfSpot + allocationOfHedge + allocationOfCost;
-                    // dust goes to costs
-                    uint256 dust = remainingAmount - (allocatedAmount);
-
-                    request0.executedFromSpot += allocationOfSpot;
-                    request0.executedFromHedge += allocationOfHedge;
-                    request0.executionCost += (allocationOfCost + dust);
-
-                    amountAvailable -= (allocatedAmount - dust);
-                    pendingDecreaseCollateral_ += request0.executedFromHedge;
-
-                    withdrawnFromSpot_ -= allocationOfSpot;
-                    amountExecuted -= allocationOfHedge;
-                    executionCost -= allocationOfCost;
-
-                    totalPendingWithdraw_ -= (allocationOfHedge + allocationOfCost);
-                    withdrawingFromHedge_ += allocationOfHedge;
-                    // if requested amount is fulfilled push to it closed
-                    $.closedWithdrawRequests.push(requestId0);
-
-                    index++;
-                } else {
-                    // redistribute remaining allocations
-
-                    request0.executedFromSpot += withdrawnFromSpot_;
-                    request0.executedFromIdle += withdrawnFromIdle_;
-                    request0.executedFromHedge += amountExecuted;
-                    request0.executionCost += executionCost;
-
-                    totalPendingWithdraw_ -= (amountExecuted + executionCost);
-                    withdrawingFromHedge_ += amountExecuted;
-
-                    amountAvailable = 0;
-                }
-
-                // update request storage state
-                $.withdrawRequests[requestId0] = request0;
-            }
-
-            // recalculate pendingDeutilization based on the new oracle price
-
-            // remove fulfilled requests from activeWithdrawRequests based on index
-            if (index > 0) {
-                if (index < $.activeWithdrawRequests.length) {
-                    for (uint256 i = 0; i < $.activeWithdrawRequests.length - index; i++) {
-                        $.activeWithdrawRequests[i] = $.activeWithdrawRequests[i + index];
-                    }
-                    for (uint256 j = 0; j < index; j++) {
-                        $.activeWithdrawRequests.pop();
-                    }
-                } else {
-                    delete $.activeWithdrawRequests;
-                }
-            }
-
-            // update global state
-            $.withdrawnFromSpot = 0;
-            $.withdrawnFromIdle = 0;
-            $.pendingDecreaseCollateral = pendingDecreaseCollateral_;
-            $.withdrawingFromHedge = withdrawingFromHedge_;
-
-            if ($.activeWithdrawRequests.length > 0) {
-                $.totalPendingWithdraw = totalPendingWithdraw_;
-
-                uint256 pendingDeutilizationInAsset_ =
-                    totalPendingWithdraw_.mulDiv($.targetLeverage, PRECISION + $.targetLeverage);
-                uint256 pendingDeutilization_ =
-                    $.oracle.convertTokenAmount(asset(), product(), pendingDeutilizationInAsset_);
-                $.pendingDeutilization = pendingDeutilization_;
-                emit UpdatePendingDeutilization(pendingDeutilization_);
-            } else {
-                $.totalPendingWithdraw = 0;
-                $.pendingDeutilization = 0;
-                emit UpdatePendingDeutilization(0);
-            }
-        }
-    }
-
-    function _processClosedWithdrawRequests(uint256 totalAvailableAmount, uint256 executionCost) internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 requestsLength = $.closedWithdrawRequests.length;
-        if (requestsLength > 0) {
-            uint256 index;
-            uint256 processedAssetAmount;
-            while (totalAvailableAmount > 0 && index < requestsLength) {
-                console.log("BREAK");
-                // process closed requests one by one
-                bytes32 withdrawId = $.closedWithdrawRequests[index];
-                WithdrawState storage request0 = $.withdrawRequests[withdrawId];
-
-                uint256 executionAmount = request0.requestedAmount - request0.executionCost;
-                console.log("executionAmount", executionAmount);
-                console.log("totalAvailableAmount", totalAvailableAmount);
-                if (executionAmount <= totalAvailableAmount) {
-                    // if there is enough processed asset to cover requested amount minus execution cost,  mark as executed
-                    if (executionCost > 0) {
-                        // if there is execution cost linked to decrease collateral, increase execution cost and reduce executed from hedge proportionally
-                        uint256 shareOfExecutionCost =
-                            executionAmount.mulDiv(executionCost, totalAvailableAmount, Math.Rounding.Ceil);
-                        request0.executedFromHedge -= shareOfExecutionCost;
-
-                        // dust goest to cost
-                        uint256 newExecutionCost = request0.requestedAmount
-                            - (request0.executedFromSpot + request0.executedFromIdle + request0.executedFromHedge);
-                        uint256 executionCostDelta = newExecutionCost - request0.executionCost;
-
-                        request0.executionCost = newExecutionCost;
-                        executionAmount = request0.requestedAmount - request0.executionCost;
-                        totalAvailableAmount -= executionCostDelta;
-                    }
-                    request0.isExecuted = true;
-                    processedAssetAmount += executionAmount;
-                    totalAvailableAmount -= executionAmount;
-                    if (request0.callbackTarget != address(0)) {
-                        try IManagedBasisCallbackReceiver(request0.callbackTarget).managedBasisCallback(
-                            withdrawId, executionAmount, request0.callbackData
-                        ) {} catch {}
-                    }
-
-                    index++;
-
-                    emit ExecuteWithdraw(withdrawId, request0.requestedAmount, executionAmount);
-                } else {
-                    // if there is not enough asset to process withdraw exit the loop
-                    totalAvailableAmount = 0;
-                }
-            }
-
-            // remove executed requests from closedWithdrawRequests based on index
-            if (index > 0) {
-                for (uint256 i = 0; i < requestsLength - index; i++) {
-                    $.closedWithdrawRequests[i] = $.closedWithdrawRequests[i + index];
-                }
-                for (uint256 j = 0; j < index; j++) {
-                    $.closedWithdrawRequests.pop();
-                }
-            }
-
-            // update global state
-            $.assetsToClaim += processedAssetAmount;
-            $.assetsToWithdraw -= processedAssetAmount;
-        }
-    }
-
-    function _afterIncreasePositionSizeSuccess(
-        PositionManagerCallbackParams memory, /* params */
-        StrategyStatus /* status */
-    ) internal pure {
-        // TODO: implement
-    }
-
-    function _afterIncreasePositionSizeRevert(
-        PositionManagerCallbackParams memory, /* params */
-        StrategyStatus /* status */
-    ) internal pure {
-        // TODO: implement
-    }
-
-    function _afterDecreasePositionSizeSuccess(PositionManagerCallbackParams memory params, StrategyStatus status)
-        internal
-    {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-
-        if (status == StrategyStatus.WITHDRAWING) {
-            uint256 indexPrecision = 10 ** uint256(IERC20Metadata(product()).decimals());
-            uint256 sizeDeltaInAsset = params.executionPrice.mulDiv(params.sizeDeltaInTokens, indexPrecision);
-            uint256 amountExecuted = sizeDeltaInAsset.mulDiv(PRECISION, $.targetLeverage);
-
-            // calculate exit cost
-            uint256 executionCost;
-            if ($.exitCost == 0) {
-                // if no exit cost use manual calculation
-                int256 executionSpread = int256(params.executionPrice) - int256($.spotExecutionPrice);
-                int256 executionCost_ = executionSpread > 0
-                    ? (uint256(executionSpread).mulDiv(params.sizeDeltaInTokens, indexPrecision)).toInt256()
-                    : -(uint256(-executionSpread).mulDiv(params.sizeDeltaInTokens, indexPrecision)).toInt256();
-                executionCost_ += params.executionCost.toInt256();
-                executionCost = executionCost_ > int256(0) ? uint256(executionCost_) : uint256(0);
-            } else {
-                executionCost = sizeDeltaInAsset.mulDiv($.exitCost, PRECISION);
-            }
-            _processActiveWithdrawRequests(amountExecuted, executionCost);
-        } else if (status == StrategyStatus.REBALANCING_DOWN) {
-            //TODO: implement
-            // processing rebalance request
-        } else if (status == StrategyStatus.KEEPING) {
-            // TODO: implement
-            // processing keep request
-        } else {
-            revert Errors.InvalidStrategyStatus(uint8(status));
-        }
-    }
-
-    function _afterDecreasePositionSizeRevert(
-        PositionManagerCallbackParams memory, /* params */
-        StrategyStatus /* status */
-    ) internal pure {
-        // TODO: implement
-    }
-
-    function _afterIncreasePositionCollateralSuccess(
-        PositionManagerCallbackParams memory, /* params */
-        StrategyStatus /* status */
-    ) internal pure {
-        // TODO: implement
-    }
-
-    function _afterIncreasePositionCollateralRevert(
-        PositionManagerCallbackParams memory, /* params */
-        StrategyStatus /* status */
-    ) internal pure {
-        // TODO: implement
-    }
-
-    function _afterDecreasePositionCollateralSuccess(PositionManagerCallbackParams memory params, StrategyStatus status)
-        internal
-    {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        IERC20(asset()).safeTransferFrom($.positionManager, address(this), params.collateralDeltaAmount);
-
-        if (status == StrategyStatus.KEEPING) {
-            // processing withdraw requests
-            uint256 assetsToWithdraw_ = $.assetsToWithdraw + params.collateralDeltaAmount;
-            uint256 totalAvailableAmount = assetsToWithdraw_ + params.executionCost;
-            $.assetsToWithdraw = assetsToWithdraw_;
-
-            _processClosedWithdrawRequests(totalAvailableAmount, params.executionCost);
-
-            $.pendingDecreaseCollateral -= params.collateralDeltaAmount;
-            $.withdrawingFromHedge -= params.collateralDeltaAmount;
-        } else if (status == StrategyStatus.REBALANCING_DOWN) {
-            // processing rebalance request
-            // TODO:impelement
-        } else {
-            revert Errors.InvalidStrategyStatus(uint8(status));
-        }
-    }
-
-    function _afterDecreasePositionCollateralRevert(
-        PositionManagerCallbackParams memory, /* params */
-        StrategyStatus /* status */
-    ) internal pure {
-        // TODO implement
-    }
-
-    // function requestWipeStrategy(uint256 productAmount, SwapType swapType, bytes memory data) external onlyOwner {
-    //     if (totalSupply() > 0) {
-    //         revert();
-    //     }
-
-    //     ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-
-    //     if (swapType == SwapType.INCH_V6) {
-    //         (, bool success) = InchAggregatorV6Logic.executeSwap(productAmount, product(), asset(), true, data);
-    //         if (!success) {
-    //             emit SwapFailed();
-    //         }
-    //     } else {
-    //         // TODO: fallback swap
-    //         revert Errors.UnsupportedSwapType();
-    //     }
-    //     uint256 positionSizeInTokens = IPositionManager($.positionManager).positionSizeInTokens();
-    //     uint256 positionNetBalance = IPositionManager($.positionManager).positionNetBalance();
-    //     IPositionManager($.positionManager).adjustPosition(positionSizeInTokens, positionNetBalance, false);
-    // }
-
-    // function wipeStrategy() external onlyOwner {
-    //     ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-    //     address asset_ = asset();
-    //     IERC20(asset_).safeTransferFrom($.positionManager, address(this), IERC20(asset_).balanceOf($.positionManager));
-    //     IERC20(asset_).safeTransfer(msg.sender, IERC20(asset_).balanceOf(address(this)));
-    // }
-
-    /*//////////////////////////////////////////////////////////////
-                        STORAGE GETTERS
-    //////////////////////////////////////////////////////////////*/
-
-    function oracle() external view returns (address) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return address($.oracle);
-    }
-
-    function positionManager() external view returns (address) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.positionManager;
-    }
-
-    function targetLeverage() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.targetLeverage;
-    }
-
-    function entryCost() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.entryCost;
-    }
-
-    function exitCost() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.exitCost;
-    }
-
-    function hedgeDeviationThreshold() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.hedgeDeviationThreshold;
-    }
-
-    function userDepositLimit() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.userDepositLimit;
-    }
-
-    function strategyDepositLimit() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.strategyDepostLimit;
-    }
-
-    function assetsToClaim() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.assetsToClaim;
-    }
-
-    function assetsToWithdraw() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.assetsToWithdraw;
+        return BasisStrategyLogic.getPreviewRedeem(
+            BasisStrategyLogic.PreviewParams({
+                assetsOrShares: shares,
+                fee: $.exitCost,
+                totalSupply: totalSupply(),
+                addr: _getStrategyAddresses($),
+                cache: _getStrategyStateCache($)
+            })
+        );
     }
 
     function pendingUtilization() external view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.pendingUtilization;
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        return BasisStrategyLogic.getPendingUtilization(asset(), cache, $.targetLeverage);
     }
 
     function pendingDeutilization() external view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.pendingDeutilization;
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        DataTypes.StrategyAddresses memory addr = _getStrategyAddresses($);
+        return BasisStrategyLogic.getPendingDeutilization(
+            addr,
+            cache,
+            totalSupply(),
+            $.maxLeverage,
+            cache.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
+        );
     }
 
     function pendingIncreaseCollateral() external view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.pendingIncreaseCollateral;
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        return BasisStrategyLogic.getPendingIncreaseCollateral(asset(), $.targetLeverage, cache);
     }
 
-    function pendingDecreaseCollateral() external view returns (uint256) {
+    /*//////////////////////////////////////////////////////////////
+                            OPERATOR LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    function utilize(uint256 amount, DataTypes.SwapType swapType, bytes calldata swapData)
+        external
+        virtual
+        onlyOperator
+    {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.pendingDecreaseCollateral;
+        DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
+
+        $.strategyStatus = DataTypes.StrategyStatus.DEPOSITING;
+        emit UpdateStrategyStatus(DataTypes.StrategyStatus.DEPOSITING);
+
+        (
+            bool success,
+            uint256 amountOut,
+            DataTypes.StrategyStateChache memory cache1,
+            IPositionManager.RequestParams memory adjustPositionParams
+        ) = BasisStrategyLogic.executeUtilize(
+            BasisStrategyLogic.UtilizeParams({
+                amount: amount,
+                targetLeverage: $.targetLeverage,
+                status: $.strategyStatus,
+                swapType: swapType,
+                addr: _getStrategyAddresses($),
+                cache: cache0,
+                swapData: swapData
+            })
+        );
+        if (success) {
+            _updateStrategyState($, cache0, cache1);
+            _executeAdjustPosition($.positionManager, adjustPositionParams);
+            emit Utilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);
+        } else {
+            emit SwapFailed();
+        }
     }
 
-    function totalPendingWithdraw() external view returns (uint256) {
+    function deutilize(uint256 amount, DataTypes.SwapType swapType, bytes calldata swapData)
+        external
+        virtual
+        onlyOperator
+    {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.totalPendingWithdraw;
+        DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
+        (
+            bool success,
+            uint256 amountOut,
+            DataTypes.StrategyStateChache memory cache1,
+            IPositionManager.RequestParams memory adjustPositionParams
+        ) = BasisStrategyLogic.executeDeutilize(
+            BasisStrategyLogic.UtilizeParams({
+                amount: amount,
+                targetLeverage: $.targetLeverage,
+                status: $.strategyStatus,
+                swapType: swapType,
+                addr: _getStrategyAddresses($),
+                cache: cache0,
+                swapData: swapData
+            })
+        );
+        if (success) {
+            _updateStrategyState($, cache0, cache1);
+            _executeAdjustPosition($.positionManager, adjustPositionParams);
+            emit Deutilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);
+        } else {
+            emit SwapFailed();
+        }
     }
 
-    function withdrawingFromHedge() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.withdrawingFromHedge;
+    /*//////////////////////////////////////////////////////////////
+                            MANUAL SWAP
+    //////////////////////////////////////////////////////////////*/
+
+    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
+        require(amount0Delta > 0 || amount1Delta > 0); // swaps entirely within 0-liquidity regions are not supported
+        if (data.length != 96) {
+            revert Errors.InvalidCallback();
+        }
+        _verifyCallback();
+        (address tokenIn,, address payer) = abi.decode(data, (address, address, address));
+        uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
+        if (payer == address(this)) {
+            IERC20(tokenIn).safeTransfer(msg.sender, amountToPay);
+        } else {
+            IERC20(tokenIn).safeTransferFrom(payer, msg.sender, amountToPay);
+        }
     }
 
-    function withdrawnFromSpot() external view returns (uint256) {
+    function _verifyCallback() internal view {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.withdrawnFromSpot;
+        if (!$.isSwapPool[msg.sender]) {
+            revert Errors.InvalidCallback();
+        }
     }
 
-    function withdrawnFromIdle() external view returns (uint256) {
+    function _manualSwap(uint256 amountIn, bool isAssetToProduct) internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.withdrawnFromIdle;
+        if (isAssetToProduct) {
+            ManualSwapLogic.swap(amountIn, $.assetToProductSwapPath);
+        } else {
+            ManualSwapLogic.swap(amountIn, $.productToAssetSwapPath);
+        }
     }
 
-    function activeWithdrawRequests() external view returns (bytes32[] memory) {
+    function _setManualSwapPath(address[] calldata _assetToProductSwapPath) private {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.activeWithdrawRequests;
-    }
+        uint256 length = _assetToProductSwapPath.length;
+        if (
+            length % 2 == 0 || _assetToProductSwapPath[0] != asset() || _assetToProductSwapPath[length - 1] != product()
+        ) {
+            // length should be odd
+            // the first element should be asset
+            // the last element should be product
+            revert Errors.InvalidPath();
+        }
 
-    function activeWithdrawRequests(uint256 index) external view returns (bytes32) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.activeWithdrawRequests[index];
-    }
-
-    function closedWithdrawRequests() external view returns (bytes32[] memory) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.closedWithdrawRequests;
-    }
-
-    function closedWithdrawRequests(uint256 index) external view returns (bytes32) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.closedWithdrawRequests[index];
-    }
-
-    function strategyStatus() external view returns (StrategyStatus) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.strategyStatus;
-    }
-
-    function requestCounter(address owner) external view returns (uint128) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.requestCounter[owner];
-    }
-
-    function withdrawRequests(bytes32 requestId) external view returns (WithdrawState memory) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.withdrawRequests[requestId];
+        address[] memory _productToAssetSwapPath = new address[](length);
+        for (uint256 i; i < length; i++) {
+            _productToAssetSwapPath[i] = _assetToProductSwapPath[length - i - 1];
+            if (i % 2 != 0) {
+                // odd index element of path should be swap pool address
+                address pool = _assetToProductSwapPath[i];
+                address tokenIn = _assetToProductSwapPath[i - 1];
+                address tokenOut = _assetToProductSwapPath[i + 1];
+                address token0 = IUniswapV3Pool(pool).token0();
+                address token1 = IUniswapV3Pool(pool).token1();
+                if ((tokenIn != token0 || tokenOut != token1) && (tokenOut != token0 || tokenIn != token1)) {
+                    revert Errors.InvalidPath();
+                }
+                $.isSwapPool[pool] = true;
+            }
+        }
+        $.assetToProductSwapPath = _assetToProductSwapPath;
+        $.productToAssetSwapPath = _productToAssetSwapPath;
     }
 }
