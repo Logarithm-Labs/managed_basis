@@ -26,15 +26,10 @@ contract MockStrategy {
     }
 
     function afterAdjustPosition(PositionManagerCallbackParams calldata params) external {
-        if (params.isSuccess) {
-            sizeDeltaInTokens = params.sizeDeltaInTokens;
-            collateralDelta = params.collateralDeltaAmount;
-            if (params.collateralDeltaAmount > 0 && !params.isIncrease) {
-                IERC20(asset()).transferFrom(msg.sender, address(this), collateralDelta);
-            }
-        } else {
-            sizeDeltaInTokens = 0;
-            collateralDelta = 0;
+        sizeDeltaInTokens = params.sizeDeltaInTokens;
+        collateralDelta = params.collateralDeltaAmount;
+        if (params.collateralDeltaAmount > 0 && !params.isIncrease) {
+            IERC20(asset()).transferFrom(msg.sender, address(this), collateralDelta);
         }
     }
 }

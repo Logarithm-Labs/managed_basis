@@ -176,6 +176,36 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     }
 
     /*//////////////////////////////////////////////////////////////
+                        CONFIGURATION   
+    //////////////////////////////////////////////////////////////*/
+
+    function setPositionManager(address _positionManager) external onlyOwner {
+        if (_positionManager == address(0)) {
+            revert Errors.ZeroAddress();
+        }
+        _getManagedBasisStrategyStorage().positionManager = _positionManager;
+    }
+
+    function setForwarder(address _forwarder) external onlyOwner {
+        if (_forwarder == address(0)) {
+            revert Errors.ZeroAddress();
+        }
+        _getManagedBasisStrategyStorage().forwarder = _forwarder;
+    }
+
+    function setEntryExitCosts(uint256 _entryCost, uint256 _exitCost) external onlyOperator {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        $.entryCost = _entryCost;
+        $.exitCost = _exitCost;
+    }
+
+    function setDepositLimits(uint256 userLimit, uint256 strategyLimit) external onlyOwner {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        $.userDepositLimit = userLimit;
+        $.strategyDepostLimit = strategyLimit;
+    }
+
+    /*//////////////////////////////////////////////////////////////
                         STATE TRANSITIONS   
     //////////////////////////////////////////////////////////////*/
 
@@ -610,5 +640,32 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         }
         $.assetToProductSwapPath = _assetToProductSwapPath;
         $.productToAssetSwapPath = _productToAssetSwapPath;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL GETTERS
+    //////////////////////////////////////////////////////////////*/
+
+    function strategyStatus() external view returns (DataTypes.StrategyStatus) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.strategyStatus;
+    }
+
+    function requestCounter(address owner) external view returns (uint128) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.requestCounter[owner];
+    }
+
+    function withdrawRequests(bytes32 requestKey) external view returns (DataTypes.WithdrawRequestState memory) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.withdrawRequests[requestKey];
+    }
+
+    function accRequestedWithdrawAssets() external view returns (uint256) {
+        return _getManagedBasisStrategyStorage().accRequestedWithdrawAssets;
+    }
+
+    function proccessedWithdrawAssets() external view returns (uint256) {
+        return _getManagedBasisStrategyStorage().proccessedWithdrawAssets;
     }
 }

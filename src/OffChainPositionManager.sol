@@ -114,8 +114,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         uint256 indexed reportRound,
         uint256 sizeDeltaInTokens,
         uint256 collateralDeltaAmount,
-        bool isIncrease,
-        bool isSuccess
+        bool isIncrease
     );
 
     event RequestIncreasePositionSize(uint256 sizeDeltaInTokens, uint256 round);
@@ -233,13 +232,11 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
             timestamp: block.timestamp
         });
 
-        if (params.isSuccess) {
-            if (params.isIncrease) {
-                $.pendingCollateralIncrease -= params.collateralDeltaAmount;
-            } else {
-                if (params.collateralDeltaAmount > 0) {
-                    _transferFromAgent(params.collateralDeltaAmount);
-                }
+        if (params.isIncrease) {
+            $.pendingCollateralIncrease -= params.collateralDeltaAmount;
+        } else {
+            if (params.collateralDeltaAmount > 0) {
+                _transferFromAgent(params.collateralDeltaAmount);
             }
         }
 
@@ -254,7 +251,6 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         requestInfo.responseRound = round;
         requestInfo.responseTimestamp = block.timestamp;
         requestInfo.isReported = true;
-        requestInfo.isSuccess = params.isSuccess;
 
         $.positionStates[round] = state;
         $.currentRound = round;
@@ -264,12 +260,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
 
         emit ReportRequest(
-            requestRound,
-            round,
-            params.sizeDeltaInTokens,
-            params.collateralDeltaAmount,
-            params.isIncrease,
-            params.isSuccess
+            requestRound, round, params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease
         );
     }
 

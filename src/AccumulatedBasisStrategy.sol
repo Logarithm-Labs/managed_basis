@@ -119,6 +119,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     //////////////////////////////////////////////////////////////*/
 
     function initialize(
+        string memory name,
+        string memory symbol,
         address _asset,
         address _product,
         address _oracle,
@@ -131,8 +133,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 _exitCost,
         address[] calldata _assetToProductSwapPath
     ) external initializer {
-        __ERC4626_init(IERC20(_asset));
-        __LogBaseVault_init(IERC20(_product));
+        __LogBaseVault_init(IERC20(_asset), IERC20(_product), name, symbol);
         __Ownable_init(msg.sender);
         __ManagedBasisStrategy_init(
             _asset,
@@ -558,15 +559,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     /// @param amount is the asset value to be utilized
     /// @param swapType is the swap type of inch or manual
     /// @param data is the data used in inch
-    function utilize(uint256 amount, SwapType swapType, bytes calldata data)
-        public
-        virtual
-        onlyOperator
-        returns (bytes32 requestKey)
-    {
+    function utilize(uint256 amount, SwapType swapType, bytes calldata data) public virtual onlyOperator {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-        (bool upkeepNeeded, bytes memory performData) = checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) = checkUpkeep(bytes(""));
         if (upkeepNeeded) {
             _performUpkeep(performData);
             return;
@@ -603,7 +599,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 emit SwapFailed();
                 $.strategyStatus = StrategyStatus.IDLE;
                 emit UpdateStrategyStatus(StrategyStatus.IDLE);
-                return bytes32(0);
+                return;
             }
             $.pendingUtilizedProducts = amountOut;
         } else if (swapType == SwapType.MANUAL) {} else {
@@ -635,12 +631,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     /// @param amount is the product value to be deutilized
     /// @param swapType is the swap type of inch or manual
     /// @param data is the data used in inch
-    function deutilize(uint256 amount, SwapType swapType, bytes calldata data)
-        public
-        virtual
-        onlyOperator
-        returns (bytes32 requestKey)
-    {
+    function deutilize(uint256 amount, SwapType swapType, bytes calldata data) public virtual onlyOperator {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
         (bool upkeepNeeded, bytes memory performData) = checkUpkeep("");
@@ -679,7 +670,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 emit SwapFailed();
                 $.strategyStatus = StrategyStatus.IDLE;
                 emit UpdateStrategyStatus(StrategyStatus.IDLE);
-                return bytes32(0);
+                return;
             }
             $.pendingDeutilizedAssets = amountOut;
         } else {
@@ -802,7 +793,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     //////////////////////////////////////////////////////////////*/
 
     //TODO: accomodate for Chainlink interface
-    function checkUpkeep(bytes calldata) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
+    function checkUpkeep(bytes memory) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
         if ($.strategyStatus != StrategyStatus.IDLE) {
@@ -1228,11 +1219,11 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
     // }
 
     function _adjustPosition(
-        address positionManager,
+        address _positionManager,
         uint256 sizeDeltaInTokens,
         uint256 collateralDeltaAmount,
         bool isIncrease
-    ) {
+    ) internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         IPositionManager.RequestParams memory params = IPositionManager.RequestParams({
             sizeDeltaInTokens: sizeDeltaInTokens,
@@ -1240,7 +1231,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             isIncrease: isIncrease
         });
         $.adjustmentRequest = params;
-        IPositionManager(positionManager).adjustPosition(params);
+        IPositionManager(_positionManager).adjustPosition(params);
     }
 
     /*//////////////////////////////////////////////////////////////

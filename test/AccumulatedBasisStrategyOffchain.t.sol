@@ -17,7 +17,7 @@ import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 
 import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
 
 import {console} from "forge-std/console.sol";
