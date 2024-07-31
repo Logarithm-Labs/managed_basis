@@ -64,7 +64,7 @@ contract Keeper is AutomationCompatibleInterface, UUPSUpgradeable, Ownable2StepU
     /// @inheritdoc AutomationCompatibleInterface
     function performUpkeep(bytes calldata performData) external override {
         if (msg.sender != forwarderAddress()) {
-            revert Errors.UnAuthorizedForwarder(msg.sender);
+            revert Errors.UnauthorizedForwarder(msg.sender);
         }
         _performUpkeep(performData);
     }

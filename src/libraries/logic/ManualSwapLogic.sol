@@ -10,7 +10,7 @@ import {TickMath} from "src/externals/uniswap/libraries/TickMath.sol";
 
 import {Errors} from "src/libraries/utils/Errors.sol";
 
-contract ManualSwapLogic {
+library ManualSwapLogic {
     using SafeCast for uint256;
 
     function swap(uint256 amountIn, address[] memory path) external returns (uint256 amountOut) {

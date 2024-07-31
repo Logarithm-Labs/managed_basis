@@ -12,6 +12,9 @@ library Errors {
     error InchInvalidReceiver();
     error InchInvalidAmount(uint256 requestedAmountIn, uint256 unpackedAmountIn);
 
+    error SwapAmountExceedsBalance(uint256 swapAmount, uint256 balance);
+    error InvalidPath();
+
     error IncosistentParamsLength();
     /// @notice only callable by factory
     error CallerNotFactory();
@@ -52,10 +55,12 @@ library Errors {
     error UnsupportedSwapType();
 
     // @notice upkeep validation
-    error UnAuthorizedForwarder(address fowarder);
+    error UnauthorizedForwarder(address fowarder);
 
-    // @notice there is no positive when decrease collateral
-    error NotPositivePnl();
+    // @notice there is not enough positive pnl when decrease collateral
+    error NotEnoughPnl();
+
+    error NotEnoughCollateral();
 
     error ActiveRequestIsNotClosed(bytes32 requestId);
 
@@ -81,13 +86,9 @@ library Errors {
 
     error CallerNotOperator();
 
+    error InvalidAdjustmentParams();
+
     error InvalidStrategyStatus(uint8 status);
 
-    error ExceededMaxDeposit(address receiver, uint256 assets, uint256 maxAssets);
-
-    error ExceededMaxMint(address receiver, uint256 shares, uint256 maxShares);
-
-    error ExceededMaxWithdraw(address owner, address assets, address maxAssets);
-
-    error ExceededMaxRedeem(address owner, address shares, address maxShares);
+    error UpkeepNeeded();
 }

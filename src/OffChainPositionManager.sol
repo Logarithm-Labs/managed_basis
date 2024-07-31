@@ -4,19 +4,18 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import {IOffChainPositionManager} from "src/interfaces/IOffChainPositionManager.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 import "src/interfaces/IManagedBasisStrategy.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
-contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, OwnableUpgradeable {
+contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUpgradeable {
     using SafeCast for uint256;
     using Math for uint256;
 
@@ -408,4 +407,14 @@ contract OffChainPositionManager is IOffChainPositionManager, UUPSUpgradeable, O
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.positionStates[$.currentRound].sizeInTokens;
     }
+
+    function apiVersion() external view virtual returns (string memory) {
+        return "0.0.1";
+    }
+
+    function needKeep() external pure virtual returns (bool) {
+        return false;
+    }
+
+    function keep() external pure {}
 }

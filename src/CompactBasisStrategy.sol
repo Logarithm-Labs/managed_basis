@@ -62,6 +62,10 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 proccessedWithdrawAssets;
         mapping(address => uint128) requestCounter;
         mapping(bytes32 => DataTypes.WithdrawRequestState) withdrawRequests;
+        mapping(address => bool) isSwapPool;
+        address[] productToAssetSwapPath;
+        address[] assetToProductSwapPath;
+        IPositionManager.RequestParams adjustmentRequest;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedBasisStrategyStorageV1")) - 1)) & ~bytes32(uint256(0xff))
@@ -88,24 +92,40 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 _targetLeverage,
         uint256 _minLeverage,
         uint256 _maxLeverage,
+        uint256 _safeMarginLeverage,
         uint256 _entryCost,
-        uint256 _exitCost
+        uint256 _exitCost,
+        address[] calldata _assetToProductSwapPath
     ) external initializer {
         __LogBaseVault_init(IERC20(_asset), IERC20(_product), name, symbol);
         __Ownable_init(msg.sender);
         __ManagedBasisStrategy_init(
-            _oracle, _operator, _targetLeverage, _minLeverage, _maxLeverage, _entryCost, _exitCost
+            _asset,
+            _product,
+            _oracle,
+            _operator,
+            _targetLeverage,
+            _minLeverage,
+            _maxLeverage,
+            _safeMarginLeverage,
+            _entryCost,
+            _exitCost,
+            _assetToProductSwapPath
         );
     }
 
     function __ManagedBasisStrategy_init(
+        address _asset,
+        address _product,
         address _oracle,
         address _operator,
         uint256 _targetLeverage,
         uint256 _minLeverage,
         uint256 _maxLeverage,
+        uint256 _safeMarginLeverage,
         uint256 _entryCost,
-        uint256 _exitCost
+        uint256 _exitCost,
+        address[] calldata _assetToProductSwapPath
     ) public initializer {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         $.oracle = _oracle;
@@ -118,6 +138,7 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         $.userDepositLimit = type(uint256).max;
         $.strategyDepostLimit = type(uint256).max;
         $.hedgeDeviationThreshold = 1e16; // 1%
+        _setManualSwapPath(_assetToProductSwapPath);
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
@@ -209,8 +230,8 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (cache0.pendingDecreaseCollateral != cache1.pendingDecreaseCollateral) {
             $.pendingDecreaseCollateral = cache1.pendingDecreaseCollateral;
         }
-        if (cache0.status != cache1.status) {
-            $.strategyStatus = cache1.status;
+        if (cache0.strategyStatus != cache1.strategyStatus) {
+            $.strategyStatus = cache1.strategyStatus;
         }
 
         emit UpdatePendingUtilization();
@@ -437,7 +458,13 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
         DataTypes.StrategyAddresses memory addr = _getStrategyAddresses($);
-        return BasisStrategyLogic.getPendingDeutilization(addr, cache);
+        return BasisStrategyLogic.getPendingDeutilization(
+            addr,
+            cache,
+            totalSupply(),
+            $.maxLeverage,
+            cache.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
+        );
     }
 
     function pendingIncreaseCollateral() external view returns (uint256) {
@@ -456,27 +483,29 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         onlyOperator
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
 
         $.strategyStatus = DataTypes.StrategyStatus.DEPOSITING;
         emit UpdateStrategyStatus(DataTypes.StrategyStatus.DEPOSITING);
 
-        bool success;
-        uint256 amountOut;
-        IPositionManager.RequestParams memory adjustPositionParams;
-        (success, amountOut, cache, adjustPositionParams) = BasisStrategyLogic.executeUtilize(
+        (
+            bool success,
+            uint256 amountOut,
+            DataTypes.StrategyStateChache memory cache1,
+            IPositionManager.RequestParams memory adjustPositionParams
+        ) = BasisStrategyLogic.executeUtilize(
             BasisStrategyLogic.UtilizeParams({
                 amount: amount,
                 targetLeverage: $.targetLeverage,
                 status: $.strategyStatus,
                 swapType: swapType,
                 addr: _getStrategyAddresses($),
-                cache: cache,
+                cache: cache0,
                 swapData: swapData
             })
         );
         if (success) {
-            _updateStrategyState($, cache);
+            _updateStrategyState($, cache0, cache1);
             _executeAdjustPosition($.positionManager, adjustPositionParams);
             emit Utilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);
         } else {
@@ -490,23 +519,25 @@ contract CompactBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         onlyOperator
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
-        bool success;
-        uint256 amountOut;
-        IPositionManager.RequestParams memory adjustPositionParams;
-        (success, amountOut, cache, adjustPositionParams) = BasisStrategyLogic.executeDeutilize(
+        DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
+        (
+            bool success,
+            uint256 amountOut,
+            DataTypes.StrategyStateChache memory cache1,
+            IPositionManager.RequestParams memory adjustPositionParams
+        ) = BasisStrategyLogic.executeDeutilize(
             BasisStrategyLogic.UtilizeParams({
                 amount: amount,
                 targetLeverage: $.targetLeverage,
                 status: $.strategyStatus,
                 swapType: swapType,
                 addr: _getStrategyAddresses($),
-                cache: cache,
+                cache: cache0,
                 swapData: swapData
             })
         );
         if (success) {
-            _updateStrategyState($, cache);
+            _updateStrategyState($, cache0, cache1);
             _executeAdjustPosition($.positionManager, adjustPositionParams);
             emit Deutilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);
         } else {
