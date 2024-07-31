@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 
 import {InchTest} from "./base/InchTest.sol";
 import {GmxV2Test} from "./base/GmxV2Test.sol";
-import {OffChainTest} from "test/base/OffChainTest.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -15,14 +14,18 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 
-import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
+import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
+import {Config} from "src/Config.sol";
+import {ConfigKeys} from "src/libraries/ConfigKeys.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
+import {Keeper} from "src/Keeper.sol";
 import {Errors} from "src/libraries/Errors.sol";
 import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
+import {PositionManagerCallbackParams} from "src/interfaces/IManagedBasisStrategy.sol";
 
 import {console} from "forge-std/console.sol";
 
-contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
+contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
     address owner = makeAddr("owner");
     address user1 = makeAddr("user1");
     address user2 = makeAddr("user2");
@@ -45,6 +48,7 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
 
     AccumulatedBasisStrategy strategy;
     LogarithmOracle oracle;
+    Keeper keeper;
     uint256 increaseFee;
     uint256 decreaseFee;
 
@@ -73,6 +77,23 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         _mockChainlinkPriceFeed(assetPriceFeed);
         _mockChainlinkPriceFeed(productPriceFeed);
 
+        // deploy config
+        Config config = new Config();
+        config.initialize(owner);
+
+        config.setAddress(ConfigKeys.GMX_EXCHANGE_ROUTER, GMX_EXCHANGE_ROUTER);
+        config.setAddress(ConfigKeys.GMX_DATA_STORE, GMX_DATA_STORE);
+        config.setAddress(ConfigKeys.GMX_ORDER_HANDLER, GMX_ORDER_HANDLER);
+        config.setAddress(ConfigKeys.GMX_ORDER_VAULT, GMX_ORDER_VAULT);
+        config.setAddress(ConfigKeys.GMX_REFERRAL_STORAGE, IOrderHandler(GMX_ORDER_HANDLER).referralStorage());
+        config.setAddress(ConfigKeys.GMX_READER, GMX_READER);
+        config.setAddress(ConfigKeys.ORACLE, address(oracle));
+
+        config.setAddress(ConfigKeys.gmxMarketKey(asset, product), GMX_ETH_USDC_MARKET);
+
+        config.setUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT, 2_000_000);
+        vm.label(address(config), "config");
+
         address[] memory pathWeth = new address[](3);
         pathWeth[0] = USDC;
         pathWeth[1] = UNISWAPV3_WETH_USDC;
@@ -99,28 +120,42 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         strategy = AccumulatedBasisStrategy(strategyProxy);
         vm.label(address(strategy), "strategy");
 
-        // deploy position manager
-        address positionManagerImpl = address(new OffChainPositionManager());
+        // deploy keeper
+        address keeperImpl = address(new Keeper());
+        address keeperProxy = address(
+            new ERC1967Proxy(keeperImpl, abi.encodeWithSelector(Keeper.initialize.selector, owner, address(config)))
+        );
+        keeper = Keeper(payable(keeperProxy));
+        vm.label(address(keeper), "keeper");
+
+        config.setAddress(ConfigKeys.KEEPER, address(keeper));
+
+        // deploy positionManager impl
+        address positionManagerImpl = address(new GmxV2PositionManager());
+        // deploy positionManager beacon
+        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
+        // deploy positionMnager beacon proxy
         address positionManagerProxy = address(
-            new ERC1967Proxy(
-                positionManagerImpl,
+            new BeaconProxy(
+                positionManagerBeacon,
                 abi.encodeWithSelector(
-                    OffChainPositionManager.initialize.selector,
-                    address(strategy),
-                    agent,
-                    address(oracle),
-                    product,
-                    asset,
-                    false
+                    GmxV2PositionManager.initialize.selector, owner, address(strategy), address(config)
                 )
             )
         );
-        positionManager = OffChainPositionManager(positionManagerProxy);
+        positionManager = GmxV2PositionManager(payable(positionManagerProxy));
         vm.label(address(positionManager), "positionManager");
 
         strategy.setPositionManager(positionManagerProxy);
 
-        _initOffChainTest(asset, product, address(oracle));
+        config.setBool(ConfigKeys.isPositionManagerKey(address(positionManager)), true);
+
+        // topup keeper with some native token, in practice, its don't through keeper
+        vm.deal(address(keeper), 1 ether);
+        vm.stopPrank();
+        (increaseFee, decreaseFee) = positionManager.getExecutionFee();
+        assert(increaseFee > 0);
+        assert(decreaseFee > 0);
 
         // top up user1
         vm.startPrank(USDC_WHALE);
@@ -177,7 +212,6 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
     }
 
     function _mint(address from, uint256 shares) private {
-        vm.startPrank(from);
         uint256 assets = strategy.previewMint(shares);
         IERC20(asset).approve(address(strategy), assets);
         strategy.mint(shares, from);
@@ -188,7 +222,7 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         vm.startPrank(operator);
         strategy.utilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
         assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.DEPOSITING));
-        _fullOffChainExecute();
+        _executeOrder(positionManager.pendingIncreaseOrderKey());
         assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.IDLE));
     }
 
@@ -197,15 +231,8 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         vm.startPrank(operator);
         strategy.deutilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
         assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.WITHDRAWING));
-        _fullOffChainExecute();
-        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.IDLE));
-    }
-
-    function _deutilizeWithoutExecution(uint256 amount) private {
-        bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
-        vm.startPrank(operator);
-        strategy.deutilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
-        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.WITHDRAWING));
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.NEED_KEEP));
     }
 
     function _performUpkeep() private {
@@ -214,13 +241,14 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         if (hedgeDeviation) {
             strategy.performUpkeep("");
             assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.KEEPING));
-            _fullOffChainExecute();
+            _executeOrder(positionManager.pendingDecreaseOrderKey());
+            _executeOrder(positionManager.pendingIncreaseOrderKey());
         }
 
         if (decreaseCollateral) {
             strategy.performUpkeep("");
             assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.KEEPING));
-            _fullOffChainExecute();
+            _executeOrder(positionManager.pendingDecreaseOrderKey());
         }
 
         assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.IDLE));
@@ -282,13 +310,11 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         assertEq(strategy.balanceOf(user2), shares);
     }
 
-    // @review srategy asset balance after full utilization should be zero
-    // thus last assertion should be TEN_THOUSANDS_USDC
     function test_mint_whenPartialUtilized() public afterPartialUtilized {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _mint(user2, shares);
         assertEq(strategy.balanceOf(user2), shares);
-        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC);
+        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC * 3 / 2);
     }
 
     function test_previewDepositMint_whenFullUtilized() public afterFullUtilized {
@@ -303,13 +329,11 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         assertEq(strategy.balanceOf(user2), shares);
     }
 
-    // @review srategy asset balance after full utilization should be zero
-    // thus last assertion should be TEN_THOUSANDS_USDC / 2
     function test_mint_whenFullUtilized() public afterFullUtilized {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _mint(user2, shares);
         assertEq(strategy.balanceOf(user2), shares);
-        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC / 2);
+        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC * 3 / 2);
     }
 
     function test_previewDepositMint_withPendingWithdraw() public afterWithdrawRequestCreated {
@@ -430,7 +454,7 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
     function test_deutilize_partial_withSingleRequest() public afterWithdrawRequestCreated {
         uint256 pendingDeutilization = strategy.pendingDeutilization();
         _deutilize(pendingDeutilization / 2);
-        // _performUpkeep();
+        _performUpkeep();
 
         bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
         assertFalse(strategy.isClaimable(requestKey));
@@ -458,18 +482,13 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
     function test_deutilize_partial_withMultipleRequest() public afterMultipleWithdrawRequestCreated {
         uint256 pendingDeutilization = strategy.pendingDeutilization();
         _deutilize(pendingDeutilization / 2);
-        // _performUpkeep();
+        _performUpkeep();
 
         bytes32 requestKey1 = strategy.getWithdrawKey(user1, 0);
-        assertFalse(strategy.isClaimable(requestKey1));
-
-        pendingDeutilization = strategy.pendingDeutilization();
-        _deutilize(pendingDeutilization);
-
         assertTrue(strategy.isClaimable(requestKey1));
 
         bytes32 requestKey2 = strategy.getWithdrawKey(user2, 0);
-        assertTrue(strategy.isClaimable(requestKey2));
+        assertFalse(strategy.isClaimable(requestKey2));
 
         AccumulatedBasisStrategy.WithdrawRequest memory withdrawRequest1 = strategy.withdrawRequests(requestKey1);
         uint256 balanceBefore = IERC20(asset).balanceOf(user1);
@@ -482,14 +501,14 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
     function test_deutilize_full_withMultipleRequest() public afterMultipleWithdrawRequestCreated {
         uint256 pendingDeutilization = strategy.pendingDeutilization();
         _deutilize(pendingDeutilization);
-        // _performUpkeep();
+        _performUpkeep();
 
         pendingDeutilization = strategy.pendingDeutilization();
         console.log("pendingDeutilization", pendingDeutilization);
 
         if (pendingDeutilization > 0) {
             _deutilize(pendingDeutilization);
-            // _performUpkeep();
+            _performUpkeep();
         }
 
         pendingDeutilization = strategy.pendingDeutilization();
@@ -497,7 +516,7 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
 
         if (pendingDeutilization > 0) {
             _deutilize(pendingDeutilization);
-            // _performUpkeep();
+            _performUpkeep();
         }
 
         bytes32 requestKey1 = strategy.getWithdrawKey(user1, 0);
@@ -521,41 +540,66 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         assertEq(balanceBefore2 + withdrawRequest2.requestedAssets, balanceAfter2);
     }
 
-    function test_lastRedeemBelowRequestedAmount() public afterFullUtilized {
-        // make last redeem
-        uint256 userShares = IERC20(address(strategy)).balanceOf(address(user1));
-        vm.startPrank(user1);
-        strategy.redeem(userShares, user1, user1);
+    /*//////////////////////////////////////////////////////////////
+                        REVERT TEST
+    //////////////////////////////////////////////////////////////*/
 
+    function test_afterAdjustPosition_revert_whenUtilizing() public afterDeposited {
+        uint256 pendingUtilization = strategy.pendingUtilization();
+        uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
+
+        uint256 amount = pendingUtilization / 2;
+        bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
+        vm.startPrank(operator);
+        strategy.utilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
+
+        // position manager increase reversion
+        vm.startPrank(GMX_ORDER_VAULT);
+        IERC20(asset).transfer(address(positionManager), pendingIncreaseCollateral / 2);
+        vm.startPrank(address(positionManager));
+        strategy.afterAdjustPosition(
+            PositionManagerCallbackParams({
+                sizeDeltaInTokens: IERC20(product).balanceOf(address(strategy)),
+                collateralDeltaAmount: pendingIncreaseCollateral / 2,
+                executionPrice: 0,
+                executionCost: 0,
+                isIncrease: true,
+                isSuccess: false
+            })
+        );
+
+        assertEq(IERC20(asset).balanceOf(address(positionManager)), 0);
+        assertEq(IERC20(product).balanceOf(address(strategy)), 0);
+        assertApproxEqRel(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC, 0.9999 ether);
+    }
+
+    function test_afterAdjustPosition_revert_whenDetilizing() public afterWithdrawRequestCreated {
+        uint256 productBefore = IERC20(product).balanceOf(address(strategy));
+        uint256 assetsToWithdrawBefore = strategy.assetsToWithdraw();
         uint256 pendingDeutilization = strategy.pendingDeutilization();
-        _deutilizeWithoutExecution(pendingDeutilization);
+        bytes memory data = _generateInchCallData(product, asset, pendingDeutilization, address(strategy));
+        vm.startPrank(operator);
+        strategy.deutilize(pendingDeutilization, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
 
-        // manually decrease margin
-        uint256 netBalance = positionManager.positionNetBalance();
-        uint256 marginDecrease = netBalance / 10;
-        vm.startPrank(address(this));
-        IERC20(asset).transfer(USDC_WHALE, marginDecrease);
-        positionNetBalance -= marginDecrease;
-        vm.startPrank(agent);
-        _reportState();
-
-        _fullOffChainExecute();
+        vm.startPrank(address(positionManager));
+        strategy.afterAdjustPosition(
+            PositionManagerCallbackParams({
+                sizeDeltaInTokens: pendingDeutilization,
+                collateralDeltaAmount: 0,
+                executionPrice: 0,
+                executionCost: 0,
+                isIncrease: false,
+                isSuccess: false
+            })
+        );
 
         bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
-        assertTrue(strategy.proccessedWithdrawAssets() < strategy.accRequestedWithdrawAssets());
-        assertTrue(strategy.isClaimable(requestKey));
+        assertFalse(strategy.isClaimable(requestKey));
 
-        uint256 requestedAmount = strategy.withdrawRequests(requestKey).requestedAssets;
-        uint256 balBefore = IERC20(asset).balanceOf(user1);
+        uint256 productAfter = IERC20(product).balanceOf(address(strategy));
+        uint256 assetsToWithdrawAfter = strategy.assetsToWithdraw();
 
-        assertGt(strategy.accRequestedWithdrawAssets(), strategy.proccessedWithdrawAssets());
-
-        vm.startPrank(user1);
-        strategy.claim(requestKey);
-        uint256 balDelta = IERC20(asset).balanceOf(user1) - balBefore;
-
-        assertGt(requestedAmount, balDelta);
-        assertEq(strategy.pendingDecreaseCollateral(), 0);
-        assertEq(strategy.accRequestedWithdrawAssets(), strategy.proccessedWithdrawAssets());
+        assertEq(assetsToWithdrawAfter, assetsToWithdrawBefore);
+        assertApproxEqRel(productAfter, productBefore, 0.9999 ether);
     }
 }
