@@ -579,9 +579,6 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             revert Errors.InvalidStrategyStatus(uint8(strategyStatus_));
         }
 
-        $.strategyStatus = StrategyStatus.DEPOSITING;
-        emit UpdateStrategyStatus(StrategyStatus.DEPOSITING);
-
         uint256 idle = idleAssets();
         uint256 _targetLeverage = $.targetLeverage;
 
@@ -626,6 +623,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         // should be called within the callback func after utilizing is successful
         // emit UpdatePendingUtilization(pendingUtilization());
 
+        $.strategyStatus = StrategyStatus.DEPOSITING;
+        emit UpdateStrategyStatus(StrategyStatus.DEPOSITING);
+
         emit Utilize(msg.sender, amount, amountOut);
     }
 
@@ -654,14 +654,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         bool needRebalanceDown = strategyStatus_ == StrategyStatus.NEED_REBLANCE_DOWN;
 
         // can only deutilize when the strategy status is IDLE or NEED_REBLANCE_DOWN
-        if (needRebalanceDown) {
-            $.strategyStatus = StrategyStatus.REBALANCING_DOWN;
-            emit UpdateStrategyStatus(StrategyStatus.REBALANCING_DOWN);
-        } else if (strategyStatus_ != StrategyStatus.IDLE) {
-            revert Errors.InvalidStrategyStatus(uint8($.strategyStatus));
-        } else {
-            $.strategyStatus = StrategyStatus.WITHDRAWING;
-            emit UpdateStrategyStatus(StrategyStatus.WITHDRAWING);
+        if (!needRebalanceDown && strategyStatus_ != StrategyStatus.IDLE) {
+            revert Errors.InvalidStrategyStatus(uint8(strategyStatus_));
         }
 
         // uint256 productBalance = IERC20(product()).balanceOf(address(this));
@@ -709,6 +703,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             }
         }
         _adjustPosition(_positionManager, amount, collateralDeltaAmount, false);
+
+        $.strategyStatus = StrategyStatus.WITHDRAWING;
+        emit UpdateStrategyStatus(StrategyStatus.WITHDRAWING);
 
         emit Deutilize(msg.sender, amount, amountOut);
     }
