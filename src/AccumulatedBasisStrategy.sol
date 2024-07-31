@@ -15,12 +15,12 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {InchAggregatorV6Logic} from "src/libraries/InchAggregatorV6Logic.sol";
+import {InchAggregatorV6Logic} from "src/libraries/logic/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/ManualSwapLogic.sol";
 
 import {IOracle} from "src/interfaces/IOracle.sol";
 
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 import {FactoryDeployable} from "src/common/FactoryDeployable.sol";
 import {LogBaseVaultUpgradeable} from "src/common/LogBaseVaultUpgradeable.sol";
 

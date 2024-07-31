@@ -14,7 +14,7 @@ import {IBasisGmxFactory} from "src/interfaces/IBasisGmxFactory.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
 
 contract BasisGmxFactory is IBasisGmxFactory, UUPSUpgradeable, Ownable2StepUpgradeable {

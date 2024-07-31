@@ -17,7 +17,9 @@ import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 
 import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
+import {Config} from "src/Config.sol";
+import {ConfigKeys} from "src/libraries/ConfigKeys.sol";
 import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
 import {PositionManagerCallbackParams} from "src/interfaces/IManagedBasisStrategy.sol";
 
@@ -575,6 +577,8 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         assertGt(requestedAmount, balDelta);
         assertEq(strategy.pendingDecreaseCollateral(), 0);
         assertEq(strategy.accRequestedWithdrawAssets(), strategy.proccessedWithdrawAssets());
+    }
+
     /*//////////////////////////////////////////////////////////////
                         REVERT TEST
     //////////////////////////////////////////////////////////////*/
