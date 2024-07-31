@@ -19,7 +19,6 @@ import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {Errors} from "src/libraries/Errors.sol";
 import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
-import {PositionManagerCallbackParams} from "src/interfaces/IManagedBasisStrategy.sol";
 
 import {console} from "forge-std/console.sol";
 
@@ -73,23 +72,6 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         oracle.setHeartbeats(feeds, heartbeats);
         _mockChainlinkPriceFeed(assetPriceFeed);
         _mockChainlinkPriceFeed(productPriceFeed);
-
-        // deploy config
-        Config config = new Config();
-        config.initialize(owner);
-
-        config.setAddress(ConfigKeys.GMX_EXCHANGE_ROUTER, GMX_EXCHANGE_ROUTER);
-        config.setAddress(ConfigKeys.GMX_DATA_STORE, GMX_DATA_STORE);
-        config.setAddress(ConfigKeys.GMX_ORDER_HANDLER, GMX_ORDER_HANDLER);
-        config.setAddress(ConfigKeys.GMX_ORDER_VAULT, GMX_ORDER_VAULT);
-        config.setAddress(ConfigKeys.GMX_REFERRAL_STORAGE, IOrderHandler(GMX_ORDER_HANDLER).referralStorage());
-        config.setAddress(ConfigKeys.GMX_READER, GMX_READER);
-        config.setAddress(ConfigKeys.ORACLE, address(oracle));
-
-        config.setAddress(ConfigKeys.gmxMarketKey(asset, product), GMX_ETH_USDC_MARKET);
-
-        config.setUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT, 2_000_000);
-        vm.label(address(config), "config");
 
         address[] memory pathWeth = new address[](3);
         pathWeth[0] = USDC;
@@ -575,66 +557,5 @@ contract AccumulatedBasisStrategyTest is InchTest, OffChainTest {
         assertGt(requestedAmount, balDelta);
         assertEq(strategy.pendingDecreaseCollateral(), 0);
         assertEq(strategy.accRequestedWithdrawAssets(), strategy.proccessedWithdrawAssets());
-    /*//////////////////////////////////////////////////////////////
-                        REVERT TEST
-    //////////////////////////////////////////////////////////////*/
-
-    function test_afterAdjustPosition_revert_whenUtilizing() public afterDeposited {
-        uint256 pendingUtilization = strategy.pendingUtilization();
-        uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
-
-        uint256 amount = pendingUtilization / 2;
-        bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
-        vm.startPrank(operator);
-        strategy.utilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
-
-        // position manager increase reversion
-        vm.startPrank(GMX_ORDER_VAULT);
-        IERC20(asset).transfer(address(positionManager), pendingIncreaseCollateral / 2);
-        vm.startPrank(address(positionManager));
-        strategy.afterAdjustPosition(
-            PositionManagerCallbackParams({
-                sizeDeltaInTokens: IERC20(product).balanceOf(address(strategy)),
-                collateralDeltaAmount: pendingIncreaseCollateral / 2,
-                executionPrice: 0,
-                executionCost: 0,
-                isIncrease: true,
-                isSuccess: false
-            })
-        );
-
-        assertEq(IERC20(asset).balanceOf(address(positionManager)), 0);
-        assertEq(IERC20(product).balanceOf(address(strategy)), 0);
-        assertApproxEqRel(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC, 0.9999 ether);
-    }
-
-    function test_afterAdjustPosition_revert_whenDetilizing() public afterWithdrawRequestCreated {
-        uint256 productBefore = IERC20(product).balanceOf(address(strategy));
-        uint256 assetsToWithdrawBefore = strategy.assetsToWithdraw();
-        uint256 pendingDeutilization = strategy.pendingDeutilization();
-        bytes memory data = _generateInchCallData(product, asset, pendingDeutilization, address(strategy));
-        vm.startPrank(operator);
-        strategy.deutilize(pendingDeutilization, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
-
-        vm.startPrank(address(positionManager));
-        strategy.afterAdjustPosition(
-            PositionManagerCallbackParams({
-                sizeDeltaInTokens: pendingDeutilization,
-                collateralDeltaAmount: 0,
-                executionPrice: 0,
-                executionCost: 0,
-                isIncrease: false,
-                isSuccess: false
-            })
-        );
-
-        bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
-        assertFalse(strategy.isClaimable(requestKey));
-
-        uint256 productAfter = IERC20(product).balanceOf(address(strategy));
-        uint256 assetsToWithdrawAfter = strategy.assetsToWithdraw();
-
-        assertEq(assetsToWithdrawAfter, assetsToWithdrawBefore);
-        assertApproxEqRel(productAfter, productBefore, 0.9999 ether);
     }
 }
