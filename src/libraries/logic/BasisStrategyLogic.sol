@@ -465,7 +465,8 @@ library BasisStrategyLogic {
                 params.addr.asset,
                 IPositionManager(params.addr.positionManager).positionSizeInTokens()
             );
-            uint256 targetCollateral = positionSizeInAssets / params.leverages.targetLeverage;
+            uint256 targetCollateral =
+                positionSizeInAssets.mulDiv(Constants.FLOAT_PRECISION, params.leverages.targetLeverage);
             (, uint256 deltaCollateralToDecrease) =
                 IPositionManager(params.addr.positionManager).positionNetBalance().trySub(targetCollateral);
             requestParams.collateralDeltaAmount = deltaCollateralToDecrease;
@@ -476,7 +477,8 @@ library BasisStrategyLogic {
                 params.addr.asset,
                 IPositionManager(params.addr.positionManager).positionSizeInTokens()
             );
-            uint256 targetCollateral = positionSizeInAssets / params.leverages.targetLeverage;
+            uint256 targetCollateral =
+                positionSizeInAssets.mulDiv(Constants.FLOAT_PRECISION, params.leverages.targetLeverage);
             (, uint256 deltaCollateralToIncrease) =
                 targetCollateral.trySub(IPositionManager(params.addr.positionManager).positionNetBalance());
 

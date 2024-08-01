@@ -857,7 +857,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             uint256 positionSizeInAssets = $.oracle.convertTokenAmount(
                 product(), asset(), IPositionManager(positionManager_).positionSizeInTokens()
             );
-            uint256 targetCollateral = positionSizeInAssets / $.targetLeverage;
+            uint256 targetCollateral = positionSizeInAssets.mulDiv(PRECISION, $.targetLeverage);
             (, uint256 deltaCollateralToDecrease) =
                 IPositionManager(positionManager_).positionNetBalance().trySub(targetCollateral);
             _adjustPosition(positionManager_, 0, deltaCollateralToDecrease, false);
@@ -866,7 +866,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             uint256 positionSizeInAssets = $.oracle.convertTokenAmount(
                 product(), asset(), IPositionManager(positionManager_).positionSizeInTokens()
             );
-            uint256 targetCollateral = positionSizeInAssets / $.targetLeverage;
+            uint256 targetCollateral = positionSizeInAssets.mulDiv(PRECISION, $.targetLeverage);
             (, uint256 deltaCollateralToIncrease) =
                 targetCollateral.trySub(IPositionManager(positionManager_).positionNetBalance());
 
