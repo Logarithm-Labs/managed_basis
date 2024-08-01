@@ -544,19 +544,18 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     }
 
     function _performUpkeep(ManagedBasisStrategyStorage storage $, bytes memory performData) internal {
-        (IPositionManager.RequestParams memory requestParams, DataTypes.StrategyStatus status, uint256 manualSwapAmount)
-        = BasisStrategyLogic.executePerformUpkeep(
+        (IPositionManager.RequestParams memory requestParams, DataTypes.StrategyStatus status) = BasisStrategyLogic
+            .executePerformUpkeep(
             BasisStrategyLogic.PerformUpkeepParams({
                 totalSupply: totalSupply(),
                 addr: _getStrategyAddresses($),
                 leverages: _getStrategyLeverages($),
                 cache: _getStrategyStateCache($),
+                productToAssetSwapPath: $.productToAssetSwapPath,
                 performData: performData
             })
         );
-        if (manualSwapAmount != 0) {
-            _manualSwap(manualSwapAmount, false);
-        }
+
         _executeAdjustPosition($, requestParams);
 
         $.strategyStatus = status;
@@ -690,15 +689,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         if (!$.isSwapPool[msg.sender]) {
             revert Errors.InvalidCallback();
-        }
-    }
-
-    function _manualSwap(uint256 amountIn, bool isAssetToProduct) internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if (isAssetToProduct) {
-            ManualSwapLogic.swap(amountIn, $.assetToProductSwapPath);
-        } else {
-            ManualSwapLogic.swap(amountIn, $.productToAssetSwapPath);
         }
     }
 

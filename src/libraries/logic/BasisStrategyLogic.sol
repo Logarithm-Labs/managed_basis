@@ -91,6 +91,7 @@ library BasisStrategyLogic {
         DataTypes.StrategyAddresses addr;
         DataTypes.StrategyLeverages leverages;
         DataTypes.StrategyStateChache cache;
+        address[] productToAssetSwapPath;
         bytes performData;
     }
 
@@ -441,11 +442,7 @@ library BasisStrategyLogic {
 
     function executePerformUpkeep(PerformUpkeepParams memory params)
         external
-        returns (
-            IPositionManager.RequestParams memory requestParams,
-            DataTypes.StrategyStatus status,
-            uint256 manualSwapAmount
-        )
+        returns (IPositionManager.RequestParams memory requestParams, DataTypes.StrategyStatus status)
     {
         (
             bool rebalanceUpNeeded,
@@ -480,7 +477,7 @@ library BasisStrategyLogic {
             if (deleverageNeeded && deltaCollateralToIncrease > idleAssets) {
                 uint256 amount =
                     getPendingDeutilization(params.addr, params.cache, params.leverages, params.totalSupply, true);
-                manualSwapAmount = amount;
+                ManualSwapLogic.swap(amount, params.productToAssetSwapPath);
                 requestParams.sizeDeltaInTokens = amount;
             } else if (!deleverageNeeded && idleAssets == 0) {
                 status = DataTypes.StrategyStatus.NEED_REBLANCE_DOWN;
@@ -606,7 +603,6 @@ library BasisStrategyLogic {
         }
 
         adjustPositionParams.sizeDeltaInTokens = params.amount;
-        adjustPositionParams.isIncrease = false;
 
         if (!needRebalanceDown) {
             params.cache.assetsToWithdraw += amountOut;
