@@ -510,7 +510,7 @@ library BasisStrategyLogic {
         }
 
         uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
-        uint256 pendingUtilization = getPendingUtilization(idleAssets, params.targetLeverage);
+        uint256 pendingUtilization = _pendingUtilization(idleAssets, params.targetLeverage);
 
         if (pendingUtilization == 0) {
             revert Errors.ZeroPendingUtilization();
@@ -537,12 +537,14 @@ library BasisStrategyLogic {
             revert Errors.UnsupportedSwapType();
         }
 
-        uint256 pendingIncreaseCollateral = getPendingIncreaseCollateral(idleAssets, params.targetLeverage);
+        uint256 pendingIncreaseCollateral = _pendingIncreaseCollateral(idleAssets, params.targetLeverage);
 
         adjustPositionParams.collateralDeltaAmount =
             pendingIncreaseCollateral_.mulDiv(params.amount, pendingUtilization);
         adjustPositionParams.isIncrease = true;
         status = DataTypes.StrategyStatus.DEPOSITING;
+
+        return (success, status, adjustPositionParams);
     }
 
     function executeDeutilize(UtilizeParams memory params)
@@ -591,11 +593,29 @@ library BasisStrategyLogic {
         return (success, amountOut, params.cache, adjustPositionParams);
     }
 
-    function getPendingUtilization(uint256 idleAssets, uint256 targetLeverage) public view returns (uint256) {
+    function getPendingUtilization(address asset, uint256 targetLeverage, DataTypes.StrategyStateChache memory cache)
+        public
+        view
+        returns (uint256)
+    {
+        uint256 idleAssets = getIdleAssets(asset, cache);
+        return _pendingUtilization(idleAssets, targetLeverage);
+    }
+
+    function _pendingUtilization(uint256 idleAssets, uint256 targetLeverage) public view returns (uint256) {
         return idleAssets.mulDiv(targetLeverage, Constants.FLOAT_PRECISION + targetLeverage);
     }
 
-    function getPendingIncreaseCollateral(uint256 idleAssets, uint256 targetLeverage) public view returns (uint256) {
+    function getPendingIncreaseCollateral(
+        address asset,
+        uint256 targetLeverage,
+        DataTypes.StrategyStateChache memory cache
+    ) public view returns (uint256) {
+        uint256 idleAssets = getIdleAssets(asset, cache);
+        return _pendingIncreaseCollateral(idleAssets, targetLeverage);
+    }
+
+    function _pendingIncreaseCollateral(uint256 idleAssets, uint256 targetLeverage) public view returns (uint256) {
         return
             idleAssets.mulDiv(Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + targetLeverage, Math.Rounding.Ceil);
     }
