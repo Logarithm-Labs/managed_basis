@@ -48,6 +48,14 @@ library DataTypes {
         address positionManager;
     }
 
+    struct StrategyLeverages {
+        uint256 currentLeverage;
+        uint256 targetLeverage;
+        uint256 minLeverage;
+        uint256 maxLeverage;
+        uint256 safeMarginLeverage;
+    }
+
     struct WithdrawRequestState {
         uint256 requestedAmount;
         uint256 accRequestedWithdrawAssets;

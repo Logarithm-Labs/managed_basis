@@ -41,7 +41,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 minLeverage;
         uint256 maxLeverage;
         uint256 safeMarginLeverage;
-        // fee state
+        // cost state
         uint256 entryCost;
         uint256 exitCost;
         // strategy configuration
@@ -51,9 +51,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         // asset state
         uint256 assetsToClaim; // asset balance that is ready to claim
         uint256 assetsToWithdraw; // asset balance that is processed for withdrawals
+        // pending state
         uint256 pendingUtilizedProducts;
         uint256 pendingDeutilizedAssets;
-        // pending state
         uint256 pendingDecreaseCollateral;
         // status state
         DataTypes.StrategyStatus strategyStatus;
@@ -224,6 +224,21 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         });
     }
 
+    function _getStrategyLeverages(ManagedBasisStrategyStorage storage $)
+        internal
+        view
+        virtual
+        returns (DataTypes.StrategyLeverages memory)
+    {
+        return DataTypes.StrategyLeverages({
+            currentLeverage: IPositionManager($.positionManager).currentLeverage(),
+            targetLeverage: $.targetLeverage,
+            minLeverage: $.minLeverage,
+            maxLeverage: $.maxLeverage,
+            safeMarginLeverage: $.safeMarginLeverage
+        });
+    }
+
     function _getStrategyStateCache(ManagedBasisStrategyStorage storage $)
         internal
         view
@@ -275,14 +290,18 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         $.withdrawRequests[withdrawId] = withdrawState;
     }
 
-    function _executeAdjustPosition(address positionManager, IPositionManager.RequestParams memory params)
+    // TODO: add checks for min execution amounts
+    function _executeAdjustPosition(ManagedBasisStrategyStorage storage $, IPositionManager.RequestParams memory params)
         internal
         virtual
     {
         if (params.isIncrease && params.collateralDeltaAmount > 0) {
-            IERC20(asset()).safeTransfer(positionManager, params.collateralDeltaAmount);
+            IERC20(asset()).safeTransfer($.positionManager, params.collateralDeltaAmount);
         }
-        IPositionManager(positionManager).adjustPosition(params);
+        if (params.collateralDeltaAmount > 0 && params.sizeDeltaInTokens > 0) {
+            $.adjustmentRequest = params;
+            IPositionManager($.positionManager).adjustPosition(params);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -369,8 +388,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         (cache1, withdrawState, executedAmount) = BasisStrategyLogic.executeClaim(
             BasisStrategyLogic.ClaimParams({
-                maxLeverage: $.maxLeverage,
                 totalSupply: totalSupply(),
+                leverages: _getStrategyLeverages($),
                 withdrawState: withdrawState,
                 addr: _getStrategyAddresses($),
                 cache: cache0
@@ -389,7 +408,11 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         DataTypes.WithdrawRequestState memory withdrawRequest = $.withdrawRequests[withdrawId];
         (bool isExecuted,) = BasisStrategyLogic.isWithdrawRequestExecuted(
-            withdrawRequest, _getStrategyAddresses($), _getStrategyStateCache($), totalSupply(), $.maxLeverage
+            withdrawRequest,
+            _getStrategyAddresses($),
+            _getStrategyStateCache($),
+            _getStrategyLeverages($),
+            totalSupply()
         );
         return isExecuted && !withdrawRequest.isClaimed;
     }
@@ -478,25 +501,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         );
     }
 
-    function pendingUtilization() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
-        return BasisStrategyLogic.getPendingUtilization(asset(), cache, $.targetLeverage);
-    }
-
-    function pendingDeutilization() external view returns (uint256) {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
-        DataTypes.StrategyAddresses memory addr = _getStrategyAddresses($);
-        return BasisStrategyLogic.getPendingDeutilization(
-            addr,
-            cache,
-            totalSupply(),
-            $.maxLeverage,
-            cache.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
-        );
-    }
-
     function pendingIncreaseCollateral() external view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
@@ -504,8 +508,80 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     }
 
     /*//////////////////////////////////////////////////////////////
+                            KEEPER LOGIC   
+    //////////////////////////////////////////////////////////////*/
+
+    function checkUpkeep(bytes memory) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        (upkeepNeeded, performData) = BasisStrategyLogic.getCheckUpkeep(
+            BasisStrategyLogic.CheckUpkeepParams({
+                hedgeDeviationThreshold: $.hedgeDeviationThreshold,
+                pendingDecreaseCollateral: $.pendingDecreaseCollateral,
+                addr: _getStrategyAddresses($),
+                leverages: _getStrategyLeverages($),
+                strategyStatus: $.strategyStatus
+            })
+        );
+    }
+
+    function performUpkeep(bytes calldata performData) external {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        if (msg.sender != $.forwarder) {
+            revert Errors.UnauthorizedForwarder(msg.sender);
+        }
+
+        if ($.strategyStatus != DataTypes.StrategyStatus.IDLE) {
+            return;
+        }
+
+        _performUpkeep($, performData);
+    }
+
+    function _performUpkeep(ManagedBasisStrategyStorage storage $, bytes memory performData) internal {
+        (IPositionManager.RequestParams memory requestParams, DataTypes.StrategyStatus status, uint256 manualSwapAmount)
+        = BasisStrategyLogic.executePerformUpkeep(
+            BasisStrategyLogic.PerformUpkeepParams({
+                totalSupply: totalSupply(),
+                addr: _getStrategyAddresses($),
+                leverages: _getStrategyLeverages($),
+                cache: _getStrategyStateCache($),
+                performData: performData
+            })
+        );
+        if (manualSwapAmount != 0) {
+            _manualSwap(manualSwapAmount, false);
+        }
+        _executeAdjustPosition($, requestParams);
+
+        $.strategyStatus = status;
+
+        emit UpdateStrategyStatus(status);
+        emit UpdatePendingUtilization();
+    }
+
+    /*//////////////////////////////////////////////////////////////
                             OPERATOR LOGIC
     //////////////////////////////////////////////////////////////*/
+
+    function pendingUtilizations()
+        external
+        view
+        returns (uint256 pendingUtilizationInAsset, uint256 pendingDeutilizationInProduct)
+    {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        DataTypes.StrategyStateChache memory cache = _getStrategyStateCache($);
+        DataTypes.StrategyAddresses memory addr = _getStrategyAddresses($);
+        DataTypes.StrategyLeverages memory leverages = _getStrategyLeverages($);
+
+        pendingUtilizationInAsset =
+            BasisStrategyLogic.getPendingUtilization(addr.asset, cache, leverages.targetLeverage);
+
+        pendingDeutilizationInProduct = BasisStrategyLogic.getPendingDeutilization(
+            addr, cache, leverages, totalSupply(), cache.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
+        );
+    }
 
     function utilize(uint256 amount, DataTypes.SwapType swapType, bytes calldata swapData)
         external
@@ -513,10 +589,14 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         onlyOperator
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
 
-        $.strategyStatus = DataTypes.StrategyStatus.DEPOSITING;
-        emit UpdateStrategyStatus(DataTypes.StrategyStatus.DEPOSITING);
+        (bool upkeepNeeded, bytes memory performData) = checkUpkeep("");
+        if (upkeepNeeded) {
+            _performUpkeep($, performData);
+            return;
+        }
+
+        DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
 
         (
             bool success,
@@ -536,7 +616,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         );
         if (success) {
             _updateStrategyState($, cache0, cache1);
-            _executeAdjustPosition($.positionManager, adjustPositionParams);
+            _executeAdjustPosition($, adjustPositionParams);
             emit Utilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);
         } else {
             emit SwapFailed();
@@ -568,7 +648,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         );
         if (success) {
             _updateStrategyState($, cache0, cache1);
-            _executeAdjustPosition($.positionManager, adjustPositionParams);
+            _executeAdjustPosition($, adjustPositionParams);
             emit Deutilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);
         } else {
             emit SwapFailed();

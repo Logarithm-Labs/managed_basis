@@ -9,6 +9,7 @@ import {IOracle} from "src/interfaces/IOracle.sol";
 import {ManagedBasisStrategy} from "src/ManagedBasisStrategy.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {InchAggregatorV6Logic} from "src/libraries/logic/InchAggregatorV6Logic.sol";
 
@@ -19,6 +20,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 library BasisStrategyLogic {
     using Math for uint256;
     using SafeERC20 for IERC20;
+    using SafeCast for uint256;
 
     struct PreviewParams {
         uint256 assetsOrShares; // assets in case of previewDeposit, shares in case of previewMint
@@ -44,8 +46,8 @@ library BasisStrategyLogic {
     }
 
     struct ClaimParams {
-        uint256 maxLeverage;
         uint256 totalSupply;
+        DataTypes.StrategyLeverages leverages;
         DataTypes.WithdrawRequestState withdrawState;
         DataTypes.StrategyAddresses addr;
         DataTypes.StrategyStateChache cache;
@@ -59,6 +61,22 @@ library BasisStrategyLogic {
         DataTypes.StrategyAddresses addr;
         DataTypes.StrategyStateChache cache;
         bytes swapData;
+    }
+
+    struct CheckUpkeepParams {
+        uint256 hedgeDeviationThreshold;
+        uint256 pendingDecreaseCollateral;
+        DataTypes.StrategyAddresses addr;
+        DataTypes.StrategyLeverages leverages;
+        DataTypes.StrategyStatus strategyStatus;
+    }
+
+    struct PerformUpkeepParams {
+        uint256 totalSupply;
+        DataTypes.StrategyAddresses addr;
+        DataTypes.StrategyLeverages leverages;
+        DataTypes.StrategyStateChache cache;
+        bytes performData;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -241,7 +259,7 @@ library BasisStrategyLogic {
             revert Errors.UnauthorizedClaimer(msg.sender, params.withdrawState.receiver);
         }
         (bool isExecuted, bool isLast) = isWithdrawRequestExecuted(
-            params.withdrawState, params.addr, params.cache, params.totalSupply, params.maxLeverage
+            params.withdrawState, params.addr, params.cache, params.leverages, params.totalSupply
         );
         if (!isExecuted) {
             revert Errors.RequestNotExecuted();
@@ -268,9 +286,9 @@ library BasisStrategyLogic {
         DataTypes.WithdrawRequestState memory withdrawState,
         DataTypes.StrategyAddresses memory addr,
         DataTypes.StrategyStateChache memory cache,
-        uint256 totalSupply,
-        uint256 maxLeverage
-    ) internal view returns (bool isExecuted, bool isLast) {
+        DataTypes.StrategyLeverages memory leverages,
+        uint256 totalSupply
+    ) public view returns (bool isExecuted, bool isLast) {
         // separate worflow for last withdraw
         // check if current withdrawState is last withdraw
         if (totalSupply == 0 && withdrawState.accRequestedWithdrawAssets == cache.accRequestedWithdrawAssets) {
@@ -279,11 +297,7 @@ library BasisStrategyLogic {
         if (isLast) {
             // last withdraw is claimable when deutilization is complete
             uint256 pendingDeutilization = getPendingDeutilization(
-                addr,
-                cache,
-                totalSupply,
-                maxLeverage,
-                cache.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
+                addr, cache, leverages, totalSupply, cache.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
             );
             isExecuted = pendingDeutilization == 0 && cache.strategyStatus == DataTypes.StrategyStatus.IDLE;
         } else {
@@ -331,7 +345,153 @@ library BasisStrategyLogic {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        ACCOUNTING LOGIC   
+                        KEEPER LOGIC   
+    //////////////////////////////////////////////////////////////*/
+
+    function getCheckUpkeep(CheckUpkeepParams memory params)
+        external
+        view
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
+        if (params.strategyStatus != DataTypes.StrategyStatus.IDLE) {
+            return (upkeepNeeded, performData);
+        }
+
+        int256 hedgeDeviationInTokens;
+        bool positionManagerNeedKeep;
+
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) = _checkRebalance(params.leverages);
+
+        if (rebalanceUpNeeded || rebalanceDownNeeded) {
+            upkeepNeeded = true;
+        } else {
+            hedgeDeviationInTokens = _checkHedgeDeviation(params.addr, params.hedgeDeviationThreshold);
+            if (hedgeDeviationInTokens != 0) {
+                upkeepNeeded = true;
+            } else {
+                positionManagerNeedKeep = IPositionManager(params.addr.positionManager).needKeep();
+                if (positionManagerNeedKeep) {
+                    upkeepNeeded = true;
+                } else {
+                    // @TODO add minimum amount restriction to decrease
+                    if (params.pendingDecreaseCollateral > 0) {
+                        upkeepNeeded = true;
+                    }
+                }
+            }
+        }
+    }
+
+    function _checkRebalance(DataTypes.StrategyLeverages memory leverages)
+        internal
+        view
+        returns (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded)
+    {
+        if (leverages.currentLeverage > leverages.maxLeverage) {
+            rebalanceDownNeeded = true;
+            if (leverages.currentLeverage > leverages.safeMarginLeverage) {
+                deleverageNeeded = true;
+            }
+        }
+
+        if (leverages.currentLeverage != 0 && leverages.currentLeverage < leverages.minLeverage) {
+            rebalanceUpNeeded = true;
+        }
+    }
+
+    function _checkHedgeDeviation(DataTypes.StrategyAddresses memory addr, uint256 hedgeDeviationThreshold)
+        internal
+        view
+        returns (int256)
+    {
+        uint256 spotExposure = IERC20(addr.product).balanceOf(address(this));
+        uint256 hedgeExposure = IPositionManager(addr.positionManager).positionSizeInTokens();
+        if (spotExposure == 0) {
+            if (hedgeExposure == 0) {
+                return 0;
+            } else {
+                return -hedgeExposure.toInt256();
+            }
+        }
+        uint256 hedgeDeviation = hedgeExposure.mulDiv(Constants.FLOAT_PRECISION, spotExposure);
+        if (
+            hedgeDeviation > Constants.FLOAT_PRECISION + hedgeDeviationThreshold
+                || hedgeDeviation < Constants.FLOAT_PRECISION - hedgeDeviationThreshold
+        ) {
+            return spotExposure.toInt256() - hedgeExposure.toInt256();
+        }
+        return 0;
+    }
+
+    function executePerformUpkeep(PerformUpkeepParams memory params)
+        external
+        returns (
+            IPositionManager.RequestParams memory requestParams,
+            DataTypes.StrategyStatus status,
+            uint256 manualSwapAmount
+        )
+    {
+        (
+            bool rebalanceUpNeeded,
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep
+        ) = abi.decode(params.performData, (bool, bool, bool, int256, bool));
+
+        if (rebalanceUpNeeded) {
+            status = DataTypes.StrategyStatus.REBALANCING_UP;
+            uint256 positionSizeInAssets = IOracle(params.addr.oracle).convertTokenAmount(
+                params.addr.product,
+                params.addr.asset,
+                IPositionManager(params.addr.positionManager).positionSizeInTokens()
+            );
+            uint256 targetCollateral = positionSizeInAssets / params.leverages.targetLeverage;
+            (, uint256 deltaCollateralToDecrease) =
+                IPositionManager(params.addr.positionManager).positionNetBalance().trySub(targetCollateral);
+            requestParams.collateralDeltaAmount = deltaCollateralToDecrease;
+        } else if (rebalanceDownNeeded) {
+            uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
+            uint256 positionSizeInAssets = IOracle(params.addr.oracle).convertTokenAmount(
+                params.addr.product,
+                params.addr.asset,
+                IPositionManager(params.addr.positionManager).positionSizeInTokens()
+            );
+            uint256 targetCollateral = positionSizeInAssets / params.leverages.targetLeverage;
+            (, uint256 deltaCollateralToIncrease) =
+                targetCollateral.trySub(IPositionManager(params.addr.positionManager).positionNetBalance());
+
+            if (deleverageNeeded && deltaCollateralToIncrease > idleAssets) {
+                uint256 amount =
+                    getPendingDeutilization(params.addr, params.cache, params.leverages, params.totalSupply, true);
+                manualSwapAmount = amount;
+                requestParams.sizeDeltaInTokens = amount;
+            } else if (!deleverageNeeded && idleAssets == 0) {
+                status = DataTypes.StrategyStatus.NEED_REBLANCE_DOWN;
+            } else {
+                requestParams.collateralDeltaAmount =
+                    idleAssets > deltaCollateralToIncrease ? deltaCollateralToIncrease : idleAssets;
+                requestParams.isIncrease = true;
+            }
+        } else if (hedgeDeviationInTokens != 0) {
+            if (hedgeDeviationInTokens > 0) {
+                requestParams.sizeDeltaInTokens = uint256(hedgeDeviationInTokens);
+                requestParams.isIncrease = true;
+            } else {
+                requestParams.sizeDeltaInTokens = uint256(-hedgeDeviationInTokens);
+            }
+        } else if (positionManagerNeedKeep) {
+            IPositionManager(params.addr.positionManager).keep();
+        } else if (params.cache.pendingDecreaseCollateral > 0) {
+            // @TODO set threshold for decrease collateral amount
+            requestParams.collateralDeltaAmount = params.cache.pendingDecreaseCollateral;
+        }
+
+        status = DataTypes.StrategyStatus.KEEPING;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        OPERATOR LOGIC   
     //////////////////////////////////////////////////////////////*/
 
     function executeUtilize(UtilizeParams memory params)
@@ -343,12 +503,23 @@ library BasisStrategyLogic {
             IPositionManager.RequestParams memory
         )
     {
+        // can only utilize when the strategy status is IDLE
+        if (params.cache.strategyStatus != DataTypes.StrategyStatus.IDLE) {
+            revert Errors.InvalidStrategyStatus(uint8(params.cache.strategyStatus));
+        }
+
         uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
         uint256 pendingUtilization = getPendingUtilization(params.addr.asset, params.cache, params.targetLeverage);
 
-        params.amount = params.amount > pendingUtilization ? pendingUtilization : params.amount;
-        params.amount = params.amount > idleAssets ? idleAssets : params.amount;
+        if (pendingUtilization == 0) {
+            revert Errors.ZeroPendingUtilization();
+        }
 
+        // actual utilize amount is min of amount, idle assets and pending utilization
+        params.amount = params.amount > idleAssets ? idleAssets : params.amount;
+        params.amount = params.amount > pendingUtilization ? pendingUtilization : params.amount;
+
+        // can only utilize when amount is positive
         if (params.amount == 0) {
             revert Errors.ZeroAmountUtilization();
         }
@@ -357,28 +528,15 @@ library BasisStrategyLogic {
             (amountOut, success) = InchAggregatorV6Logic.executeSwap(
                 params.amount, params.addr.asset, params.addr.product, true, params.swapData
             );
+        } else if (params.swapType == DataTypes.SwapType.MANUAL) {
+            // TODO: fallback swap
         } else {
-            // @consider: fallback swap
             revert Errors.UnsupportedSwapType();
         }
 
-        IPositionManager.RequestParams memory adjustPositionParams;
-        // if (success) {
-        //     uint256 collateralDeltaAmount;
-        //     if (params.cache.pendingIncreaseCollateral > 0) {
-        //         collateralDeltaAmount = getPendingIncreaseCollateral(
-        //             params.addr.asset, params.targetLeverage, params.cache
-        //         ).mulDiv(params.amount, pendingUtilization);
-        //         params.cache.pendingIncreaseCollateral -= collateralDeltaAmount;
-        //     }
-        //     params.cache.pendingUtilization -= params.amount;
-        //     adjustPositionParams = IPositionManager.AdjustPositionParams({
-        //         sizeDeltaInTokens: amountOut,
-        //         collateralDeltaAmount: collateralDeltaAmount,
-        //         isIncrease: true
-        //     });
-        // }
-        return (success, amountOut, params.cache, adjustPositionParams);
+        uint256 pendingIncreaseCollateral =
+            getPendingIncreaseCollateral(params.addr.asset, params.targetLeverage, params.cache);
+        uint256 collateralDeltaAmount;
     }
 
     function executeDeutilize(UtilizeParams memory params)
@@ -457,8 +615,8 @@ library BasisStrategyLogic {
     function getPendingDeutilization(
         DataTypes.StrategyAddresses memory addr,
         DataTypes.StrategyStateChache memory cache,
+        DataTypes.StrategyLeverages memory leverages,
         uint256 totalSupply,
-        uint256 maxLeverage,
         bool needRebalanceDownWithDeutilizing
     ) public view returns (uint256 deutilization) {
         uint256 productBalance = IERC20(addr.product).balanceOf(address(this));
@@ -469,8 +627,8 @@ library BasisStrategyLogic {
         if (needRebalanceDownWithDeutilizing) {
             // currentLeverage > maxLeverage is guarranteed, so there is no math error
             // deltaSizeToDecrease =  positionSize - maxLeverage * positionSize / currentLeverage
-            deutilization = positionSizeInTokens
-                - positionSizeInTokens.mulDiv(maxLeverage, IPositionManager(addr.positionManager).currentLeverage());
+            deutilization =
+                positionSizeInTokens - positionSizeInTokens.mulDiv(leverages.maxLeverage, leverages.currentLeverage);
         } else {
             uint256 positionNetBalance = IPositionManager(addr.positionManager).positionNetBalance();
             uint256 positionSizeInAssets =

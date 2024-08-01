@@ -49,6 +49,10 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         address indexToken;
         address collateralToken;
         bool isLong;
+        uint256[2] increaseSizeMinMax;
+        uint256[2] increaseCollateralMinMax;
+        uint256[2] decreaseSizeMinMax;
+        uint256[2] decreaseCollateralMinMax;
         // position state
         uint256 currentRound;
         uint256 lastRequestRound;
@@ -90,6 +94,10 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         $.indexToken = indexToken_;
         $.collateralToken = collateralToken_;
         $.isLong = isLong_;
+        $.increaseSizeMinMax = [0, type(uint256).max];
+        $.increaseCollateralMinMax = [0, type(uint256).max];
+        $.decreaseSizeMinMax = [0, type(uint256).max];
+        $.decreaseCollateralMinMax = [0, type(uint256).max];
 
         // strategy is trusted
         IERC20(collateralToken_).approve(strategy_, type(uint256).max);
@@ -100,6 +108,30 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
     function setAgent(address agent) external onlyOwner {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         $.agent = agent;
+    }
+
+    function setSizeMinMax(
+        uint256 increaseSizeMin,
+        uint256 increaseSizeMax,
+        uint256 decreaseSizeMin,
+        uint256 decreaseSizeMax
+    ) external onlyOwner {
+        require(increaseSizeMin < increaseSizeMax && decreaseSizeMin < decreaseSizeMax);
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        $.increaseSizeMinMax = [increaseSizeMin, increaseSizeMax];
+        $.decreaseSizeMinMax = [decreaseSizeMin, decreaseSizeMax];
+    }
+
+    function setCollateralMinMax(
+        uint256 increaseCollateralMin,
+        uint256 increaseCollateralMax,
+        uint256 decreaseCollateralMin,
+        uint256 decreaseCollateralMax
+    ) external onlyOwner {
+        require(increaseCollateralMin < increaseCollateralMax && decreaseCollateralMin < decreaseCollateralMax);
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        $.increaseCollateralMinMax = [increaseCollateralMin, increaseCollateralMax];
+        $.decreaseCollateralMinMax = [decreaseCollateralMin, decreaseCollateralMax];
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -117,17 +149,9 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         bool isIncrease
     );
 
-    event RequestIncreasePositionSize(uint256 sizeDeltaInTokens, uint256 round);
-    event IncreasePositionSize(uint256 sizeDeltaIntokens, int256 executionCost, uint256 round);
+    event RequestIncreasePosition(uint256 collateralDeltaAmount, uint256 sizeDeltaInTokens, uint256 round);
 
-    event RequestDecreasePositionSize(uint256 sizeDeltaInTokens, uint256 round);
-    event DecreasePositionSize(uint256 sizeDeltaIntokens, int256 executionCost, uint256 round);
-
-    event RequestIncreasePositionCollateral(uint256 collateralAmount, uint256 round);
-    event IncreasePositionCollateral(uint256 collateralAmount, uint256 round);
-
-    event RequestDecreasePositionCollateral(uint256 collateralAmount, uint256 round);
-    event DecreasePositionCollateral(uint256 collateralAmount, uint256 round);
+    event RequestDecreasePosition(uint256 collateralDeltaAmount, uint256 sizeDeltaInTokens, uint256 round);
 
     event AgentTransfer(address indexed caller, uint256 amount, bool toAgent);
 
@@ -165,19 +189,43 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
 
         if (params.isIncrease) {
             if (params.collateralDeltaAmount > 0) {
+                if (
+                    params.collateralDeltaAmount < $.increaseCollateralMinMax[0]
+                        || params.collateralDeltaAmount > $.increaseCollateralMinMax[1]
+                ) {
+                    revert Errors.InvalidCollateralRequest(params.collateralDeltaAmount, true);
+                }
                 _transferToAgent(params.collateralDeltaAmount);
-                emit RequestIncreasePositionCollateral(params.collateralDeltaAmount, round);
             }
             if (params.sizeDeltaInTokens > 0) {
-                emit RequestIncreasePositionSize(params.sizeDeltaInTokens, round);
+                if (
+                    params.sizeDeltaInTokens < $.increaseSizeMinMax[0]
+                        || params.sizeDeltaInTokens > $.increaseSizeMinMax[1]
+                ) {
+                    revert Errors.InvalidCollateralRequest(params.sizeDeltaInTokens, true);
+                }
             }
+
+            emit RequestIncreasePosition(params.collateralDeltaAmount, params.sizeDeltaInTokens, round);
         } else {
-            if (params.sizeDeltaInTokens > 0) {
-                emit RequestDecreasePositionSize(params.sizeDeltaInTokens, round);
-            }
             if (params.collateralDeltaAmount > 0) {
-                emit RequestDecreasePositionCollateral(params.collateralDeltaAmount, round);
+                if (
+                    params.collateralDeltaAmount < $.decreaseCollateralMinMax[0]
+                        || params.collateralDeltaAmount > $.decreaseCollateralMinMax[1]
+                ) {
+                    revert Errors.InvalidCollateralRequest(params.collateralDeltaAmount, false);
+                }
             }
+            if (params.sizeDeltaInTokens > 0) {
+                if (
+                    params.sizeDeltaInTokens < $.decreaseSizeMinMax[0]
+                        || params.sizeDeltaInTokens > $.decreaseSizeMinMax[1]
+                ) {
+                    revert Errors.InvalidCollateralRequest(params.sizeDeltaInTokens, false);
+                }
+            }
+
+            emit RequestDecreasePosition(params.collateralDeltaAmount, params.sizeDeltaInTokens, round);
         }
 
         RequestInfo memory requestInfo;
