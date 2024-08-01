@@ -390,6 +390,12 @@ library BasisStrategyLogic {
                 }
             }
         }
+
+        performData = abi.encode(
+            rebalanceUpNeeded, rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep
+        );
+
+        return (upkeepNeeded, performData);
     }
 
     function _checkRebalance(DataTypes.StrategyLeverages memory leverages)
