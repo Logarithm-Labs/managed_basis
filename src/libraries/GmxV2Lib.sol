@@ -239,6 +239,7 @@ library GmxV2Lib {
         estimatedGasLimitIncrease += callbackGasLimit;
         estimatedGasLimitDecrease += callbackGasLimit;
         uint256 baseGasLimit = IDataStore(dataStore).getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT_V2_1);
+        baseGasLimit += IDataStore(dataStore).getUint(Keys.ESTIMATED_GAS_FEE_PER_ORACLE_PRICE) * 3;
         uint256 multiplierFactor = IDataStore(dataStore).getUint(Keys.ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR);
         uint256 gasLimitIncrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitIncrease, multiplierFactor);
         uint256 gasLimitDecrease = baseGasLimit + Precision.applyFactor(estimatedGasLimitDecrease, multiplierFactor);
