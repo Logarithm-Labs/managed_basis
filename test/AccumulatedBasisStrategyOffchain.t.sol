@@ -42,6 +42,9 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
     bool constant isLong = false;
 
     uint256 constant targetLeverage = 3 ether;
+    uint256 constant minLeverage = 2 ether;
+    uint256 constant maxLeverage = 5 ether;
+    uint256 constant safeMarginLeverage = 7 ether;
 
     AccumulatedBasisStrategy strategy;
     LogarithmOracle oracle;
@@ -85,11 +88,16 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
                 strategyImpl,
                 abi.encodeWithSelector(
                     AccumulatedBasisStrategy.initialize.selector,
+                    "tt",
+                    "tt",
                     asset,
                     product,
                     oracle,
                     operator,
                     targetLeverage,
+                    minLeverage,
+                    maxLeverage,
+                    safeMarginLeverage,
                     entryCost,
                     exitCost,
                     pathWeth
@@ -184,27 +192,27 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
     }
 
     function _utilize(uint256 amount) private {
-        bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
+        // bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
         vm.startPrank(operator);
-        strategy.utilize(amount, DataTypes.SwapType.INCH_V6, data);
+        strategy.utilize(amount, DataTypes.SwapType.MANUAL, "");
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.DEPOSITING));
         _fullOffChainExecute();
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.IDLE));
     }
 
     function _deutilize(uint256 amount) private {
-        bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
+        // bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
         vm.startPrank(operator);
-        strategy.deutilize(amount, DataTypes.SwapType.INCH_V6, data);
+        strategy.deutilize(amount, DataTypes.SwapType.MANUAL, "");
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.WITHDRAWING));
         _fullOffChainExecute();
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.IDLE));
     }
 
     function _deutilizeWithoutExecution(uint256 amount) private {
-        bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
+        // bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
         vm.startPrank(operator);
-        strategy.deutilize(amount, DataTypes.SwapType.INCH_V6, data);
+        strategy.deutilize(amount, DataTypes.SwapType.MANUAL, "");
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.WITHDRAWING));
     }
 
