@@ -970,10 +970,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         return assets;
     }
 
-    function _afterIncreasePosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount)
-        internal
-        returns (bool isSuccess)
-    {
+    function _afterIncreasePosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount) internal {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         DataTypes.PositionManagerPayload memory adjustmentRequest = $.adjustmentRequest;
 

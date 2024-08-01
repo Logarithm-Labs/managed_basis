@@ -232,8 +232,7 @@ library GmxV2Lib {
     }
 
     /// @dev returns transaction fees needed for gmx keeper
-    function getExecutionFee(address dataStore) external view returns (uint256, uint256) {
-        uint256 callbackGasLimit = IDataStore(dataStore).getUint(Keys.MAX_CALLBACK_GAS_LIMIT);
+    function getExecutionFee(address dataStore, uint256 callbackGasLimit) external view returns (uint256, uint256) {
         uint256 estimatedGasLimitIncrease = IDataStore(dataStore).getUint(Keys.INCREASE_ORDER_GAS_LIMIT);
         uint256 estimatedGasLimitDecrease = IDataStore(dataStore).getUint(Keys.DECREASE_ORDER_GAS_LIMIT);
         estimatedGasLimitIncrease += callbackGasLimit;
