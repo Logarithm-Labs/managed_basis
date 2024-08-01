@@ -12,6 +12,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {InchAggregatorV6Logic} from "src/libraries/logic/InchAggregatorV6Logic.sol";
+import {ManualSwapLogic} from "src/libraries/logic/ManualSwapLogic.sol";
 
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {DataTypes} from "src/libraries/utils/DataTypes.sol";
@@ -498,9 +499,8 @@ library BasisStrategyLogic {
         external
         returns (
             bool success,
-            uint256 amountOut,
             DataTypes.StrategyStateChache memory,
-            IPositionManager.RequestParams memory
+            IPositionManager.RequestParams memory adjustPositionParams
         )
     {
         // can only utilize when the strategy status is IDLE
@@ -526,18 +526,22 @@ library BasisStrategyLogic {
         }
 
         if (params.swapType == DataTypes.SwapType.INCH_V6) {
-            (amountOut, success) = InchAggregatorV6Logic.executeSwap(
+            (adjustPositionParams.sizeDeltaInTokens, success) = InchAggregatorV6Logic.executeSwap(
                 params.amount, params.addr.asset, params.addr.product, true, params.swapData
             );
         } else if (params.swapType == DataTypes.SwapType.MANUAL) {
-            // TODO: fallback swap
+            adjustPositionParams.sizeDeltaInTokens = ManualSwapLogic.swap(amountIn, path);
+            success = true;
         } else {
             revert Errors.UnsupportedSwapType();
         }
 
         uint256 pendingIncreaseCollateral =
             getPendingIncreaseCollateral(params.addr.asset, params.targetLeverage, params.cache);
-        uint256 collateralDeltaAmount;
+
+        adjustPositionParams.collateralDeltaAmount =
+            pendingIncreaseCollateral_.mulDiv(params.amount, pendingUtilization);
+        adjustPositionParams.isIncrease = true;
     }
 
     function executeDeutilize(UtilizeParams memory params)
