@@ -95,6 +95,12 @@ library BasisStrategyLogic {
         bytes performData;
     }
 
+    struct AfterAdjustPositionParams {
+        address positionManager;
+        DataTypes.PositionManagerPayload requestParams;
+        DataTypes.PositionManagerPayload responseParams;
+        address[] revertSwapPath;
+    }
 
     /*//////////////////////////////////////////////////////////////
                         ACCOUNTING LOGIC   
@@ -322,7 +328,6 @@ library BasisStrategyLogic {
     /// including user's deposit and system's deutilizing
     ///
     /// @return remainingAssets remaining which goes to idle or assetsToWithdraw
-
     function processWithdrawRequests(uint256 assets, DataTypes.StrategyStateChache memory cache)
         public
         pure
@@ -590,7 +595,7 @@ library BasisStrategyLogic {
             (amountOut, success) = InchAggregatorV6Logic.executeSwap(
                 params.amount, params.addr.asset, params.addr.product, false, params.swapData
             );
-            // $.pendingDeutilizedAssets = amountOut;
+            params.cache.pendingDeutilizedAssets = amountOut;
         } else if (params.swapType == DataTypes.SwapType.MANUAL) {
             amountOut = ManualSwapLogic.swap(params.amount, params.productToAssetSwapPath);
             success = true;
@@ -713,5 +718,50 @@ library BasisStrategyLogic {
 
         deutilization = deutilization > productBalance ? productBalance : deutilization;
         return deutilization;
+    }
+
+    function executeAfterIncreasePosition(AfterAdjustPositionParams calldata params) external {
+        if (params.requestParams.sizeDeltaInTokens > params.responseParams.sizeDeltaInTokens) {
+            // revert spot to make hedge size the same as spot
+            ManualSwapLogic.swap(
+                params.requestParams.sizeDeltaInTokens - params.responseParams.sizeDeltaInTokens, params.revertSwapPath
+            );
+        }
+
+        (, uint256 revertCollateralDeltaAmount) =
+            params.requestParams.collateralDeltaAmount.trySub(params.responseParams.collateralDeltaAmount);
+
+        if (revertCollateralDeltaAmount > 0) {
+            IERC20(params.revertSwapPath[params.revertSwapPath.length - 1]).safeTransferFrom(
+                params.positionManager, address(this), revertCollateralDeltaAmount
+            );
+        }
+    }
+
+    function executeAfterDecreasePosition(
+        AfterAdjustPositionParams calldata params,
+        DataTypes.StrategyStateChache memory cache
+    ) external returns (DataTypes.StrategyStateChache memory) {
+        if (params.requestParams.sizeDeltaInTokens > 0) {
+            if (params.responseParams.sizeDeltaInTokens == 0) {
+                ManualSwapLogic.swap(cache.pendingDeutilizedAssets, params.revertSwapPath);
+                cache.pendingDeutilizedAssets = 0;
+                cache.assetsToWithdraw -= cache.pendingDeutilizedAssets;
+            } else {
+                (cache.assetsToWithdraw, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);
+                (, cache) = processWithdrawRequests(getIdleAssets(params.revertSwapPath[0], cache), cache);
+            }
+        }
+        if (params.responseParams.collateralDeltaAmount > 0) {
+            IERC20(params.revertSwapPath[0]).safeTransferFrom(
+                params.positionManager, address(this), params.responseParams.collateralDeltaAmount
+            );
+            uint256 remainingAssets;
+            (remainingAssets, cache) = processWithdrawRequests(params.responseParams.collateralDeltaAmount, cache);
+            cache.assetsToWithdraw += remainingAssets;
+            (, cache.pendingDecreaseCollateral) =
+                cache.pendingDecreaseCollateral.trySub(params.responseParams.collateralDeltaAmount);
+        }
+        return cache;
     }
 }

@@ -167,6 +167,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     event UpdateStrategyStatus(DataTypes.StrategyStatus status);
 
+    event AfterAdjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease);
+
     /*//////////////////////////////////////////////////////////////
                             MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -262,7 +264,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             assetsToWithdraw: $.assetsToWithdraw,
             accRequestedWithdrawAssets: $.accRequestedWithdrawAssets,
             proccessedWithdrawAssets: $.proccessedWithdrawAssets,
-            pendingDecreaseCollateral: $.pendingDecreaseCollateral
+            pendingDecreaseCollateral: $.pendingDecreaseCollateral,
+            pendingDeutilizedAssets: $.pendingDeutilizedAssets
         });
         // strategyStatus: $.strategyStatus
     }
@@ -286,6 +289,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         }
         if (cache0.pendingDecreaseCollateral != cache1.pendingDecreaseCollateral) {
             $.pendingDecreaseCollateral = cache1.pendingDecreaseCollateral;
+        }
+        if (cache0.pendingDeutilizedAssets != cache1.pendingDeutilizedAssets) {
+            $.pendingDeutilizedAssets = cache1.pendingDeutilizedAssets;
         }
         // if (cache0.strategyStatus != cache1.strategyStatus) {
         //     $.strategyStatus = cache1.strategyStatus;
@@ -732,6 +738,50 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         }
         $.assetToProductSwapPath = _assetToProductSwapPath;
         $.productToAssetSwapPath = _productToAssetSwapPath;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    POSITION MANAGER CALLBACK LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    // callback function dispatcher
+    function afterAdjustPosition(DataTypes.PositionManagerPayload memory params) external onlyPositionManager {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        DataTypes.StrategyStatus status = $.strategyStatus;
+        if (status == DataTypes.StrategyStatus.IDLE) {
+            revert Errors.InvalidCallback();
+        }
+
+        if (params.isIncrease) {
+            BasisStrategyLogic.executeAfterIncreasePosition(
+                BasisStrategyLogic.AfterAdjustPositionParams({
+                    positionManager: $.positionManager,
+                    requestParams: $.requestParams,
+                    responseParams: params,
+                    revertSwapPath: $.productToAssetSwapPath
+                })
+            );
+            emit UpdatePendingUtilization();
+        } else {
+            DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
+            DataTypes.StrategyStateChache memory cache1 = BasisStrategyLogic.executeAfterDecreasePosition(
+                BasisStrategyLogic.AfterAdjustPositionParams({
+                    positionManager: $.positionManager,
+                    requestParams: $.requestParams,
+                    responseParams: params,
+                    revertSwapPath: $.assetToProductSwapPath
+                }),
+                cache0
+            );
+            _updateStrategyState($, cache0, cache1);
+        }
+
+        $.strategyStatus = DataTypes.StrategyStatus.IDLE;
+        emit UpdateStrategyStatus(DataTypes.StrategyStatus.IDLE);
+
+        // _checkStrategyStatus();
+
+        emit AfterAdjustPosition(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
 
     /*//////////////////////////////////////////////////////////////

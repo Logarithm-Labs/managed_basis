@@ -32,6 +32,7 @@ library DataTypes {
         uint256 accRequestedWithdrawAssets;
         uint256 proccessedWithdrawAssets;
         uint256 pendingDecreaseCollateral;
+        uint256 pendingDeutilizedAssets;
     }
     // StrategyStatus strategyStatus;
 

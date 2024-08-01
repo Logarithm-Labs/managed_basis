@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-interface IOffChainPositionManager {
-    struct DataTypes.PositionManagerPayload {
-        uint256 sizeDeltaInTokens;
-        uint256 collateralDeltaAmount;
-        bool isIncrease;
-    }
+import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 
+interface IOffChainPositionManager {
     function initialize(
         address strategy,
         address agent,

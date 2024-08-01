@@ -715,7 +715,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             revert Errors.InvalidCallback();
         }
         if (params.isIncrease) {
-            _afterIncreasePosition(params.sizeDeltaInTokens, params.collateralDeltaAmount, status);
+            _afterIncreasePosition(params.sizeDeltaInTokens, params.collateralDeltaAmount);
         } else {
             _afterDecreasePosition(params.sizeDeltaInTokens, params.collateralDeltaAmount);
         }
@@ -970,11 +970,10 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         return assets;
     }
 
-    function _afterIncreasePosition(
-        uint256 sizeDeltaInTokens,
-        uint256 collateralDeltaAmount,
-        DataTypes.StrategyStatus status
-    ) internal returns (bool isSuccess) {
+    function _afterIncreasePosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount)
+        internal
+        returns (bool isSuccess)
+    {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         DataTypes.PositionManagerPayload memory adjustmentRequest = $.adjustmentRequest;
 
@@ -1013,100 +1012,6 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
             $.assetsToWithdraw += _processWithdrawRequests(collateralDeltaAmount);
             (, $.pendingDecreaseCollateral) = $.pendingDecreaseCollateral.trySub(collateralDeltaAmount);
         }
-    }
-
-    function _afterIncreasePositionSizeSuccess(
-        DataTypes.PositionManagerPayload memory, /* params */
-        DataTypes.StrategyStatus /* status */
-    ) internal {
-        emit UpdatePendingUtilization(
-            _pendingUtilization(idleAssets(), _getManagedBasisStrategyStorage().targetLeverage)
-        );
-    }
-
-    function _afterIncreasePositionCollateralSuccess(
-        DataTypes.PositionManagerPayload memory, /* params */
-        DataTypes.StrategyStatus /* status */
-    ) internal pure {
-        // TODO: implement
-    }
-
-    function _afterIncreasePositionSizeRevert(
-        DataTypes.PositionManagerPayload memory, /* params */
-        DataTypes.StrategyStatus /* status */
-    ) internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        _manualSwap($.pendingUtilizedProducts, false);
-        delete $.pendingUtilizedProducts;
-    }
-
-    function _afterIncreasePositionCollateralRevert(
-        DataTypes.PositionManagerPayload memory params,
-        DataTypes.StrategyStatus status
-    ) internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        if (status == DataTypes.StrategyStatus.DEPOSITING) {
-            IERC20(asset()).safeTransferFrom($.positionManager, address(this), params.collateralDeltaAmount);
-        }
-    }
-
-    function _afterDecreasePositionSizeSuccess(
-        DataTypes.PositionManagerPayload memory params,
-        DataTypes.StrategyStatus status
-    ) internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-
-        if (status == DataTypes.StrategyStatus.WITHDRAWING) {
-            // don't make remainingAssets go to idle because it has execution cost
-            $.assetsToWithdraw = _processWithdrawRequests($.assetsToWithdraw);
-        } else if (status == DataTypes.StrategyStatus.REBALANCING_DOWN) {
-            $.assetsToWithdraw = _processWithdrawRequests($.assetsToWithdraw);
-            _processWithdrawRequests(idleAssets());
-        } else if (status == DataTypes.StrategyStatus.KEEPING) {
-            // TODO: implement
-            // processing keep request
-        } else {
-            revert Errors.InvalidStrategyStatus(uint8(status));
-        }
-    }
-
-    function _afterDecreasePositionCollateralSuccess(
-        DataTypes.PositionManagerPayload memory params,
-        DataTypes.StrategyStatus status
-    ) internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        IERC20(asset()).safeTransferFrom($.positionManager, address(this), params.collateralDeltaAmount);
-
-        if (status == DataTypes.StrategyStatus.WITHDRAWING) {
-            // processing withdraw requests
-            // don't increase idle asset by the remaining amount
-            $.assetsToWithdraw += _processWithdrawRequests(params.collateralDeltaAmount);
-            uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
-            (, $.pendingDecreaseCollateral) = _pendingDecreaseCollateral.trySub(params.collateralDeltaAmount);
-        } else if (status == DataTypes.StrategyStatus.REBALANCING_DOWN) {
-            // processing rebalance request
-            // TODO:impelement
-        } else {
-            revert Errors.InvalidStrategyStatus(uint8(status));
-        }
-    }
-
-    function _afterDecreasePositionSizeRevert(
-        DataTypes.PositionManagerPayload memory, /* params */
-        DataTypes.StrategyStatus /* status */
-    ) internal {
-        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        uint256 pendingDeutilizedAssets_ = $.pendingDeutilizedAssets;
-        _manualSwap(pendingDeutilizedAssets_, true);
-        delete $.pendingDeutilizedAssets;
-        $.assetsToWithdraw -= pendingDeutilizedAssets_;
-    }
-
-    function _afterDecreasePositionCollateralRevert(
-        DataTypes.PositionManagerPayload memory, /* params */
-        DataTypes.StrategyStatus /* status */
-    ) internal pure {
-        // TODO implement
     }
 
     /*//////////////////////////////////////////////////////////////
