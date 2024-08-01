@@ -13,6 +13,8 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
+import {DataTypes} from "src/libraries/utils/DataTypes.sol";
+
 import {console2 as console} from "forge-std/console2.sol";
 
 contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUpgradeable {
@@ -27,8 +29,8 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
     }
 
     struct RequestInfo {
-        RequestParams request;
-        RequestParams response;
+        DataTypes.PositionManagerPayload request;
+        DataTypes.PositionManagerPayload response;
         uint256 requestTimestamp;
         uint256 responseRound;
         uint256 responseTimestamp;
@@ -174,7 +176,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
                         REQUEST LOGIC 
     //////////////////////////////////////////////////////////////*/
 
-    function adjustPosition(RequestParams memory params) external {
+    function adjustPosition(DataTypes.PositionManagerPayload memory params) external {
         // increments round
         // stores position state from the previous round in the current round
         // stores request in the current round
@@ -263,7 +265,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         uint256 sizeInTokens,
         uint256 netBalance,
         uint256 markPrice,
-        PositionManagerCallbackParams calldata params
+        DataTypes.PositionManagerPayload calldata params
     ) external onlyAgent {
         // 1. increments round
         // 2. stores position state in the current round
@@ -288,7 +290,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
             }
         }
 
-        RequestParams memory response = RequestParams({
+        DataTypes.PositionManagerPayload memory response = DataTypes.PositionManagerPayload({
             sizeDeltaInTokens: params.sizeDeltaInTokens,
             collateralDeltaAmount: params.collateralDeltaAmount,
             isIncrease: params.isIncrease

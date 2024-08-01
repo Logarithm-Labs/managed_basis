@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-interface IPositionManager {
-    struct RequestParams {
-        uint256 sizeDeltaInTokens;
-        uint256 collateralDeltaAmount;
-        bool isIncrease;
-    }
+import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 
+interface IPositionManager {
     function apiVersion() external view returns (string memory);
 
     function positionNetBalance() external view returns (uint256);
@@ -20,5 +16,5 @@ interface IPositionManager {
 
     function needKeep() external view returns (bool);
 
-    function adjustPosition(RequestParams memory params) external;
+    function adjustPosition(DataTypes.PositionManagerPayload memory requestParams) external;
 }

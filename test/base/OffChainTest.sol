@@ -39,20 +39,20 @@ contract OffChainTest is ForkTest {
 
     function _fullOffChainExecute() internal {
         vm.startPrank(agent);
-        OffChainPositionManager.RequestParams memory request = _getRequest();
-        OffChainPositionManager.RequestParams memory response = _executeRequest(request);
+        DataTypes.PositionManagerPayload memory request = _getRequest();
+        DataTypes.PositionManagerPayload memory response = _executeRequest(request);
         _reportStateAndExecuteRequest(response);
         vm.stopPrank();
     }
 
-    function _getRequest() internal view returns (OffChainPositionManager.RequestParams memory request) {
+    function _getRequest() internal view returns (DataTypes.PositionManagerPayload memory request) {
         OffChainPositionManager.RequestInfo memory requestInfo = positionManager.getLastRequest();
         request = requestInfo.request;
     }
 
-    function _executeRequest(OffChainPositionManager.RequestParams memory request)
+    function _executeRequest(DataTypes.PositionManagerPayload memory request)
         internal
-        returns (OffChainPositionManager.RequestParams memory response)
+        returns (DataTypes.PositionManagerPayload memory response)
     {
         if (request.isIncrease) {
             response.isIncrease = true;
@@ -78,9 +78,9 @@ contract OffChainTest is ForkTest {
         positionManager.reportState(positionSizeInTokens, positionNetBalance, markPrice);
     }
 
-    function _reportStateAndExecuteRequest(OffChainPositionManager.RequestParams memory response) internal {
+    function _reportStateAndExecuteRequest(DataTypes.PositionManagerPayload memory response) internal {
         uint256 markPrice = _getMarkPrice();
-        PositionManagerCallbackParams memory params = PositionManagerCallbackParams({
+        DataTypes.PositionManagerPayload memory params = DataTypes.PositionManagerPayload({
             sizeDeltaInTokens: response.sizeDeltaInTokens,
             collateralDeltaAmount: response.collateralDeltaAmount,
             isIncrease: response.isIncrease

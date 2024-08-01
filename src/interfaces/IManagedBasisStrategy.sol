@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-struct PositionManagerCallbackParams {
-    uint256 sizeDeltaInTokens;
-    uint256 collateralDeltaAmount;
-    bool isIncrease;
-}
+import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 
 interface IManagedBasisStrategy {
     function setPositionManager(address positionManager) external;
@@ -15,5 +11,5 @@ interface IManagedBasisStrategy {
     function targetLeverage() external view returns (uint256);
 
     // callback logic
-    function afterAdjustPosition(PositionManagerCallbackParams calldata params) external;
+    function afterAdjustPosition(DataTypes.PositionManagerPayload calldata responseParams) external;
 }

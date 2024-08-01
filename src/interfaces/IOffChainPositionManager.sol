@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 interface IOffChainPositionManager {
-    struct RequestParams {
+    struct DataTypes.PositionManagerPayload {
         uint256 sizeDeltaInTokens;
         uint256 collateralDeltaAmount;
         bool isIncrease;
@@ -23,5 +23,5 @@ interface IOffChainPositionManager {
 
     function positionSizeInTokens() external view returns (uint256);
 
-    function adjustPosition(RequestParams memory params) external;
+    function adjustPosition(DataTypes.PositionManagerPayload memory params) external;
 }

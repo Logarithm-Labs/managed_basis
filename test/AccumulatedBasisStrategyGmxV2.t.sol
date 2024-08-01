@@ -21,8 +21,7 @@ import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {Keeper} from "src/Keeper.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
-import {PositionManagerCallbackParams} from "src/interfaces/IManagedBasisStrategy.sol";
-
+import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 import {console} from "forge-std/console.sol";
 
 contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
@@ -220,17 +219,17 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
     function _utilize(uint256 amount) private {
         bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
         vm.startPrank(operator);
-        strategy.utilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
-        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.DEPOSITING));
+        strategy.utilize(amount, DataTypes.SwapType.INCH_V6, data);
+        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.DEPOSITING));
         _executeOrder(positionManager.pendingIncreaseOrderKey());
-        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.IDLE));
+        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.IDLE));
     }
 
     function _deutilize(uint256 amount) private {
         bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
         vm.startPrank(operator);
-        strategy.deutilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
-        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.WITHDRAWING));
+        strategy.deutilize(amount, DataTypes.SwapType.INCH_V6, data);
+        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.WITHDRAWING));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
     }
 
@@ -239,18 +238,18 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         (, bool hedgeDeviation, bool decreaseCollateral) = abi.decode(performData, (bool, bool, bool));
         if (hedgeDeviation) {
             strategy.performUpkeep("");
-            assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.KEEPING));
+            assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.KEEPING));
             _executeOrder(positionManager.pendingDecreaseOrderKey());
             _executeOrder(positionManager.pendingIncreaseOrderKey());
         }
 
         if (decreaseCollateral) {
             strategy.performUpkeep("");
-            assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.KEEPING));
+            assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.KEEPING));
             _executeOrder(positionManager.pendingDecreaseOrderKey());
         }
 
-        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.IDLE));
+        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.IDLE));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -550,14 +549,14 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         uint256 amount = pendingUtilization / 2;
         bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
         vm.startPrank(operator);
-        strategy.utilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
+        strategy.utilize(amount, DataTypes.SwapType.INCH_V6, data);
 
         // position manager increase reversion
         vm.startPrank(GMX_ORDER_VAULT);
         IERC20(asset).transfer(address(positionManager), pendingIncreaseCollateral / 2);
         vm.startPrank(address(positionManager));
         strategy.afterAdjustPosition(
-            PositionManagerCallbackParams({
+            DataTypes.PositionManagerPayload({
                 sizeDeltaInTokens: IERC20(product).balanceOf(address(strategy)),
                 collateralDeltaAmount: pendingIncreaseCollateral / 2,
                 isIncrease: true
@@ -575,11 +574,11 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         uint256 pendingDeutilization = strategy.pendingDeutilization();
         bytes memory data = _generateInchCallData(product, asset, pendingDeutilization, address(strategy));
         vm.startPrank(operator);
-        strategy.deutilize(pendingDeutilization, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
+        strategy.deutilize(pendingDeutilization, DataTypes.SwapType.INCH_V6, data);
 
         vm.startPrank(address(positionManager));
         strategy.afterAdjustPosition(
-            PositionManagerCallbackParams({
+            DataTypes.PositionManagerPayload({
                 sizeDeltaInTokens: pendingDeutilization,
                 collateralDeltaAmount: 0,
                 isIncrease: false

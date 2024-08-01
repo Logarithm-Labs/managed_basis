@@ -19,11 +19,12 @@ import {EventUtils} from "src/externals/gmx-v2/libraries/EventUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Order} from "src/externals/gmx-v2/libraries/Order.sol";
 
-import {IManagedBasisStrategy, PositionManagerCallbackParams} from "src/interfaces/IManagedBasisStrategy.sol";
+import {IManagedBasisStrategy} from "src/interfaces/IManagedBasisStrategy.sol";
 import {IConfig} from "src/interfaces/IConfig.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 import {IKeeper} from "src/interfaces/IKeeper.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 
 import {ConfigKeys} from "src/libraries/ConfigKeys.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
@@ -177,7 +178,7 @@ contract GmxV2PositionManager is
         _getGmxV2PositionManagerStorage().maxClaimableFundingShare = _maxClaimableFundingShare;
     }
 
-    function adjustPosition(RequestParams calldata params) external onlyStrategy whenNotPending {
+    function adjustPosition(DataTypes.PositionManagerPayload calldata params) external onlyStrategy whenNotPending {
         if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount == 0) {
             revert Errors.InvalidAdjustmentParams();
         }
@@ -218,7 +219,7 @@ contract GmxV2PositionManager is
         } else {
             if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount <= idleCollateralAmount) {
                 IManagedBasisStrategy(strategy()).afterAdjustPosition(
-                    PositionManagerCallbackParams({
+                    DataTypes.PositionManagerPayload({
                         sizeDeltaInTokens: 0,
                         collateralDeltaAmount: params.collateralDeltaAmount,
                         isIncrease: false
@@ -392,7 +393,11 @@ contract GmxV2PositionManager is
             _getGmxV2PositionManagerStorage().status = Status.IDLE;
             // notify strategy that keeping has been done
             IManagedBasisStrategy(strategy()).afterAdjustPosition(
-                PositionManagerCallbackParams({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: isIncrease})
+                DataTypes.PositionManagerPayload({
+                    sizeDeltaInTokens: 0,
+                    collateralDeltaAmount: 0,
+                    isIncrease: isIncrease
+                })
             );
             claimFunding();
         } else if (_status == Status.INCREASE) {
@@ -421,14 +426,14 @@ contract GmxV2PositionManager is
         if (_status == Status.INCREASE) {
             // in the case when increase order was failed
             IManagedBasisStrategy(strategy()).afterAdjustPosition(
-                PositionManagerCallbackParams({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
+                DataTypes.PositionManagerPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
             );
         } else if (_status == Status.DECREASE_ONE_STEP || _status == Status.DECREASE_TWO_STEP) {
             // in case when the first order was executed successfully or one step decrease order was failed
             // or in case when the order executed in wrong order by gmx was failed
             _getGmxV2PositionManagerStorage().sizeInTokensBefore = 0;
             IManagedBasisStrategy(strategy()).afterAdjustPosition(
-                PositionManagerCallbackParams({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: false})
+                DataTypes.PositionManagerPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: false})
             );
         }
         _getGmxV2PositionManagerStorage().status = Status.IDLE;
@@ -589,7 +594,7 @@ contract GmxV2PositionManager is
     }
 
     function _processIncreasePosition(uint256 initialCollateralDeltaAmount, uint256 sizeDeltaUsd) private {
-        PositionManagerCallbackParams memory callbackParams;
+        DataTypes.PositionManagerPayload memory callbackParams;
         if (initialCollateralDeltaAmount > 0) {
             // increase collateral
             _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
@@ -606,7 +611,7 @@ contract GmxV2PositionManager is
     }
 
     function _processDecreasePosition() private {
-        PositionManagerCallbackParams memory callbackParams;
+        DataTypes.PositionManagerPayload memory callbackParams;
         uint256 sizeInTokensBefore = _getGmxV2PositionManagerStorage().sizeInTokensBefore;
         if (sizeInTokensBefore > 0) {
             uint256 sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));

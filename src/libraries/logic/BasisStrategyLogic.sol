@@ -95,6 +95,7 @@ library BasisStrategyLogic {
         bytes performData;
     }
 
+
     /*//////////////////////////////////////////////////////////////
                         ACCOUNTING LOGIC   
     //////////////////////////////////////////////////////////////*/
@@ -442,7 +443,7 @@ library BasisStrategyLogic {
 
     function executePerformUpkeep(PerformUpkeepParams memory params)
         external
-        returns (IPositionManager.RequestParams memory requestParams, DataTypes.StrategyStatus status)
+        returns (DataTypes.PositionManagerPayload memory requestParams, DataTypes.StrategyStatus status)
     {
         (
             bool rebalanceUpNeeded,
@@ -509,11 +510,7 @@ library BasisStrategyLogic {
 
     function executeUtilize(UtilizeParams memory params)
         external
-        returns (
-            bool success,
-            DataTypes.StrategyStatus status,
-            IPositionManager.RequestParams memory adjustPositionParams
-        )
+        returns (bool success, DataTypes.StrategyStatus status, DataTypes.PositionManagerPayload memory requestParams)
     {
         // can only utilize when the strategy status is IDLE
         if (params.status != DataTypes.StrategyStatus.IDLE) {
@@ -538,11 +535,11 @@ library BasisStrategyLogic {
         }
 
         if (params.swapType == DataTypes.SwapType.INCH_V6) {
-            (adjustPositionParams.sizeDeltaInTokens, success) = InchAggregatorV6Logic.executeSwap(
+            (requestParams.sizeDeltaInTokens, success) = InchAggregatorV6Logic.executeSwap(
                 params.amount, params.addr.asset, params.addr.product, true, params.swapData
             );
         } else if (params.swapType == DataTypes.SwapType.MANUAL) {
-            adjustPositionParams.sizeDeltaInTokens = ManualSwapLogic.swap(params.amount, params.assetToProductSwapPath);
+            requestParams.sizeDeltaInTokens = ManualSwapLogic.swap(params.amount, params.assetToProductSwapPath);
             success = true;
         } else {
             revert Errors.UnsupportedSwapType();
@@ -550,11 +547,11 @@ library BasisStrategyLogic {
 
         uint256 pendingIncreaseCollateral = _pendingIncreaseCollateral(idleAssets, params.targetLeverage);
 
-        adjustPositionParams.collateralDeltaAmount = pendingIncreaseCollateral.mulDiv(params.amount, pendingUtilization);
-        adjustPositionParams.isIncrease = true;
+        requestParams.collateralDeltaAmount = pendingIncreaseCollateral.mulDiv(params.amount, pendingUtilization);
+        requestParams.isIncrease = true;
         status = DataTypes.StrategyStatus.DEPOSITING;
 
-        return (success, status, adjustPositionParams);
+        return (success, status, requestParams);
     }
 
     function executeDeutilize(DeutilizeParams memory params)
@@ -564,7 +561,7 @@ library BasisStrategyLogic {
             uint256 amountOut,
             DataTypes.StrategyStatus status,
             DataTypes.StrategyStateChache memory,
-            IPositionManager.RequestParams memory adjustPositionParams
+            DataTypes.PositionManagerPayload memory requestParams
         )
     {
         bool needRebalanceDown = params.status == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN;
@@ -602,14 +599,14 @@ library BasisStrategyLogic {
             revert Errors.UnsupportedSwapType();
         }
 
-        adjustPositionParams.sizeDeltaInTokens = params.amount;
+        requestParams.sizeDeltaInTokens = params.amount;
 
         if (!needRebalanceDown) {
             params.cache.assetsToWithdraw += amountOut;
             if (params.amount == pendingDeutilization) {
-                (, adjustPositionParams.collateralDeltaAmount) =
+                (, requestParams.collateralDeltaAmount) =
                     params.cache.accRequestedWithdrawAssets.trySub(params.cache.proccessedWithdrawAssets + amountOut);
-                params.cache.pendingDecreaseCollateral = adjustPositionParams.collateralDeltaAmount;
+                params.cache.pendingDecreaseCollateral = requestParams.collateralDeltaAmount;
             } else {
                 uint256 positionNetBalance = IPositionManager(params.addr.positionManager).positionNetBalance();
                 uint256 positionSizeInTokens = IPositionManager(params.addr.positionManager).positionSizeInTokens();
@@ -620,7 +617,7 @@ library BasisStrategyLogic {
 
         status = DataTypes.StrategyStatus.WITHDRAWING;
 
-        return (success, amountOut, status, params.cache, adjustPositionParams);
+        return (success, amountOut, status, params.cache, requestParams);
     }
 
     function getTotalPendingWithdraw(DataTypes.StrategyStateChache memory cache) public pure returns (uint256) {

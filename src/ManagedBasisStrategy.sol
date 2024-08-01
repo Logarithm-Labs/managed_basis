@@ -20,6 +20,8 @@ import {Constants} from "src/libraries/utils/Constants.sol";
 import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
+import {IManagedBasisStrategy} from "src/interfaces/IManagedBasisStrategy.sol";
+
 contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, OwnableUpgradeable {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -67,7 +69,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         address[] productToAssetSwapPath;
         address[] assetToProductSwapPath;
         // adjust position
-        IPositionManager.RequestParams adjustmentRequest;
+        DataTypes.PositionManagerPayload requestParams;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedBasisStrategyStorageV1")) - 1)) & ~bytes32(uint256(0xff))
@@ -173,6 +175,14 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         if (msg.sender != $.operator) {
             revert Errors.CallerNotOperator();
+        }
+        _;
+    }
+
+    modifier onlyPositionManager() {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        if (msg.sender != $.positionManager) {
+            revert Errors.CallerNotPositionManager();
         }
         _;
     }
@@ -293,15 +303,15 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     }
 
     // TODO: add checks for min execution amounts
-    function _executeAdjustPosition(ManagedBasisStrategyStorage storage $, IPositionManager.RequestParams memory params)
-        internal
-        virtual
-    {
+    function _executeAdjustPosition(
+        ManagedBasisStrategyStorage storage $,
+        DataTypes.PositionManagerPayload memory params
+    ) internal virtual {
         if (params.isIncrease && params.collateralDeltaAmount > 0) {
             IERC20(asset()).safeTransfer($.positionManager, params.collateralDeltaAmount);
         }
         if (params.collateralDeltaAmount > 0 && params.sizeDeltaInTokens > 0) {
-            $.adjustmentRequest = params;
+            $.requestParams = params;
             IPositionManager($.positionManager).adjustPosition(params);
         }
     }
@@ -544,7 +554,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     }
 
     function _performUpkeep(ManagedBasisStrategyStorage storage $, bytes memory performData) internal {
-        (IPositionManager.RequestParams memory requestParams, DataTypes.StrategyStatus status) = BasisStrategyLogic
+        (DataTypes.PositionManagerPayload memory requestParams, DataTypes.StrategyStatus status) = BasisStrategyLogic
             .executePerformUpkeep(
             BasisStrategyLogic.PerformUpkeepParams({
                 totalSupply: totalSupply(),
@@ -601,7 +611,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
 
-        (bool success, DataTypes.StrategyStatus status, IPositionManager.RequestParams memory adjustPositionParams) =
+        (bool success, DataTypes.StrategyStatus status, DataTypes.PositionManagerPayload memory requestParams) =
         BasisStrategyLogic.executeUtilize(
             BasisStrategyLogic.UtilizeParams({
                 amount: amount,
@@ -616,8 +626,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         );
         if (success) {
             $.strategyStatus = status;
-            _executeAdjustPosition($, adjustPositionParams);
-            emit Utilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);
+            _executeAdjustPosition($, requestParams);
+            emit Utilize(msg.sender, amount, requestParams.sizeDeltaInTokens);
         } else {
             emit SwapFailed();
         }
@@ -642,7 +652,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             uint256 amountOut,
             DataTypes.StrategyStatus status,
             DataTypes.StrategyStateChache memory cache1,
-            IPositionManager.RequestParams memory adjustPositionParams
+            DataTypes.PositionManagerPayload memory requestParams
         ) = BasisStrategyLogic.executeDeutilize(
             BasisStrategyLogic.DeutilizeParams({
                 amount: amount,
@@ -659,8 +669,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (success) {
             $.strategyStatus = status;
             _updateStrategyState($, cache0, cache1);
-            _executeAdjustPosition($, adjustPositionParams);
-            emit Deutilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);
+            _executeAdjustPosition($, requestParams);
+            emit Deutilize(msg.sender, amount, requestParams.sizeDeltaInTokens);
         } else {
             emit SwapFailed();
         }

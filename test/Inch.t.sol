@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+pragma solidity ^0.8.0;
+
 import "forge-std/Test.sol";
 import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-
-pragma solidity ^0.8.0;
+import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 
 contract InchTest is Test {
     using stdStorage for StdStorage;
@@ -78,7 +79,7 @@ contract InchTest is Test {
         bytes memory data = generateInchCallData(asset, product, amount);
 
         // call utilize
-        strategy.utilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
+        strategy.utilize(amount, DataTypes.SwapType.INCH_V6, data);
         console.log("amountOut: ", IERC20(product).balanceOf(address(strategy)));
     }
 
@@ -89,7 +90,7 @@ contract InchTest is Test {
         bytes memory data = generateInchCallData(product, asset, amount);
 
         // call deutilize
-        strategy.deutilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
+        strategy.deutilize(amount, DataTypes.SwapType.INCH_V6, data);
         console.log("amountOut: ", IERC20(asset).balanceOf(address(strategy)));
     }
 

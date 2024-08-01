@@ -96,4 +96,14 @@ library DataTypes {
         WithdrawRequestState withdrawState;
         StrategyStateChache cache;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        POSITION MANAGER DATATYPES   
+    //////////////////////////////////////////////////////////////*/
+
+    struct PositionManagerPayload {
+        uint256 sizeDeltaInTokens;
+        uint256 collateralDeltaAmount;
+        bool isIncrease;
+    }
 }
