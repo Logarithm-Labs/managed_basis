@@ -7,6 +7,11 @@ pragma solidity ^0.8.0;
 library Keys {
     // @dev key for the base gas limit used when estimating execution fee
     bytes32 public constant ESTIMATED_GAS_FEE_BASE_AMOUNT = keccak256(abi.encode("ESTIMATED_GAS_FEE_BASE_AMOUNT"));
+    // @dev key for the base gas limit used when estimating execution fee
+    bytes32 public constant ESTIMATED_GAS_FEE_BASE_AMOUNT_V2_1 =
+        keccak256(abi.encode("ESTIMATED_GAS_FEE_BASE_AMOUNT_V2_1"));
+    bytes32 public constant MAX_CALLBACK_GAS_LIMIT = keccak256(abi.encode("MAX_CALLBACK_GAS_LIMIT"));
+
     // @dev key for the multiplier used when estimating execution fee
     bytes32 public constant ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR =
         keccak256(abi.encode("ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR"));
