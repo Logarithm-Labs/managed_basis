@@ -61,6 +61,7 @@ library BasisStrategyLogic {
         DataTypes.SwapType swapType;
         DataTypes.StrategyAddresses addr;
         DataTypes.StrategyStateChache cache;
+        address[] assetToProductSwapPath;
         bytes swapData;
     }
 
@@ -530,7 +531,7 @@ library BasisStrategyLogic {
                 params.amount, params.addr.asset, params.addr.product, true, params.swapData
             );
         } else if (params.swapType == DataTypes.SwapType.MANUAL) {
-            adjustPositionParams.sizeDeltaInTokens = ManualSwapLogic.swap(amountIn, path);
+            adjustPositionParams.sizeDeltaInTokens = ManualSwapLogic.swap(amountIn, params.assetToProductSwapPath);
             success = true;
         } else {
             revert Errors.UnsupportedSwapType();

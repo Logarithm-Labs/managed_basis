@@ -62,9 +62,11 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 proccessedWithdrawAssets;
         mapping(address => uint128) requestCounter;
         mapping(bytes32 => DataTypes.WithdrawRequestState) withdrawRequests;
+        // manual swap state
         mapping(address => bool) isSwapPool;
         address[] productToAssetSwapPath;
         address[] assetToProductSwapPath;
+        // adjust position
         IPositionManager.RequestParams adjustmentRequest;
     }
 
@@ -607,6 +609,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 swapType: swapType,
                 addr: _getStrategyAddresses($),
                 cache: cache0,
+                assetToProductSwapPath: $.assetToProductSwapPath,
                 swapData: swapData
             })
         );
