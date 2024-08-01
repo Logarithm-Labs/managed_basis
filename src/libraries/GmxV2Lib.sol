@@ -280,7 +280,7 @@ library GmxV2Lib {
 
         if (remainingCollateralUsd == 0) return type(uint256).max;
 
-        return positionSizeInUsd / remainingCollateralUsd;
+        return positionSizeInUsd.mulDiv(1 ether, remainingCollateralUsd);
     }
 
     /// @dev returns remainingCollateral and claimable funding amount in collateral token
