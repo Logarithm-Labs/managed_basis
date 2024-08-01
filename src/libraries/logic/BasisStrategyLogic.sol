@@ -516,7 +516,8 @@ library BasisStrategyLogic {
         }
 
         // actual utilize amount is min of amount, idle assets and pending utilization
-        params.amount = params.amount > idleAssets ? idleAssets : params.amount;
+        // @note dont need to check because always pendingUtilization_ < idle
+        // params.amount = params.amount > idleAssets ? idleAssets : params.amount;
         params.amount = params.amount > pendingUtilization ? pendingUtilization : params.amount;
 
         // can only utilize when amount is positive

@@ -583,7 +583,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         if (pendingUtilization_ == 0) {
             revert Errors.ZeroPendingUtilization();
         }
-        amount = amount > idle ? idle : amount;
+        // @note dont need to check because always pendingUtilization_ < idle
+        // amount = amount > idle ? idle : amount;
         amount = amount > pendingUtilization_ ? pendingUtilization_ : amount;
 
         // can only utilize when amount is positive
