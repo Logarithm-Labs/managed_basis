@@ -83,8 +83,7 @@ contract OffChainTest is ForkTest {
         PositionManagerCallbackParams memory params = PositionManagerCallbackParams({
             sizeDeltaInTokens: response.sizeDeltaInTokens,
             collateralDeltaAmount: response.collateralDeltaAmount,
-            isIncrease: response.isIncrease,
-            isSuccess: true
+            isIncrease: response.isIncrease
         });
         positionManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
     }

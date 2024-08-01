@@ -292,7 +292,7 @@
     }
   ],
   "libraries": [
-    "src/libraries/InchAggregatorV6Logic.sol:InchAggregatorV6Logic:0x01B28090928bdadA55D67D6b3FC70751cE4c833F"
+    "src/libraries/logic/InchAggregatorV6Logic.sol:InchAggregatorV6Logic:0x230e11FB0c6A6ee3c5242FCBea09b6de6cd7b48C"
   ],
   "pending": [],
   "returns": {},

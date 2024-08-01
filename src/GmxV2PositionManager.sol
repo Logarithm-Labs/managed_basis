@@ -26,7 +26,7 @@ import {IKeeper} from "src/interfaces/IKeeper.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 import {ConfigKeys} from "src/libraries/ConfigKeys.sol";
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
 
 /// @title A gmx position manager

@@ -9,7 +9,7 @@ import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.s
 import {IConfig} from "src/interfaces/IConfig.sol";
 
 import {ConfigKeys} from "src/libraries/ConfigKeys.sol";
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 
 contract Keeper is UUPSUpgradeable, Ownable2StepUpgradeable {
     /*//////////////////////////////////////////////////////////////

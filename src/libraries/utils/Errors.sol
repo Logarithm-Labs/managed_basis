@@ -91,4 +91,8 @@ library Errors {
     error InvalidStrategyStatus(uint8 status);
 
     error UpkeepNeeded();
+
+    error InvalidCollateralRequest(uint256 collateralDeltaAmount, bool isIncrease);
+
+    error InvalidSizeRequest(uint256 sizeDeltaInTokens, bool isIncrease);
 }

@@ -11,7 +11,7 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 
 import {IOracle} from "src/interfaces/IOracle.sol";
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 
 contract LogarithmOracle is IOracle, UUPSUpgradeable, Ownable2StepUpgradeable {
     uint256 public constant FLOAT_PRECISION = 1e30;

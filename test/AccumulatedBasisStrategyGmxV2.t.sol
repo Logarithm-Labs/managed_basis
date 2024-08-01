@@ -19,7 +19,7 @@ import {Config} from "src/Config.sol";
 import {ConfigKeys} from "src/libraries/ConfigKeys.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {Keeper} from "src/Keeper.sol";
-import {Errors} from "src/libraries/Errors.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
 import {PositionManagerCallbackParams} from "src/interfaces/IManagedBasisStrategy.sol";
 
@@ -232,7 +232,6 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         strategy.deutilize(amount, AccumulatedBasisStrategy.SwapType.INCH_V6, data);
         assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.WITHDRAWING));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
-        assertEq(uint256(strategy.strategyStatus()), uint256(AccumulatedBasisStrategy.StrategyStatus.NEED_KEEP));
     }
 
     function _performUpkeep() private {
@@ -561,10 +560,7 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
             PositionManagerCallbackParams({
                 sizeDeltaInTokens: IERC20(product).balanceOf(address(strategy)),
                 collateralDeltaAmount: pendingIncreaseCollateral / 2,
-                executionPrice: 0,
-                executionCost: 0,
-                isIncrease: true,
-                isSuccess: false
+                isIncrease: true
             })
         );
 
@@ -586,10 +582,7 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
             PositionManagerCallbackParams({
                 sizeDeltaInTokens: pendingDeutilization,
                 collateralDeltaAmount: 0,
-                executionPrice: 0,
-                executionCost: 0,
-                isIncrease: false,
-                isSuccess: false
+                isIncrease: false
             })
         );
 

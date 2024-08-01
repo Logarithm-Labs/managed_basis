@@ -1,8 +1,0 @@
-24 Jul 2024 at 11:55:09
-Oracle deployed at: 0x949C9908Cd6C2F0Bca623355f4C5BaF157c3fb70
-Strategy deployed at: 0xC69c6A3228BB8EE5Bdd0C656eEA43Bf8713B0740
-Position manager deployed at: 0x51dc6BCAcC6818d47D870405BeF0Cafb6014EC77
-
-25 Jul 2024 at 00:21:42
-Strategy deployed at: 0x541A3908f6914A5574A42Ad37e136EEdFDD4Fc89
-Position manager deployed at: 0x9FfeA3a15b40CA046c8Dfa278a1aeaD6E39c37Ea
