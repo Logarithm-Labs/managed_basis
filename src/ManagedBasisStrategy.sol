@@ -598,12 +598,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
 
-        (
-            bool success,
-            uint256 amountOut,
-            DataTypes.StrategyStateChache memory cache1,
-            IPositionManager.RequestParams memory adjustPositionParams
-        ) = BasisStrategyLogic.executeUtilize(
+        (bool success, DataTypes.StrategyStatus status, IPositionManager.RequestParams memory adjustPositionParams) =
+        BasisStrategyLogic.executeUtilize(
             BasisStrategyLogic.UtilizeParams({
                 amount: amount,
                 targetLeverage: $.targetLeverage,
@@ -615,7 +611,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             })
         );
         if (success) {
-            _updateStrategyState($, cache0, cache1);
+            $.strategyStatus = status;
             _executeAdjustPosition($, adjustPositionParams);
             emit Utilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);
         } else {

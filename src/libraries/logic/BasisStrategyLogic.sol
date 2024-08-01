@@ -499,17 +499,17 @@ library BasisStrategyLogic {
         external
         returns (
             bool success,
-            DataTypes.StrategyStateChache memory,
+            DataTypes.StrategyStatus status,
             IPositionManager.RequestParams memory adjustPositionParams
         )
     {
         // can only utilize when the strategy status is IDLE
-        if (params.cache.strategyStatus != DataTypes.StrategyStatus.IDLE) {
-            revert Errors.InvalidStrategyStatus(uint8(params.cache.strategyStatus));
+        if (params.status != DataTypes.StrategyStatus.IDLE) {
+            revert Errors.InvalidStrategyStatus(uint8(params.status));
         }
 
         uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
-        uint256 pendingUtilization = getPendingUtilization(params.addr.asset, params.cache, params.targetLeverage);
+        uint256 pendingUtilization = getPendingUtilization(idleAssets, params.targetLeverage);
 
         if (pendingUtilization == 0) {
             revert Errors.ZeroPendingUtilization();
@@ -536,12 +536,12 @@ library BasisStrategyLogic {
             revert Errors.UnsupportedSwapType();
         }
 
-        uint256 pendingIncreaseCollateral =
-            getPendingIncreaseCollateral(params.addr.asset, params.targetLeverage, params.cache);
+        uint256 pendingIncreaseCollateral = getPendingIncreaseCollateral(idleAssets, params.targetLeverage);
 
         adjustPositionParams.collateralDeltaAmount =
             pendingIncreaseCollateral_.mulDiv(params.amount, pendingUtilization);
         adjustPositionParams.isIncrease = true;
+        status = DataTypes.StrategyStatus.DEPOSITING;
     }
 
     function executeDeutilize(UtilizeParams memory params)
@@ -590,13 +590,13 @@ library BasisStrategyLogic {
         return (success, amountOut, params.cache, adjustPositionParams);
     }
 
-    function getPendingUtilization(address asset, DataTypes.StrategyStateChache memory cache, uint256 targetLeverage)
-        public
-        view
-        returns (uint256)
-    {
-        uint256 idleAssets = getIdleAssets(asset, cache);
+    function getPendingUtilization(uint256 idleAssets, uint256 targetLeverage) public view returns (uint256) {
         return idleAssets.mulDiv(targetLeverage, Constants.FLOAT_PRECISION + targetLeverage);
+    }
+
+    function getPendingIncreaseCollateral(uint256 idleAssets, uint256 targetLeverage) public view returns (uint256) {
+        return
+            idleAssets.mulDiv(Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + targetLeverage, Math.Rounding.Ceil);
     }
 
     /// @notice product amount to be deutilized to process the totalPendingWithdraw amount
@@ -659,15 +659,5 @@ library BasisStrategyLogic {
 
         deutilization = deutilization > productBalance ? productBalance : deutilization;
         return deutilization;
-    }
-
-    function getPendingIncreaseCollateral(
-        address asset,
-        uint256 targetLeverage,
-        DataTypes.StrategyStateChache memory cache
-    ) public view returns (uint256) {
-        uint256 idleAssets = getIdleAssets(asset, cache);
-        return
-            idleAssets.mulDiv(Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + targetLeverage, Math.Rounding.Ceil);
     }
 }

@@ -32,8 +32,8 @@ library DataTypes {
         uint256 accRequestedWithdrawAssets;
         uint256 proccessedWithdrawAssets;
         uint256 pendingDecreaseCollateral;
-        StrategyStatus strategyStatus;
     }
+    // StrategyStatus strategyStatus;
 
     struct StrategyWithdrawCache {
         uint256 accRequestedWithdrawAssets;
