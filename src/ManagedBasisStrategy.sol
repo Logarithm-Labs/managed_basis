@@ -658,6 +658,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             })
         );
         if (success) {
+            $.strategyStatus = status;
             _updateStrategyState($, cache0, cache1);
             _executeAdjustPosition($, adjustPositionParams);
             emit Deutilize(msg.sender, amount, adjustPositionParams.sizeDeltaInTokens);

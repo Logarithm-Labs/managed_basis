@@ -394,7 +394,7 @@ library BasisStrategyLogic {
 
     function _checkRebalance(DataTypes.StrategyLeverages memory leverages)
         internal
-        view
+        pure
         returns (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded)
     {
         if (leverages.currentLeverage > leverages.maxLeverage) {
@@ -636,7 +636,7 @@ library BasisStrategyLogic {
         return _pendingUtilization(idleAssets, targetLeverage);
     }
 
-    function _pendingUtilization(uint256 idleAssets, uint256 targetLeverage) public view returns (uint256) {
+    function _pendingUtilization(uint256 idleAssets, uint256 targetLeverage) public pure returns (uint256) {
         return idleAssets.mulDiv(targetLeverage, Constants.FLOAT_PRECISION + targetLeverage);
     }
 
@@ -649,7 +649,7 @@ library BasisStrategyLogic {
         return _pendingIncreaseCollateral(idleAssets, targetLeverage);
     }
 
-    function _pendingIncreaseCollateral(uint256 idleAssets, uint256 targetLeverage) public view returns (uint256) {
+    function _pendingIncreaseCollateral(uint256 idleAssets, uint256 targetLeverage) public pure returns (uint256) {
         return
             idleAssets.mulDiv(Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + targetLeverage, Math.Rounding.Ceil);
     }
