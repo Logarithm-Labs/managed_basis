@@ -48,6 +48,7 @@ library BasisStrategyLogic {
 
     struct ClaimParams {
         uint256 totalSupply;
+        DataTypes.StrategyStatus status;
         DataTypes.StrategyLeverages leverages;
         DataTypes.WithdrawRequestState withdrawState;
         DataTypes.StrategyAddresses addr;
@@ -62,6 +63,18 @@ library BasisStrategyLogic {
         DataTypes.StrategyAddresses addr;
         DataTypes.StrategyStateChache cache;
         address[] assetToProductSwapPath;
+        bytes swapData;
+    }
+
+    struct DeutilizeParams {
+        uint256 amount;
+        uint256 totalSupply;
+        DataTypes.StrategyStatus status;
+        DataTypes.SwapType swapType;
+        DataTypes.StrategyAddresses addr;
+        DataTypes.StrategyLeverages leverages;
+        DataTypes.StrategyStateChache cache;
+        address[] productToAssetSwapPath;
         bytes swapData;
     }
 
@@ -96,7 +109,7 @@ library BasisStrategyLogic {
         // In the scenario where user tries to withdraw all of the remaining assets the volatility
         // of oracle price can create a situation where pending withdraw is greater then the sum of
         // idle and utilized assets. In this case we will return 0 as total assets.
-        (, uint256 totalAssets) = (utilizedAssets + idleAssets).trySub(_getTotalPendingWithdraw(cache));
+        (, uint256 totalAssets) = (utilizedAssets + idleAssets).trySub(getTotalPendingWithdraw(cache));
         return (utilizedAssets, idleAssets, totalAssets);
     }
 
@@ -116,7 +129,7 @@ library BasisStrategyLogic {
         }
 
         // calculate the amount of assets that will be utilized
-        (, uint256 assetsToUtilize) = params.assetsOrShares.trySub(_getTotalPendingWithdraw(params.cache));
+        (, uint256 assetsToUtilize) = params.assetsOrShares.trySub(getTotalPendingWithdraw(params.cache));
         (,, uint256 totalAssets) = getTotalAssets(params.addr, params.cache);
 
         // apply entry fee only to the portion of assets that will be utilized
@@ -137,7 +150,7 @@ library BasisStrategyLogic {
         assets = _convertToAssets(params.assetsOrShares, totalAssets, params.totalSupply, Math.Rounding.Ceil);
 
         // calculate amount of assets that will be utilized
-        (, uint256 assetsToUtilize) = assets.trySub(_getTotalPendingWithdraw(params.cache));
+        (, uint256 assetsToUtilize) = assets.trySub(getTotalPendingWithdraw(params.cache));
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
@@ -205,10 +218,6 @@ library BasisStrategyLogic {
         return shares.mulDiv(totalAssets + 1, totalSupply + 10 ** Constants.DECIMAL_OFFSET, rounding);
     }
 
-    function _getTotalPendingWithdraw(DataTypes.StrategyStateChache memory cache) internal pure returns (uint256) {
-        return cache.accRequestedWithdrawAssets - cache.proccessedWithdrawAssets;
-    }
-
     /*//////////////////////////////////////////////////////////////
                         ACCOUNTING LOGIC   
     //////////////////////////////////////////////////////////////*/
@@ -261,7 +270,7 @@ library BasisStrategyLogic {
             revert Errors.UnauthorizedClaimer(msg.sender, params.withdrawState.receiver);
         }
         (bool isExecuted, bool isLast) = isWithdrawRequestExecuted(
-            params.withdrawState, params.addr, params.cache, params.leverages, params.totalSupply
+            params.status, params.withdrawState, params.addr, params.cache, params.leverages, params.totalSupply
         );
         if (!isExecuted) {
             revert Errors.RequestNotExecuted();
@@ -285,6 +294,7 @@ library BasisStrategyLogic {
     }
 
     function isWithdrawRequestExecuted(
+        DataTypes.StrategyStatus status,
         DataTypes.WithdrawRequestState memory withdrawState,
         DataTypes.StrategyAddresses memory addr,
         DataTypes.StrategyStateChache memory cache,
@@ -298,10 +308,8 @@ library BasisStrategyLogic {
         }
         if (isLast) {
             // last withdraw is claimable when deutilization is complete
-            uint256 pendingDeutilization = getPendingDeutilization(
-                addr, cache, leverages, totalSupply, cache.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
-            );
-            isExecuted = pendingDeutilization == 0 && cache.strategyStatus == DataTypes.StrategyStatus.IDLE;
+            uint256 pendingDeutilization = getPendingDeutilization(addr, cache, leverages, totalSupply, false);
+            isExecuted = pendingDeutilization == 0 && status == DataTypes.StrategyStatus.IDLE;
         } else {
             isExecuted = withdrawState.accRequestedWithdrawAssets <= cache.proccessedWithdrawAssets;
         }
@@ -531,7 +539,7 @@ library BasisStrategyLogic {
                 params.amount, params.addr.asset, params.addr.product, true, params.swapData
             );
         } else if (params.swapType == DataTypes.SwapType.MANUAL) {
-            adjustPositionParams.sizeDeltaInTokens = ManualSwapLogic.swap(amountIn, params.assetToProductSwapPath);
+            adjustPositionParams.sizeDeltaInTokens = ManualSwapLogic.swap(params.amount, params.assetToProductSwapPath);
             success = true;
         } else {
             revert Errors.UnsupportedSwapType();
@@ -539,58 +547,84 @@ library BasisStrategyLogic {
 
         uint256 pendingIncreaseCollateral = _pendingIncreaseCollateral(idleAssets, params.targetLeverage);
 
-        adjustPositionParams.collateralDeltaAmount =
-            pendingIncreaseCollateral_.mulDiv(params.amount, pendingUtilization);
+        adjustPositionParams.collateralDeltaAmount = pendingIncreaseCollateral.mulDiv(params.amount, pendingUtilization);
         adjustPositionParams.isIncrease = true;
         status = DataTypes.StrategyStatus.DEPOSITING;
 
         return (success, status, adjustPositionParams);
     }
 
-    function executeDeutilize(UtilizeParams memory params)
+    function executeDeutilize(DeutilizeParams memory params)
         external
         returns (
             bool success,
             uint256 amountOut,
+            DataTypes.StrategyStatus status,
             DataTypes.StrategyStateChache memory,
-            IPositionManager.RequestParams memory
+            IPositionManager.RequestParams memory adjustPositionParams
         )
     {
-        //     uint256 productBalance = IERC20(params.addr.product).balanceOf(address(this));
+        bool needRebalanceDown = params.status == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN;
 
-        //     // actual deutilize amount is min of amount, product balance and pending deutilization
-        //     params.amount =
-        //         params.amount > params.cache.pendingDeutilization ? params.cache.pendingDeutilization : params.amount;
-        //     params.amount = params.amount > productBalance ? productBalance : params.amount;
+        // can only deutilize when the strategy status is IDLE or NEED_REBLANCE_DOWN
+        if (params.status != DataTypes.StrategyStatus.IDLE && !needRebalanceDown) {
+            revert Errors.InvalidStrategyStatus(uint8(params.status));
+        }
 
-        //     // can only deutilize when amount is positive
-        //     if (params.amount == 0) {
-        //         revert Errors.ZeroAmountUtilization();
-        //     }
+        // uint256 productBalance = IERC20(product()).balanceOf(address(this));
 
-        //     if (params.swapType == DataTypes.SwapType.INCH_V6) {
-        //         (amountOut, success) = InchAggregatorV6Logic.executeSwap(
-        //             params.amount, params.addr.asset, params.addr.product, true, params.swapData
-        //         );
-        //     } else {
-        //         // @consider: fallback swap
-        //         revert Errors.UnsupportedSwapType();
-        //     }
+        // actual deutilize amount is min of amount, product balance and pending deutilization
+        uint256 pendingDeutilization =
+            getPendingDeutilization(params.addr, params.cache, params.leverages, params.totalSupply, needRebalanceDown);
+        // @note productBalance is already checked within _pendingDeutilization()
+        // amount = amount > productBalance ? productBalance : amount;
+        params.amount = params.amount > pendingDeutilization ? pendingDeutilization : params.amount;
 
-        IPositionManager.RequestParams memory adjustPositionParams;
-        //     if (success) {
-        //         if (params.status == DataTypes.StrategyStatus.IDLE) {
-        //             params.cache.assetsToWithdraw += amountOut;
-        //             params.cache.totalPendingWithdraw -= amountOut;
-        //             params.cache.withdrawnFromSpot += amountOut;
-        //             adjustPositionParams = IPositionManager.AdjustPositionParams({
-        //                 sizeDeltaInTokens: params.amount,
-        //                 collateralDeltaAmount: 0,
-        //                 isIncrease: false
-        //             });
-        //         }
-        //     }
-        return (success, amountOut, params.cache, adjustPositionParams);
+        // can only deutilize when amount is positive
+        if (params.amount == 0) {
+            revert Errors.ZeroAmountUtilization();
+        }
+
+        bool success;
+        if (params.swapType == DataTypes.SwapType.INCH_V6) {
+            (amountOut, success) = InchAggregatorV6Logic.executeSwap(
+                params.amount, params.addr.asset, params.addr.product, false, params.swapData
+            );
+            // $.pendingDeutilizedAssets = amountOut;
+        } else if (params.swapType == DataTypes.SwapType.MANUAL) {
+            amountOut = ManualSwapLogic.swap(params.amount, params.productToAssetSwapPath);
+            success = true;
+        } else {
+            // TODO: fallback swap
+            revert Errors.UnsupportedSwapType();
+        }
+
+        adjustPositionParams.sizeDeltaInTokens = params.amount;
+        adjustPositionParams.isIncrease = false;
+
+        if (!needRebalanceDown) {
+            params.cache.assetsToWithdraw += amountOut;
+            if (params.amount == pendingDeutilization) {
+                (, adjustPositionParams.collateralDeltaAmount) =
+                    params.cache.accRequestedWithdrawAssets.trySub(params.cache.proccessedWithdrawAssets + amountOut);
+                params.cache.pendingDecreaseCollateral = adjustPositionParams.collateralDeltaAmount;
+            } else {
+                uint256 positionNetBalance = IPositionManager(params.addr.positionManager).positionNetBalance();
+                uint256 positionSizeInTokens = IPositionManager(params.addr.positionManager).positionSizeInTokens();
+                uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(params.amount, positionSizeInTokens);
+                params.cache.pendingDecreaseCollateral += collateralDeltaToDecrease;
+            }
+        }
+
+        status = DataTypes.StrategyStatus.WITHDRAWING;
+
+        return (success, amountOut, status, params.cache, adjustPositionParams);
+    }
+
+    function getTotalPendingWithdraw(DataTypes.StrategyStateChache memory cache) public pure returns (uint256) {
+        (, uint256 totalPendingWithdraw) =
+            cache.accRequestedWithdrawAssets.trySub(cache.proccessedWithdrawAssets + cache.assetsToWithdraw);
+        return totalPendingWithdraw;
     }
 
     function getPendingUtilization(address asset, uint256 targetLeverage, DataTypes.StrategyStateChache memory cache)
@@ -660,7 +694,7 @@ library BasisStrategyLogic {
             uint256 positionSizeInAssets =
                 IOracle(addr.oracle).convertTokenAmount(addr.product, addr.asset, positionSizeInTokens);
             if (positionSizeInAssets == 0 && positionNetBalance == 0) return 0;
-            uint256 totalPendingWithdraw = _getTotalPendingWithdraw(cache);
+            uint256 totalPendingWithdraw = getTotalPendingWithdraw(cache);
 
             // prevents underflow
             if (

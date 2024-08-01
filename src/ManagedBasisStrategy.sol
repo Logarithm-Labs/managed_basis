@@ -252,9 +252,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             assetsToWithdraw: $.assetsToWithdraw,
             accRequestedWithdrawAssets: $.accRequestedWithdrawAssets,
             proccessedWithdrawAssets: $.proccessedWithdrawAssets,
-            pendingDecreaseCollateral: $.pendingDecreaseCollateral,
-            strategyStatus: $.strategyStatus
+            pendingDecreaseCollateral: $.pendingDecreaseCollateral
         });
+        // strategyStatus: $.strategyStatus
     }
 
     function _updateStrategyState(
@@ -277,9 +277,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (cache0.pendingDecreaseCollateral != cache1.pendingDecreaseCollateral) {
             $.pendingDecreaseCollateral = cache1.pendingDecreaseCollateral;
         }
-        if (cache0.strategyStatus != cache1.strategyStatus) {
-            $.strategyStatus = cache1.strategyStatus;
-        }
+        // if (cache0.strategyStatus != cache1.strategyStatus) {
+        //     $.strategyStatus = cache1.strategyStatus;
+        // }
 
         emit UpdatePendingUtilization();
     }
@@ -390,6 +390,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         (cache1, withdrawState, executedAmount) = BasisStrategyLogic.executeClaim(
             BasisStrategyLogic.ClaimParams({
+                status: $.strategyStatus,
                 totalSupply: totalSupply(),
                 leverages: _getStrategyLeverages($),
                 withdrawState: withdrawState,
@@ -410,6 +411,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         DataTypes.WithdrawRequestState memory withdrawRequest = $.withdrawRequests[withdrawId];
         (bool isExecuted,) = BasisStrategyLogic.isWithdrawRequestExecuted(
+            $.strategyStatus,
             withdrawRequest,
             _getStrategyAddresses($),
             _getStrategyStateCache($),
@@ -448,7 +450,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     function totalPendingWithdraw() external view virtual returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return $.accRequestedWithdrawAssets - $.proccessedWithdrawAssets;
+        return BasisStrategyLogic.getTotalPendingWithdraw(_getStrategyStateCache($));
     }
 
     function previewDeposit(uint256 assets) public view virtual override returns (uint256 shares) {
@@ -578,10 +580,10 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         DataTypes.StrategyLeverages memory leverages = _getStrategyLeverages($);
 
         pendingUtilizationInAsset =
-            BasisStrategyLogic.getPendingUtilization(addr.asset, cache, leverages.targetLeverage);
+            BasisStrategyLogic.getPendingUtilization(addr.asset, leverages.targetLeverage, cache);
 
         pendingDeutilizationInProduct = BasisStrategyLogic.getPendingDeutilization(
-            addr, cache, leverages, totalSupply(), cache.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
+            addr, cache, leverages, totalSupply(), $.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
         );
     }
 
@@ -628,20 +630,30 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         onlyOperator
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+
+        (bool upkeepNeeded, bytes memory performData) = checkUpkeep("");
+        if (upkeepNeeded) {
+            _performUpkeep($, performData);
+            return;
+        }
+
         DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
         (
             bool success,
             uint256 amountOut,
+            DataTypes.StrategyStatus status,
             DataTypes.StrategyStateChache memory cache1,
             IPositionManager.RequestParams memory adjustPositionParams
         ) = BasisStrategyLogic.executeDeutilize(
-            BasisStrategyLogic.UtilizeParams({
+            BasisStrategyLogic.DeutilizeParams({
                 amount: amount,
-                targetLeverage: $.targetLeverage,
+                totalSupply: totalSupply(),
                 status: $.strategyStatus,
                 swapType: swapType,
                 addr: _getStrategyAddresses($),
+                leverages: _getStrategyLeverages($),
                 cache: cache0,
+                productToAssetSwapPath: $.productToAssetSwapPath,
                 swapData: swapData
             })
         );
