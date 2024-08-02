@@ -120,7 +120,7 @@ library GmxV2Lib {
             int256 realizedPnlAmount = realizedPnlUsd / collateralTokenPrice.toInt256();
 
             if (realizedPnlAmount < 0) {
-                initialCollateralAmount -= uint256(-realizedPnlAmount);
+                (, initialCollateralAmount) = initialCollateralAmount.trySub(uint256(-realizedPnlAmount));
             } else if (uint256(realizedPnlAmount) > collateralDeltaAmount) {
                 result.isIncreaseCollateral = true;
                 result.initialCollateralDeltaAmount = uint256(realizedPnlAmount) - collateralDeltaAmount;
@@ -143,7 +143,9 @@ library GmxV2Lib {
             InternalGetMinCollateralAmount({
                 market: params.market,
                 dataStore: params.dataStore,
-                sizeInUsd: position.numbers.sizeInUsd - result.sizeDeltaUsdToDecrease,
+                sizeInUsd: position.numbers.sizeInUsd > result.sizeDeltaUsdToDecrease
+                    ? position.numbers.sizeInUsd - result.sizeDeltaUsdToDecrease
+                    : 0,
                 sizeDeltaUsd: -result.sizeDeltaUsdToDecrease.toInt256(),
                 collateralTokenPrice: collateralTokenPrice,
                 isLong: params.isLong
