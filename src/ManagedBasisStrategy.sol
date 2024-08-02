@@ -316,7 +316,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         if (params.isIncrease && params.collateralDeltaAmount > 0) {
             IERC20(asset()).safeTransfer($.positionManager, params.collateralDeltaAmount);
         }
-        if (params.collateralDeltaAmount > 0 && params.sizeDeltaInTokens > 0) {
+        if (params.collateralDeltaAmount > 0 || params.sizeDeltaInTokens > 0) {
             $.requestParams = params;
             IPositionManager($.positionManager).adjustPosition(params);
         }
