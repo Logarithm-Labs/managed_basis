@@ -597,7 +597,6 @@ library BasisStrategyLogic {
             (amountOut, success) = InchAggregatorV6Logic.executeSwap(
                 params.amount, params.addr.asset, params.addr.product, false, params.swapData
             );
-            params.cache.pendingDeutilizedAssets = amountOut;
         } else if (params.swapType == DataTypes.SwapType.MANUAL) {
             amountOut = ManualSwapLogic.swap(params.amount, params.productToAssetSwapPath);
             success = true;
@@ -606,6 +605,7 @@ library BasisStrategyLogic {
             revert Errors.UnsupportedSwapType();
         }
 
+        params.cache.pendingDeutilizedAssets = amountOut;
         requestParams.sizeDeltaInTokens = params.amount;
 
         if (!needRebalanceDown) {
@@ -744,21 +744,22 @@ library BasisStrategyLogic {
         AfterAdjustPositionParams calldata params,
         DataTypes.StrategyStateChache memory cache
     ) external returns (DataTypes.StrategyStateChache memory) {
+        uint256 remainingAssets;
         if (params.requestParams.sizeDeltaInTokens > 0) {
             if (params.responseParams.sizeDeltaInTokens == 0) {
                 ManualSwapLogic.swap(cache.pendingDeutilizedAssets, params.revertSwapPath);
-                cache.pendingDeutilizedAssets = 0;
                 cache.assetsToWithdraw -= cache.pendingDeutilizedAssets;
+                cache.pendingDeutilizedAssets = 0;
             } else {
-                (cache.assetsToWithdraw, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);
+                (remainingAssets, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);
                 (, cache) = processWithdrawRequests(getIdleAssets(params.revertSwapPath[0], cache), cache);
+                cache.assetsToWithdraw += remainingAssets;
             }
         }
         if (params.responseParams.collateralDeltaAmount > 0) {
             IERC20(params.revertSwapPath[0]).safeTransferFrom(
                 params.positionManager, address(this), params.responseParams.collateralDeltaAmount
             );
-            uint256 remainingAssets;
             (remainingAssets, cache) = processWithdrawRequests(params.responseParams.collateralDeltaAmount, cache);
             cache.assetsToWithdraw += remainingAssets;
             (, cache.pendingDecreaseCollateral) =

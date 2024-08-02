@@ -810,4 +810,12 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     function proccessedWithdrawAssets() external view returns (uint256) {
         return _getManagedBasisStrategyStorage().proccessedWithdrawAssets;
     }
+
+    function assetsToClaim() external view returns (uint256) {
+        return _getManagedBasisStrategyStorage().assetsToClaim;
+    }
+
+    function assetsToWithdraw() external view returns (uint256) {
+        return _getManagedBasisStrategyStorage().assetsToWithdraw;
+    }
 }
