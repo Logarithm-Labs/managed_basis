@@ -599,7 +599,6 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 collateralDeltaAmount;
         if (pendingIncreaseCollateral_ > 0) {
             collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization_);
-            IERC20(asset()).safeTransfer($.positionManager, collateralDeltaAmount);
         }
         _adjustPosition($.positionManager, amountOut, collateralDeltaAmount, true);
 
@@ -1120,6 +1119,9 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         uint256 collateralDeltaAmount,
         bool isIncrease
     ) internal {
+        if (isIncrease && collateralDeltaAmount > 0) {
+            IERC20(asset()).safeTransfer(_positionManager, collateralDeltaAmount);
+        }
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         DataTypes.PositionManagerPayload memory params = DataTypes.PositionManagerPayload({
             sizeDeltaInTokens: sizeDeltaInTokens,

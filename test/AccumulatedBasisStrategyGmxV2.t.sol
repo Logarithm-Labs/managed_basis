@@ -29,6 +29,7 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
     address user1 = makeAddr("user1");
     address user2 = makeAddr("user2");
     address operator = makeAddr("operator");
+    address forwarder = makeAddr("forwarder");
 
     uint256 constant USD_PRECISION = 1e30;
 
@@ -46,7 +47,7 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
     uint256 constant targetLeverage = 3 ether;
     uint256 constant minLeverage = 2 ether;
     uint256 constant maxLeverage = 5 ether;
-    uint256 constant safeMarginLeverage = 7 ether;
+    uint256 constant safeMarginLeverage = 10 ether;
 
     AccumulatedBasisStrategy strategy;
     LogarithmOracle oracle;
@@ -151,6 +152,7 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
             )
         );
         positionManager = GmxV2PositionManager(payable(positionManagerProxy));
+        strategy.setForwarder(forwarder);
         vm.label(address(positionManager), "positionManager");
 
         strategy.setPositionManager(positionManagerProxy);
@@ -240,25 +242,6 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         strategy.deutilize(amount, DataTypes.SwapType.MANUAL, "");
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.WITHDRAWING));
         _executeOrder(positionManager.pendingDecreaseOrderKey());
-    }
-
-    function _performUpkeep() private {
-        (, bytes memory performData) = strategy.checkUpkeep("");
-        (, bool hedgeDeviation, bool decreaseCollateral) = abi.decode(performData, (bool, bool, bool));
-        if (hedgeDeviation) {
-            strategy.performUpkeep("");
-            assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.KEEPING));
-            _executeOrder(positionManager.pendingDecreaseOrderKey());
-            _executeOrder(positionManager.pendingIncreaseOrderKey());
-        }
-
-        if (decreaseCollateral) {
-            strategy.performUpkeep("");
-            assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.KEEPING));
-            _executeOrder(positionManager.pendingDecreaseOrderKey());
-        }
-
-        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.IDLE));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -461,7 +444,6 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
     function test_deutilize_partial_withSingleRequest() public afterWithdrawRequestCreated {
         uint256 pendingDeutilization = strategy.pendingDeutilization();
         _deutilize(pendingDeutilization / 2);
-        _performUpkeep();
 
         bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
         assertFalse(strategy.isClaimable(requestKey));
@@ -473,7 +455,6 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
     function test_deutilize_full_withSingleRequest() public afterWithdrawRequestCreated {
         uint256 pendingDeutilization = strategy.pendingDeutilization();
         _deutilize(pendingDeutilization);
-        _performUpkeep();
 
         bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
         assertTrue(strategy.isClaimable(requestKey));
@@ -489,7 +470,6 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
     function test_deutilize_partial_withMultipleRequest() public afterMultipleWithdrawRequestCreated {
         uint256 pendingDeutilization = strategy.pendingDeutilization();
         _deutilize(pendingDeutilization / 2);
-        _performUpkeep();
 
         bytes32 requestKey1 = strategy.getWithdrawKey(user1, 0);
         assertTrue(strategy.isClaimable(requestKey1));
@@ -508,14 +488,12 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
     function test_deutilize_full_withMultipleRequest() public afterMultipleWithdrawRequestCreated {
         uint256 pendingDeutilization = strategy.pendingDeutilization();
         _deutilize(pendingDeutilization);
-        _performUpkeep();
 
         pendingDeutilization = strategy.pendingDeutilization();
         console.log("pendingDeutilization", pendingDeutilization);
 
         if (pendingDeutilization > 0) {
             _deutilize(pendingDeutilization);
-            _performUpkeep();
         }
 
         pendingDeutilization = strategy.pendingDeutilization();
@@ -523,7 +501,6 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
 
         if (pendingDeutilization > 0) {
             _deutilize(pendingDeutilization);
-            _performUpkeep();
         }
 
         bytes32 requestKey1 = strategy.getWithdrawKey(user1, 0);
@@ -545,6 +522,133 @@ contract AccumulatedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         strategy.claim(requestKey2);
         uint256 balanceAfter2 = IERC20(asset).balanceOf(user2);
         assertEq(balanceBefore2 + withdrawRequest2.requestedAssets, balanceAfter2);
+    }
+
+    function test_performUpkeep_rebalanceUp() public afterMultipleWithdrawRequestCreated {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 5 / 10);
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
+            abi.decode(performData, (bool, bool, bool, int256, bool));
+        assertTrue(rebalanceUpNeeded);
+        assertFalse(rebalanceDownNeeded);
+        assertFalse(liquidatable);
+        assertFalse(positionManagerNeedKeep);
+        console.log("currentLeverage", positionManager.currentLeverage());
+        vm.startPrank(forwarder);
+        strategy.performUpkeep(performData);
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        console.log("resultedLeverage", positionManager.currentLeverage());
+    }
+
+    function test_performUpkeep_rebalanceDown_whenNoIdle() public afterMultipleWithdrawRequestCreated {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
+            abi.decode(performData, (bool, bool, bool, int256, bool));
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        assertFalse(liquidatable);
+        assertFalse(positionManagerNeedKeep);
+        console.log("currentLeverage", positionManager.currentLeverage());
+        vm.startPrank(forwarder);
+        strategy.performUpkeep(performData);
+        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.NEED_REBLANCE_DOWN));
+        assertEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
+        assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
+
+        _deutilize(strategy.pendingDeutilization());
+
+        console.log("resultedLeverage", positionManager.currentLeverage());
+    }
+
+    function test_performUpkeep_rebalanceDown_whenIdle() public afterMultipleWithdrawRequestCreated {
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(strategy), 100 * 1e6);
+        assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
+
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
+            abi.decode(performData, (bool, bool, bool, int256, bool));
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        assertFalse(liquidatable);
+        assertFalse(positionManagerNeedKeep);
+        console.log("currentLeverage", positionManager.currentLeverage());
+        vm.startPrank(forwarder);
+        strategy.performUpkeep(performData);
+        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        console.log("resultedLeverage", positionManager.currentLeverage());
+    }
+
+    function test_performUpkeep_emergencyRebalanceDown_whenNotIdle() public afterMultipleWithdrawRequestCreated {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 14 / 10);
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
+            abi.decode(performData, (bool, bool, bool, int256, bool));
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        assertTrue(liquidatable);
+        assertFalse(positionManagerNeedKeep);
+        console.log("currentLeverage", positionManager.currentLeverage());
+        vm.startPrank(forwarder);
+        strategy.performUpkeep(performData);
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        console.log("resultedLeverage", positionManager.currentLeverage());
+    }
+
+    function test_performUpkeep_emergencyRebalanceDown_whenIdleNotEnough() public afterMultipleWithdrawRequestCreated {
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(strategy), 100 * 1e6);
+        assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 14 / 10);
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
+            abi.decode(performData, (bool, bool, bool, int256, bool));
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        assertTrue(liquidatable);
+        assertFalse(positionManagerNeedKeep);
+        console.log("currentLeverage", positionManager.currentLeverage());
+        vm.startPrank(forwarder);
+        strategy.performUpkeep(performData);
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        console.log("resultedLeverage", positionManager.currentLeverage());
+        assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
+    }
+
+    function test_performUpkeep_emergencyRebalanceDown_whenIdleEnough() public afterMultipleWithdrawRequestCreated {
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(strategy), TEN_THOUSANDS_USDC);
+        uint256 strategyBalanceBefore = IERC20(asset).balanceOf(address(strategy));
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 14 / 10);
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
+            abi.decode(performData, (bool, bool, bool, int256, bool));
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        assertTrue(liquidatable);
+        assertFalse(positionManagerNeedKeep);
+        console.log("currentLeverage", positionManager.currentLeverage());
+        vm.startPrank(forwarder);
+        strategy.performUpkeep(performData);
+        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        uint256 strategyBalanceAfter = IERC20(asset).balanceOf(address(strategy));
+        assertTrue(strategyBalanceAfter < strategyBalanceBefore);
+        console.log("resultedLeverage", positionManager.currentLeverage());
     }
 
     /*//////////////////////////////////////////////////////////////

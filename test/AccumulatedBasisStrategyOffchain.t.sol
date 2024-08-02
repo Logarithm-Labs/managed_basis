@@ -27,6 +27,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
     address user1 = makeAddr("user1");
     address user2 = makeAddr("user2");
     address operator = makeAddr("operator");
+    address forwarder = makeAddr("forwarder");
 
     uint256 constant USD_PRECISION = 1e30;
 
@@ -44,7 +45,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
     uint256 constant targetLeverage = 3 ether;
     uint256 constant minLeverage = 2 ether;
     uint256 constant maxLeverage = 5 ether;
-    uint256 constant safeMarginLeverage = 7 ether;
+    uint256 constant safeMarginLeverage = 10 ether;
 
     AccumulatedBasisStrategy strategy;
     LogarithmOracle oracle;
@@ -127,6 +128,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
         vm.label(address(positionManager), "positionManager");
 
         strategy.setPositionManager(positionManagerProxy);
+        strategy.setForwarder(forwarder);
 
         _initOffChainTest(asset, product, address(oracle));
 
@@ -214,24 +216,6 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
         vm.startPrank(operator);
         strategy.deutilize(amount, DataTypes.SwapType.MANUAL, "");
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.WITHDRAWING));
-    }
-
-    function _performUpkeep() private {
-        (, bytes memory performData) = strategy.checkUpkeep("");
-        (, bool hedgeDeviation, bool decreaseCollateral) = abi.decode(performData, (bool, bool, bool));
-        if (hedgeDeviation) {
-            strategy.performUpkeep("");
-            assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.KEEPING));
-            _fullOffChainExecute();
-        }
-
-        if (decreaseCollateral) {
-            strategy.performUpkeep("");
-            assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.KEEPING));
-            _fullOffChainExecute();
-        }
-
-        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.IDLE));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -450,7 +434,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
     function test_deutilize_full_withSingleRequest() public afterWithdrawRequestCreated {
         uint256 pendingDeutilization = strategy.pendingDeutilization();
         _deutilize(pendingDeutilization);
-        _performUpkeep();
+        // _performUpkeep();
 
         bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
         assertTrue(strategy.isClaimable(requestKey));
