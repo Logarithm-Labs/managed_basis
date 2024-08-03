@@ -252,6 +252,7 @@ library BasisStrategyLogic {
         if (idleAssets >= params.assets) {
             withdrawId = bytes32(0);
         } else {
+            params.cache.assetsToClaim += idleAssets;
             uint256 pendingWithdraw = params.assets - idleAssets;
             params.cache.accRequestedWithdrawAssets += pendingWithdraw;
             withdrawId = getWithdrawId(params.owner, params.requestCounter);
@@ -457,9 +458,8 @@ library BasisStrategyLogic {
             int256 hedgeDeviationInTokens,
             bool positionManagerNeedKeep
         ) = abi.decode(params.performData, (bool, bool, bool, int256, bool));
-
+        status = DataTypes.StrategyStatus.KEEPING;
         if (rebalanceUpNeeded) {
-            status = DataTypes.StrategyStatus.REBALANCING_UP;
             uint256 positionSizeInAssets = IOracle(params.addr.oracle).convertTokenAmount(
                 params.addr.product,
                 params.addr.asset,
@@ -507,8 +507,6 @@ library BasisStrategyLogic {
             // @TODO set threshold for decrease collateral amount
             requestParams.collateralDeltaAmount = params.cache.pendingDecreaseCollateral;
         }
-
-        status = DataTypes.StrategyStatus.KEEPING;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -752,8 +750,8 @@ library BasisStrategyLogic {
                 cache.pendingDeutilizedAssets = 0;
             } else {
                 (remainingAssets, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);
-                (, cache) = processWithdrawRequests(getIdleAssets(params.revertSwapPath[0], cache), cache);
                 cache.assetsToWithdraw += remainingAssets;
+                (, cache) = processWithdrawRequests(getIdleAssets(params.revertSwapPath[0], cache), cache);
             }
         }
         if (params.responseParams.collateralDeltaAmount > 0) {
