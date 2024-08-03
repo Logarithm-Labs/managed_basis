@@ -755,7 +755,7 @@ library BasisStrategyLogic {
                 cache.pendingDeutilizedAssets = 0;
             } else {
                 (remainingAssets, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);
-                cache.assetsToWithdraw += remainingAssets;
+                cache.assetsToWithdraw = remainingAssets;
                 (, cache) = processWithdrawRequests(getIdleAssets(params.revertSwapPath[0], cache), cache);
             }
         }
