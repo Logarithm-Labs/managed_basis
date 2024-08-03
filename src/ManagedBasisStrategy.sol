@@ -139,6 +139,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         $.targetLeverage = _targetLeverage;
         $.minLeverage = _minLeverage;
         $.maxLeverage = _maxLeverage;
+        $.safeMarginLeverage = _safeMarginLeverage;
         $.userDepositLimit = type(uint256).max;
         $.strategyDepostLimit = type(uint256).max;
         $.hedgeDeviationThreshold = 1e16; // 1%
@@ -817,5 +818,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     function assetsToWithdraw() external view returns (uint256) {
         return _getManagedBasisStrategyStorage().assetsToWithdraw;
+    }
+
+    function pendingDecreaseCollateral() external view returns (uint256) {
+        return _getManagedBasisStrategyStorage().pendingDecreaseCollateral;
     }
 }

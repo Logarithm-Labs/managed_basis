@@ -162,10 +162,9 @@ library GmxV2Lib {
         // Note: with regard to minimum collateral requirement,
         //       if the above is satisfied, then all is ok because the reverted sizeUsd will be smaller than original
         // if negative pnl, then revert
-        if (collateralDeltaAmount > result.initialCollateralDeltaAmount) {
+        if (collateralDeltaAmount > result.initialCollateralDeltaAmount && totalPositionPnlUsd > 0) {
             // fill the reducing collateral with realized pnl
             collateralDeltaAmount -= result.initialCollateralDeltaAmount;
-            // assuming totalPositionPnlUsd is positive, otherwise will revert with SafeCastOverflowedIntToUint
             uint256 totalPositionPnlAmount = totalPositionPnlUsd.toUint256() / collateralTokenPrice;
             if (totalPositionPnlAmount <= collateralDeltaAmount) {
                 revert Errors.NotEnoughPnl();
@@ -196,6 +195,12 @@ library GmxV2Lib {
                         - executionPriceResultForIncrease.executionPrice * sizeDeltaInTokensToBeRealized
                 ) / sizeDeltaInTokens;
             }
+        }
+
+        if (result.sizeDeltaUsdToDecrease >= position.numbers.sizeInUsd) {
+            result.sizeDeltaUsdToDecrease = position.numbers.sizeInUsd;
+            result.sizeDeltaUsdToIncrease = 0;
+            result.initialCollateralDeltaAmount = 0;
         }
         return result;
     }

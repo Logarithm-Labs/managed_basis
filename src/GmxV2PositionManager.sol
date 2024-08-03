@@ -612,21 +612,20 @@ contract GmxV2PositionManager is
 
     function _processDecreasePosition() private {
         DataTypes.PositionManagerPayload memory callbackParams;
+        uint256 sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));
         uint256 sizeInTokensBefore = _getGmxV2PositionManagerStorage().sizeInTokensBefore;
         if (sizeInTokensBefore > 0) {
-            uint256 sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));
             (, callbackParams.sizeDeltaInTokens) = sizeInTokensBefore.trySub(sizeInTokensAfter);
             _getGmxV2PositionManagerStorage().sizeInTokensBefore = 0;
         }
         uint256 decreasingCollateralDeltaAmount = _getGmxV2PositionManagerStorage().decreasingCollateralDeltaAmount;
         if (decreasingCollateralDeltaAmount > 0) {
             uint256 idleCollateralAmount = IERC20(collateralToken()).balanceOf(address(this));
-            callbackParams.collateralDeltaAmount = idleCollateralAmount > decreasingCollateralDeltaAmount
-                ? decreasingCollateralDeltaAmount
-                : idleCollateralAmount;
+            callbackParams.collateralDeltaAmount = (
+                sizeInTokensAfter == 0 || idleCollateralAmount < decreasingCollateralDeltaAmount
+            ) ? idleCollateralAmount : decreasingCollateralDeltaAmount;
             _getGmxV2PositionManagerStorage().decreasingCollateralDeltaAmount = 0;
         }
-        callbackParams.isIncrease = false;
         IManagedBasisStrategy(strategy()).afterAdjustPosition(callbackParams);
     }
 
