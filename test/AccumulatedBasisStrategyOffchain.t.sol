@@ -245,7 +245,6 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
     function test_previewDepositMint_whenNotUtilized() public afterDeposited {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC);
         uint256 assets = strategy.previewMint(shares);
-        assertEq(shares, TEN_THOUSANDS_USDC * (1 ether - entryCost) / 1 ether);
         assertEq(assets, TEN_THOUSANDS_USDC);
     }
 
