@@ -721,7 +721,12 @@ library BasisStrategyLogic {
     }
 
     function executeAfterIncreasePosition(AfterAdjustPositionParams calldata params) external {
-        if (params.requestParams.sizeDeltaInTokens > params.responseParams.sizeDeltaInTokens) {
+        if (
+            params.requestParams.sizeDeltaInTokens > params.responseParams.sizeDeltaInTokens
+                && (params.requestParams.sizeDeltaInTokens - params.responseParams.sizeDeltaInTokens).mulDiv(
+                    Constants.FLOAT_PRECISION, params.requestParams.sizeDeltaInTokens
+                ) > 0.01 ether
+        ) {
             // revert spot to make hedge size the same as spot
             ManualSwapLogic.swap(
                 params.requestParams.sizeDeltaInTokens - params.responseParams.sizeDeltaInTokens, params.revertSwapPath
