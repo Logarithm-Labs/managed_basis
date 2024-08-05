@@ -392,7 +392,9 @@ library BasisStrategyLogic {
                     upkeepNeeded = true;
                 } else {
                     // @TODO add minimum amount restriction to decrease
-                    if (params.pendingDecreaseCollateral > 0) {
+                    (uint256 minDecreaseCollateral,) =
+                        IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
+                    if (params.pendingDecreaseCollateral > minDecreaseCollateral) {
                         upkeepNeeded = true;
                     }
                 }
@@ -485,6 +487,8 @@ library BasisStrategyLogic {
             if (deleverageNeeded && deltaCollateralToIncrease > idleAssets) {
                 uint256 amount =
                     getPendingDeutilization(params.addr, params.cache, params.leverages, params.totalSupply, true);
+                (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseSizeMinMax();
+                amount = _clamp(min, amount, max);
                 ManualSwapLogic.swap(amount, params.productToAssetSwapPath);
                 requestParams.sizeDeltaInTokens = amount;
             } else if (!deleverageNeeded && idleAssets == 0) {
@@ -492,20 +496,25 @@ library BasisStrategyLogic {
             } else {
                 requestParams.collateralDeltaAmount =
                     idleAssets > deltaCollateralToIncrease ? deltaCollateralToIncrease : idleAssets;
+                (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
+                requestParams.collateralDeltaAmount = _clamp(min, requestParams.collateralDeltaAmount, max);
                 requestParams.isIncrease = true;
             }
         } else if (hedgeDeviationInTokens != 0) {
             if (hedgeDeviationInTokens > 0) {
-                requestParams.sizeDeltaInTokens = uint256(hedgeDeviationInTokens);
+                (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).increaseSizeMinMax();
+                requestParams.sizeDeltaInTokens = _clamp(min, uint256(hedgeDeviationInTokens), max);
                 requestParams.isIncrease = true;
             } else {
-                requestParams.sizeDeltaInTokens = uint256(-hedgeDeviationInTokens);
+                (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseSizeMinMax();
+                requestParams.sizeDeltaInTokens = _clamp(min, uint256(-hedgeDeviationInTokens), max);
             }
         } else if (positionManagerNeedKeep) {
             IPositionManager(params.addr.positionManager).keep();
         } else if (params.cache.pendingDecreaseCollateral > 0) {
             // @TODO set threshold for decrease collateral amount
-            requestParams.collateralDeltaAmount = params.cache.pendingDecreaseCollateral;
+            (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
+            requestParams.collateralDeltaAmount = _clamp(min, params.cache.pendingDecreaseCollateral, max);
         }
     }
 
@@ -533,7 +542,6 @@ library BasisStrategyLogic {
         // @note dont need to check because always pendingUtilization_ < idle
         // params.amount = params.amount > idleAssets ? idleAssets : params.amount;
         params.amount = params.amount > pendingUtilization ? pendingUtilization : params.amount;
-
         // can only utilize when amount is positive
         if (params.amount == 0) {
             revert Errors.ZeroAmountUtilization();
@@ -553,6 +561,10 @@ library BasisStrategyLogic {
         uint256 pendingIncreaseCollateral = _pendingIncreaseCollateral(idleAssets, params.targetLeverage);
 
         requestParams.collateralDeltaAmount = pendingIncreaseCollateral.mulDiv(params.amount, pendingUtilization);
+        (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
+
+        // note: clamp is not required for size delta in tokens, expected behaviour is reversion in position manager
+        requestParams.collateralDeltaAmount = _clamp(min, requestParams.collateralDeltaAmount, max);
         requestParams.isIncrease = true;
         status = DataTypes.StrategyStatus.DEPOSITING;
 
@@ -583,19 +595,26 @@ library BasisStrategyLogic {
             getPendingDeutilization(params.addr, params.cache, params.leverages, params.totalSupply, needRebalanceDown);
         // @note productBalance is already checked within _pendingDeutilization()
         // amount = amount > productBalance ? productBalance : amount;
-        params.amount = params.amount > pendingDeutilization ? pendingDeutilization : params.amount;
+        uint256 amount = params.amount > pendingDeutilization ? pendingDeutilization : params.amount;
+        (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseSizeMinMax();
+        amount = _clamp(min, amount, max);
 
         // can only deutilize when amount is positive
-        if (params.amount == 0) {
+        if (amount == 0) {
             revert Errors.ZeroAmountUtilization();
+        }
+
+        // can only execute through 1Inch with valid amountIn in swapData
+        if (amount != params.amount) {
+            params.swapType = DataTypes.SwapType.MANUAL;
         }
 
         if (params.swapType == DataTypes.SwapType.INCH_V6) {
             (amountOut, success) = InchAggregatorV6Logic.executeSwap(
-                params.amount, params.addr.asset, params.addr.product, false, params.swapData
+                amount, params.addr.asset, params.addr.product, false, params.swapData
             );
         } else if (params.swapType == DataTypes.SwapType.MANUAL) {
-            amountOut = ManualSwapLogic.swap(params.amount, params.productToAssetSwapPath);
+            amountOut = ManualSwapLogic.swap(amount, params.productToAssetSwapPath);
             success = true;
         } else {
             // TODO: fallback swap
@@ -603,18 +622,18 @@ library BasisStrategyLogic {
         }
 
         params.cache.pendingDeutilizedAssets = amountOut;
-        requestParams.sizeDeltaInTokens = params.amount;
+        requestParams.sizeDeltaInTokens = amount;
 
         if (!needRebalanceDown) {
             params.cache.assetsToWithdraw += amountOut;
-            if (params.amount == pendingDeutilization) {
+            if (amount == pendingDeutilization) {
                 (, requestParams.collateralDeltaAmount) =
                     params.cache.accRequestedWithdrawAssets.trySub(params.cache.proccessedWithdrawAssets + amountOut);
                 params.cache.pendingDecreaseCollateral = requestParams.collateralDeltaAmount;
             } else {
                 uint256 positionNetBalance = IPositionManager(params.addr.positionManager).positionNetBalance();
                 uint256 positionSizeInTokens = IPositionManager(params.addr.positionManager).positionSizeInTokens();
-                uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(params.amount, positionSizeInTokens);
+                uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
                 params.cache.pendingDecreaseCollateral += collateralDeltaToDecrease;
             }
         }
@@ -776,5 +795,9 @@ library BasisStrategyLogic {
                 cache.pendingDecreaseCollateral.trySub(params.responseParams.collateralDeltaAmount);
         }
         return (cache, status);
+    }
+
+    function _clamp(uint256 min, uint256 value, uint256 max) internal pure returns (uint256 result) {
+        result = value < min ? 0 : (value > max ? max : value);
     }
 }

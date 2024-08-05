@@ -458,4 +458,24 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
     }
 
     function keep() external pure {}
+
+    function increaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return ($.increaseCollateralMinMax[0], $.increaseCollateralMinMax[1]);
+    }
+
+    function increaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return ($.increaseSizeMinMax[0], $.increaseSizeMinMax[1]);
+    }
+
+    function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return ($.decreaseCollateralMinMax[0], $.decreaseCollateralMinMax[1]);
+    }
+
+    function decreaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return ($.decreaseSizeMinMax[0], $.decreaseSizeMinMax[1]);
+    }
 }

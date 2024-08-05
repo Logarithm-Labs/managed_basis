@@ -17,4 +17,12 @@ interface IPositionManager {
     function needKeep() external view returns (bool);
 
     function adjustPosition(DataTypes.PositionManagerPayload memory requestParams) external;
+
+    function increaseCollateralMinMax() external view returns (uint256 min, uint256 max);
+
+    function increaseSizeMinMax() external view returns (uint256 min, uint256 max);
+
+    function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max);
+
+    function decreaseSizeMinMax() external view returns (uint256 min, uint256 max);
 }

@@ -464,7 +464,7 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
 
     function test_deutilize_partial_withMultipleRequest() public afterMultipleWithdrawRequestCreated {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        _deutilize(pendingDeutilization / 2);
+        _deutilize(pendingDeutilization / 10);
 
         bytes32 requestKey1 = strategy.getWithdrawId(user1, 0);
         assertFalse(strategy.isClaimable(requestKey1));

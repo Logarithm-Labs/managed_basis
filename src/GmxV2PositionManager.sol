@@ -93,6 +93,11 @@ contract GmxV2PositionManager is
         uint256 sizeInTokensBefore;
         uint256 decreasingCollateralDeltaAmount;
     }
+    // min max
+    // uint256[2] increaseSizeMinMax;
+    // uint256[2] increaseCollateralMinMax;
+    // uint256[2] decreaseSizeMinMax;
+    // uint256[2] decreaseCollateralMinMax;
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant GmxV2PositionManagerStorageLocation =
@@ -117,11 +122,6 @@ contract GmxV2PositionManager is
 
     modifier onlyStrategy() {
         _onlyStrategy();
-        _;
-    }
-
-    modifier onlyKeeper() {
-        _onlyKeeper();
         _;
     }
 
@@ -161,6 +161,11 @@ contract GmxV2PositionManager is
 
         $.maxClaimableFundingShare = 1e16; // 1%
 
+        // $.increaseSizeMinMax = [0, type(uint256).max];
+        // $.increaseCollateralMinMax = [0, type(uint256).max];
+        // $.decreaseSizeMinMax = [0, type(uint256).max];
+        // $.decreaseCollateralMinMax = [0, type(uint256).max];
+
         // approve strategy to max amount
         IERC20(asset).approve($.strategy, type(uint256).max);
     }
@@ -172,6 +177,30 @@ contract GmxV2PositionManager is
     function renounceOwnership() public pure override {
         revert();
     }
+
+    // function setSizeMinMax(
+    //     uint256 increaseSizeMin,
+    //     uint256 increaseSizeMax,
+    //     uint256 decreaseSizeMin,
+    //     uint256 decreaseSizeMax
+    // ) external onlyOwner {
+    //     require(increaseSizeMin < increaseSizeMax && decreaseSizeMin < decreaseSizeMax);
+    //     GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+    //     $.increaseSizeMinMax = [increaseSizeMin, increaseSizeMax];
+    //     $.decreaseSizeMinMax = [decreaseSizeMin, decreaseSizeMax];
+    // }
+
+    // function setCollateralMinMax(
+    //     uint256 increaseCollateralMin,
+    //     uint256 increaseCollateralMax,
+    //     uint256 decreaseCollateralMin,
+    //     uint256 decreaseCollateralMax
+    // ) external onlyOwner {
+    //     require(increaseCollateralMin < increaseCollateralMax && decreaseCollateralMin < decreaseCollateralMax);
+    //     GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+    //     $.increaseCollateralMinMax = [increaseCollateralMin, increaseCollateralMax];
+    //     $.decreaseCollateralMinMax = [decreaseCollateralMin, decreaseCollateralMax];
+    // }
 
     function setMaxClaimableFundingShare(uint256 _maxClaimableFundingShare) external onlyOwner {
         require(_maxClaimableFundingShare < 1 ether);
@@ -657,13 +686,6 @@ contract GmxV2PositionManager is
         }
     }
 
-    // @dev used in modifier which reduces the code size
-    function _onlyKeeper() private view {
-        if (msg.sender != keeper()) {
-            revert Errors.CallerNotKeeper();
-        }
-    }
-
     // @dev used to stop create orders one by on
     function _whenNotPending() private view {
         if (_isPending()) {
@@ -762,5 +784,25 @@ contract GmxV2PositionManager is
 
     function pendingDecreaseOrderKey() public view returns (bytes32) {
         return _getGmxV2PositionManagerStorage().pendingDecreaseOrderKey;
+    }
+
+    // note: accomodate for IPositionManager interface wo impact to contract size
+    function increaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+        return (0, type(uint256).max);
+    }
+
+    // note: accomodate for IPositionManager interface wo impact to contract size
+    function increaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+        return (0, type(uint256).max);
+    }
+
+    // note: accomodate for IPositionManager interface wo impact to contract size
+    function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+        return (0, type(uint256).max);
+    }
+
+    // note: accomodate for IPositionManager interface wo impact to contract size
+    function decreaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+        return (0, type(uint256).max);
     }
 }
