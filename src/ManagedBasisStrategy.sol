@@ -683,6 +683,11 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         }
     }
 
+    function unpause() external onlyOperator {
+        require(_getManagedBasisStrategyStorage().strategyStatus == DataTypes.StrategyStatus.PAUSE);
+        _getManagedBasisStrategyStorage().strategyStatus = DataTypes.StrategyStatus.IDLE;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             MANUAL SWAP
     //////////////////////////////////////////////////////////////*/
@@ -754,7 +759,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         }
 
         if (params.isIncrease) {
-            BasisStrategyLogic.executeAfterIncreasePosition(
+            $.strategyStatus = BasisStrategyLogic.executeAfterIncreasePosition(
                 BasisStrategyLogic.AfterAdjustPositionParams({
                     positionManager: $.positionManager,
                     requestParams: $.requestParams,
@@ -765,7 +770,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             emit UpdatePendingUtilization();
         } else {
             DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
-            DataTypes.StrategyStateChache memory cache1 = BasisStrategyLogic.executeAfterDecreasePosition(
+            DataTypes.StrategyStateChache memory cache1;
+            (cache1, $.strategyStatus) = BasisStrategyLogic.executeAfterDecreasePosition(
                 BasisStrategyLogic.AfterAdjustPositionParams({
                     positionManager: $.positionManager,
                     requestParams: $.requestParams,
@@ -777,7 +783,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             _updateStrategyState($, cache0, cache1);
         }
 
-        $.strategyStatus = DataTypes.StrategyStatus.IDLE;
         emit UpdateStrategyStatus(DataTypes.StrategyStatus.IDLE);
 
         // _checkStrategyStatus();

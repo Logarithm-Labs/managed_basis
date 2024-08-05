@@ -18,8 +18,8 @@ library DataTypes {
         WITHDRAWING,
         NEED_REBLANCE_DOWN,
         REBALANCING_UP, // increase leverage
-        REBALANCING_DOWN // decrease leverage
-
+        REBALANCING_DOWN, // decrease leverage
+        PAUSE
     }
 
     /*//////////////////////////////////////////////////////////////

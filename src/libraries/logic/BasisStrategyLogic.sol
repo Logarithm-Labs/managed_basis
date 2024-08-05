@@ -590,7 +590,6 @@ library BasisStrategyLogic {
             revert Errors.ZeroAmountUtilization();
         }
 
-        bool success;
         if (params.swapType == DataTypes.SwapType.INCH_V6) {
             (amountOut, success) = InchAggregatorV6Logic.executeSwap(
                 params.amount, params.addr.asset, params.addr.product, false, params.swapData
@@ -720,7 +719,11 @@ library BasisStrategyLogic {
         return deutilization;
     }
 
-    function executeAfterIncreasePosition(AfterAdjustPositionParams calldata params) external {
+    function executeAfterIncreasePosition(AfterAdjustPositionParams calldata params)
+        external
+        returns (DataTypes.StrategyStatus)
+    {
+        DataTypes.StrategyStatus status = DataTypes.StrategyStatus.IDLE;
         if (
             params.requestParams.sizeDeltaInTokens > params.responseParams.sizeDeltaInTokens
                 && (params.requestParams.sizeDeltaInTokens - params.responseParams.sizeDeltaInTokens).mulDiv(
@@ -731,6 +734,7 @@ library BasisStrategyLogic {
             ManualSwapLogic.swap(
                 params.requestParams.sizeDeltaInTokens - params.responseParams.sizeDeltaInTokens, params.revertSwapPath
             );
+            status = DataTypes.StrategyStatus.PAUSE;
         }
 
         (, uint256 revertCollateralDeltaAmount) =
@@ -741,18 +745,21 @@ library BasisStrategyLogic {
                 params.positionManager, address(this), revertCollateralDeltaAmount
             );
         }
+        return status;
     }
 
     function executeAfterDecreasePosition(
         AfterAdjustPositionParams calldata params,
         DataTypes.StrategyStateChache memory cache
-    ) external returns (DataTypes.StrategyStateChache memory) {
+    ) external returns (DataTypes.StrategyStateChache memory, DataTypes.StrategyStatus) {
+        DataTypes.StrategyStatus status = DataTypes.StrategyStatus.IDLE;
         uint256 remainingAssets;
         if (params.requestParams.sizeDeltaInTokens > 0) {
             if (params.responseParams.sizeDeltaInTokens == 0) {
                 ManualSwapLogic.swap(cache.pendingDeutilizedAssets, params.revertSwapPath);
                 cache.assetsToWithdraw -= cache.pendingDeutilizedAssets;
                 cache.pendingDeutilizedAssets = 0;
+                status = DataTypes.StrategyStatus.PAUSE;
             } else {
                 (remainingAssets, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);
                 cache.assetsToWithdraw = remainingAssets;
@@ -768,6 +775,6 @@ library BasisStrategyLogic {
             (, cache.pendingDecreaseCollateral) =
                 cache.pendingDecreaseCollateral.trySub(params.responseParams.collateralDeltaAmount);
         }
-        return cache;
+        return (cache, status);
     }
 }
