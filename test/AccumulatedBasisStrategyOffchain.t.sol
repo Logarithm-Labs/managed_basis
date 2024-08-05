@@ -18,11 +18,11 @@ import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
-import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
+import {ManagedBasisStrategy} from "src/ManagedBasisStrategy.sol";
 import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 import {console} from "forge-std/console.sol";
 
-contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
+contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
     address owner = makeAddr("owner");
     address user1 = makeAddr("user1");
     address user2 = makeAddr("user2");
@@ -47,7 +47,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
     uint256 constant maxLeverage = 5 ether;
     uint256 constant safeMarginLeverage = 10 ether;
 
-    AccumulatedBasisStrategy strategy;
+    ManagedBasisStrategy strategy;
     LogarithmOracle oracle;
     uint256 increaseFee;
     uint256 decreaseFee;
@@ -83,12 +83,12 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
         pathWeth[2] = WETH;
 
         // deploy strategy
-        address strategyImpl = address(new AccumulatedBasisStrategy());
+        address strategyImpl = address(new ManagedBasisStrategy());
         address strategyProxy = address(
             new ERC1967Proxy(
                 strategyImpl,
                 abi.encodeWithSelector(
-                    AccumulatedBasisStrategy.initialize.selector,
+                    ManagedBasisStrategy.initialize.selector,
                     "tt",
                     "tt",
                     asset,
@@ -105,7 +105,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
                 )
             )
         );
-        strategy = AccumulatedBasisStrategy(strategyProxy);
+        strategy = ManagedBasisStrategy(strategyProxy);
         vm.label(address(strategy), "strategy");
 
         // deploy position manager
@@ -145,19 +145,22 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
 
     modifier afterPartialUtilized() {
         _deposit(user1, TEN_THOUSANDS_USDC);
-        _utilize(strategy.pendingUtilization() / 2);
+        (uint256 pendingUtilization,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilization / 2);
         _;
     }
 
     modifier afterFullUtilized() {
         _deposit(user1, TEN_THOUSANDS_USDC);
-        _utilize(strategy.pendingUtilization());
+        (uint256 pendingUtilization,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilization);
         _;
     }
 
     modifier afterWithdrawRequestCreated() {
         _deposit(user1, TEN_THOUSANDS_USDC);
-        _utilize(strategy.pendingUtilization() / 2);
+        (uint256 pendingUtilization,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilization / 2);
         uint256 redeemShares = strategy.balanceOf(user1) * 2 / 3;
         vm.startPrank(user1);
         strategy.redeem(redeemShares, user1, user1);
@@ -166,9 +169,11 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
 
     modifier afterMultipleWithdrawRequestCreated() {
         _deposit(user1, TEN_THOUSANDS_USDC);
-        _utilize(strategy.pendingUtilization());
+        (uint256 pendingUtilization,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilization);
         _deposit(user2, TEN_THOUSANDS_USDC);
-        _utilize(strategy.pendingUtilization());
+        (pendingUtilization,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilization);
 
         uint256 redeemShares1 = strategy.balanceOf(user1) / 5;
         vm.startPrank(user1);
@@ -200,6 +205,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.DEPOSITING));
         _fullOffChainExecute();
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.IDLE));
+        _performKeep();
     }
 
     function _deutilize(uint256 amount) private {
@@ -209,6 +215,16 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.WITHDRAWING));
         _fullOffChainExecute();
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.IDLE));
+        _performKeep();
+    }
+
+    function _performKeep() private {
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        if (upkeepNeeded) {
+            vm.startPrank(forwarder);
+            strategy.performUpkeep(performData);
+            _fullOffChainExecute();
+        }
     }
 
     function _deutilizeWithoutExecution(uint256 amount) private {
@@ -316,7 +332,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
         assertEq(strategy.balanceOf(user2), shares);
         uint256 pendingWithdrawAfter = strategy.totalPendingWithdraw();
         assertEq(pendingWithdrawAfter + THOUSAND_USDC, pendingWithdrawBefore);
-        assertFalse(strategy.isClaimable(strategy.getWithdrawKey(user1, 0)));
+        assertFalse(strategy.isClaimable(strategy.getWithdrawId(user1, 0)));
     }
 
     function test_deposit_withPendingWithdraw_biggerThanTotalPendingWithdraw() public afterWithdrawRequestCreated {
@@ -326,7 +342,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
         assertEq(strategy.balanceOf(user2), shares);
         uint256 pendingWithdrawAfter = strategy.totalPendingWithdraw();
         assertEq(pendingWithdrawAfter, 0);
-        assertTrue(strategy.isClaimable(strategy.getWithdrawKey(user1, 0)));
+        assertTrue(strategy.isClaimable(strategy.getWithdrawId(user1, 0)));
         assertEq(strategy.idleAssets(), TEN_THOUSANDS_USDC - pendingWithdrawBefore);
     }
 
@@ -335,7 +351,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
     //////////////////////////////////////////////////////////////*/
 
     function test_utilize_partialDepositing() public afterDeposited {
-        uint256 pendingUtilization = strategy.pendingUtilization();
+        (uint256 pendingUtilization,) = strategy.pendingUtilizations();
         uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         assertEq(pendingUtilization, pendingIncreaseCollateral * targetLeverage / 1 ether);
         _utilize(pendingUtilization / 2);
@@ -343,13 +359,13 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
         assertApproxEqRel(totalAssets, TEN_THOUSANDS_USDC, 0.99 ether);
         assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC / 2);
         assertEq(IERC20(asset).balanceOf(address(positionManager)), 0);
-        pendingUtilization = strategy.pendingUtilization();
+        (pendingUtilization,) = strategy.pendingUtilizations();
         pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         assertEq(pendingUtilization, pendingIncreaseCollateral * targetLeverage / 1 ether);
     }
 
     function test_utilize_fullDepositing() public afterDeposited {
-        uint256 pendingUtilization = strategy.pendingUtilization();
+        (uint256 pendingUtilization,) = strategy.pendingUtilizations();
         uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         assertEq(pendingUtilization, pendingIncreaseCollateral * targetLeverage / 1 ether);
         _utilize(pendingUtilization);
@@ -357,7 +373,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
         assertApproxEqRel(totalAssets, TEN_THOUSANDS_USDC, 0.99 ether);
         assertEq(IERC20(asset).balanceOf(address(strategy)), 0);
         assertEq(IERC20(asset).balanceOf(address(positionManager)), 0);
-        pendingUtilization = strategy.pendingUtilization();
+        (pendingUtilization,) = strategy.pendingUtilizations();
         pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         assertEq(pendingUtilization, 0);
         assertEq(pendingIncreaseCollateral, 0);
@@ -399,13 +415,13 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
         uint256 redeemShares = totalShares * 2 / 3;
         uint256 assets = strategy.previewRedeem(redeemShares);
         vm.expectEmit();
-        emit AccumulatedBasisStrategy.UpdatePendingUtilization(0);
+        emit ManagedBasisStrategy.UpdatePendingUtilization();
         vm.startPrank(user1);
         strategy.redeem(redeemShares, user1, user1);
-        bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
-        AccumulatedBasisStrategy.WithdrawRequest memory withdrawRequest = strategy.withdrawRequests(requestKey);
+        bytes32 requestKey = strategy.getWithdrawId(user1, 0);
+        DataTypes.WithdrawRequestState memory withdrawRequest = strategy.withdrawRequests(requestKey);
         assertFalse(strategy.isClaimable(requestKey));
-        assertEq(withdrawRequest.requestedAssets, assets);
+        assertEq(withdrawRequest.requestedAmount, assets);
         assertEq(withdrawRequest.receiver, user1);
         assertEq(withdrawRequest.accRequestedWithdrawAssets, assets - TEN_THOUSANDS_USDC / 2);
         assertEq(strategy.idleAssets(), 0);
@@ -419,11 +435,11 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
     //////////////////////////////////////////////////////////////*/
 
     function test_deutilize_partial_withSingleRequest() public afterWithdrawRequestCreated {
-        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization / 2);
         // _performUpkeep();
 
-        bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
+        bytes32 requestKey = strategy.getWithdrawId(user1, 0);
         assertFalse(strategy.isClaimable(requestKey));
         vm.expectRevert(Errors.RequestNotExecuted.selector);
         vm.startPrank(user1);
@@ -431,51 +447,50 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
     }
 
     function test_deutilize_full_withSingleRequest() public afterWithdrawRequestCreated {
-        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
         // _performUpkeep();
 
-        bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
+        bytes32 requestKey = strategy.getWithdrawId(user1, 0);
         assertTrue(strategy.isClaimable(requestKey));
 
-        AccumulatedBasisStrategy.WithdrawRequest memory withdrawRequest = strategy.withdrawRequests(requestKey);
+        DataTypes.WithdrawRequestState memory withdrawRequest = strategy.withdrawRequests(requestKey);
         uint256 balanceBefore = IERC20(asset).balanceOf(user1);
         vm.startPrank(user1);
         strategy.claim(requestKey);
         uint256 balanceAfter = IERC20(asset).balanceOf(user1);
-        assertEq(balanceBefore + withdrawRequest.requestedAssets, balanceAfter);
+        assertEq(balanceBefore + withdrawRequest.requestedAmount, balanceAfter);
     }
 
     function test_deutilize_partial_withMultipleRequest() public afterMultipleWithdrawRequestCreated {
-        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization / 2);
-        // _performUpkeep();
 
-        bytes32 requestKey1 = strategy.getWithdrawKey(user1, 0);
+        bytes32 requestKey1 = strategy.getWithdrawId(user1, 0);
         assertFalse(strategy.isClaimable(requestKey1));
 
-        pendingDeutilization = strategy.pendingDeutilization();
+        (, pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
 
         assertTrue(strategy.isClaimable(requestKey1));
 
-        bytes32 requestKey2 = strategy.getWithdrawKey(user2, 0);
+        bytes32 requestKey2 = strategy.getWithdrawId(user2, 0);
         assertTrue(strategy.isClaimable(requestKey2));
 
-        AccumulatedBasisStrategy.WithdrawRequest memory withdrawRequest1 = strategy.withdrawRequests(requestKey1);
+        DataTypes.WithdrawRequestState memory withdrawRequest1 = strategy.withdrawRequests(requestKey1);
         uint256 balanceBefore = IERC20(asset).balanceOf(user1);
         vm.startPrank(user1);
         strategy.claim(requestKey1);
         uint256 balanceAfter = IERC20(asset).balanceOf(user1);
-        assertEq(balanceBefore + withdrawRequest1.requestedAssets, balanceAfter);
+        assertEq(balanceBefore + withdrawRequest1.requestedAmount, balanceAfter);
     }
 
     function test_deutilize_full_withMultipleRequest() public afterMultipleWithdrawRequestCreated {
-        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
         // _performUpkeep();
 
-        pendingDeutilization = strategy.pendingDeutilization();
+        (, pendingDeutilization) = strategy.pendingUtilizations();
         console.log("pendingDeutilization", pendingDeutilization);
 
         if (pendingDeutilization > 0) {
@@ -483,7 +498,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
             // _performUpkeep();
         }
 
-        pendingDeutilization = strategy.pendingDeutilization();
+        (, pendingDeutilization) = strategy.pendingUtilizations();
         console.log("pendingDeutilization", pendingDeutilization);
 
         if (pendingDeutilization > 0) {
@@ -491,25 +506,25 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
             // _performUpkeep();
         }
 
-        bytes32 requestKey1 = strategy.getWithdrawKey(user1, 0);
+        bytes32 requestKey1 = strategy.getWithdrawId(user1, 0);
         assertTrue(strategy.isClaimable(requestKey1));
 
-        bytes32 requestKey2 = strategy.getWithdrawKey(user2, 0);
+        bytes32 requestKey2 = strategy.getWithdrawId(user2, 0);
         assertTrue(strategy.isClaimable(requestKey2));
 
-        AccumulatedBasisStrategy.WithdrawRequest memory withdrawRequest1 = strategy.withdrawRequests(requestKey1);
+        DataTypes.WithdrawRequestState memory withdrawRequest1 = strategy.withdrawRequests(requestKey1);
         uint256 balanceBefore1 = IERC20(asset).balanceOf(user1);
         vm.startPrank(user1);
         strategy.claim(requestKey1);
         uint256 balanceAfter1 = IERC20(asset).balanceOf(user1);
-        assertEq(balanceBefore1 + withdrawRequest1.requestedAssets, balanceAfter1);
+        assertEq(balanceBefore1 + withdrawRequest1.requestedAmount, balanceAfter1);
 
-        AccumulatedBasisStrategy.WithdrawRequest memory withdrawRequest2 = strategy.withdrawRequests(requestKey2);
+        DataTypes.WithdrawRequestState memory withdrawRequest2 = strategy.withdrawRequests(requestKey2);
         uint256 balanceBefore2 = IERC20(asset).balanceOf(user2);
         vm.startPrank(user2);
         strategy.claim(requestKey2);
         uint256 balanceAfter2 = IERC20(asset).balanceOf(user2);
-        assertEq(balanceBefore2 + withdrawRequest2.requestedAssets, balanceAfter2);
+        assertEq(balanceBefore2 + withdrawRequest2.requestedAmount, balanceAfter2);
     }
 
     function test_lastRedeemBelowRequestedAmount() public afterFullUtilized {
@@ -518,7 +533,7 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
         vm.startPrank(user1);
         strategy.redeem(userShares, user1, user1);
 
-        uint256 pendingDeutilization = strategy.pendingDeutilization();
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilizeWithoutExecution(pendingDeutilization);
 
         // manually decrease margin
@@ -532,11 +547,11 @@ contract AccumulatedBasisStrategyOffchainTest is InchTest, OffChainTest {
 
         _fullOffChainExecute();
 
-        bytes32 requestKey = strategy.getWithdrawKey(user1, 0);
+        bytes32 requestKey = strategy.getWithdrawId(user1, 0);
         assertTrue(strategy.proccessedWithdrawAssets() < strategy.accRequestedWithdrawAssets());
         assertTrue(strategy.isClaimable(requestKey));
 
-        uint256 requestedAmount = strategy.withdrawRequests(requestKey).requestedAssets;
+        uint256 requestedAmount = strategy.withdrawRequests(requestKey).requestedAmount;
         uint256 balBefore = IERC20(asset).balanceOf(user1);
 
         assertGt(strategy.accRequestedWithdrawAssets(), strategy.proccessedWithdrawAssets());
