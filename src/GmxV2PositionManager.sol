@@ -787,22 +787,22 @@ contract GmxV2PositionManager is
     }
 
     // note: accomodate for IPositionManager interface wo impact to contract size
-    function increaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+    function increaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
     // note: accomodate for IPositionManager interface wo impact to contract size
-    function increaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+    function increaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
     // note: accomodate for IPositionManager interface wo impact to contract size
-    function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+    function decreaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
     // note: accomodate for IPositionManager interface wo impact to contract size
-    function decreaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+    function decreaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 }
