@@ -687,7 +687,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     /*//////////////////////////////////////////////////////////////
                             MANUAL SWAP
     //////////////////////////////////////////////////////////////*/
-π
+
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
         require(amount0Delta > 0 || amount1Delta > 0); // swaps entirely within 0-liquidity regions are not supported
         if (data.length != 96) {

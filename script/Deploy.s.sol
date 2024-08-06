@@ -36,10 +36,10 @@ contract DeployScript is Script {
     uint256 constant maxLeverage = 5 ether;
     uint256 constant safeMarginLeverage = 10 ether;
 
-    uint256 increaseSizeMin = 15 * 1e6
-    uint256 increaseSizeMax = type(uint256).max
-    uint256 decreaseSizeMin = 15 * 1e6
-    uint256 decreaseSizeMax = type(uint256).max
+    uint256 increaseSizeMin = 15 * 1e6;
+    uint256 increaseSizeMax = type(uint256).max;
+    uint256 decreaseSizeMin = 15 * 1e6;
+    uint256 decreaseSizeMax = type(uint256).max;
 
     uint256 increaseCollateralMin = 5 * 1e6;
     uint256 increaseCollateralMax = type(uint256).max;
@@ -128,7 +128,9 @@ contract DeployScript is Script {
 
         // configure position manager
         positionManager.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
-        positionManager.setCollateralMinMax(increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax);
+        positionManager.setCollateralMinMax(
+            increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
+        );
 
         // set position manager
         strategy.setForwarder(forwarder);
