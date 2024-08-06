@@ -488,6 +488,14 @@ library BasisStrategyLogic {
                 uint256 amount =
                     getPendingDeutilization(params.addr, params.cache, params.leverages, params.totalSupply, true);
                 (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseSizeMinMax();
+                (min, max) = (
+                    min == 0
+                        ? 0
+                        : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, min),
+                    max == type(uint256).max
+                        ? type(uint256).max
+                        : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, max)
+                );
                 amount = _clamp(min, amount, max);
                 ManualSwapLogic.swap(amount, params.productToAssetSwapPath);
                 requestParams.sizeDeltaInTokens = amount;
@@ -503,10 +511,26 @@ library BasisStrategyLogic {
         } else if (hedgeDeviationInTokens != 0) {
             if (hedgeDeviationInTokens > 0) {
                 (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).increaseSizeMinMax();
+                (min, max) = (
+                    min == 0
+                        ? 0
+                        : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, min),
+                    max == type(uint256).max
+                        ? type(uint256).max
+                        : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, max)
+                );
                 requestParams.sizeDeltaInTokens = _clamp(min, uint256(hedgeDeviationInTokens), max);
                 requestParams.isIncrease = true;
             } else {
                 (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseSizeMinMax();
+                (min, max) = (
+                    min == 0
+                        ? 0
+                        : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, min),
+                    max == type(uint256).max
+                        ? type(uint256).max
+                        : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, max)
+                );
                 requestParams.sizeDeltaInTokens = _clamp(min, uint256(-hedgeDeviationInTokens), max);
             }
         } else if (positionManagerNeedKeep) {
@@ -597,6 +621,12 @@ library BasisStrategyLogic {
         // amount = amount > productBalance ? productBalance : amount;
         uint256 amount = params.amount > pendingDeutilization ? pendingDeutilization : params.amount;
         (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseSizeMinMax();
+        (min, max) = (
+            min == 0 ? 0 : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, min),
+            max == type(uint256).max
+                ? type(uint256).max
+                : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, max)
+        );
         amount = _clamp(min, amount, max);
 
         // can only deutilize when amount is positive
