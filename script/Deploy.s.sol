@@ -17,7 +17,7 @@ contract DeployScript is Script {
     address public operator = 0x78057a43dDc57792340BC19E50e1011F8DAdEd01;
     address public agent = 0xA2a7e3a770c38aAe24F175a38281f74731Fe477E;
     address public owner = 0xd1DD21D53eC43C8FE378E51029Aa3F380b229c98;
-    address public forwarder;
+    address public forwarder = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
 
     address public asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // USDC
     address public product = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH
@@ -35,6 +35,16 @@ contract DeployScript is Script {
     uint256 constant minLeverage = 2 ether;
     uint256 constant maxLeverage = 5 ether;
     uint256 constant safeMarginLeverage = 10 ether;
+
+    uint256 increaseSizeMin = 15 * 1e6
+    uint256 increaseSizeMax = type(uint256).max
+    uint256 decreaseSizeMin = 15 * 1e6
+    uint256 decreaseSizeMax = type(uint256).max
+
+    uint256 increaseCollateralMin = 5 * 1e6;
+    uint256 increaseCollateralMax = type(uint256).max;
+    uint256 decreaseCollateralMin = 10 * 1e6;
+    uint256 decreaseCollateralMax = type(uint256).max;
 
     bool public isLong = false;
 
@@ -115,6 +125,10 @@ contract DeployScript is Script {
 
         require(positionManager.owner() == owner, "DeployScript: position manager owner mismatch");
         console.log("Position manager deployed at: %s", address(positionManager));
+
+        // configure position manager
+        positionManager.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
+        positionManager.setCollateralMinMax(increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax);
 
         // set position manager
         strategy.setForwarder(forwarder);

@@ -391,7 +391,6 @@ library BasisStrategyLogic {
                 if (positionManagerNeedKeep) {
                     upkeepNeeded = true;
                 } else {
-                    // @TODO add minimum amount restriction to decrease
                     (uint256 minDecreaseCollateral,) =
                         IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
                     if (params.pendingDecreaseCollateral > minDecreaseCollateral) {
@@ -444,7 +443,30 @@ library BasisStrategyLogic {
             hedgeDeviation > Constants.FLOAT_PRECISION + hedgeDeviationThreshold
                 || hedgeDeviation < Constants.FLOAT_PRECISION - hedgeDeviationThreshold
         ) {
-            return spotExposure.toInt256() - hedgeExposure.toInt256();
+            int256 hedgeDeviationInTokens = spotExposure.toInt256() - hedgeExposure.toInt256();
+            if (hedgeDeviationInTokens > 0) {
+                (uint256 min, uint256 max) = IPositionManager(addr.positionManager).increaseSizeMinMax();
+                (min, max) = (
+                    min == 0
+                        ? 0
+                        : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, min),
+                    max == type(uint256).max
+                        ? type(uint256).max
+                        : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, max)
+                );
+                return int256(_clamp(min, uint256(hedgeDeviationInTokens), max);
+            } else {
+                (uint256 min, uint256 max) = IPositionManager(addr.positionManager).decreaseSizeMinMax();
+                (min, max) = (
+                    min == 0
+                        ? 0
+                        : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, min),
+                    max == type(uint256).max
+                        ? type(uint256).max
+                        : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, max)
+                );
+                return -int256(_clamp(min, uint256(-hedgeDeviationInTokens), max));
+            }
         }
         return 0;
     }
@@ -536,7 +558,6 @@ library BasisStrategyLogic {
         } else if (positionManagerNeedKeep) {
             IPositionManager(params.addr.positionManager).keep();
         } else if (params.cache.pendingDecreaseCollateral > 0) {
-            // @TODO set threshold for decrease collateral amount
             (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
             requestParams.collateralDeltaAmount = _clamp(min, params.cache.pendingDecreaseCollateral, max);
         }
@@ -647,7 +668,6 @@ library BasisStrategyLogic {
             amountOut = ManualSwapLogic.swap(amount, params.productToAssetSwapPath);
             success = true;
         } else {
-            // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
 
