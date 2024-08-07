@@ -790,6 +790,16 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                            EXTERNAL GETTERS
     //////////////////////////////////////////////////////////////*/
 
+    function positionManager() external view returns (address) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.positionManager;
+    }
+
+    function oracle() external view returns (address) {
+        ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
+        return $.oracle;
+    }
+
     function strategyStatus() external view returns (DataTypes.StrategyStatus) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
         return $.strategyStatus;

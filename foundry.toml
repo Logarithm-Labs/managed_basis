@@ -13,7 +13,7 @@ fs_permissions = [{ access = "read-write", path = "./" }]
 evm_version = 'shanghai'
 gas_reports = ["GmxV2PositionManager"]
 show_progress = true
-threads = 1
+# threads = 1
 
 [rpc_endpoints]
 # All available network keywords:

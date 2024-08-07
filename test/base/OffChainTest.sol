@@ -9,6 +9,7 @@ import "src/interfaces/IManagedBasisStrategy.sol";
 import {ForkTest} from "./ForkTest.sol";
 import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {console2 as console} from "forge-std/console2.sol";
 
 contract OffChainTest is ForkTest {
     using Math for uint256;
@@ -40,7 +41,13 @@ contract OffChainTest is ForkTest {
     function _fullOffChainExecute() internal {
         vm.startPrank(agent);
         DataTypes.PositionManagerPayload memory request = _getRequest();
+        console.log("requestSizeInTokens", request.sizeDeltaInTokens);
+        console.log("requestCollateralDeltaAmount", request.collateralDeltaAmount);
+        console.log("requestIsIncreasee", request.isIncrease);
         DataTypes.PositionManagerPayload memory response = _executeRequest(request);
+        console.log("responseSizeInTokens", response.sizeDeltaInTokens);
+        console.log("responseCollateralDeltaAmount", response.collateralDeltaAmount);
+        console.log("responseIsIncreasee", response.isIncrease);
         _reportStateAndExecuteRequest(response);
         vm.stopPrank();
     }
@@ -64,11 +71,11 @@ contract OffChainTest is ForkTest {
             }
         } else {
             response.isIncrease = false;
-            if (request.collateralDeltaAmount > 0) {
-                response.collateralDeltaAmount = _decreasePositionCollateral(request.collateralDeltaAmount);
-            }
             if (request.sizeDeltaInTokens > 0) {
                 response.sizeDeltaInTokens = _decreasePositionSize(request.sizeDeltaInTokens);
+            }
+            if (request.collateralDeltaAmount > 0) {
+                response.collateralDeltaAmount = _decreasePositionCollateral(request.collateralDeltaAmount);
             }
         }
     }
@@ -78,6 +85,10 @@ contract OffChainTest is ForkTest {
         positionManager.reportState(positionSizeInTokens, positionNetBalance, markPrice);
     }
 
+    function _updatePositionNetBalance(uint256 netBalance) internal {
+        positionNetBalance = netBalance;
+    }
+
     function _reportStateAndExecuteRequest(DataTypes.PositionManagerPayload memory response) internal {
         uint256 markPrice = _getMarkPrice();
         DataTypes.PositionManagerPayload memory params = DataTypes.PositionManagerPayload({
@@ -85,6 +96,9 @@ contract OffChainTest is ForkTest {
             collateralDeltaAmount: response.collateralDeltaAmount,
             isIncrease: response.isIncrease
         });
+        console.log("positionSizeInTokens", positionSizeInTokens);
+        console.log("positionNetBalance", positionNetBalance);
+        console.log("markPrice", markPrice);
         positionManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
     }
 
