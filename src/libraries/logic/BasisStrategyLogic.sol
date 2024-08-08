@@ -384,11 +384,14 @@ library BasisStrategyLogic {
         (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) = _checkRebalance(params.leverages);
 
         if (!rebalanceUpNeeded && params.processingRebalance) {
-            rebalanceUpNeeded = _checkNeedRebalance(params.leverages.currentLeverage, params.leverages.targetLeverage);
+            (rebalanceUpNeeded,) =
+                _checkNeedRebalance(params.leverages.currentLeverage, params.leverages.targetLeverage);
         }
 
         if (!rebalanceDownNeeded && params.processingRebalance) {
-            if (_checkNeedRebalance(params.leverages.currentLeverage, params.leverages.targetLeverage)) {
+            (, rebalanceDownNeeded) =
+                _checkNeedRebalance(params.leverages.currentLeverage, params.leverages.targetLeverage);
+            if (rebalanceDownNeeded) {
                 uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
                 (uint256 minIncreaseCollateral,) =
                     IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
@@ -833,7 +836,8 @@ library BasisStrategyLogic {
         }
 
         // only when rebalance was started, we need to check
-        processingRebalance = processingRebalance && _checkNeedRebalance(currentLeverage, targetLeverage);
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded) = _checkNeedRebalance(currentLeverage, targetLeverage);
+        processingRebalance = processingRebalance && (rebalanceUpNeeded || rebalanceDownNeeded);
 
         return (status, processingRebalance);
     }
@@ -885,19 +889,27 @@ library BasisStrategyLogic {
         }
 
         // only when rebalance was started, we need to check
-        processingRebalance = processingRebalance && _checkNeedRebalance(currentLeverage, targetLeverage);
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded) = _checkNeedRebalance(currentLeverage, targetLeverage);
+        processingRebalance = processingRebalance && (rebalanceUpNeeded || rebalanceDownNeeded);
 
         return (cache, status, processingRebalance);
     }
 
-    function _checkNeedRebalance(uint256 currentLeverage, uint256 targetLeverage) internal pure returns (bool) {
-        uint256 leverageDeviation;
-        if (currentLeverage > targetLeverage) {
-            leverageDeviation = (currentLeverage - targetLeverage).mulDiv(Constants.FLOAT_PRECISION, targetLeverage);
-        } else {
-            leverageDeviation = (targetLeverage - currentLeverage).mulDiv(Constants.FLOAT_PRECISION, targetLeverage);
+    function _checkNeedRebalance(uint256 currentLeverage, uint256 targetLeverage)
+        internal
+        pure
+        returns (bool rebalanceUpNeeded, bool rebalanceDownNeeded)
+    {
+        int256 leverageDeviation = currentLeverage.toInt256() - targetLeverage.toInt256();
+        if (
+            (leverageDeviation < 0 ? uint256(-leverageDeviation) : uint256(leverageDeviation)).mulDiv(
+                Constants.FLOAT_PRECISION, targetLeverage
+            ) > Constants.REBALANCE_LEVERAGE_BOUNDRY
+        ) {
+            rebalanceUpNeeded = leverageDeviation < 0;
+            rebalanceDownNeeded = !rebalanceUpNeeded;
         }
-        return leverageDeviation > Constants.REBALANCE_BOUNDRY;
+        return (rebalanceUpNeeded, rebalanceDownNeeded);
     }
 
     function _clamp(uint256 min, uint256 value, uint256 max) internal pure returns (uint256 result) {
