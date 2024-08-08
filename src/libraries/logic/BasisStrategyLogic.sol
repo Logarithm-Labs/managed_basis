@@ -383,6 +383,10 @@ library BasisStrategyLogic {
 
         (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) = _checkRebalance(params.leverages);
 
+        if (!rebalanceUpNeeded && params.processingRebalance) {
+            rebalanceUpNeeded = _checkNeedRebalance(params.leverages.currentLeverage, params.leverages.targetLeverage);
+        }
+
         if (!rebalanceDownNeeded && params.processingRebalance) {
             if (_checkNeedRebalance(params.leverages.currentLeverage, params.leverages.targetLeverage)) {
                 uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
@@ -497,6 +501,8 @@ library BasisStrategyLogic {
         ) = abi.decode(params.performData, (bool, bool, bool, int256, bool));
         status = DataTypes.StrategyStatus.KEEPING;
         if (rebalanceUpNeeded) {
+            // if reblance up is needed, we have to break normal deutilization of decreasing collateral
+            params.cache.pendingDecreaseCollateral = 0;
             uint256 positionSizeInAssets = IOracle(params.addr.oracle).convertTokenAmount(
                 params.addr.product,
                 params.addr.asset,
@@ -507,6 +513,7 @@ library BasisStrategyLogic {
             (, uint256 deltaCollateralToDecrease) =
                 IPositionManager(params.addr.positionManager).positionNetBalance().trySub(targetCollateral);
             requestParams.collateralDeltaAmount = deltaCollateralToDecrease;
+            processingRebalance = true;
         } else if (rebalanceDownNeeded) {
             // if reblance down is needed, we have to break normal deutilization of decreasing collateral
             params.cache.pendingDecreaseCollateral = 0;
@@ -543,8 +550,6 @@ library BasisStrategyLogic {
                 // produced asset shouldn't go to idle until position size is decreased
                 params.cache.assetsToWithdraw += amountOut;
                 requestParams.sizeDeltaInTokens = amount;
-            } else if (!deleverageNeeded && idleAssets == 0) {
-                processingRebalance = true;
             } else {
                 requestParams.collateralDeltaAmount =
                     idleAssets > deltaCollateralToIncrease ? deltaCollateralToIncrease : idleAssets;
@@ -552,6 +557,7 @@ library BasisStrategyLogic {
                 requestParams.collateralDeltaAmount = _clamp(min, requestParams.collateralDeltaAmount, max);
                 requestParams.isIncrease = true;
             }
+            processingRebalance = true;
         } else if (hedgeDeviationInTokens != 0) {
             if (hedgeDeviationInTokens > 0) {
                 (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).increaseSizeMinMax();
@@ -879,9 +885,11 @@ library BasisStrategyLogic {
                 params.positionManager, address(this), params.responseParams.collateralDeltaAmount
             );
             (remainingAssets, cache) = processWithdrawRequests(params.responseParams.collateralDeltaAmount, cache);
-            cache.assetsToWithdraw += remainingAssets;
-            (, cache.pendingDecreaseCollateral) =
-                cache.pendingDecreaseCollateral.trySub(params.responseParams.collateralDeltaAmount);
+            if (!processingRebalance) {
+                cache.assetsToWithdraw += remainingAssets;
+                (, cache.pendingDecreaseCollateral) =
+                    cache.pendingDecreaseCollateral.trySub(params.responseParams.collateralDeltaAmount);
+            }
         }
 
         // only when rebalance was started, we need to check
