@@ -396,6 +396,13 @@ library BasisStrategyLogic {
                 _checkNeedRebalance(params.leverages.currentLeverage, params.leverages.targetLeverage);
         }
 
+        if (rebalanceUpNeeded) {
+            uint256 deltaCollateralToDecrease =
+                _calculateDeltaCollateralForRebalance(params.addr.positionManager, params.leverages.targetLeverage);
+            (uint256 minDecreaseCollateral,) = IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
+            rebalanceUpNeeded = deltaCollateralToDecrease >= minDecreaseCollateral;
+        }
+
         if (rebalanceDownNeeded && !deleverageNeeded) {
             uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
             (uint256 minIncreaseCollateral,) = IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
