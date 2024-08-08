@@ -904,7 +904,7 @@ library BasisStrategyLogic {
         if (
             (leverageDeviation < 0 ? uint256(-leverageDeviation) : uint256(leverageDeviation)).mulDiv(
                 Constants.FLOAT_PRECISION, targetLeverage
-            ) > Constants.REBALANCE_LEVERAGE_BOUNDRY
+            ) > Constants.REBALANCE_LEVERAGE_DEVIATION_THRESHOLD
         ) {
             rebalanceUpNeeded = leverageDeviation < 0;
             rebalanceDownNeeded = !rebalanceUpNeeded;
@@ -925,7 +925,7 @@ library BasisStrategyLogic {
         sizeDeltaDeviationInTokens = sizeDeltaInTokensResp.toInt256() - sizeDeltaInTokensReq.toInt256();
         isWrongPositionSize = (
             sizeDeltaDeviationInTokens < 0 ? uint256(-sizeDeltaDeviationInTokens) : uint256(sizeDeltaDeviationInTokens)
-        ).mulDiv(Constants.FLOAT_PRECISION, sizeDeltaInTokensReq) > Constants.SIZE_DELTA_DEVIATION_BOUNDRY;
+        ).mulDiv(Constants.FLOAT_PRECISION, sizeDeltaInTokensReq) > Constants.SIZE_DELTA_DEVIATION_THRESHOLD;
         return (isWrongPositionSize, sizeDeltaDeviationInTokens);
     }
 
