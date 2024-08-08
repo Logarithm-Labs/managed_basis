@@ -777,15 +777,16 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     // callback function dispatcher
     function afterAdjustPosition(DataTypes.PositionManagerPayload memory params) external onlyPositionManager {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        DataTypes.StrategyStatus status = $.strategyStatus;
-        if (status == DataTypes.StrategyStatus.IDLE) {
+
+        if ($.strategyStatus == DataTypes.StrategyStatus.IDLE) {
             revert Errors.InvalidCallback();
         }
 
         uint256 currentLeverage = IPositionManager($.positionManager).currentLeverage();
 
         if (params.isIncrease) {
-            ($.strategyStatus, $.processingRebalance) = BasisStrategyLogic.executeAfterIncreasePosition(
+            (DataTypes.StrategyStatus status, bool processingRebalance) = BasisStrategyLogic
+                .executeAfterIncreasePosition(
                 BasisStrategyLogic.AfterAdjustPositionParams({
                     positionManager: $.positionManager,
                     requestParams: $.requestParams,
@@ -796,11 +797,14 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 currentLeverage,
                 $.targetLeverage
             );
+            $.strategyStatus = status;
+            $.processingRebalance = processingRebalance;
             emit UpdatePendingUtilization();
         } else {
             DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
-            DataTypes.StrategyStateChache memory cache1;
-            (cache1, $.strategyStatus, $.processingRebalance) = BasisStrategyLogic.executeAfterDecreasePosition(
+
+            (DataTypes.StrategyStateChache memory cache1, DataTypes.StrategyStatus status, bool processingRebalance) =
+            BasisStrategyLogic.executeAfterDecreasePosition(
                 BasisStrategyLogic.AfterAdjustPositionParams({
                     positionManager: $.positionManager,
                     requestParams: $.requestParams,
@@ -812,12 +816,12 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 currentLeverage,
                 $.targetLeverage
             );
+            $.strategyStatus = status;
+            $.processingRebalance = processingRebalance;
             _updateStrategyState($, cache0, cache1);
         }
 
         emit UpdateStrategyStatus(DataTypes.StrategyStatus.IDLE);
-
-        // _checkStrategyStatus();
 
         emit AfterAdjustPosition(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
