@@ -619,11 +619,27 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         DataTypes.StrategyAddresses memory addr = _getStrategyAddresses($);
         DataTypes.StrategyLeverages memory leverages = _getStrategyLeverages($);
 
+        (bool upkeepNeeded,) = BasisStrategyLogic.getCheckUpkeep(
+            BasisStrategyLogic.CheckUpkeepParams({
+                hedgeDeviationThreshold: $.hedgeDeviationThreshold,
+                pendingDecreaseCollateral: $.pendingDecreaseCollateral,
+                processingRebalance: $.processingRebalance,
+                cache: cache,
+                addr: addr,
+                leverages: leverages,
+                strategyStatus: $.strategyStatus
+            })
+        );
+
+        if (upkeepNeeded) {
+            return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
+        }
+
         pendingUtilizationInAsset =
             BasisStrategyLogic.getPendingUtilization(addr.asset, leverages.targetLeverage, cache);
-
         pendingDeutilizationInProduct =
             BasisStrategyLogic.getPendingDeutilization(addr, cache, leverages, totalSupply(), $.processingRebalance);
+        return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
     }
 
     function utilize(uint256 amount, DataTypes.SwapType swapType, bytes calldata swapData)
