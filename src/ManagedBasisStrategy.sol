@@ -20,6 +20,7 @@ import {Constants} from "src/libraries/utils/Constants.sol";
 import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
+import {IOracle} from "src/interfaces/IOracle.sol";
 import {IManagedBasisStrategy} from "src/interfaces/IManagedBasisStrategy.sol";
 
 contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, OwnableUpgradeable {

@@ -825,17 +825,17 @@ library BasisStrategyLogic {
         uint256 targetLeverage
     ) external returns (DataTypes.StrategyStatus, bool) {
         DataTypes.StrategyStatus status = DataTypes.StrategyStatus.IDLE;
-        if (
-            params.requestParams.sizeDeltaInTokens > params.responseParams.sizeDeltaInTokens
-                && (params.requestParams.sizeDeltaInTokens - params.responseParams.sizeDeltaInTokens).mulDiv(
-                    Constants.FLOAT_PRECISION, params.requestParams.sizeDeltaInTokens
-                ) > 0.01 ether
-        ) {
-            // revert spot to make hedge size the same as spot
-            ManualSwapLogic.swap(
-                params.requestParams.sizeDeltaInTokens - params.responseParams.sizeDeltaInTokens, params.revertSwapPath
+        if (params.requestParams.sizeDeltaInTokens > 0) {
+            (bool isWrongPositionSize, int256 sizeDeltaDeviationInTokens) = _checkResultedPositionSize(
+                params.responseParams.sizeDeltaInTokens, params.requestParams.sizeDeltaInTokens
             );
-            status = DataTypes.StrategyStatus.PAUSE;
+            if (isWrongPositionSize) {
+                status = DataTypes.StrategyStatus.PAUSE;
+                if (sizeDeltaDeviationInTokens < 0) {
+                    // revert spot to make hedge size the same as spot
+                    ManualSwapLogic.swap(uint256(-sizeDeltaDeviationInTokens), params.revertSwapPath);
+                }
+            }
         }
 
         (, uint256 revertCollateralDeltaAmount) =
@@ -863,22 +863,29 @@ library BasisStrategyLogic {
         DataTypes.StrategyStatus status = DataTypes.StrategyStatus.IDLE;
         uint256 remainingAssets;
         if (params.requestParams.sizeDeltaInTokens > 0) {
-            if (params.responseParams.sizeDeltaInTokens == 0) {
-                ManualSwapLogic.swap(cache.pendingDeutilizedAssets, params.revertSwapPath);
-                cache.assetsToWithdraw -= cache.pendingDeutilizedAssets;
-                cache.pendingDeutilizedAssets = 0;
+            (bool isWrongPositionSize, int256 sizeDeltaDeviationInTokens) = _checkResultedPositionSize(
+                params.responseParams.sizeDeltaInTokens, params.requestParams.sizeDeltaInTokens
+            );
+            if (isWrongPositionSize) {
                 status = DataTypes.StrategyStatus.PAUSE;
-            } else {
-                if (processingRebalance) {
-                    // release deutilized asset to idle when rebalance down
-                    cache.assetsToWithdraw -= cache.pendingDeutilizedAssets;
-                } else {
-                    // process withdraw request
-                    (remainingAssets, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);
-                    cache.assetsToWithdraw = remainingAssets;
+                if (sizeDeltaDeviationInTokens < 0) {
+                    uint256 assetsToBeReverted = cache.pendingDeutilizedAssets.mulDiv(
+                        uint256(-sizeDeltaDeviationInTokens), params.requestParams.sizeDeltaInTokens
+                    );
+                    ManualSwapLogic.swap(assetsToBeReverted, params.revertSwapPath);
+                    cache.assetsToWithdraw -= assetsToBeReverted;
+                    cache.pendingDeutilizedAssets -= assetsToBeReverted;
                 }
-                cache.pendingDeutilizedAssets = 0;
             }
+            if (processingRebalance) {
+                // release deutilized asset to idle when rebalance down
+                cache.assetsToWithdraw -= cache.pendingDeutilizedAssets;
+            } else {
+                // process withdraw request
+                (remainingAssets, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);
+                cache.assetsToWithdraw = remainingAssets;
+            }
+            cache.pendingDeutilizedAssets = 0;
         }
         if (params.responseParams.collateralDeltaAmount > 0) {
             IERC20(params.revertSwapPath[0]).safeTransferFrom(
@@ -910,5 +917,18 @@ library BasisStrategyLogic {
 
     function _clamp(uint256 min, uint256 value, uint256 max) internal pure returns (uint256 result) {
         result = value < min ? 0 : (value > max ? max : value);
+    }
+
+    // @dev should be called under the condition that sizeDeltaInTokensReq != 0
+    function _checkResultedPositionSize(uint256 sizeDeltaInTokensResp, uint256 sizeDeltaInTokensReq)
+        internal
+        pure
+        returns (bool isWrongPositionSize, int256 sizeDeltaDeviationInTokens)
+    {
+        sizeDeltaDeviationInTokens = sizeDeltaInTokensResp.toInt256() - sizeDeltaInTokensReq.toInt256();
+        isWrongPositionSize = (
+            sizeDeltaDeviationInTokens < 0 ? uint256(-sizeDeltaDeviationInTokens) : uint256(sizeDeltaDeviationInTokens)
+        ).mulDiv(Constants.FLOAT_PRECISION, sizeDeltaInTokensReq) > Constants.SIZE_DELTA_DEVIATION_BOUNDRY;
+        return (isWrongPositionSize, sizeDeltaDeviationInTokens);
     }
 }
