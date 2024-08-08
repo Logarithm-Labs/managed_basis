@@ -522,6 +522,9 @@ library BasisStrategyLogic {
             (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
             requestParams.collateralDeltaAmount = _clamp(min, deltaCollateralToDecrease, max);
             processingRebalance = true;
+            if (requestParams.collateralDeltaAmount == 0) {
+                status = DataTypes.StrategyStatus.IDLE;
+            }
         } else if (rebalanceDownNeeded) {
             // if reblance down is needed, we have to break normal deutilization of decreasing collateral
             params.cache.pendingDecreaseCollateral = 0;
@@ -545,16 +548,23 @@ library BasisStrategyLogic {
 
                 // @issue amount can be 0 because of clamping that breaks emergency rebalance down
                 amount = _clamp(min, amount, max);
-                uint256 amountOut = ManualSwapLogic.swap(amount, params.productToAssetSwapPath);
-                // produced asset shouldn't go to idle until position size is decreased
-                params.cache.assetsToWithdraw += amountOut;
-                requestParams.sizeDeltaInTokens = amount;
+                if (amount > 0) {
+                    uint256 amountOut = ManualSwapLogic.swap(amount, params.productToAssetSwapPath);
+                    // produced asset shouldn't go to idle until position size is decreased
+                    params.cache.assetsToWithdraw += amountOut;
+                    requestParams.sizeDeltaInTokens = amount;
+                } else {
+                    status = DataTypes.StrategyStatus.IDLE;
+                }
             } else {
                 requestParams.collateralDeltaAmount =
                     idleAssets > deltaCollateralToIncrease ? deltaCollateralToIncrease : idleAssets;
                 (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
                 requestParams.collateralDeltaAmount = _clamp(min, requestParams.collateralDeltaAmount, max);
                 requestParams.isIncrease = true;
+                if (requestParams.collateralDeltaAmount == 0) {
+                    status = DataTypes.StrategyStatus.IDLE;
+                }
             }
             processingRebalance = true;
         } else if (hedgeDeviationInTokens != 0) {
@@ -570,6 +580,9 @@ library BasisStrategyLogic {
                 );
                 requestParams.sizeDeltaInTokens = _clamp(min, uint256(hedgeDeviationInTokens), max);
                 requestParams.isIncrease = true;
+                if (requestParams.sizeDeltaInTokens == 0) {
+                    status = DataTypes.StrategyStatus.IDLE;
+                }
             } else {
                 (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseSizeMinMax();
                 (min, max) = (
@@ -581,12 +594,18 @@ library BasisStrategyLogic {
                         : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, max)
                 );
                 requestParams.sizeDeltaInTokens = _clamp(min, uint256(-hedgeDeviationInTokens), max);
+                if (requestParams.sizeDeltaInTokens == 0) {
+                    status = DataTypes.StrategyStatus.IDLE;
+                }
             }
         } else if (positionManagerNeedKeep) {
             IPositionManager(params.addr.positionManager).keep();
         } else if (params.cache.pendingDecreaseCollateral > 0) {
             (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
             requestParams.collateralDeltaAmount = _clamp(min, params.cache.pendingDecreaseCollateral, max);
+            if (requestParams.collateralDeltaAmount == 0) {
+                status = DataTypes.StrategyStatus.IDLE;
+            }
         }
         return (params.cache, requestParams, status, processingRebalance);
     }
