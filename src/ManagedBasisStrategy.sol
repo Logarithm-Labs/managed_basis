@@ -104,6 +104,10 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     ) external initializer {
         __LogBaseVault_init(IERC20(_asset), IERC20(_product), name, symbol);
         __Ownable_init(msg.sender);
+
+        // validation oracle
+        if (IOracle(_oracle).getAssetPrice(_asset) == 0 || IOracle(_oracle).getAssetPrice(_product) == 0) revert();
+
         __ManagedBasisStrategy_init(
             _oracle,
             _operator,
@@ -133,10 +137,16 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         $.operator = _operator;
         $.entryCost = _entryCost;
         $.exitCost = _exitCost;
+
+        if (_targetLeverage == 0) revert();
         $.targetLeverage = _targetLeverage;
+        if (_minLeverage >= _targetLeverage) revert();
         $.minLeverage = _minLeverage;
+        if (_maxLeverage <= _targetLeverage) revert();
         $.maxLeverage = _maxLeverage;
+        if (_safeMarginLeverage <= _maxLeverage) revert();
         $.safeMarginLeverage = _safeMarginLeverage;
+
         $.userDepositLimit = type(uint256).max;
         $.strategyDepostLimit = type(uint256).max;
         $.hedgeDeviationThreshold = 1e16; // 1%
