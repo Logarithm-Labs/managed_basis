@@ -403,7 +403,7 @@ library BasisStrategyLogic {
             rebalanceUpNeeded = deltaCollateralToDecrease >= minDecreaseCollateral;
         }
 
-        if (rebalanceDownNeeded && !deleverageNeeded) {
+        if (rebalanceDownNeeded && params.processingRebalance && !deleverageNeeded) {
             uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
             (uint256 minIncreaseCollateral,) = IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
             rebalanceDownNeeded = idleAssets != 0 && idleAssets >= minIncreaseCollateral;
@@ -519,7 +519,8 @@ library BasisStrategyLogic {
             params.cache.pendingDecreaseCollateral = 0;
             uint256 deltaCollateralToDecrease =
                 _calculateDeltaCollateralForRebalance(params.addr.positionManager, params.leverages.targetLeverage);
-            requestParams.collateralDeltaAmount = deltaCollateralToDecrease;
+            (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
+            requestParams.collateralDeltaAmount = _clamp(min, deltaCollateralToDecrease, max);
             processingRebalance = true;
         } else if (rebalanceDownNeeded) {
             // if reblance down is needed, we have to break normal deutilization of decreasing collateral
