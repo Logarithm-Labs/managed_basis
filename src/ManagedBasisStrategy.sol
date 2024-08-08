@@ -70,6 +70,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         address[] assetToProductSwapPath;
         // adjust position
         DataTypes.PositionManagerPayload requestParams;
+        bool processingRebalance;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedBasisStrategyStorageV1")) - 1)) & ~bytes32(uint256(0xff))
@@ -535,6 +536,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             BasisStrategyLogic.CheckUpkeepParams({
                 hedgeDeviationThreshold: $.hedgeDeviationThreshold,
                 pendingDecreaseCollateral: $.pendingDecreaseCollateral,
+                processingRebalance: $.processingRebalance,
+                cache: _getStrategyStateCache($),
                 addr: _getStrategyAddresses($),
                 leverages: _getStrategyLeverages($),
                 strategyStatus: $.strategyStatus
@@ -557,21 +560,35 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     }
 
     function _performUpkeep(ManagedBasisStrategyStorage storage $, bytes memory performData) internal {
-        (DataTypes.PositionManagerPayload memory requestParams, DataTypes.StrategyStatus status) = BasisStrategyLogic
-            .executePerformUpkeep(
+        DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
+
+        (
+            DataTypes.StrategyStateChache memory cache1,
+            DataTypes.PositionManagerPayload memory requestParams,
+            DataTypes.StrategyStatus status,
+            bool processingRebalance
+        ) = BasisStrategyLogic.executePerformUpkeep(
             BasisStrategyLogic.PerformUpkeepParams({
                 totalSupply: totalSupply(),
                 addr: _getStrategyAddresses($),
                 leverages: _getStrategyLeverages($),
-                cache: _getStrategyStateCache($),
+                cache: cache0,
                 productToAssetSwapPath: $.productToAssetSwapPath,
                 performData: performData
             })
         );
 
-        _executeAdjustPosition($, requestParams);
+        _updateStrategyState($, cache0, cache1);
 
         $.strategyStatus = status;
+
+        if (processingRebalance) {
+            // processingRebalance shouldn't be set as false during performing upkeep
+            // can be set as false within the callback function
+            $.processingRebalance = processingRebalance;
+        }
+
+        _executeAdjustPosition($, requestParams);
 
         emit UpdateStrategyStatus(status);
         emit UpdatePendingUtilization();
@@ -594,9 +611,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         pendingUtilizationInAsset =
             BasisStrategyLogic.getPendingUtilization(addr.asset, leverages.targetLeverage, cache);
 
-        pendingDeutilizationInProduct = BasisStrategyLogic.getPendingDeutilization(
-            addr, cache, leverages, totalSupply(), $.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN
-        );
+        pendingDeutilizationInProduct =
+            BasisStrategyLogic.getPendingDeutilization(addr, cache, leverages, totalSupply(), $.processingRebalance);
     }
 
     function utilize(uint256 amount, DataTypes.SwapType swapType, bytes calldata swapData)
@@ -666,7 +682,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 leverages: _getStrategyLeverages($),
                 cache: cache0,
                 productToAssetSwapPath: $.productToAssetSwapPath,
-                swapData: swapData
+                swapData: swapData,
+                processingRebalance: $.processingRebalance
             })
         );
         if (success) {
@@ -754,27 +771,35 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             revert Errors.InvalidCallback();
         }
 
+        uint256 currentLeverage = IPositionManager($.positionManager).currentLeverage();
+
         if (params.isIncrease) {
-            $.strategyStatus = BasisStrategyLogic.executeAfterIncreasePosition(
+            ($.strategyStatus, $.processingRebalance) = BasisStrategyLogic.executeAfterIncreasePosition(
                 BasisStrategyLogic.AfterAdjustPositionParams({
                     positionManager: $.positionManager,
                     requestParams: $.requestParams,
                     responseParams: params,
                     revertSwapPath: $.productToAssetSwapPath
-                })
+                }),
+                $.processingRebalance,
+                currentLeverage,
+                $.targetLeverage
             );
             emit UpdatePendingUtilization();
         } else {
             DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
             DataTypes.StrategyStateChache memory cache1;
-            (cache1, $.strategyStatus) = BasisStrategyLogic.executeAfterDecreasePosition(
+            (cache1, $.strategyStatus, $.processingRebalance) = BasisStrategyLogic.executeAfterDecreasePosition(
                 BasisStrategyLogic.AfterAdjustPositionParams({
                     positionManager: $.positionManager,
                     requestParams: $.requestParams,
                     responseParams: params,
                     revertSwapPath: $.assetToProductSwapPath
                 }),
-                cache0
+                cache0,
+                $.processingRebalance,
+                currentLeverage,
+                $.targetLeverage
             );
             _updateStrategyState($, cache0, cache1);
         }

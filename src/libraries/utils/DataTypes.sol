@@ -14,11 +14,8 @@ library DataTypes {
     enum StrategyStatus {
         IDLE,
         KEEPING,
-        DEPOSITING,
-        WITHDRAWING,
-        NEED_REBLANCE_DOWN,
-        REBALANCING_UP, // increase leverage
-        REBALANCING_DOWN, // decrease leverage
+        UTILIZING,
+        DEUTILIZING,
         PAUSE
     }
 

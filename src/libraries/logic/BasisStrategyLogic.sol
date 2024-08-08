@@ -76,11 +76,14 @@ library BasisStrategyLogic {
         DataTypes.StrategyStateChache cache;
         address[] productToAssetSwapPath;
         bytes swapData;
+        bool processingRebalance;
     }
 
     struct CheckUpkeepParams {
         uint256 hedgeDeviationThreshold;
         uint256 pendingDecreaseCollateral;
+        bool processingRebalance;
+        DataTypes.StrategyStateChache cache;
         DataTypes.StrategyAddresses addr;
         DataTypes.StrategyLeverages leverages;
         DataTypes.StrategyStatus strategyStatus;
@@ -380,6 +383,15 @@ library BasisStrategyLogic {
 
         (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) = _checkRebalance(params.leverages);
 
+        if (!rebalanceDownNeeded && params.processingRebalance) {
+            if (_checkNeedRebalance(params.leverages.currentLeverage, params.leverages.targetLeverage)) {
+                uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
+                (uint256 minIncreaseCollateral,) =
+                    IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
+                rebalanceDownNeeded = idleAssets != 0 && idleAssets >= minIncreaseCollateral;
+            }
+        }
+
         if (rebalanceUpNeeded || rebalanceDownNeeded) {
             upkeepNeeded = true;
         } else {
@@ -469,7 +481,12 @@ library BasisStrategyLogic {
 
     function executePerformUpkeep(PerformUpkeepParams memory params)
         external
-        returns (DataTypes.PositionManagerPayload memory requestParams, DataTypes.StrategyStatus status)
+        returns (
+            DataTypes.StrategyStateChache memory,
+            DataTypes.PositionManagerPayload memory requestParams,
+            DataTypes.StrategyStatus status,
+            bool processingRebalance
+        )
     {
         (
             bool rebalanceUpNeeded,
@@ -491,6 +508,9 @@ library BasisStrategyLogic {
                 IPositionManager(params.addr.positionManager).positionNetBalance().trySub(targetCollateral);
             requestParams.collateralDeltaAmount = deltaCollateralToDecrease;
         } else if (rebalanceDownNeeded) {
+            // if reblance down is needed, we have to break normal deutilization of decreasing collateral
+            params.cache.pendingDecreaseCollateral = 0;
+
             uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
             uint256 positionSizeInAssets = IOracle(params.addr.oracle).convertTokenAmount(
                 params.addr.product,
@@ -502,7 +522,9 @@ library BasisStrategyLogic {
             (, uint256 deltaCollateralToIncrease) =
                 targetCollateral.trySub(IPositionManager(params.addr.positionManager).positionNetBalance());
 
-            if (deleverageNeeded && deltaCollateralToIncrease > idleAssets) {
+            (uint256 minIncreaseCollateral,) = IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
+
+            if (deleverageNeeded && (deltaCollateralToIncrease > idleAssets || minIncreaseCollateral > idleAssets)) {
                 uint256 amount =
                     getPendingDeutilization(params.addr, params.cache, params.leverages, params.totalSupply, true);
                 (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseSizeMinMax();
@@ -514,11 +536,15 @@ library BasisStrategyLogic {
                         ? type(uint256).max
                         : IOracle(params.addr.oracle).convertTokenAmount(params.addr.asset, params.addr.product, max)
                 );
+
+                // @issue amount can be 0 because of clamping that breaks emergency rebalance down
                 amount = _clamp(min, amount, max);
-                ManualSwapLogic.swap(amount, params.productToAssetSwapPath);
+                uint256 amountOut = ManualSwapLogic.swap(amount, params.productToAssetSwapPath);
+                // produced asset shouldn't go to idle until position size is decreased
+                params.cache.assetsToWithdraw += amountOut;
                 requestParams.sizeDeltaInTokens = amount;
             } else if (!deleverageNeeded && idleAssets == 0) {
-                status = DataTypes.StrategyStatus.NEED_REBLANCE_DOWN;
+                processingRebalance = true;
             } else {
                 requestParams.collateralDeltaAmount =
                     idleAssets > deltaCollateralToIncrease ? deltaCollateralToIncrease : idleAssets;
@@ -557,6 +583,7 @@ library BasisStrategyLogic {
             (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
             requestParams.collateralDeltaAmount = _clamp(min, params.cache.pendingDecreaseCollateral, max);
         }
+        return (params.cache, requestParams, status, processingRebalance);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -607,7 +634,7 @@ library BasisStrategyLogic {
         // note: clamp is not required for size delta in tokens, expected behaviour is reversion in position manager
         requestParams.collateralDeltaAmount = _clamp(min, requestParams.collateralDeltaAmount, max);
         requestParams.isIncrease = true;
-        status = DataTypes.StrategyStatus.DEPOSITING;
+        status = DataTypes.StrategyStatus.UTILIZING;
 
         return (success, status, requestParams);
     }
@@ -622,18 +649,17 @@ library BasisStrategyLogic {
             DataTypes.PositionManagerPayload memory requestParams
         )
     {
-        bool needRebalanceDown = params.status == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN;
-
-        // can only deutilize when the strategy status is IDLE or NEED_REBLANCE_DOWN
-        if (params.status != DataTypes.StrategyStatus.IDLE && !needRebalanceDown) {
+        // can only deutilize when the strategy status is IDLE
+        if (params.status != DataTypes.StrategyStatus.IDLE) {
             revert Errors.InvalidStrategyStatus(uint8(params.status));
         }
 
         // uint256 productBalance = IERC20(product()).balanceOf(address(this));
 
         // actual deutilize amount is min of amount, product balance and pending deutilization
-        uint256 pendingDeutilization =
-            getPendingDeutilization(params.addr, params.cache, params.leverages, params.totalSupply, needRebalanceDown);
+        uint256 pendingDeutilization = getPendingDeutilization(
+            params.addr, params.cache, params.leverages, params.totalSupply, params.processingRebalance
+        );
         // @note productBalance is already checked within _pendingDeutilization()
         // amount = amount > productBalance ? productBalance : amount;
         uint256 amount = params.amount > pendingDeutilization ? pendingDeutilization : params.amount;
@@ -668,10 +694,11 @@ library BasisStrategyLogic {
         }
 
         params.cache.pendingDeutilizedAssets = amountOut;
+        params.cache.assetsToWithdraw += amountOut;
+
         requestParams.sizeDeltaInTokens = amount;
 
-        if (!needRebalanceDown) {
-            params.cache.assetsToWithdraw += amountOut;
+        if (!params.processingRebalance) {
             if (amount == pendingDeutilization) {
                 (, requestParams.collateralDeltaAmount) =
                     params.cache.accRequestedWithdrawAssets.trySub(params.cache.proccessedWithdrawAssets + amountOut);
@@ -684,7 +711,7 @@ library BasisStrategyLogic {
             }
         }
 
-        status = DataTypes.StrategyStatus.WITHDRAWING;
+        status = DataTypes.StrategyStatus.DEUTILIZING;
 
         return (success, amountOut, status, params.cache, requestParams);
     }
@@ -745,18 +772,19 @@ library BasisStrategyLogic {
         DataTypes.StrategyStateChache memory cache,
         DataTypes.StrategyLeverages memory leverages,
         uint256 totalSupply,
-        bool needRebalanceDownWithDeutilizing
+        bool processingRebalance
     ) public view returns (uint256 deutilization) {
         uint256 productBalance = IERC20(addr.product).balanceOf(address(this));
         if (totalSupply == 0) return productBalance;
 
         uint256 positionSizeInTokens = IPositionManager(addr.positionManager).positionSizeInTokens();
 
-        if (needRebalanceDownWithDeutilizing) {
-            // currentLeverage > maxLeverage is guarranteed, so there is no math error
-            // deltaSizeToDecrease =  positionSize - maxLeverage * positionSize / currentLeverage
-            deutilization =
-                positionSizeInTokens - positionSizeInTokens.mulDiv(leverages.maxLeverage, leverages.currentLeverage);
+        if (processingRebalance) {
+            if (leverages.currentLeverage > leverages.targetLeverage) {
+                // deltaSizeToDecrease =  positionSize - targetLeverage * positionSize / currentLeverage
+                deutilization = positionSizeInTokens
+                    - positionSizeInTokens.mulDiv(leverages.targetLeverage, leverages.currentLeverage);
+            }
         } else {
             uint256 positionNetBalance = IPositionManager(addr.positionManager).positionNetBalance();
             uint256 positionSizeInAssets =
@@ -784,10 +812,12 @@ library BasisStrategyLogic {
         return deutilization;
     }
 
-    function executeAfterIncreasePosition(AfterAdjustPositionParams calldata params)
-        external
-        returns (DataTypes.StrategyStatus)
-    {
+    function executeAfterIncreasePosition(
+        AfterAdjustPositionParams calldata params,
+        bool processingRebalance,
+        uint256 currentLeverage,
+        uint256 targetLeverage
+    ) external returns (DataTypes.StrategyStatus, bool) {
         DataTypes.StrategyStatus status = DataTypes.StrategyStatus.IDLE;
         if (
             params.requestParams.sizeDeltaInTokens > params.responseParams.sizeDeltaInTokens
@@ -810,13 +840,20 @@ library BasisStrategyLogic {
                 params.positionManager, address(this), revertCollateralDeltaAmount
             );
         }
-        return status;
+
+        // only when rebalance was started, we need to check
+        processingRebalance = processingRebalance && _checkNeedRebalance(currentLeverage, targetLeverage);
+
+        return (status, processingRebalance);
     }
 
     function executeAfterDecreasePosition(
         AfterAdjustPositionParams calldata params,
-        DataTypes.StrategyStateChache memory cache
-    ) external returns (DataTypes.StrategyStateChache memory, DataTypes.StrategyStatus) {
+        DataTypes.StrategyStateChache memory cache,
+        bool processingRebalance,
+        uint256 currentLeverage,
+        uint256 targetLeverage
+    ) external returns (DataTypes.StrategyStateChache memory, DataTypes.StrategyStatus, bool) {
         DataTypes.StrategyStatus status = DataTypes.StrategyStatus.IDLE;
         uint256 remainingAssets;
         if (params.requestParams.sizeDeltaInTokens > 0) {
@@ -826,9 +863,15 @@ library BasisStrategyLogic {
                 cache.pendingDeutilizedAssets = 0;
                 status = DataTypes.StrategyStatus.PAUSE;
             } else {
-                (remainingAssets, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);
-                cache.assetsToWithdraw = remainingAssets;
-                (, cache) = processWithdrawRequests(getIdleAssets(params.revertSwapPath[0], cache), cache);
+                if (processingRebalance) {
+                    // release deutilized asset to idle when rebalance down
+                    cache.assetsToWithdraw -= cache.pendingDeutilizedAssets;
+                } else {
+                    // process withdraw request
+                    (remainingAssets, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);
+                    cache.assetsToWithdraw = remainingAssets;
+                }
+                cache.pendingDeutilizedAssets = 0;
             }
         }
         if (params.responseParams.collateralDeltaAmount > 0) {
@@ -840,7 +883,21 @@ library BasisStrategyLogic {
             (, cache.pendingDecreaseCollateral) =
                 cache.pendingDecreaseCollateral.trySub(params.responseParams.collateralDeltaAmount);
         }
-        return (cache, status);
+
+        // only when rebalance was started, we need to check
+        processingRebalance = processingRebalance && _checkNeedRebalance(currentLeverage, targetLeverage);
+
+        return (cache, status, processingRebalance);
+    }
+
+    function _checkNeedRebalance(uint256 currentLeverage, uint256 targetLeverage) internal pure returns (bool) {
+        uint256 leverageDeviation;
+        if (currentLeverage > targetLeverage) {
+            leverageDeviation = (currentLeverage - targetLeverage).mulDiv(Constants.FLOAT_PRECISION, targetLeverage);
+        } else {
+            leverageDeviation = (targetLeverage - currentLeverage).mulDiv(Constants.FLOAT_PRECISION, targetLeverage);
+        }
+        return leverageDeviation > Constants.REBALANCE_BOUNDRY;
     }
 
     function _clamp(uint256 min, uint256 value, uint256 max) internal pure returns (uint256 result) {
