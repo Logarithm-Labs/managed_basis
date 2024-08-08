@@ -120,7 +120,10 @@ library BasisStrategyLogic {
         // In the scenario where user tries to withdraw all of the remaining assets the volatility
         // of oracle price can create a situation where pending withdraw is greater then the sum of
         // idle and utilized assets. In this case we will return 0 as total assets.
-        (, uint256 totalAssets) = (utilizedAssets + idleAssets).trySub(getTotalPendingWithdraw(cache));
+        (, uint256 totalAssets) = ((utilizedAssets + idleAssets) + cache.assetsToWithdraw).trySub(
+            (cache.accRequestedWithdrawAssets - cache.proccessedWithdrawAssets)
+        );
+
         return (utilizedAssets, idleAssets, totalAssets);
     }
 
@@ -338,7 +341,7 @@ library BasisStrategyLogic {
         returns (uint256 remainingAssets, DataTypes.StrategyStateChache memory)
     {
         if (assets == 0) {
-            remainingAssets = 0;
+            return (remainingAssets, cache);
         } else {
             // check if there is neccessarity to process withdraw requests
             if (cache.proccessedWithdrawAssets < cache.accRequestedWithdrawAssets) {
@@ -868,8 +871,8 @@ library BasisStrategyLogic {
             }
             if (processingRebalance) {
                 // release deutilized asset to idle when rebalance down
-                cache.assetsToWithdraw -= cache.pendingDeutilizedAssets;
                 (, cache) = processWithdrawRequests(cache.pendingDeutilizedAssets, cache);
+                cache.assetsToWithdraw -= cache.pendingDeutilizedAssets;
             } else {
                 // process withdraw request
                 (remainingAssets, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);
