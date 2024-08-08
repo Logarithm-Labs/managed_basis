@@ -500,35 +500,20 @@ library BasisStrategyLogic {
             bool positionManagerNeedKeep
         ) = abi.decode(params.performData, (bool, bool, bool, int256, bool));
         status = DataTypes.StrategyStatus.KEEPING;
+
         if (rebalanceUpNeeded) {
             // if reblance up is needed, we have to break normal deutilization of decreasing collateral
             params.cache.pendingDecreaseCollateral = 0;
-            uint256 positionSizeInAssets = IOracle(params.addr.oracle).convertTokenAmount(
-                params.addr.product,
-                params.addr.asset,
-                IPositionManager(params.addr.positionManager).positionSizeInTokens()
-            );
-            uint256 targetCollateral =
-                positionSizeInAssets.mulDiv(Constants.FLOAT_PRECISION, params.leverages.targetLeverage);
-            (, uint256 deltaCollateralToDecrease) =
-                IPositionManager(params.addr.positionManager).positionNetBalance().trySub(targetCollateral);
+            uint256 deltaCollateralToDecrease =
+                _calculateDeltaCollateralForRebalance(params.addr.positionManager, params.leverages.targetLeverage);
             requestParams.collateralDeltaAmount = deltaCollateralToDecrease;
             processingRebalance = true;
         } else if (rebalanceDownNeeded) {
             // if reblance down is needed, we have to break normal deutilization of decreasing collateral
             params.cache.pendingDecreaseCollateral = 0;
-
             uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
-            uint256 positionSizeInAssets = IOracle(params.addr.oracle).convertTokenAmount(
-                params.addr.product,
-                params.addr.asset,
-                IPositionManager(params.addr.positionManager).positionSizeInTokens()
-            );
-            uint256 targetCollateral =
-                positionSizeInAssets.mulDiv(Constants.FLOAT_PRECISION, params.leverages.targetLeverage);
-            (, uint256 deltaCollateralToIncrease) =
-                targetCollateral.trySub(IPositionManager(params.addr.positionManager).positionNetBalance());
-
+            uint256 deltaCollateralToIncrease =
+                _calculateDeltaCollateralForRebalance(params.addr.positionManager, params.leverages.targetLeverage);
             (uint256 minIncreaseCollateral,) = IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
 
             if (deleverageNeeded && (deltaCollateralToIncrease > idleAssets || minIncreaseCollateral > idleAssets)) {
@@ -778,14 +763,14 @@ library BasisStrategyLogic {
         DataTypes.StrategyStateChache memory cache,
         DataTypes.StrategyLeverages memory leverages,
         uint256 totalSupply,
-        bool processingRebalance
+        bool processingRebalanceDown
     ) public view returns (uint256 deutilization) {
         uint256 productBalance = IERC20(addr.product).balanceOf(address(this));
         if (totalSupply == 0) return productBalance;
 
         uint256 positionSizeInTokens = IPositionManager(addr.positionManager).positionSizeInTokens();
 
-        if (processingRebalance) {
+        if (processingRebalanceDown) {
             if (leverages.currentLeverage > leverages.targetLeverage) {
                 // deltaSizeToDecrease =  positionSize - targetLeverage * positionSize / currentLeverage
                 deutilization = positionSizeInTokens
@@ -930,5 +915,28 @@ library BasisStrategyLogic {
             sizeDeltaDeviationInTokens < 0 ? uint256(-sizeDeltaDeviationInTokens) : uint256(sizeDeltaDeviationInTokens)
         ).mulDiv(Constants.FLOAT_PRECISION, sizeDeltaInTokensReq) > Constants.SIZE_DELTA_DEVIATION_BOUNDRY;
         return (isWrongPositionSize, sizeDeltaDeviationInTokens);
+    }
+
+    /// @dev collateral adjustment for rebalancing
+    /// currentLeverage = notional / collateral
+    /// notional = currentLeverage * collateral
+    /// targetLeverage = notional / targetCollateral
+    /// targetCollateral = notional / targetLeverage
+    /// targetCollateral = collateral * currentLeverage  / targetLeverage
+    function _calculateDeltaCollateralForRebalance(address positionManager, uint256 targetLeverage)
+        internal
+        view
+        returns (uint256)
+    {
+        uint256 positionNetBalance = IPositionManager(positionManager).positionNetBalance();
+        uint256 currentLeverage = IPositionManager(positionManager).currentLeverage();
+        uint256 targetCollateral = positionNetBalance.mulDiv(currentLeverage, targetLeverage);
+        uint256 deltaCollateral;
+        if (currentLeverage > targetLeverage) {
+            deltaCollateral = targetCollateral - positionNetBalance;
+        } else {
+            deltaCollateral = positionNetBalance - targetCollateral;
+        }
+        return deltaCollateral;
     }
 }
