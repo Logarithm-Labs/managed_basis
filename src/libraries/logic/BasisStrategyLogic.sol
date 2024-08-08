@@ -388,15 +388,14 @@ library BasisStrategyLogic {
                 _checkNeedRebalance(params.leverages.currentLeverage, params.leverages.targetLeverage);
         }
 
-        uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
-        (uint256 minIncreaseCollateral,) = IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
-
         if (!rebalanceDownNeeded && params.processingRebalance) {
             (, rebalanceDownNeeded) =
                 _checkNeedRebalance(params.leverages.currentLeverage, params.leverages.targetLeverage);
         }
 
         if (rebalanceDownNeeded) {
+            uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
+            (uint256 minIncreaseCollateral,) = IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
             rebalanceDownNeeded = idleAssets != 0 && idleAssets >= minIncreaseCollateral;
         }
 
@@ -870,6 +869,7 @@ library BasisStrategyLogic {
             if (processingRebalance) {
                 // release deutilized asset to idle when rebalance down
                 cache.assetsToWithdraw -= cache.pendingDeutilizedAssets;
+                (, cache) = processWithdrawRequests(cache.pendingDeutilizedAssets, cache);
             } else {
                 // process withdraw request
                 (remainingAssets, cache) = processWithdrawRequests(cache.assetsToWithdraw, cache);

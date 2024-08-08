@@ -25,6 +25,38 @@ import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 import {console} from "forge-std/console.sol";
 
 contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
+    using Math for uint256;
+
+    struct StrategyState {
+        uint8 strategyStatus;
+        uint256 totalSupply;
+        uint256 totalAssets;
+        uint256 utilizedAssets;
+        uint256 idleAssets;
+        uint256 assetBalance;
+        uint256 productBalance;
+        uint256 productValueInAsset;
+        uint256 assetsToWithdraw;
+        uint256 assetsToClaim;
+        uint256 totalPendingWithdraw;
+        uint256 pendingIncreaseCollateral;
+        uint256 pendingDecreaseCollateral;
+        uint256 pendingUtilization;
+        uint256 pendingDeutilization;
+        uint256 accRequestedWithdrawAssets;
+        uint256 proccessedWithdrawAssets;
+        uint256 positionNetBalance;
+        uint256 positionLeverage;
+        uint256 positionSizeInTokens;
+        uint256 positionSizeInAsset;
+        bool upkeepNeeded;
+        bool rebalanceUpNeeded;
+        bool rebalanceDownNeeded;
+        bool deleverageNeeded;
+        bool rehedgeNeeded;
+        bool positionManagerKeepNeeded;
+    }
+
     address owner = makeAddr("owner");
     address user1 = makeAddr("user1");
     address user2 = makeAddr("user2");
@@ -172,6 +204,70 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         IERC20(asset).transfer(user2, 10_000_000 * 1e6);
     }
 
+    function _getStrategyState() internal view returns (StrategyState memory state) {
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        bool rebalanceUpNeeded;
+        bool rebalanceDownNeeded;
+        bool deleverageNeeded;
+        int256 hedgeDeviationInTokens;
+        bool positionManagerNeedKeep;
+        if (performData.length > 0) {
+            (rebalanceUpNeeded, rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep)
+            = abi.decode(performData, (bool, bool, bool, int256, bool));
+        }
+
+        state.strategyStatus = uint8(strategy.strategyStatus());
+        state.totalSupply = strategy.totalSupply();
+        state.totalAssets = strategy.totalAssets();
+        state.utilizedAssets = strategy.utilizedAssets();
+        state.idleAssets = strategy.idleAssets();
+        state.assetBalance = IERC20(asset).balanceOf(address(strategy));
+        state.productBalance = IERC20(product).balanceOf(address(strategy));
+        state.productValueInAsset = oracle.convertTokenAmount(product, asset, state.productBalance);
+        state.assetsToWithdraw = strategy.assetsToWithdraw();
+        state.assetsToClaim = strategy.assetsToClaim();
+        state.totalPendingWithdraw = strategy.totalPendingWithdraw();
+        state.pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
+        state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
+        (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
+        state.accRequestedWithdrawAssets = strategy.accRequestedWithdrawAssets();
+        state.proccessedWithdrawAssets = strategy.proccessedWithdrawAssets();
+        state.positionNetBalance = positionManager.positionNetBalance();
+        state.positionLeverage = positionManager.currentLeverage();
+        state.positionSizeInTokens = positionManager.positionSizeInTokens();
+        state.positionSizeInAsset = oracle.convertTokenAmount(product, asset, state.positionSizeInTokens);
+
+        state.upkeepNeeded = upkeepNeeded;
+        state.rebalanceUpNeeded = rebalanceUpNeeded;
+        state.rebalanceDownNeeded = rebalanceDownNeeded;
+        state.deleverageNeeded = deleverageNeeded;
+        state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
+        state.positionManagerKeepNeeded = positionManagerNeedKeep;
+    }
+
+    function _validateFinalState(StrategyState memory state) internal pure {
+        assertEq(state.strategyStatus, uint8(0), "strategy status");
+        if (state.positionSizeInTokens > 0) {
+            assertApproxEqRel(state.positionLeverage, 3 ether, 0.01 ether, "current leverage");
+            assertApproxEqRel(state.productBalance, state.positionSizeInTokens, 0.001 ether, "product exposure");
+        } else {
+            assertEq(state.productBalance, state.positionSizeInTokens, "not 0 product exposure");
+        }
+
+        assertFalse(state.upkeepNeeded, "upkeep");
+    }
+
+    function _validateStateTransition(StrategyState memory state0, StrategyState memory state1) internal pure {
+        if (state0.totalSupply != 0 && state1.totalSupply != 0) {
+            uint256 sharePrice0 = state0.totalAssets.mulDiv(1 ether, state0.totalSupply);
+            uint256 sharePrice1 = state1.totalAssets.mulDiv(1 ether, state1.totalSupply);
+            assertApproxEqRel(sharePrice0, sharePrice1, 0.01 ether, "share price");
+        }
+        // if (state0.positionLeverage != 0 && state1.positionLeverage != 0) {
+        //     assertApproxEqRel(state0.positionLeverage, state1.positionLeverage, 0.01 ether, "position leverage");
+        // }
+    }
+
     modifier afterDeposited() {
         _deposit(user1, TEN_THOUSANDS_USDC);
         _;
@@ -219,36 +315,60 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         _;
     }
 
+    modifier validateFinalState() {
+        _;
+        _validateFinalState(_getStrategyState());
+    }
+
     function _deposit(address from, uint256 assets) private {
         vm.startPrank(from);
         IERC20(asset).approve(address(strategy), assets);
+        StrategyState memory state0 = _getStrategyState();
         strategy.deposit(assets, from);
+        StrategyState memory state1 = _getStrategyState();
+        _validateStateTransition(state0, state1);
     }
 
     function _mint(address from, uint256 shares) private {
         vm.startPrank(from);
         uint256 assets = strategy.previewMint(shares);
         IERC20(asset).approve(address(strategy), assets);
+        StrategyState memory state0 = _getStrategyState();
         strategy.mint(shares, from);
+        StrategyState memory state1 = _getStrategyState();
+        _validateStateTransition(state0, state1);
     }
 
     function _utilize(uint256 amount) private {
-        // bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
         vm.startPrank(operator);
+        StrategyState memory state0 = _getStrategyState();
         strategy.utilize(amount, DataTypes.SwapType.MANUAL, "");
+        StrategyState memory state1 = _getStrategyState();
+        _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.UTILIZING));
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
+
+        state0 = state1;
+        _fullExcuteOrder();
+        state1 = _getStrategyState();
+        _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.IDLE));
         _performKeep();
     }
 
     function _deutilize(uint256 amount) private {
-        // bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
+        StrategyState memory state0 = _getStrategyState();
         vm.startPrank(operator);
         strategy.deutilize(amount, DataTypes.SwapType.MANUAL, "");
+        StrategyState memory state1 = _getStrategyState();
+        _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.DEUTILIZING));
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+
+        state0 = state1;
+        _fullExcuteOrder();
+        state1 = _getStrategyState();
+        _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.IDLE));
+
         _performKeep();
     }
 
@@ -263,9 +383,15 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         if (upkeepNeeded) {
             vm.startPrank(forwarder);
+            StrategyState memory state0 = _getStrategyState();
             strategy.performUpkeep(performData);
-            _executeOrder(positionManager.pendingIncreaseOrderKey());
-            _executeOrder(positionManager.pendingDecreaseOrderKey());
+            StrategyState memory state1 = _getStrategyState();
+            _validateStateTransition(state0, state1);
+
+            state0 = state1;
+            _fullExcuteOrder();
+            state1 = _getStrategyState();
+            _validateStateTransition(state0, state1);
         }
     }
 
@@ -280,13 +406,13 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(assets, TEN_THOUSANDS_USDC);
     }
 
-    function test_deposit_first() public {
+    function test_deposit_first() public validateFinalState {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC);
         _deposit(user1, TEN_THOUSANDS_USDC);
         assertEq(strategy.balanceOf(user1), shares);
     }
 
-    function test_mint_first() public {
+    function test_mint_first() public validateFinalState {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC);
         _mint(user1, shares);
         assertEq(strategy.balanceOf(user1), shares);
@@ -299,13 +425,13 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(assets, TEN_THOUSANDS_USDC);
     }
 
-    function test_deposit_whenNotUtilized() public afterDeposited {
+    function test_deposit_whenNotUtilized() public afterDeposited validateFinalState {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _deposit(user2, TEN_THOUSANDS_USDC / 2);
         assertEq(strategy.balanceOf(user2), shares);
     }
 
-    function test_mint_whenNotUtilized() public afterDeposited {
+    function test_mint_whenNotUtilized() public afterDeposited validateFinalState {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _mint(user2, shares);
         assertEq(strategy.balanceOf(user2), shares);
@@ -318,13 +444,13 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(assets, TEN_THOUSANDS_USDC);
     }
 
-    function test_deposit_whenPartialUtilized() public afterPartialUtilized {
+    function test_deposit_whenPartialUtilized() public afterPartialUtilized validateFinalState {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _deposit(user2, TEN_THOUSANDS_USDC / 2);
         assertEq(strategy.balanceOf(user2), shares);
     }
 
-    function test_mint_whenPartialUtilized() public afterPartialUtilized {
+    function test_mint_whenPartialUtilized() public afterPartialUtilized validateFinalState {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _mint(user2, shares);
         assertEq(strategy.balanceOf(user2), shares);
@@ -337,13 +463,13 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(assets, TEN_THOUSANDS_USDC);
     }
 
-    function test_deposit_whenFullUtilized() public afterFullUtilized {
+    function test_deposit_whenFullUtilized() public afterFullUtilized validateFinalState {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _deposit(user2, TEN_THOUSANDS_USDC / 2);
         assertEq(strategy.balanceOf(user2), shares);
     }
 
-    function test_mint_whenFullUtilized() public afterFullUtilized {
+    function test_mint_whenFullUtilized() public afterFullUtilized validateFinalState {
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _mint(user2, shares);
         assertEq(strategy.balanceOf(user2), shares);
@@ -356,7 +482,11 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(assets, THOUSAND_USDC);
     }
 
-    function test_deposit_withPendingWithdraw_smallerThanTotalPendingWithdraw() public afterWithdrawRequestCreated {
+    function test_deposit_withPendingWithdraw_smallerThanTotalPendingWithdraw()
+        public
+        afterWithdrawRequestCreated
+        validateFinalState
+    {
         uint256 pendingWithdrawBefore = strategy.totalPendingWithdraw();
         uint256 shares = strategy.previewDeposit(THOUSAND_USDC);
         _deposit(user2, THOUSAND_USDC);
@@ -366,7 +496,11 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertFalse(strategy.isClaimable(strategy.getWithdrawId(user1, 0)));
     }
 
-    function test_deposit_withPendingWithdraw_biggerThanTotalPendingWithdraw() public afterWithdrawRequestCreated {
+    function test_deposit_withPendingWithdraw_biggerThanTotalPendingWithdraw()
+        public
+        afterWithdrawRequestCreated
+        validateFinalState
+    {
         uint256 pendingWithdrawBefore = strategy.totalPendingWithdraw();
         uint256 shares = strategy.previewDeposit(TEN_THOUSANDS_USDC);
         _deposit(user2, TEN_THOUSANDS_USDC);
@@ -381,7 +515,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
                             UTILIZE TEST
     //////////////////////////////////////////////////////////////*/
 
-    function test_utilize_partialDepositing() public afterDeposited {
+    function test_utilize_partialDepositing() public afterDeposited validateFinalState {
         (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
         uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         assertEq(pendingUtilizationInAsset, pendingIncreaseCollateral * targetLeverage / 1 ether);
@@ -395,7 +529,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(pendingUtilizationInAsset, pendingIncreaseCollateral * targetLeverage / 1 ether);
     }
 
-    function test_utilize_fullDepositing() public afterDeposited {
+    function test_utilize_fullDepositing() public afterDeposited validateFinalState {
         (uint256 pendingUtilization,) = strategy.pendingUtilizations();
         uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         assertEq(pendingUtilization, pendingIncreaseCollateral * targetLeverage / 1 ether);
@@ -421,7 +555,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(shares, totalShares / 2);
     }
 
-    function test_withdraw_whenIdleEnough() public afterDeposited {
+    function test_withdraw_whenIdleEnough() public afterDeposited validateFinalState {
         uint256 user1BalanceBefore = IERC20(asset).balanceOf(user1);
         uint256 totalShares = strategy.balanceOf(user1);
         uint256 assets = strategy.previewRedeem(totalShares / 2);
@@ -433,7 +567,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(sharesAfter, totalShares - shares);
     }
 
-    function test_previewWithdrawRedeem_whenIdleNotEnough() public afterPartialUtilized {
+    function test_previewWithdrawRedeem_whenIdleNotEnough() public afterPartialUtilized validateFinalState {
         uint256 totalShares = strategy.balanceOf(user1);
         uint256 redeemShares = totalShares * 2 / 3;
         uint256 assets = strategy.previewRedeem(redeemShares);
@@ -441,7 +575,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(shares, redeemShares);
     }
 
-    function test_withdraw_whenIdleNotEnough() public afterPartialUtilized {
+    function test_withdraw_whenIdleNotEnough() public afterPartialUtilized validateFinalState {
         uint256 totalShares = strategy.balanceOf(user1);
         uint256 redeemShares = totalShares * 2 / 3;
         uint256 assets = strategy.previewRedeem(redeemShares);
@@ -465,7 +599,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
                         DEUTILIZE/UPKEEP TEST
     //////////////////////////////////////////////////////////////*/
 
-    function test_deutilize_partial_withSingleRequest() public afterWithdrawRequestCreated {
+    function test_deutilize_partial_withSingleRequest() public afterWithdrawRequestCreated validateFinalState {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization / 2);
         bytes32 requestKey = strategy.getWithdrawId(user1, 0);
@@ -475,7 +609,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         strategy.claim(requestKey);
     }
 
-    function test_deutilize_full_withSingleRequest() public afterWithdrawRequestCreated {
+    function test_deutilize_full_withSingleRequest() public afterWithdrawRequestCreated validateFinalState {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
         bytes32 requestKey = strategy.getWithdrawId(user1, 0);
@@ -489,7 +623,11 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(balanceBefore + withdrawRequest.requestedAmount, balanceAfter);
     }
 
-    function test_deutilize_partial_withMultipleRequest() public afterMultipleWithdrawRequestCreated {
+    function test_deutilize_partial_withMultipleRequest()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization / 2);
 
@@ -507,7 +645,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(balanceBefore + withdrawRequest1.requestedAmount, balanceAfter);
     }
 
-    function test_deutilize_full_withMultipleRequest() public afterMultipleWithdrawRequestCreated {
+    function test_deutilize_full_withMultipleRequest() public afterMultipleWithdrawRequestCreated validateFinalState {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
 
@@ -532,7 +670,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(balanceBefore2 + withdrawRequest2.requestedAmount, balanceAfter2);
     }
 
-    function test_deutilize_lastRedeemBelowRequestedAmount() public afterFullUtilized {
+    function test_deutilize_lastRedeemBelowRequestedAmount() public afterFullUtilized validateFinalState {
         // make last redeem
         uint256 userShares = IERC20(address(strategy)).balanceOf(address(user1));
         vm.startPrank(user1);
@@ -545,10 +683,8 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 105 / 100);
 
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        _fullExcuteOrder();
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.IDLE));
-        // _performKeep();
-        // _performKeep();
 
         bytes32 requestKey = strategy.getWithdrawId(user1, 0);
         assertTrue(strategy.proccessedWithdrawAssets() < strategy.accRequestedWithdrawAssets());
@@ -568,7 +704,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(strategy.accRequestedWithdrawAssets(), strategy.proccessedWithdrawAssets());
     }
 
-    function test_performUpkeep_rebalanceUp() public afterMultipleWithdrawRequestCreated {
+    function test_performUpkeep_rebalanceUp() public afterMultipleWithdrawRequestCreated validateFinalState {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 5 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
@@ -579,14 +715,25 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertFalse(rebalanceDownNeeded);
         assertFalse(liquidatable);
         assertFalse(positionManagerNeedKeep);
-        console.log("currentLeverage", positionManager.currentLeverage());
-        vm.startPrank(forwarder);
-        strategy.performUpkeep(performData);
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
-        console.log("resultedLeverage", positionManager.currentLeverage());
+
+        // position.sizeInUsd is changed due to realization of positive pnl
+        // so need to execute performUpKeep several times
+        while (rebalanceUpNeeded) {
+            vm.startPrank(forwarder);
+            strategy.performUpkeep(performData);
+            _fullExcuteOrder();
+
+            (, performData) = strategy.checkUpkeep("");
+            (rebalanceUpNeeded, rebalanceDownNeeded, liquidatable,, positionManagerNeedKeep) =
+                abi.decode(performData, (bool, bool, bool, int256, bool));
+        }
     }
 
-    function test_performUpkeep_rebalanceDown_whenNoIdle() public afterMultipleWithdrawRequestCreated {
+    function test_performUpkeep_rebalanceDown_whenNoIdle()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
@@ -609,7 +756,11 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         console.log("resultedLeverage", positionManager.currentLeverage());
     }
 
-    function test_performUpkeep_rebalanceDown_whenIdle() public afterMultipleWithdrawRequestCreated {
+    function test_performUpkeep_rebalanceDown_whenIdle()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
         vm.startPrank(USDC_WHALE);
         IERC20(asset).transfer(address(strategy), 100 * 1e6);
         assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
@@ -625,14 +776,25 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertTrue(rebalanceDownNeeded);
         assertFalse(liquidatable);
         assertFalse(positionManagerNeedKeep);
-        console.log("currentLeverage", positionManager.currentLeverage());
+
         vm.startPrank(forwarder);
         strategy.performUpkeep(performData);
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
-        console.log("resultedLeverage", positionManager.currentLeverage());
+        _fullExcuteOrder();
+
+        assertEq(strategy.idleAssets(), 0);
+
+        (upkeepNeeded,) = strategy.checkUpkeep("");
+        assertFalse(upkeepNeeded);
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
     }
 
-    function test_performUpkeep_emergencyRebalanceDown_whenNotIdle() public afterMultipleWithdrawRequestCreated {
+    function test_performUpkeep_emergencyRebalanceDown_whenNotIdle()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
@@ -646,11 +808,15 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         console.log("currentLeverage", positionManager.currentLeverage());
         vm.startPrank(forwarder);
         strategy.performUpkeep(performData);
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        _fullExcuteOrder();
         console.log("resultedLeverage", positionManager.currentLeverage());
     }
 
-    function test_performUpkeep_emergencyRebalanceDown_whenIdleNotEnough() public afterMultipleWithdrawRequestCreated {
+    function test_performUpkeep_emergencyRebalanceDown_whenIdleNotEnough()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
         vm.startPrank(USDC_WHALE);
         IERC20(asset).transfer(address(strategy), 100 * 1e6);
         assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
@@ -667,12 +833,16 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         console.log("currentLeverage", positionManager.currentLeverage());
         vm.startPrank(forwarder);
         strategy.performUpkeep(performData);
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        _fullExcuteOrder();
         console.log("resultedLeverage", positionManager.currentLeverage());
         assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
     }
 
-    function test_performUpkeep_emergencyRebalanceDown_whenIdleEnough() public afterMultipleWithdrawRequestCreated {
+    function test_performUpkeep_emergencyRebalanceDown_whenIdleEnough()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
         vm.startPrank(USDC_WHALE);
         IERC20(asset).transfer(address(strategy), TEN_THOUSANDS_USDC);
         uint256 strategyBalanceBefore = IERC20(asset).balanceOf(address(strategy));
@@ -689,7 +859,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         console.log("currentLeverage", positionManager.currentLeverage());
         vm.startPrank(forwarder);
         strategy.performUpkeep(performData);
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        _fullExcuteOrder();
         uint256 strategyBalanceAfter = IERC20(asset).balanceOf(address(strategy));
         assertTrue(strategyBalanceAfter < strategyBalanceBefore);
         console.log("resultedLeverage", positionManager.currentLeverage());
