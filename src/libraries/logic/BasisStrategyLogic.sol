@@ -396,7 +396,7 @@ library BasisStrategyLogic {
                 _checkNeedRebalance(params.leverages.currentLeverage, params.leverages.targetLeverage);
         }
 
-        if (rebalanceDownNeeded) {
+        if (rebalanceDownNeeded && !deleverageNeeded) {
             uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
             (uint256 minIncreaseCollateral,) = IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
             rebalanceDownNeeded = idleAssets != 0 && idleAssets >= minIncreaseCollateral;
