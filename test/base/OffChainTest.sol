@@ -86,7 +86,10 @@ contract OffChainTest is ForkTest {
     }
 
     function _updatePositionNetBalance(uint256 netBalance) internal {
+        IERC20(asset_).transfer(USDC_WHALE, IERC20(asset_).balanceOf(address(this)));
         positionNetBalance = netBalance;
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset_).transfer(address(this), netBalance);
     }
 
     function _reportStateAndExecuteRequest(DataTypes.PositionManagerPayload memory response) internal {

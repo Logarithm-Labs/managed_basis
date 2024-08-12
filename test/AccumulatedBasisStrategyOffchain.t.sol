@@ -768,5 +768,7 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         console.log("BREAK");
         _fullOffChainExecute();
         _logStrategyState("STATE AFTER UPKEEP", _getStrategyState());
+        console.log("processingRebalance", strategy.processingRebalance());
+        console.log();
     }
 }
