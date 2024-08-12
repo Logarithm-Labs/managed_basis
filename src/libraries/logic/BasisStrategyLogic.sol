@@ -803,14 +803,14 @@ library BasisStrategyLogic {
         DataTypes.StrategyStateChache memory cache,
         DataTypes.StrategyLeverages memory leverages,
         uint256 totalSupply,
-        bool processingRebalanceDown
+        bool processingRebalance
     ) public view returns (uint256 deutilization) {
         uint256 productBalance = IERC20(addr.product).balanceOf(address(this));
         if (totalSupply == 0) return productBalance;
 
         uint256 positionSizeInTokens = IPositionManager(addr.positionManager).positionSizeInTokens();
 
-        if (processingRebalanceDown) {
+        if (processingRebalance) {
             if (leverages.currentLeverage > leverages.targetLeverage) {
                 // deltaSizeToDecrease =  positionSize - targetLeverage * positionSize / currentLeverage
                 deutilization = positionSizeInTokens

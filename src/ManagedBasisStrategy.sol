@@ -577,7 +577,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             DataTypes.StrategyStateChache memory cache1,
             DataTypes.PositionManagerPayload memory requestParams,
             DataTypes.StrategyStatus status,
-            bool processingRebalance
+            bool processingRebalance_
         ) = BasisStrategyLogic.executePerformUpkeep(
             BasisStrategyLogic.PerformUpkeepParams({
                 totalSupply: totalSupply(),
@@ -593,10 +593,10 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
         $.strategyStatus = status;
 
-        if (processingRebalance) {
+        if (processingRebalance_) {
             // processingRebalance shouldn't be set as false during performing upkeep
             // can be set as false within the callback function
-            $.processingRebalance = processingRebalance;
+            $.processingRebalance = processingRebalance_;
         }
 
         _executeAdjustPosition($, requestParams);
@@ -684,7 +684,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
         (
             bool success,
-            uint256 amountOut,
+            ,
+            // uint256 amountOut,
             DataTypes.StrategyStatus status,
             DataTypes.StrategyStateChache memory cache1,
             DataTypes.PositionManagerPayload memory requestParams
@@ -790,7 +791,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         uint256 currentLeverage = IPositionManager($.positionManager).currentLeverage();
 
         if (params.isIncrease) {
-            (DataTypes.StrategyStatus status, bool processingRebalance) = BasisStrategyLogic
+            (DataTypes.StrategyStatus status, bool processingRebalance_) = BasisStrategyLogic
                 .executeAfterIncreasePosition(
                 BasisStrategyLogic.AfterAdjustPositionParams({
                     positionManager: $.positionManager,
@@ -803,12 +804,12 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 $.targetLeverage
             );
             $.strategyStatus = status;
-            $.processingRebalance = processingRebalance;
+            $.processingRebalance = processingRebalance_;
             emit UpdatePendingUtilization();
         } else {
             DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
 
-            (DataTypes.StrategyStateChache memory cache1, DataTypes.StrategyStatus status, bool processingRebalance) =
+            (DataTypes.StrategyStateChache memory cache1, DataTypes.StrategyStatus status, bool processingRebalance_) =
             BasisStrategyLogic.executeAfterDecreasePosition(
                 BasisStrategyLogic.AfterAdjustPositionParams({
                     positionManager: $.positionManager,
@@ -822,7 +823,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 $.targetLeverage
             );
             $.strategyStatus = status;
-            $.processingRebalance = processingRebalance;
+            $.processingRebalance = processingRebalance_;
             _updateStrategyState($, cache0, cache1);
         }
 
