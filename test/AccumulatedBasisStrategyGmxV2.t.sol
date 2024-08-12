@@ -49,6 +49,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         uint256 positionLeverage;
         uint256 positionSizeInTokens;
         uint256 positionSizeInAsset;
+        bool processingRebalance;
         bool upkeepNeeded;
         bool rebalanceUpNeeded;
         bool rebalanceDownNeeded;
@@ -236,6 +237,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         state.positionLeverage = positionManager.currentLeverage();
         state.positionSizeInTokens = positionManager.positionSizeInTokens();
         state.positionSizeInAsset = oracle.convertTokenAmount(product, asset, state.positionSizeInTokens);
+        state.processingRebalance = strategy.processingRebalance();
 
         state.upkeepNeeded = upkeepNeeded;
         state.rebalanceUpNeeded = rebalanceUpNeeded;
@@ -287,7 +289,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         } else {
             assertEq(state.productBalance, state.positionSizeInTokens, "not 0 product exposure");
         }
-
+        assertFalse(state.processingRebalance);
         assertFalse(state.upkeepNeeded, "upkeep");
     }
 
@@ -297,6 +299,10 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
             uint256 sharePrice1 = state1.totalAssets.mulDiv(1 ether, state1.totalSupply);
             assertApproxEqRel(sharePrice0, sharePrice1, 0.01 ether, "share price");
         }
+
+        assertTrue(state0.pendingUtilization == 0 || state0.pendingDeutilization == 0, "utilizations");
+        assertTrue(state1.pendingUtilization == 0 || state1.pendingDeutilization == 0, "utilizations");
+
         // if (state0.positionLeverage != 0 && state1.positionLeverage != 0) {
         //     assertApproxEqRel(state0.positionLeverage, state1.positionLeverage, 0.01 ether, "position leverage");
         // }

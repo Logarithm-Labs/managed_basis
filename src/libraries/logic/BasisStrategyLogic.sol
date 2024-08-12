@@ -64,6 +64,7 @@ library BasisStrategyLogic {
         DataTypes.StrategyStateChache cache;
         address[] assetToProductSwapPath;
         bytes swapData;
+        bool processingRebalance;
     }
 
     struct DeutilizeParams {
@@ -624,7 +625,7 @@ library BasisStrategyLogic {
         }
 
         uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
-        uint256 pendingUtilization = _pendingUtilization(idleAssets, params.targetLeverage);
+        uint256 pendingUtilization = _pendingUtilization(idleAssets, params.targetLeverage, params.processingRebalance);
 
         if (pendingUtilization == 0) {
             revert Errors.ZeroPendingUtilization();
@@ -746,17 +747,23 @@ library BasisStrategyLogic {
         return totalPendingWithdraw;
     }
 
-    function getPendingUtilization(address asset, uint256 targetLeverage, DataTypes.StrategyStateChache memory cache)
-        public
-        view
-        returns (uint256)
-    {
+    function getPendingUtilization(
+        address asset,
+        uint256 targetLeverage,
+        DataTypes.StrategyStateChache memory cache,
+        bool processingRebalance
+    ) public view returns (uint256) {
         uint256 idleAssets = getIdleAssets(asset, cache);
-        return _pendingUtilization(idleAssets, targetLeverage);
+        return _pendingUtilization(idleAssets, targetLeverage, processingRebalance);
     }
 
-    function _pendingUtilization(uint256 idleAssets, uint256 targetLeverage) public pure returns (uint256) {
-        return idleAssets.mulDiv(targetLeverage, Constants.FLOAT_PRECISION + targetLeverage);
+    function _pendingUtilization(uint256 idleAssets, uint256 targetLeverage, bool processingRebalance)
+        public
+        pure
+        returns (uint256)
+    {
+        // don't use utilze function when rebalancing
+        return processingRebalance ? 0 : idleAssets.mulDiv(targetLeverage, Constants.FLOAT_PRECISION + targetLeverage);
     }
 
     function getPendingIncreaseCollateral(

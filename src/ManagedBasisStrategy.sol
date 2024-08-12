@@ -636,7 +636,7 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         }
 
         pendingUtilizationInAsset =
-            BasisStrategyLogic.getPendingUtilization(addr.asset, leverages.targetLeverage, cache);
+            BasisStrategyLogic.getPendingUtilization(addr.asset, leverages.targetLeverage, cache, $.processingRebalance);
         pendingDeutilizationInProduct =
             BasisStrategyLogic.getPendingDeutilization(addr, cache, leverages, totalSupply(), $.processingRebalance);
         return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
@@ -667,7 +667,8 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
                 addr: _getStrategyAddresses($),
                 cache: cache0,
                 assetToProductSwapPath: $.assetToProductSwapPath,
-                swapData: swapData
+                swapData: swapData,
+                processingRebalance: $.processingRebalance
             })
         );
         if (success) {
@@ -889,5 +890,9 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
 
     function pendingDecreaseCollateral() external view returns (uint256) {
         return _getManagedBasisStrategyStorage().pendingDecreaseCollateral;
+    }
+
+    function processingRebalance() external view returns (bool) {
+        return _getManagedBasisStrategyStorage().processingRebalance;
     }
 }
