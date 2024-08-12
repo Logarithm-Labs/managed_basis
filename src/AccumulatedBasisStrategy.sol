@@ -83,6 +83,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         address[] productToAssetSwapPath;
         address[] assetToProductSwapPath;
         DataTypes.PositionManagerPayload adjustmentRequest;
+        bool processingRebalance;
     }
     // mapping(bytes32 => DataTypes.PositionManagerPayload) positionRequests;
 
@@ -606,8 +607,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         // should be called within the callback func after utilizing is successful
         // emit UpdatePendingUtilization(pendingUtilization());
 
-        $.strategyStatus = DataTypes.StrategyStatus.DEPOSITING;
-        emit UpdateStrategyStatus(DataTypes.StrategyStatus.DEPOSITING);
+        $.strategyStatus = DataTypes.StrategyStatus.UTILIZING;
+        emit UpdateStrategyStatus(DataTypes.StrategyStatus.UTILIZING);
 
         emit Utilize(msg.sender, amount, amountOut);
     }
@@ -629,7 +630,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         DataTypes.StrategyStatus strategyStatus_ = $.strategyStatus;
 
-        bool needRebalanceDown = strategyStatus_ == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN;
+        bool needRebalanceDown = $.processingRebalance;
 
         // can only deutilize when the strategy status is IDLE or NEED_REBLANCE_DOWN
         if (!needRebalanceDown && strategyStatus_ != DataTypes.StrategyStatus.IDLE) {
@@ -684,8 +685,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         }
         _adjustPosition(_positionManager, amount, collateralDeltaAmount, false);
 
-        $.strategyStatus = DataTypes.StrategyStatus.WITHDRAWING;
-        emit UpdateStrategyStatus(DataTypes.StrategyStatus.WITHDRAWING);
+        $.strategyStatus = DataTypes.StrategyStatus.DEUTILIZING;
+        emit UpdateStrategyStatus(DataTypes.StrategyStatus.DEUTILIZING);
 
         emit Deutilize(msg.sender, amount, amountOut);
     }
@@ -696,8 +697,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         if ($.strategyStatus != DataTypes.StrategyStatus.IDLE) {
             revert Errors.InvalidStrategyStatus(uint8($.strategyStatus));
         }
-        $.strategyStatus = DataTypes.StrategyStatus.WITHDRAWING;
-        emit UpdateStrategyStatus(DataTypes.StrategyStatus.WITHDRAWING);
+        $.strategyStatus = DataTypes.StrategyStatus.DEUTILIZING;
+        emit UpdateStrategyStatus(DataTypes.StrategyStatus.DEUTILIZING);
 
         _adjustPosition($.positionManager, 0, $.pendingDecreaseCollateral, false);
     }
@@ -852,7 +853,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         address positionManager_ = $.positionManager;
         if (rebalanceUpNeeded) {
-            $.strategyStatus = DataTypes.StrategyStatus.REBALANCING_UP;
+            // $.strategyStatus = DataTypes.StrategyStatus.REBALANCING_UP;
             uint256 positionSizeInAssets = $.oracle.convertTokenAmount(
                 product(), asset(), IPositionManager(positionManager_).positionSizeInTokens()
             );
@@ -874,8 +875,8 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
                 _manualSwap(amount, false);
                 _adjustPosition(positionManager_, amount, 0, false);
             } else if (!liquidatable && idle == 0) {
-                $.strategyStatus = DataTypes.StrategyStatus.NEED_REBLANCE_DOWN;
-                emit UpdateStrategyStatus(DataTypes.StrategyStatus.NEED_REBLANCE_DOWN);
+                // $.strategyStatus = DataTypes.StrategyStatus.NEED_REBLANCE_DOWN;
+                // emit UpdateStrategyStatus(DataTypes.StrategyStatus.NEED_REBLANCE_DOWN);
                 emit UpdatePendingDeutilization(_pendingDeutilization(true));
                 return;
             } else {
@@ -1192,7 +1193,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
     function pendingDeutilization() public view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return _pendingDeutilization($.strategyStatus == DataTypes.StrategyStatus.NEED_REBLANCE_DOWN);
+        return _pendingDeutilization($.processingRebalance);
     }
 
     // @review Numa:

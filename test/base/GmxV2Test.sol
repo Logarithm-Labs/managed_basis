@@ -24,6 +24,11 @@ contract GmxV2Test is ForkTest {
 
     GmxV2PositionManager positionManager;
 
+    function _fullExcuteOrder() internal {
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        _executeOrder(positionManager.pendingIncreaseOrderKey());
+    }
+
     function _executeOrder(bytes32 key) internal {
         if (key != bytes32(0)) {
             IOrderHandler.SetPricesParams memory oracleParams;

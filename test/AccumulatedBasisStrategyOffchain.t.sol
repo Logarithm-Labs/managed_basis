@@ -249,8 +249,11 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         assertEq(state.strategyStatus, uint8(0), "strategy status");
         if (state.positionSizeInTokens > 0) {
             assertApproxEqRel(state.positionLeverage, 3 ether, 0.01 ether, "current leverage");
+            assertApproxEqRel(state.productBalance, state.positionSizeInTokens, 0.001 ether, "product exposure");
+        } else {
+            assertEq(state.productBalance, state.positionSizeInTokens, "not 0 product exposure");
         }
-        assertApproxEqRel(state.productBalance, state.positionSizeInTokens, 0.001 ether, "product exposure");
+
         assertFalse(state.upkeepNeeded, "upkeep");
     }
 
@@ -344,7 +347,7 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         strategy.utilize(amount, DataTypes.SwapType.MANUAL, "");
         StrategyState memory state1 = _getStrategyState();
         _validateStateTransition(state0, state1);
-        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.DEPOSITING));
+        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.UTILIZING));
 
         state0 = state1;
         _fullOffChainExecute();
@@ -355,13 +358,12 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
     }
 
     function _deutilize(uint256 amount) private {
-        // bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
         StrategyState memory state0 = _getStrategyState();
         vm.startPrank(operator);
         strategy.deutilize(amount, DataTypes.SwapType.MANUAL, "");
         StrategyState memory state1 = _getStrategyState();
         _validateStateTransition(state0, state1);
-        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.WITHDRAWING));
+        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.DEUTILIZING));
 
         state0 = state1;
         _fullOffChainExecute();
@@ -396,7 +398,7 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         // bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
         vm.startPrank(operator);
         strategy.deutilize(amount, DataTypes.SwapType.MANUAL, "");
-        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.WITHDRAWING));
+        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.DEUTILIZING));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -766,5 +768,7 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         console.log("BREAK");
         _fullOffChainExecute();
         _logStrategyState("STATE AFTER UPKEEP", _getStrategyState());
+        console.log("processingRebalance", strategy.processingRebalance());
+        console.log();
     }
 }
