@@ -649,12 +649,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
 
-        (bool upkeepNeeded, bytes memory performData) = checkUpkeep("");
-        if (upkeepNeeded) {
-            _performUpkeep($, performData);
-            return;
-        }
-
         DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
 
         (bool success, DataTypes.StrategyStatus status, DataTypes.PositionManagerPayload memory requestParams) =
@@ -686,12 +680,6 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
         onlyOperator
     {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-
-        (bool upkeepNeeded, bytes memory performData) = checkUpkeep("");
-        if (upkeepNeeded) {
-            _performUpkeep($, performData);
-            return;
-        }
 
         DataTypes.StrategyStateChache memory cache0 = _getStrategyStateCache($);
         (
