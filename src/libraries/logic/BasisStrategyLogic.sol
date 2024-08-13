@@ -514,7 +514,7 @@ library BasisStrategyLogic {
             bool positionManagerNeedKeep
         ) = abi.decode(params.performData, (bool, bool, bool, int256, bool));
         status = DataTypes.StrategyStatus.KEEPING;
-
+        uint256 idleAssets;
         if (rebalanceUpNeeded) {
             // if reblance up is needed, we have to break normal deutilization of decreasing collateral
             params.cache.pendingDecreaseCollateral = 0;
@@ -529,7 +529,7 @@ library BasisStrategyLogic {
         } else if (rebalanceDownNeeded) {
             // if reblance down is needed, we have to break normal deutilization of decreasing collateral
             params.cache.pendingDecreaseCollateral = 0;
-            uint256 idleAssets = getIdleAssets(params.addr.asset, params.cache);
+            idleAssets = getIdleAssets(params.addr.asset, params.cache);
             uint256 deltaCollateralToIncrease =
                 _calculateDeltaCollateralForRebalance(params.addr.positionManager, params.leverages.targetLeverage);
             (uint256 minIncreaseCollateral,) = IPositionManager(params.addr.positionManager).increaseCollateralMinMax();
