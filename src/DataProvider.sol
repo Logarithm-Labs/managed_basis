@@ -28,6 +28,9 @@ contract DataProvider {
         uint256 positionNetBalance;
         uint256 positionLeverage;
         uint256 positionSizeInTokens;
+        uint256 positionSizeInAsset;
+        uint256 positionManagerBalance;
+        bool processingRebalance;
         bool upkeepNeeded;
         bool rebalanceUpNeeded;
         bool rebalanceDownNeeded;
@@ -43,13 +46,15 @@ contract DataProvider {
         address asset = strategy.asset();
         address product = strategy.product();
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
-        (
-            bool rebalanceUpNeeded,
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep
-        ) = abi.decode(performData, (bool, bool, bool, int256, bool));
+        bool rebalanceUpNeeded;
+        bool rebalanceDownNeeded;
+        bool deleverageNeeded;
+        int256 hedgeDeviationInTokens;
+        bool positionManagerNeedKeep;
+        if (performData.length > 0) {
+            (rebalanceUpNeeded, rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep)
+            = abi.decode(performData, (bool, bool, bool, int256, bool));
+        }
 
         state.strategyStatus = uint8(strategy.strategyStatus());
         state.totalSupply = strategy.totalSupply();
@@ -70,6 +75,10 @@ contract DataProvider {
         state.positionNetBalance = positionManager.positionNetBalance();
         state.positionLeverage = positionManager.currentLeverage();
         state.positionSizeInTokens = positionManager.positionSizeInTokens();
+        state.positionSizeInAsset = oracle.convertTokenAmount(product, asset, state.positionSizeInTokens);
+        state.positionManagerBalance = IERC20(asset).balanceOf(address(positionManager));
+
+        state.processingRebalance = strategy.processingRebalance();
         state.upkeepNeeded = upkeepNeeded;
         state.rebalanceUpNeeded = rebalanceUpNeeded;
         state.rebalanceDownNeeded = rebalanceDownNeeded;

@@ -7,7 +7,7 @@ import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
 import {RescueStrategy} from "src/RescueStrategy.sol";
 
 contract RescueScript is Script {
-    AccumulatedBasisStrategy public strategy = AccumulatedBasisStrategy(0x8BAAB907986EB5d34E11b1a128F38e5085a9a24f);
+    AccumulatedBasisStrategy public strategy = AccumulatedBasisStrategy(0x541A3908f6914A5574A42Ad37e136EEdFDD4Fc89);
     address public keeper = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
     address public usdc = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
 

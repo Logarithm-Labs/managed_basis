@@ -95,4 +95,6 @@ library Errors {
     error InvalidCollateralRequest(uint256 collateralDeltaAmount, bool isIncrease);
 
     error InvalidSizeRequest(uint256 sizeDeltaInTokens, bool isIncrease);
+
+    error ZeroSupplyMint();
 }

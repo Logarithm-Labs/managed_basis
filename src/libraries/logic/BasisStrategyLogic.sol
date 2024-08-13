@@ -140,7 +140,7 @@ library BasisStrategyLogic {
 
     function getPreviewDeposit(PreviewParams memory params) external view returns (uint256 shares) {
         if (params.totalSupply == 0) {
-            return params.assetsOrShares;
+            return params.assetsOrShares * 10 ** Constants.DECIMAL_OFFSET;
         }
 
         // calculate the amount of assets that will be utilized
@@ -157,7 +157,7 @@ library BasisStrategyLogic {
 
     function getPreviewMint(PreviewParams memory params) external view returns (uint256 assets) {
         if (params.totalSupply == 0) {
-            return params.assetsOrShares;
+            revert Errors.ZeroSupplyMint();
         }
 
         // calculate amount of assets before applying entry fee

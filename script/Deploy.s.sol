@@ -58,7 +58,7 @@ contract DeployScript is Script {
         oracle = LogarithmOracle(oracleProxy);
 
         require(oracle.owner() == owner, "DeployScript: oracle owner mismatch");
-        console.log("Oracle deployed at: %s", address(strategy));
+        console.log("Oracle deployed at: %s", address(oracle));
 
         // set oracle price feed
         address[] memory assets = new address[](2);
