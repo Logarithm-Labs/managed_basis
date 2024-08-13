@@ -724,7 +724,7 @@ library BasisStrategyLogic {
         requestParams.sizeDeltaInTokens = amount;
 
         if (!params.processingRebalance) {
-            if (amount == pendingDeutilization) {
+            if (amount == pendingDeutilization && params.totalSupply == 0) {
                 (, requestParams.collateralDeltaAmount) =
                     params.cache.accRequestedWithdrawAssets.trySub(params.cache.proccessedWithdrawAssets + amountOut);
                 params.cache.pendingDecreaseCollateral = requestParams.collateralDeltaAmount;
