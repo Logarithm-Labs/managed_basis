@@ -2,17 +2,14 @@
 pragma solidity ^0.8.0;
 
 interface IBasisStrategy {
-    function initialize(address asset, address product, string memory name, string memory symbol) external;
-    function setPositionManager(address positionManager) external;
-    function asset() external view returns (address);
-    function product() external view returns (address);
-    function positionManager() external view returns (address);
-    function targetLeverage() external view returns (uint256);
+    function depositLimits() external view returns (uint256 userDepositLimit, uint256 strategyDepostLimit);
+    function totalAssets() external view returns (uint256);
+    function idleAssets() external view returns (uint256);
+    function totalPendingWithdraw() external view returns (uint256);
+    function isClaimable(bytes32 withdrawRequestKey) external view returns (bool);
 
-    // callback logic
-    function afterIncreasePositionSize(uint256 amountExecuted, bytes32 requestId, bool isSuccess) external;
-    function afterDecreasePositionSize(uint256 amountExecuted, uint256 executionCost, bytes32 requestId, bool isSuccess)
-        external;
-    function afterIncreasePositionCollateral(uint256 collateralAmount, bytes32 requestId, bool isSuccess) external;
-    function afterDecreasePositionCollateral(uint256 collateralAmount, bytes32 requestId, bool isSuccess) external;
+    // callable only by vault
+    function processPendingWithdrawRequests() external;
+    function createWithdrawRequest() external;
+    function claim(bytes32 withdrawRequestKey) external;
 }
