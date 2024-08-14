@@ -10,12 +10,15 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
+import {IBasisVault} from "src/interfaces/IBasisVault.sol";
 
-contract BasisVault is Initializable, ERC4626Upgradeable {
+import {Constants} from "src/libraries/utils/Constants.sol";
+
+/// @title A basis vault
+/// @author Logarithm Labs
+contract BasisVault is Initializable, ERC4626Upgradeable, IBasisVault {
     using Math for uint256;
     using SafeERC20 for IERC20;
-
-    uint256 constant PRECISION = 1e18;
 
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
@@ -67,6 +70,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         $.exitCost = exitCost_;
     }
 
+    /// @inheritdoc ERC4626Upgradeable
     function maxDeposit(address receiver) public view virtual override returns (uint256 allowed) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
         (uint256 userDepositLimit, uint256 strategyDepositLimit) = $.strategy.depositLimits();
@@ -86,16 +90,19 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         }
     }
 
+    /// @inheritdoc ERC4626Upgradeable
     function maxMint(address receiver) public view virtual override returns (uint256) {
         uint256 maxAssets = maxDeposit(receiver);
         return previewDeposit(maxAssets);
     }
 
+    /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
         return $.strategy.totalAssets();
     }
 
+    /// @inheritdoc ERC4626Upgradeable
     function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
         if (totalSupply() == 0) {
@@ -106,13 +113,14 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            uint256 feeAmount = assetsToUtilize.mulDiv($.entryCost, PRECISION, Math.Rounding.Ceil);
+            uint256 feeAmount = assetsToUtilize.mulDiv($.entryCost, Consstants.FLOAT_PRECISION, Math.Rounding.Ceil);
             assets -= feeAmount;
         }
 
         return _convertToShares(assets, Math.Rounding.Floor);
     }
 
+    /// @inheritdoc ERC4626Upgradeable
     function previewMint(uint256 shares) public view virtual override returns (uint256) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
         if (totalSupply() == 0) {
@@ -128,12 +136,14 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
             // feeAmount / (assetsToUtilize + feeAmount) = entryCost
             // feeAmount = (assetsToUtilize * entryCost) / (1 - entryCost)
             uint256 entryCost_ = $.entryCost;
-            uint256 feeAmount = assetsToUtilize.mulDiv(entryCost_, PRECISION - entryCost_, Math.Rounding.Ceil);
+            uint256 feeAmount =
+                assetsToUtilize.mulDiv(entryCost_, Consstants.FLOAT_PRECISION - entryCost_, Math.Rounding.Ceil);
             assets += feeAmount;
         }
         return assets;
     }
 
+    /// @inheritdoc ERC4626Upgradeable
     function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
         // calc the amount of assets that can not be withdrawn via idle
@@ -142,13 +152,14 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         // apply exit fee to assets that should be deutilized and add exit fee amount the asset amount
         if (assetsToDeutilize > 0) {
             // feeAmount / assetsToDeutilize = exitCost
-            uint256 feeAmount = assetsToDeutilize.mulDiv($.exitCost, PRECISION, Math.Rounding.Ceil);
+            uint256 feeAmount = assetsToDeutilize.mulDiv($.exitCost, Consstants.FLOAT_PRECISION, Math.Rounding.Ceil);
             assets += feeAmount;
         }
 
         return _convertToShares(assets, Math.Rounding.Ceil);
     }
 
+    /// @inheritdoc ERC4626Upgradeable
     function previewRedeem(uint256 shares) public view virtual override returns (uint256) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
         uint256 assets = _convertToAssets(shares, Math.Rounding.Floor);
@@ -161,21 +172,21 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
             // feeAmount / (assetsToDeutilize - feeAmount) = exitCost
             // feeAmount = (assetsToDeutilize * exitCost) / (1 + exitCost)
             uint256 exitCost_ = $.exitCost;
-            uint256 feeAmount = assetsToDeutilize.mulDiv(exitCost_, PRECISION + exitCost_, Math.Rounding.Ceil);
+            uint256 feeAmount =
+                assetsToDeutilize.mulDiv(exitCost_, Consstants.FLOAT_PRECISION + exitCost_, Math.Rounding.Ceil);
             assets -= feeAmount;
         }
 
         return assets;
     }
 
+    /// @notice claim the processed withdraw request
     function claim(bytes32 withdrawRequestKey) external virtual {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
         $.strategy.claim(withdrawRequestKey);
     }
 
-    /**
-     * @dev Deposit/mint common workflow.
-     */
+    /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
 
@@ -189,9 +200,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         emit Deposit(caller, receiver, assets, shares);
     }
 
-    /**
-     * @dev Withdraw/redeem common workflow.
-     */
+    /// @inheritdoc ERC4626Upgradeable
     function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
         internal
         virtual
