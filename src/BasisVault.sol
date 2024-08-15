@@ -16,7 +16,7 @@ import {Constants} from "src/libraries/utils/Constants.sol";
 
 /// @title A basis vault
 /// @author Logarithm Labs
-contract BasisVault is Initializable, ERC4626Upgradeable, IBasisVault {
+contract BasisVault is Initializable, ERC4626Upgradeable {
     using Math for uint256;
     using SafeERC20 for IERC20;
 
@@ -113,7 +113,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable, IBasisVault {
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            uint256 feeAmount = assetsToUtilize.mulDiv($.entryCost, Consstants.FLOAT_PRECISION, Math.Rounding.Ceil);
+            uint256 feeAmount = assetsToUtilize.mulDiv($.entryCost, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
             assets -= feeAmount;
         }
 
@@ -137,7 +137,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable, IBasisVault {
             // feeAmount = (assetsToUtilize * entryCost) / (1 - entryCost)
             uint256 entryCost_ = $.entryCost;
             uint256 feeAmount =
-                assetsToUtilize.mulDiv(entryCost_, Consstants.FLOAT_PRECISION - entryCost_, Math.Rounding.Ceil);
+                assetsToUtilize.mulDiv(entryCost_, Constants.FLOAT_PRECISION - entryCost_, Math.Rounding.Ceil);
             assets += feeAmount;
         }
         return assets;
@@ -152,7 +152,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable, IBasisVault {
         // apply exit fee to assets that should be deutilized and add exit fee amount the asset amount
         if (assetsToDeutilize > 0) {
             // feeAmount / assetsToDeutilize = exitCost
-            uint256 feeAmount = assetsToDeutilize.mulDiv($.exitCost, Consstants.FLOAT_PRECISION, Math.Rounding.Ceil);
+            uint256 feeAmount = assetsToDeutilize.mulDiv($.exitCost, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
             assets += feeAmount;
         }
 
@@ -173,7 +173,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable, IBasisVault {
             // feeAmount = (assetsToDeutilize * exitCost) / (1 + exitCost)
             uint256 exitCost_ = $.exitCost;
             uint256 feeAmount =
-                assetsToDeutilize.mulDiv(exitCost_, Consstants.FLOAT_PRECISION + exitCost_, Math.Rounding.Ceil);
+                assetsToDeutilize.mulDiv(exitCost_, Constants.FLOAT_PRECISION + exitCost_, Math.Rounding.Ceil);
             assets -= feeAmount;
         }
 

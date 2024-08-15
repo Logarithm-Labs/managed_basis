@@ -75,6 +75,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         bool processingRebalance;
         Leverages leverages;
         uint256 idleAssets;
+        uint256 pendingDecreaseCollateral;
         uint256 hedgeDeviationThreshold;
         uint256 rebalanceDeviationThreshold;
     }
@@ -313,7 +314,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + pendingWithdraw;
             $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
 
-            uint128 counter = $.requestCounter;
+            uint256 counter = $.requestCounter;
             bytes32 withdrawKey = getWithdrawKey(counter);
             $.withdrawRequests[withdrawKey] = WithdrawRequestState({
                 requestedAmount: assets,
@@ -583,6 +584,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     maxLeverage: $.maxLeverage,
                     safeMarginLeverage: $.safeMarginLeverage
                 }),
+                pendingDecreaseCollateral: $.pendingDecreaseCollateral,
                 idleAssets: idleAssets_,
                 hedgeDeviationThreshold: $.hedgeDeviationThreshold,
                 rebalanceDeviationThreshold: $.rebalanceDeviationThreshold
@@ -1123,7 +1125,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     }
 
     function _pendingIncreaseCollateral(uint256 idleAssets_, uint256 _targetLeverage) private pure returns (uint256) {
-        return idleAssets_.mulDiv(Constants.PRECISION, Constants.PRECISION + _targetLeverage, Math.Rounding.Ceil);
+        return idleAssets_.mulDiv(
+            Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + _targetLeverage, Math.Rounding.Ceil
+        );
     }
 
     function _pendingDeutilization(InternalPendingDeutilization memory params) private view returns (uint256) {
@@ -1149,15 +1153,15 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 _totalPendingWithdraw(params.asset, params.accRequestedWithdrawAssets, params.proccessedWithdrawAssets);
 
             if (
-                params.pendingDecreaseCollaterl > totalPendingWithdraw_
-                    || params.pendingDecreaseCollaterl >= (positionSizeInAssets + positionNetBalance)
+                params.pendingDecreaseCollateral > totalPendingWithdraw_
+                    || params.pendingDecreaseCollateral >= (positionSizeInAssets + positionNetBalance)
             ) {
                 return 0;
             }
 
             deutilization = positionSizeInTokens.mulDiv(
-                totalPendingWithdraw_ - params.pendingDecreaseCollaterl,
-                positionSizeInAssets + positionNetBalance - params.pendingDecreaseCollaterl
+                totalPendingWithdraw_ - params.pendingDecreaseCollateral,
+                positionSizeInAssets + positionNetBalance - params.pendingDecreaseCollateral
             );
         }
 
