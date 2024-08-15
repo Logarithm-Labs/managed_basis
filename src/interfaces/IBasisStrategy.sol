@@ -10,6 +10,6 @@ interface IBasisStrategy {
 
     // callable only by vault
     function processPendingWithdrawRequests() external;
-    function createWithdrawRequest() external;
+    function requestWithdraw(address receiver, uint256 assets) external;
     function claim(bytes32 withdrawRequestKey) external;
 }

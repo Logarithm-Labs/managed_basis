@@ -200,6 +200,11 @@ contract BasisVault is Initializable, ERC4626Upgradeable, IBasisVault {
         emit Deposit(caller, receiver, assets, shares);
     }
 
+    function isClaimable(bytes32 withdrawRequestKey) external returns (bool) {
+        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        return $.strategy.isClaimable(withdrawRequestKey);
+    }
+
     /// @inheritdoc ERC4626Upgradeable
     function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
         internal
@@ -220,7 +225,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable, IBasisVault {
         // shares are burned and after the assets are transferred, which is a valid state.
         _burn(owner, shares);
 
-        $.strategy.createWithdrawRequest();
+        $.strategy.requestWithdraw(receiver, assets);
 
         emit Withdraw(caller, receiver, owner, assets, shares);
     }

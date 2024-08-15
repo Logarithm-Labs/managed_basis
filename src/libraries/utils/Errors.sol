@@ -86,6 +86,8 @@ library Errors {
 
     error CallerNotOperator();
 
+    error CallerNotVault();
+
     error InvalidAdjustmentParams();
 
     error InvalidStrategyStatus(uint8 status);
