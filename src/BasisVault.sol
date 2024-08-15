@@ -26,7 +26,6 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
     /// @custom:storage-location erc7201:logarithm.storage.BasisVault
     struct BasisVaultStorage {
-        IERC20 product;
         IBasisStrategy strategy;
         uint256 entryCost;
         uint256 exitCost;
@@ -50,7 +49,6 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         string calldata name_,
         string calldata symbol_,
         address asset_,
-        address product_,
         address strategy_,
         uint256 entryCost_,
         uint256 exitCost_
@@ -58,12 +56,10 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         __ERC20_init_unchained(name_, symbol_);
         __ERC4626_init_unchained(IERC20(asset_));
         BasisVaultStorage storage $ = _getBasisVaultStorage();
-        $.product = IERC20(product_);
 
         require(strategy_ != address(0));
         $.strategy = IBasisStrategy(strategy_);
         IERC20(asset_).approve(strategy_, type(uint256).max);
-        IERC20(product_).approve(strategy_, type(uint256).max);
 
         require(entryCost_ < 1 ether && exitCost_ < 1 ether);
         $.entryCost = entryCost_;
@@ -233,11 +229,6 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     /*//////////////////////////////////////////////////////////////
                             STORAGE VIEWERS
     //////////////////////////////////////////////////////////////*/
-
-    function product() external view returns (address) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
-        return address($.product);
-    }
 
     function strategy() external view returns (address) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
