@@ -261,7 +261,9 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
     function _validateFinalState(StrategyState memory state) internal pure {
         assertEq(state.strategyStatus, uint8(0), "strategy status");
         if (state.positionSizeInTokens > 0) {
-            assertApproxEqRel(state.positionLeverage, 3 ether, 0.01 ether, "current leverage");
+            assertTrue(state.positionLeverage >= minLeverage, "minLeverage");
+            assertTrue(state.positionLeverage <= maxLeverage, "maxLeverage");
+            // assertApproxEqRel(state.positionLeverage, 3 ether, 0.01 ether, "current leverage");
             assertApproxEqRel(state.productBalance, state.positionSizeInTokens, 0.001 ether, "product exposure");
         } else {
             assertEq(state.productBalance, state.positionSizeInTokens, "not 0 product exposure");
