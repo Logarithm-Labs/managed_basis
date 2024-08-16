@@ -348,7 +348,9 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         StrategyState memory state1 = _getStrategyState();
         _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.UTILIZING));
-
+        (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingUtilization, 0);
+        assertEq(pendingDeutilization, 0);
         state0 = state1;
         _fullOffChainExecute();
         state1 = _getStrategyState();
@@ -364,7 +366,9 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         StrategyState memory state1 = _getStrategyState();
         _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.DEUTILIZING));
-
+        (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingUtilization, 0);
+        assertEq(pendingDeutilization, 0);
         state0 = state1;
         _fullOffChainExecute();
         state1 = _getStrategyState();

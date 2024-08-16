@@ -408,8 +408,10 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         strategy.utilize(amount, BasisStrategy.SwapType.MANUAL, "");
         StrategyState memory state1 = _getStrategyState();
         _validateStateTransition(state0, state1);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.UTILIZING));
-
+        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.UTILIZING));
+        (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingUtilization, 0);
+        assertEq(pendingDeutilization, 0);
         state0 = state1;
         _fullExcuteOrder();
         state1 = _getStrategyState();
@@ -425,8 +427,10 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         StrategyState memory state1 = _getStrategyState();
         // can't guarantee 1% deviation due to price impact of uniswap
         // _validateStateTransition(state0, state1);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.DEUTILIZING));
-
+        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.DEUTILIZING));
+        (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingUtilization, 0);
+        assertEq(pendingDeutilization, 0);
         state0 = state1;
         _fullExcuteOrder();
         state1 = _getStrategyState();
