@@ -730,8 +730,7 @@ library BasisStrategyLogic {
                 (, requestParams.collateralDeltaAmount) =
                     params.cache.accRequestedWithdrawAssets.trySub(params.cache.proccessedWithdrawAssets + amountOut);
                 if (params.totalSupply != 0) {
-                    (uint256 min, uint256 max) =
-                        IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
+                    (min, max) = IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
                     requestParams.collateralDeltaAmount = _clamp(min, requestParams.collateralDeltaAmount, max);
                 }
                 // when collateralDeltaAmount is 0, pendingDecreaseCollateral should be set as 0
