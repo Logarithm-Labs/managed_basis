@@ -732,6 +732,7 @@ library BasisStrategyLogic {
                 params.cache.pendingDecreaseCollateral = requestParams.collateralDeltaAmount;
             } else {
                 uint256 positionNetBalance = IPositionManager(params.addr.positionManager).positionNetBalance();
+                (, positionNetBalance) = positionNetBalance.trySub(params.cache.pendingDecreaseCollateral);
                 uint256 positionSizeInTokens = IPositionManager(params.addr.positionManager).positionSizeInTokens();
                 uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
                 params.cache.pendingDecreaseCollateral += collateralDeltaToDecrease;
