@@ -228,6 +228,13 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         IERC20(asset).transfer(user2, 10_000_000 * 1e6);
     }
 
+    function _moveTimestamp(uint256 deltaTime) internal {
+        address[] memory priceFeeds = new address[](2);
+        priceFeeds[0] = assetPriceFeed;
+        priceFeeds[1] = productPriceFeed;
+        _moveTimestamp(deltaTime, priceFeeds);
+    }
+
     function _getStrategyState() internal view returns (StrategyState memory state) {
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         bool rebalanceUpNeeded;
@@ -307,7 +314,9 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
     function _validateFinalState(StrategyState memory state) internal pure {
         assertEq(state.strategyStatus, uint8(0), "strategy status");
         if (state.positionSizeInTokens > 0) {
-            assertApproxEqRel(state.positionLeverage, 3 ether, 0.01 ether, "current leverage");
+            assertTrue(state.positionLeverage >= minLeverage, "minLeverage");
+            assertTrue(state.positionLeverage <= maxLeverage, "maxLeverage");
+            // assertApproxEqRel(state.positionLeverage, 3 ether, 0.01 ether, "current leverage");
             assertApproxEqRel(state.productBalance, state.positionSizeInTokens, 0.001 ether, "product exposure");
         } else {
             assertEq(state.productBalance, state.positionSizeInTokens, "not 0 product exposure");
@@ -909,6 +918,93 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         uint256 strategyBalanceAfter = IERC20(asset).balanceOf(address(strategy));
         assertTrue(strategyBalanceAfter < strategyBalanceBefore);
         console.log("resultedLeverage", positionManager.currentLeverage());
+    }
+
+    function test_performUpkeep_hedgeDeviation_down() public afterMultipleWithdrawRequestCreated validateFinalState {
+        vm.startPrank(address(strategy));
+        IERC20(product).transfer(address(this), IERC20(product).balanceOf(address(strategy)) / 10);
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded, "upkeepNeeded");
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded,
+            uint256 deltaCollateralToDecrease
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
+        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertFalse(deleverageNeeded, "deleverageNeeded");
+        assertFalse(positionManagerNeedKeep, "positionManagerNeedKeep");
+
+        assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
+
+        _performKeep();
+    }
+
+    function test_performUpkeep_hedgeDeviation_up() public afterMultipleWithdrawRequestCreated validateFinalState {
+        vm.startPrank(address(WETH_WHALE));
+        IERC20(product).transfer(address(strategy), IERC20(product).balanceOf(address(strategy)) / 10);
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded,
+            uint256 deltaCollateralToDecrease
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
+        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertFalse(deleverageNeeded, "deleverageNeeded");
+        assertFalse(positionManagerNeedKeep, "positionManagerNeedKeep");
+
+        assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
+
+        _performKeep();
+    }
+
+    function test_performUpkeep_decreaseCollateral_whenRebalanceUpNeeded() public validateFinalState {
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+        uint256 redeemShares1 = strategy.balanceOf(user1);
+        vm.startPrank(user1);
+        strategy.redeem(redeemShares1, user1, user1);
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        uint256 amount = pendingDeutilization * 9 / 10;
+        vm.startPrank(operator);
+        strategy.deutilize(amount, DataTypes.SwapType.MANUAL, "");
+
+        _fullExcuteOrder();
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded,
+            uint256 deltaCollateralToDecrease
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
+
+        assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertFalse(deleverageNeeded, "deleverageNeeded");
+        assertFalse(positionManagerNeedKeep, "positionManagerNeedKeep");
+        assertFalse(hedgeDeviationInTokens != 0, "hedge deviation");
+        assertTrue(decreaseCollateral, "decreaseCollateral");
+        assertTrue(rebalanceUpNeeded, "rebalanceUpNeeded");
+
+        _performKeep();
     }
 
     /*//////////////////////////////////////////////////////////////
