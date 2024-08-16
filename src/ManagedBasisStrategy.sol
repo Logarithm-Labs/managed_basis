@@ -631,7 +631,14 @@ contract ManagedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, Ownab
             })
         );
 
+        // priority upkeep
         if (upkeepNeeded) {
+            return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
+        }
+
+        // when strategy is in processing, return 0
+        // so that operator doesn't need to take care of status
+        if ($.strategyStatus != DataTypes.StrategyStatus.IDLE) {
             return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
         }
 
