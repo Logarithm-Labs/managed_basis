@@ -196,7 +196,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         emit Deposit(caller, receiver, assets, shares);
     }
 
-    function isClaimable(bytes32 withdrawRequestKey) external returns (bool) {
+    function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
         return $.strategy.isClaimable(withdrawRequestKey);
     }

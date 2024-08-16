@@ -211,9 +211,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
-        $.product = _product;
+        $.product = IERC20(_product);
         $.vault = IBasisVault(_vault);
         $.oracle = IOracle(_oracle);
+        $.operator = _operator;
 
         if (_targetLeverage == 0) revert();
         $.targetLeverage = _targetLeverage;
@@ -346,8 +347,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         bool _processingRebalance = $.processingRebalance;
         IBasisVault _vault = $.vault;
         IPositionManager _positionManager = $.positionManager;
-        address asset = _vault.asset();
-        address _product = $.product;
+        address _asset = _vault.asset();
+        address _product = address($.product);
         uint256 productBalance = IERC20(_product).balanceOf(address(this));
         uint256 totalSupply = _vault.totalSupply();
         uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
@@ -357,7 +358,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             InternalPendingDeutilization({
                 oracle: $.oracle,
                 positionManager: _positionManager,
-                asset: asset,
+                asset: _asset,
                 product: _product,
                 pendingDecreaseCollateral: $.pendingDecreaseCollateral,
                 productBalance: productBalance,
@@ -379,6 +380,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             $.strategyStatus
         );
 
+        if (!isExecuted) {
+            revert Errors.RequestNotExecuted();
+        }
+
         withdrawState.isClaimed = true;
 
         $.withdrawRequests[withdrawRequestKey] = withdrawState;
@@ -396,7 +401,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         $.assetsToClaim -= executedAmount;
 
-        IERC20(asset).safeTransferFrom(address(_vault), withdrawState.receiver, executedAmount);
+        IERC20(_asset).safeTransferFrom(address(_vault), withdrawState.receiver, executedAmount);
 
         emit Claim(withdrawState.receiver, withdrawRequestKey, executedAmount);
     }
@@ -421,10 +426,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
 
         IBasisVault _vault = $.vault;
-        address asset = _vault.asset();
-        address _product = $.product;
+        address _asset = _vault.asset();
+        address _product = address($.product);
 
-        uint256 idle = _idleAssets(asset, address(_vault), $.assetsToClaim);
+        uint256 idle = _idleAssets(_asset, address(_vault), $.assetsToClaim);
         uint256 _targetLeverage = $.targetLeverage;
 
         // actual utilize amount is min of amount, idle assets and pending utilization
@@ -442,9 +447,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         uint256 amountOut;
         bool success;
-        IERC20(asset).safeTransferFrom(address(_vault), address(this), amount);
+        IERC20(_asset).safeTransferFrom(address(_vault), address(this), amount);
         if (swapType == SwapType.INCH_V6) {
-            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, asset, _product, true, swapData);
+            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, _asset, _product, true, swapData);
             if (!success) {
                 emit SwapFailed();
                 $.strategyStatus = StrategyStatus.IDLE;
@@ -491,8 +496,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         bool _processingRebalance = $.processingRebalance;
         IBasisVault _vault = $.vault;
         IPositionManager _positionManager = $.positionManager;
-        address asset = _vault.asset();
-        address _product = $.product;
+        address _asset = _vault.asset();
+        address _product = address($.product);
         uint256 productBalance = IERC20(_product).balanceOf(address(this));
         uint256 totalSupply = _vault.totalSupply();
 
@@ -501,7 +506,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             InternalPendingDeutilization({
                 oracle: $.oracle,
                 positionManager: _positionManager,
-                asset: asset,
+                asset: _asset,
                 product: _product,
                 pendingDecreaseCollateral: $.pendingDecreaseCollateral,
                 productBalance: productBalance,
@@ -524,7 +529,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 amountOut;
         bool success;
         if (swapType == SwapType.INCH_V6) {
-            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, asset, _product, false, swapData);
+            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, _asset, _product, false, swapData);
             if (!success) {
                 emit SwapFailed();
                 $.strategyStatus = StrategyStatus.IDLE;
@@ -569,16 +574,16 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         IBasisVault _vault = $.vault;
-        address asset = _vault.asset();
-        uint256 idleAssets_ = _idleAssets(asset, address(_vault), $.assetsToClaim);
+        address _asset = _vault.asset();
+        uint256 idleAssets_ = _idleAssets(_asset, address(_vault), $.assetsToClaim);
         uint256 currentLeverage = $.positionManager.currentLeverage();
 
         (upkeepNeeded, performData) = _checkUpkeep(
             InternalCheckUpkeep({
                 oracle: $.oracle,
                 positionManager: $.positionManager,
-                asset: asset,
-                product: $.product,
+                asset: _asset,
+                product: address($.product),
                 status: $.strategyStatus,
                 processingRebalance: $.processingRebalance,
                 leverages: Leverages({
@@ -637,8 +642,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             $.pendingDecreaseCollateral = 0;
             IPositionManager _positionManager = $.positionManager;
             IBasisVault _vault = $.vault;
-            address asset = _vault.asset();
-            uint256 idleAssets_ = _idleAssets(asset, address(_vault), $.assetsToClaim);
+            address _asset = _vault.asset();
+            uint256 idleAssets_ = _idleAssets(_asset, address(_vault), $.assetsToClaim);
             uint256 currentLeverage = _positionManager.currentLeverage();
             uint256 targetLeverage = $.targetLeverage;
             uint256 deltaCollateralToIncrease =
@@ -646,12 +651,12 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
 
             if (deleverageNeeded && (deltaCollateralToIncrease > idleAssets_ || minIncreaseCollateral > idleAssets_)) {
-                address _product = $.product;
+                address _product = address($.product);
                 uint256 amount = _pendingDeutilization(
                     InternalPendingDeutilization({
                         oracle: $.oracle,
                         positionManager: _positionManager,
-                        asset: asset,
+                        asset: _asset,
                         product: _product,
                         pendingDecreaseCollateral: $.pendingDecreaseCollateral,
                         productBalance: IERC20(_product).balanceOf(address(this)),
@@ -665,8 +670,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 );
                 (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
                 (min, max) = (
-                    min == 0 ? 0 : $.oracle.convertTokenAmount(asset, _product, min),
-                    max == type(uint256).max ? type(uint256).max : $.oracle.convertTokenAmount(asset, _product, max)
+                    min == 0 ? 0 : $.oracle.convertTokenAmount(_asset, _product, min),
+                    max == type(uint256).max ? type(uint256).max : $.oracle.convertTokenAmount(_asset, _product, max)
                 );
 
                 // @issue amount can be 0 because of clamping that breaks emergency rebalance down
@@ -736,8 +741,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             revert Errors.InvalidCallback();
         }
 
-        uint256 currentLeverage = $.positionManager.currentLeverage();
-
         if (params.isIncrease) {
             _afterIncreasePosition(params);
         } else {
@@ -764,16 +767,16 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IPositionManager _positionManager = $.positionManager;
         IBasisVault _vault = $.vault;
-        address asset = _vault.asset();
-        address _product = $.product;
-        uint256 idleAssets_ = _idleAssets(asset, address(_vault), $.assetsToClaim);
+        address _asset = _vault.asset();
+        address _product = address($.product);
+        uint256 idleAssets_ = _idleAssets(_asset, address(_vault), $.assetsToClaim);
         bool _processingRebalance = $.processingRebalance;
         pendingUtilizationInAsset = _pendingUtilization(idleAssets_, $.targetLeverage, _processingRebalance);
         pendingDeutilizationInProduct = _pendingDeutilization(
             InternalPendingDeutilization({
                 oracle: $.oracle,
                 positionManager: _positionManager,
-                asset: asset,
+                asset: _asset,
                 product: _product,
                 pendingDecreaseCollateral: $.pendingDecreaseCollateral,
                 productBalance: IERC20(_product).balanceOf(address(this)),
@@ -793,9 +796,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IBasisVault _vault = $.vault;
         address _asset = _vault.asset();
-        address _product = $.product;
+        address _product = address($.product);
         uint256 idleAssets_ = _idleAssets(_asset, _product, $.assetsToClaim);
-        uint256 utilizedAssets_ = _utilizedAssets(_asset, _product, address(_vault), $.oracle, $.positionManager);
+        uint256 utilizedAssets_ = _utilizedAssets(_asset, _product, $.oracle, $.positionManager);
         uint256 _assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
 
         (, uint256 totalAssets_) = ((utilizedAssets_ + idleAssets_) + _assetsToWithdraw).trySub(
@@ -822,8 +825,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         IBasisVault _vault = $.vault;
         IPositionManager _positionManager = $.positionManager;
-        address asset = _vault.asset();
-        address _product = $.product;
+        address _asset = _vault.asset();
+        address _product = address($.product);
         uint256 productBalance = IERC20(_product).balanceOf(address(this));
         uint256 totalSupply = _vault.totalSupply();
         uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
@@ -833,7 +836,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             InternalPendingDeutilization({
                 oracle: $.oracle,
                 positionManager: _positionManager,
-                asset: asset,
+                asset: _asset,
                 product: _product,
                 pendingDecreaseCollateral: $.pendingDecreaseCollateral,
                 productBalance: productBalance,
@@ -857,7 +860,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         return isExecuted && !withdrawRequest.isClaimed;
     }
 
-    function getWithdrawKey(uint256 counter) public returns (bytes32) {
+    function getWithdrawKey(uint256 counter) public view returns (bytes32) {
         return keccak256(abi.encodePacked(address(this), counter));
     }
 
@@ -874,10 +877,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         returns (bool)
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        address asset = $.vault.asset();
-        address _product = $.product();
+        address _asset = $.vault.asset();
+        address _product = address($.product);
         if (isIncrease && collateralDeltaAmount > 0) {
-            IERC20(asset).safeTransfer(address($.positionManager), collateralDeltaAmount);
+            IERC20(_asset).safeTransfer(address($.positionManager), collateralDeltaAmount);
         }
 
         if (sizeDeltaInTokens > 0) {
@@ -887,8 +890,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             else (min, max) = $.positionManager.decreaseSizeMinMax();
 
             (min, max) = (
-                min == 0 ? 0 : $.oracle.convertTokenAmount(asset, _product, min),
-                max == type(uint256).max ? type(uint256).max : $.oracle.convertTokenAmount(asset, _product, max)
+                min == 0 ? 0 : $.oracle.convertTokenAmount(_asset, _product, min),
+                max == type(uint256).max ? type(uint256).max : $.oracle.convertTokenAmount(_asset, _product, max)
             );
             sizeDeltaInTokens = _clamp(min, sizeDeltaInTokens, max);
         }
@@ -956,7 +959,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         IPositionManager.PositionManagerPayload memory requestParams = $.requestParams;
         bool _processingRebalance = $.processingRebalance;
         IBasisVault _vault = $.vault;
-        address asset = _vault.asset();
+        address _asset = _vault.asset();
 
         if (requestParams.sizeDeltaInTokens > 0) {
             uint256 _pendingDeutilizedAssets = $.pendingDeutilizedAssets;
@@ -984,32 +987,32 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
             if (_processingRebalance) {
                 // release deutilized asset to idle when rebalance down
-                IERC20(asset).safeTransfer(address(_vault), _pendingDeutilizedAssets);
-                uint256 idleAssets_ = _idleAssets(asset, address(_vault), $.assetsToClaim);
+                IERC20(_asset).safeTransfer(address(_vault), _pendingDeutilizedAssets);
+                uint256 idleAssets_ = _idleAssets(_asset, address(_vault), $.assetsToClaim);
                 _processPendingWithdrawRequests(idleAssets_);
             } else {
                 // process withdraw request
-                uint256 _assetsToWithdraw = IERC20(asset).balanceOf(address(this));
+                uint256 _assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
                 (uint256 processedAssets,) = _processPendingWithdrawRequests(_assetsToWithdraw);
-                IERC20(asset).safeTransfer(address(_vault), processedAssets);
+                IERC20(_asset).safeTransfer(address(_vault), processedAssets);
             }
         }
 
         if (responseParams.collateralDeltaAmount > 0) {
             if (_processingRebalance) {
                 // release deutilized asset to idle when rebalance down
-                IERC20(asset).safeTransferFrom(
+                IERC20(_asset).safeTransferFrom(
                     address($.positionManager), address(_vault), responseParams.collateralDeltaAmount
                 );
-                uint256 idleAssets_ = _idleAssets(asset, address(_vault), $.assetsToClaim);
+                uint256 idleAssets_ = _idleAssets(_asset, address(_vault), $.assetsToClaim);
                 _processPendingWithdrawRequests(idleAssets_);
             } else {
-                IERC20(asset).safeTransferFrom(
+                IERC20(_asset).safeTransferFrom(
                     address($.positionManager), address(this), responseParams.collateralDeltaAmount
                 );
-                uint256 _assetsToWithdraw = IERC20(asset).balanceOf(address(this));
+                uint256 _assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
                 (uint256 processedAssets,) = _processPendingWithdrawRequests(_assetsToWithdraw);
-                IERC20(asset).safeTransfer(address(_vault), processedAssets);
+                IERC20(_asset).safeTransfer(address(_vault), processedAssets);
                 (, $.pendingDecreaseCollateral) =
                     $.pendingDecreaseCollateral.trySub(responseParams.collateralDeltaAmount);
             }
@@ -1130,13 +1133,11 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     }
 
     /// @dev returns the spot assets value
-    function _utilizedAssets(
-        address _asset,
-        address _product,
-        address _vault,
-        IOracle _oralce,
-        IPositionManager _positionManager
-    ) private view returns (uint256) {
+    function _utilizedAssets(address _asset, address _product, IOracle _oralce, IPositionManager _positionManager)
+        private
+        view
+        returns (uint256)
+    {
         uint256 productBalance = IERC20(_product).balanceOf(address(this));
         uint256 productValueInAssets = _oralce.convertTokenAmount(_product, _asset, productBalance);
         return productValueInAssets + _positionManager.positionNetBalance();
@@ -1315,7 +1316,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 accRequestedWithdrawAssets,
         uint256 proccessedWithdrawAssets,
         StrategyStatus status
-    ) private view returns (bool isExecuted, bool isLast) {
+    ) private pure returns (bool isExecuted, bool isLast) {
         // separate worflow for last withdraw
         // check if current withdrawRequest is last withdraw
         if (totalSupply == 0 && withdrawRequest.accRequestedWithdrawAssets == accRequestedWithdrawAssets) {
@@ -1351,5 +1352,25 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             deltaCollateral = positionNetBalance - targetCollateral;
         }
         return deltaCollateral;
+    }
+
+    function positionManager() external view returns (address) {
+        return address(_getBasisStrategyStorage().positionManager);
+    }
+
+    function oracle() external view returns (address) {
+        return address(_getBasisStrategyStorage().oracle);
+    }
+
+    function asset() external view returns (address) {
+        return address(_getBasisStrategyStorage().vault.asset());
+    }
+
+    function product() external view returns (address) {
+        return address(_getBasisStrategyStorage().product);
+    }
+
+    function strategyStatus() external view returns (StrategyStatus) {
+        return _getBasisStrategyStorage().strategyStatus;
     }
 }
