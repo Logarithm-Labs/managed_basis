@@ -183,8 +183,8 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         int256 hedgeDeviationInTokens;
         bool positionManagerNeedKeep;
         if (performData.length > 0) {
-            (rebalanceUpNeeded, rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep)
-            = abi.decode(performData, (bool, bool, bool, int256, bool));
+            (rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep, rebalanceUpNeeded,)
+            = abi.decode(performData, (bool, bool, int256, bool, bool, uint256));
         }
 
         state.strategyStatus = uint8(strategy.strategyStatus());
@@ -797,11 +797,18 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         _updatePositionNetBalance(positionManager.positionNetBalance());
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded,
+            uint256 deltaCollateralToDecrease
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
         assertTrue(rebalanceUpNeeded);
         assertFalse(rebalanceDownNeeded);
-        assertFalse(liquidatable);
+        assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
         vm.startPrank(forwarder);
         _performKeep();
@@ -843,11 +850,18 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded,
+            uint256 deltaCollateralToDecrease
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
-        assertFalse(liquidatable);
+        assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
 
         _performKeep();

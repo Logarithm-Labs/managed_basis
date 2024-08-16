@@ -213,8 +213,8 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         int256 hedgeDeviationInTokens;
         bool positionManagerNeedKeep;
         if (performData.length > 0) {
-            (rebalanceUpNeeded, rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep)
-            = abi.decode(performData, (bool, bool, bool, int256, bool));
+            (rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep, rebalanceUpNeeded,)
+            = abi.decode(performData, (bool, bool, int256, bool, bool, uint256));
         }
 
         state.strategyStatus = uint8(strategy.strategyStatus());
@@ -759,11 +759,18 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 5 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded,
+            uint256 deltaCollateralToDecrease
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
         assertTrue(rebalanceUpNeeded);
         assertFalse(rebalanceDownNeeded);
-        assertFalse(liquidatable);
+        assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
 
         // position.sizeInUsd is changed due to realization of positive pnl
@@ -801,11 +808,18 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded,
+            uint256 deltaCollateralToDecrease
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
-        assertFalse(liquidatable);
+        assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
 
         _performKeep();
@@ -828,11 +842,18 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded,
+            uint256 deltaCollateralToDecrease
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
-        assertTrue(liquidatable, "liquidatable");
+        assertTrue(deleverageNeeded, "deleverageNeeded");
         assertFalse(positionManagerNeedKeep, "positionManagerNeedKeep");
 
         _performKeep();
@@ -850,11 +871,18 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded,
+            uint256 deltaCollateralToDecrease
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
-        assertTrue(liquidatable);
+        assertTrue(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
         _performKeep();
         assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
@@ -871,20 +899,25 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
-        assertTrue(upkeepNeeded);
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
-        assertTrue(liquidatable);
-        assertFalse(positionManagerNeedKeep);
-        console.log("currentLeverage", positionManager.currentLeverage());
+        assertTrue(upkeepNeeded, "upkeepNeeded");
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded,
+            uint256 deltaCollateralToDecrease
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
+        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertTrue(deleverageNeeded, "deleverageNeeded");
+        assertFalse(positionManagerNeedKeep, "positionManagerNeedKeep");
         vm.startPrank(forwarder);
         strategy.performUpkeep(performData);
         _fullExcuteOrder();
         uint256 strategyBalanceAfter = IERC20(asset).balanceOf(address(strategy));
         assertTrue(strategyBalanceAfter < strategyBalanceBefore);
-        console.log("resultedLeverage", positionManager.currentLeverage());
     }
 
     /*//////////////////////////////////////////////////////////////
