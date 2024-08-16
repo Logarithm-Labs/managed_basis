@@ -384,6 +384,9 @@ library BasisStrategyLogic {
 
         int256 hedgeDeviationInTokens;
         bool positionManagerNeedKeep;
+        bool decreaseCollateral;
+
+        uint256 deltaCollateralToDecrease;
 
         (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) = _checkRebalance(params.leverages);
 
@@ -398,7 +401,7 @@ library BasisStrategyLogic {
         }
 
         if (rebalanceUpNeeded) {
-            uint256 deltaCollateralToDecrease =
+            deltaCollateralToDecrease =
                 _calculateDeltaCollateralForRebalance(params.addr.positionManager, params.leverages.targetLeverage);
             (uint256 minDecreaseCollateral,) = IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
             rebalanceUpNeeded = deltaCollateralToDecrease >= minDecreaseCollateral;
@@ -410,7 +413,7 @@ library BasisStrategyLogic {
             rebalanceDownNeeded = idleAssets != 0 && idleAssets >= minIncreaseCollateral;
         }
 
-        if (rebalanceUpNeeded || rebalanceDownNeeded) {
+        if (rebalanceDownNeeded) {
             upkeepNeeded = true;
         } else {
             hedgeDeviationInTokens = _checkHedgeDeviation(params.addr, params.hedgeDeviationThreshold);
@@ -424,6 +427,9 @@ library BasisStrategyLogic {
                     (uint256 minDecreaseCollateral,) =
                         IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
                     if (params.pendingDecreaseCollateral > minDecreaseCollateral) {
+                        decreaseCollateral = true;
+                        upkeepNeeded = true;
+                    } else if (rebalanceUpNeeded) {
                         upkeepNeeded = true;
                     }
                 }
@@ -431,7 +437,13 @@ library BasisStrategyLogic {
         }
 
         performData = abi.encode(
-            rebalanceUpNeeded, rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep
+            rebalanceDownNeeded,
+            deleverageNeeded,
+            hedgeDeviationInTokens,
+            positionManagerNeedKeep,
+            decreaseCollateral,
+            rebalanceUpNeeded,
+            deltaCollateralToDecrease
         );
 
         return (upkeepNeeded, performData);
@@ -507,26 +519,17 @@ library BasisStrategyLogic {
         )
     {
         (
-            bool rebalanceUpNeeded,
             bool rebalanceDownNeeded,
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep
-        ) = abi.decode(params.performData, (bool, bool, bool, int256, bool));
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded,
+            uint256 deltaCollateralToDecrease
+        ) = abi.decode(params.performData, (bool, bool, int256, bool, bool, bool, uint256));
         status = DataTypes.StrategyStatus.KEEPING;
         uint256 idleAssets;
-        if (rebalanceUpNeeded) {
-            // if reblance up is needed, we have to break normal deutilization of decreasing collateral
-            params.cache.pendingDecreaseCollateral = 0;
-            uint256 deltaCollateralToDecrease =
-                _calculateDeltaCollateralForRebalance(params.addr.positionManager, params.leverages.targetLeverage);
-            (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
-            requestParams.collateralDeltaAmount = _clamp(min, deltaCollateralToDecrease, max);
-            processingRebalance = true;
-            if (requestParams.collateralDeltaAmount == 0) {
-                status = DataTypes.StrategyStatus.IDLE;
-            }
-        } else if (rebalanceDownNeeded) {
+        if (rebalanceDownNeeded) {
             // if reblance down is needed, we have to break normal deutilization of decreasing collateral
             params.cache.pendingDecreaseCollateral = 0;
             idleAssets = getIdleAssets(params.addr.asset, params.cache);
@@ -601,12 +604,11 @@ library BasisStrategyLogic {
             }
         } else if (positionManagerNeedKeep) {
             IPositionManager(params.addr.positionManager).keep();
-        } else if (params.cache.pendingDecreaseCollateral > 0) {
-            (uint256 min, uint256 max) = IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
-            requestParams.collateralDeltaAmount = _clamp(min, params.cache.pendingDecreaseCollateral, max);
-            if (requestParams.collateralDeltaAmount == 0) {
-                status = DataTypes.StrategyStatus.IDLE;
-            }
+        } else if (decreaseCollateral) {
+            requestParams.collateralDeltaAmount = params.cache.pendingDecreaseCollateral;
+        } else if (rebalanceUpNeeded) {
+            requestParams.collateralDeltaAmount = deltaCollateralToDecrease;
+            processingRebalance = true;
         }
         return (params.cache, requestParams, status, processingRebalance);
     }
@@ -921,9 +923,9 @@ library BasisStrategyLogic {
             (remainingAssets, cache) = processWithdrawRequests(params.responseParams.collateralDeltaAmount, cache);
             if (!processingRebalance) {
                 cache.assetsToWithdraw += remainingAssets;
-                (, cache.pendingDecreaseCollateral) =
-                    cache.pendingDecreaseCollateral.trySub(params.responseParams.collateralDeltaAmount);
             }
+            (, cache.pendingDecreaseCollateral) =
+                cache.pendingDecreaseCollateral.trySub(params.responseParams.collateralDeltaAmount);
         }
 
         // only when rebalance was started, we need to check
