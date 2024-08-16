@@ -729,6 +729,13 @@ library BasisStrategyLogic {
             if (amount == pendingDeutilization) {
                 (, requestParams.collateralDeltaAmount) =
                     params.cache.accRequestedWithdrawAssets.trySub(params.cache.proccessedWithdrawAssets + amountOut);
+                if (params.totalSupply != 0) {
+                    (uint256 min, uint256 max) =
+                        IPositionManager(params.addr.positionManager).decreaseCollateralMinMax();
+                    requestParams.collateralDeltaAmount = _clamp(min, requestParams.collateralDeltaAmount, max);
+                }
+                // when collateralDeltaAmount is 0, pendingDecreaseCollateral should be set as 0
+                // so that the remaining pendingWithdraw amount can be processed by deutilizing sizes
                 params.cache.pendingDecreaseCollateral = requestParams.collateralDeltaAmount;
             } else {
                 uint256 positionNetBalance = IPositionManager(params.addr.positionManager).positionNetBalance();
