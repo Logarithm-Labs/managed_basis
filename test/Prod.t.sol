@@ -63,7 +63,7 @@ contract ProdTest is Test {
         console.log("positionSizeInTokens", state.positionSizeInTokens);
         console.log("positionSizeInAsset", state.positionSizeInAsset);
         console.log("positionManagerBalance", state.positionManagerBalance);
-        console.log("processingRebalance", state.processingRebalance);
+        console.log("processingRebalanceDown", state.processingRebalanceDown);
         console.log("upkeepNeeded", state.upkeepNeeded);
         console.log("rebalanceUpNeeded", state.rebalanceUpNeeded);
         console.log("rebalanceDownNeeded", state.rebalanceDownNeeded);

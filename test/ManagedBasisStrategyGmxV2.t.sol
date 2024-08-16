@@ -49,7 +49,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         uint256 positionLeverage;
         uint256 positionSizeInTokens;
         uint256 positionSizeInAsset;
-        bool processingRebalance;
+        bool processingRebalanceDown;
         bool upkeepNeeded;
         bool rebalanceUpNeeded;
         bool rebalanceDownNeeded;
@@ -244,7 +244,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         state.positionLeverage = positionManager.currentLeverage();
         state.positionSizeInTokens = positionManager.positionSizeInTokens();
         state.positionSizeInAsset = oracle.convertTokenAmount(product, asset, state.positionSizeInTokens);
-        state.processingRebalance = strategy.processingRebalance();
+        state.processingRebalanceDown = strategy.processingRebalanceDown();
 
         state.upkeepNeeded = upkeepNeeded;
         state.rebalanceUpNeeded = rebalanceUpNeeded;
@@ -298,7 +298,7 @@ contract ManagedBasisStrategyGmxV2Test is InchTest, GmxV2Test {
         } else {
             assertEq(state.productBalance, state.positionSizeInTokens, "not 0 product exposure");
         }
-        assertFalse(state.processingRebalance);
+        assertFalse(state.processingRebalanceDown);
         assertFalse(state.upkeepNeeded, "upkeep");
     }
 

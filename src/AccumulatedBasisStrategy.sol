@@ -83,7 +83,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
         address[] productToAssetSwapPath;
         address[] assetToProductSwapPath;
         DataTypes.PositionManagerPayload adjustmentRequest;
-        bool processingRebalance;
+        bool processingRebalanceDown;
     }
     // mapping(bytes32 => DataTypes.PositionManagerPayload) positionRequests;
 
@@ -630,7 +630,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
         DataTypes.StrategyStatus strategyStatus_ = $.strategyStatus;
 
-        bool needRebalanceDown = $.processingRebalance;
+        bool needRebalanceDown = $.processingRebalanceDown;
 
         // can only deutilize when the strategy status is IDLE or NEED_REBLANCE_DOWN
         if (!needRebalanceDown && strategyStatus_ != DataTypes.StrategyStatus.IDLE) {
@@ -1193,7 +1193,7 @@ contract AccumulatedBasisStrategy is UUPSUpgradeable, LogBaseVaultUpgradeable, O
 
     function pendingDeutilization() public view returns (uint256) {
         ManagedBasisStrategyStorage storage $ = _getManagedBasisStrategyStorage();
-        return _pendingDeutilization($.processingRebalance);
+        return _pendingDeutilization($.processingRebalanceDown);
     }
 
     // @review Numa:

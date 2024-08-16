@@ -51,7 +51,7 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         uint256 positionManagerBalance;
         uint256 positionManagerPendingCollateralIncrease;
         uint256 agentBalance;
-        bool processingRebalance;
+        bool processingRebalanceDown;
         bool upkeepNeeded;
         bool rebalanceUpNeeded;
         bool rebalanceDownNeeded;
@@ -211,7 +211,7 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         state.positionManagerPendingCollateralIncrease = positionManager.pendingCollateralIncrease();
         state.agentBalance = IERC20(asset).balanceOf(positionManager.agent());
 
-        state.processingRebalance = strategy.processingRebalance();
+        state.processingRebalanceDown = strategy.processingRebalanceDown();
         state.upkeepNeeded = upkeepNeeded;
         state.rebalanceUpNeeded = rebalanceUpNeeded;
         state.rebalanceDownNeeded = rebalanceDownNeeded;
@@ -248,7 +248,7 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         console.log("positionManagerBalance", state.positionManagerBalance);
         console.log("positionManagerPendingCollateralIncrease", state.positionManagerPendingCollateralIncrease);
         console.log("agentBalance", state.agentBalance);
-        console.log("processingRebalance", state.processingRebalance);
+        console.log("processingRebalanceDown", state.processingRebalanceDown);
         console.log("upkeepNeeded", state.upkeepNeeded);
         console.log("rebalanceUpNeeded", state.rebalanceUpNeeded);
         console.log("rebalanceDownNeeded", state.rebalanceDownNeeded);

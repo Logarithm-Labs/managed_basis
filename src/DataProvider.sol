@@ -30,7 +30,7 @@ contract DataProvider {
         uint256 positionSizeInTokens;
         uint256 positionSizeInAsset;
         uint256 positionManagerBalance;
-        bool processingRebalance;
+        bool processingRebalanceDown;
         bool upkeepNeeded;
         bool rebalanceUpNeeded;
         bool rebalanceDownNeeded;
@@ -78,7 +78,7 @@ contract DataProvider {
         state.positionSizeInAsset = oracle.convertTokenAmount(product, asset, state.positionSizeInTokens);
         state.positionManagerBalance = IERC20(asset).balanceOf(address(positionManager));
 
-        state.processingRebalance = strategy.processingRebalance();
+        state.processingRebalanceDown = strategy.processingRebalanceDown();
         state.upkeepNeeded = upkeepNeeded;
         state.rebalanceUpNeeded = rebalanceUpNeeded;
         state.rebalanceDownNeeded = rebalanceDownNeeded;
