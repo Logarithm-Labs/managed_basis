@@ -140,7 +140,7 @@ library BasisStrategyLogic {
 
     function getPreviewDeposit(PreviewParams memory params) external view returns (uint256 shares) {
         if (params.totalSupply == 0) {
-            return params.assetsOrShares * 10 ** Constants.DECIMAL_OFFSET;
+            return params.assetsOrShares;
         }
 
         // calculate the amount of assets that will be utilized
@@ -219,7 +219,7 @@ library BasisStrategyLogic {
         pure
         returns (uint256)
     {
-        return assets.mulDiv(totalSupply + 10 ** Constants.DECIMAL_OFFSET, totalAssets + 1, rounding);
+        return assets.mulDiv(totalSupply + 1, totalAssets + 1, rounding);
     }
 
     /**
@@ -230,7 +230,7 @@ library BasisStrategyLogic {
         pure
         returns (uint256)
     {
-        return shares.mulDiv(totalAssets + 1, totalSupply + 10 ** Constants.DECIMAL_OFFSET, rounding);
+        return shares.mulDiv(totalAssets + 1, totalSupply + 1, rounding);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -726,7 +726,7 @@ library BasisStrategyLogic {
         requestParams.sizeDeltaInTokens = amount;
 
         if (!params.processingRebalance) {
-            if (amount == pendingDeutilization && params.totalSupply == 0) {
+            if (amount == pendingDeutilization) {
                 (, requestParams.collateralDeltaAmount) =
                     params.cache.accRequestedWithdrawAssets.trySub(params.cache.proccessedWithdrawAssets + amountOut);
                 params.cache.pendingDecreaseCollateral = requestParams.collateralDeltaAmount;

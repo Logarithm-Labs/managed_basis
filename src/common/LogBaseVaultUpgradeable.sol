@@ -44,8 +44,4 @@ abstract contract LogBaseVaultUpgradeable is Initializable, ERC4626Upgradeable {
         BaseVaultStorage storage $ = _getBaseVaultStorage();
         return address($._product);
     }
-
-    function _decimalsOffset() internal pure virtual override returns (uint8) {
-        return Constants.DECIMAL_OFFSET;
-    }
 }
