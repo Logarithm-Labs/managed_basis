@@ -29,4 +29,6 @@ interface IPositionManager {
     function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max);
 
     function decreaseSizeMinMax() external view returns (uint256 min, uint256 max);
+
+    function limitDecreaseCollateral() external view returns (uint256);
 }

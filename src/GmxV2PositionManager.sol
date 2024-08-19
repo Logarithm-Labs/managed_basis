@@ -91,6 +91,7 @@ contract GmxV2PositionManager is
         // this value is set only when changing position sizes
         uint256 sizeInTokensBefore;
         uint256 decreasingCollateralDeltaAmount;
+        uint256 limitDecreaseCollateral;
     }
     // min max
     // uint256[2] increaseSizeMinMax;
@@ -159,6 +160,9 @@ contract GmxV2PositionManager is
         $.isLong = false;
 
         $.maxClaimableFundingShare = 1e16; // 1%
+
+        // placeholder constant to avoid contract size bloat
+        $.limitDecreaseCollateral = 100 * 1e6;
 
         // $.increaseSizeMinMax = [0, type(uint256).max];
         // $.increaseCollateralMinMax = [0, type(uint256).max];
@@ -799,9 +803,14 @@ contract GmxV2PositionManager is
     function decreaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
-
     // note: accomodate for IPositionManager interface wo impact to contract size
+
     function decreaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
+    }
+
+    function limitDecreaseCollateral() external view returns (uint256) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.limitDecreaseCollateral;
     }
 }

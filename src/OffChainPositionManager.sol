@@ -58,6 +58,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         mapping(uint256 round => PositionState) positionStates;
         mapping(uint256 round => RequestInfo) requests;
         uint256[] requestRounds;
+        uint256 limitDecreaseCollateral;
     }
 
     uint256 private constant PRECISION = 1e18;
@@ -130,6 +131,12 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         $.increaseCollateralMinMax = [increaseCollateralMin, increaseCollateralMax];
         $.decreaseCollateralMinMax = [decreaseCollateralMin, decreaseCollateralMax];
+    }
+
+    function setLimitDecreaseCollateral(uint256 limit) external onlyOwner {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        require(limit > $.decreaseCollateralMinMax[0]);
+        $.limitDecreaseCollateral = limit;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -473,5 +480,10 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
     function decreaseSizeMinMax() external view returns (uint256 min, uint256 max) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return ($.decreaseSizeMinMax[0], $.decreaseSizeMinMax[1]);
+    }
+
+    function limitDecreaseCollateral() external view returns (uint256) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.limitDecreaseCollateral;
     }
 }

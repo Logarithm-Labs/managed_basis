@@ -7,6 +7,7 @@ import "forge-std/Script.sol";
 import {ManagedBasisStrategy} from "src/ManagedBasisStrategy.sol";
 import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
+import {DataProvider} from "src/DataProvider.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployScript is Script {
@@ -45,6 +46,7 @@ contract DeployScript is Script {
     uint256 increaseCollateralMax = type(uint256).max;
     uint256 decreaseCollateralMin = 10 * 1e6;
     uint256 decreaseCollateralMax = type(uint256).max;
+    uint256 limitDecreaseCollateral = 30 * 1e6;
 
     bool public isLong = false;
 
@@ -131,9 +133,15 @@ contract DeployScript is Script {
         positionManager.setCollateralMinMax(
             increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
         );
+        positionManager.setLimitDecreaseCollateral(limitDecreaseCollateral);
 
         // set position manager
         strategy.setForwarder(forwarder);
         strategy.setPositionManager(address(positionManager));
+
+        address dataProvider = address(new DataProvider());
+        console.log("Data Provider deployed at: ", dataProvider);
+
+        DataProvider.StrategyState memory state = DataProvider(dataProvider).getStrategyState(address(strategy));
     }
 }

@@ -762,19 +762,156 @@ contract ManagedBasisStrategyOffchainTest is InchTest, OffChainTest {
         _logStrategyState("STATE AFTER PRICE DROP", _getStrategyState());
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            /* int256 hedgeDeviationInTokens */
+            ,
+            bool positionManagerNeedKeep,
+            /* bool decreaseCollateral */
+            ,
+            bool rebalanceUpNeeded,
+            /* uint256 deltaCollateralToDecrease */
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
         assertTrue(rebalanceUpNeeded);
         assertFalse(rebalanceDownNeeded);
         assertFalse(liquidatable);
         assertFalse(positionManagerNeedKeep);
         console.log("currentLeverage", positionManager.currentLeverage());
         vm.startPrank(forwarder);
-        strategy.performUpkeep(performData);
-        console.log("BREAK");
-        _fullOffChainExecute();
-        _logStrategyState("STATE AFTER UPKEEP", _getStrategyState());
-        console.log("processingRebalance", strategy.processingRebalance());
-        console.log();
+        _performKeep();
+        // _logStrategyState("FINAL STATE", _getStrategyState());
     }
+
+    function test_performUpkeep_rebalanceDown_whenNoIdle()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+        _updatePositionNetBalance(positionManager.positionNetBalance());
+        // _logStrategyState("STATE AFTER PRICE INCREASE", _getStrategyState());
+        assertEq(strategy.idleAssets(), 0);
+        (bool upkeepNeeded,) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        _performKeep();
+        // _logStrategyState("STATE AFTER UPKEEP", _getStrategyState());
+        (, uint256 deutilization) = strategy.pendingUtilizations();
+        _deutilize(deutilization);
+        // _logStrategyState("FINAL STATE", _getStrategyState());
+    }
+
+    function test_performUpkeep_rebalanceDown_whenIdle()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(strategy), 100 * 1e6);
+        assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
+
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+        _updatePositionNetBalance(positionManager.positionNetBalance());
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            /* int256 hedgeDeviationInTokens */
+            ,
+            bool positionManagerNeedKeep,
+            /* bool decreaseCollateral */
+            ,
+            bool rebalanceUpNeeded,
+            /* uint256 deltaCollateralToDecrease */
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        assertFalse(deleverageNeeded);
+        assertFalse(positionManagerNeedKeep);
+
+        _performKeep();
+
+        assertEq(strategy.idleAssets(), 0);
+
+        (upkeepNeeded,) = strategy.checkUpkeep("");
+        assertFalse(upkeepNeeded);
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+    }
+
+    // function test_performUpkeep_emergencyRebalanceDown_whenNotIdle()
+    //     public
+    //     afterMultipleWithdrawRequestCreated
+    //     validateFinalState
+    // {
+    //     int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+    //     _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
+    //     _updatePositionNetBalance(positionManager.positionNetBalance());
+
+    //     (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+    //     assertTrue(upkeepNeeded, "upkeepNeeded");
+    //     (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
+    //         abi.decode(performData, (bool, bool, bool, int256, bool));
+    //     assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
+    //     assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
+    //     assertTrue(liquidatable, "liquidatable");
+    //     assertFalse(positionManagerNeedKeep, "positionManagerNeedKeep");
+
+    //     _performKeep();
+    // }
+
+    // function test_performUpkeep_emergencyRebalanceDown_whenIdleNotEnough()
+    //     public
+    //     afterMultipleWithdrawRequestCreated
+    //     validateFinalState
+    // {
+    //     vm.startPrank(USDC_WHALE);
+    //     IERC20(asset).transfer(address(strategy), 100 * 1e6);
+    //     assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
+    //     int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+    //     _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
+    //     _updatePositionNetBalance(positionManager.positionNetBalance());
+    //     (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+    //     assertTrue(upkeepNeeded);
+    //     (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
+    //         abi.decode(performData, (bool, bool, bool, int256, bool));
+    //     assertFalse(rebalanceUpNeeded);
+    //     assertTrue(rebalanceDownNeeded);
+    //     assertTrue(liquidatable);
+    //     assertFalse(positionManagerNeedKeep);
+    //     _performKeep();
+    //     assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
+    // }
+
+    // function test_performUpkeep_emergencyRebalanceDown_whenIdleEnough()
+    //     public
+    //     afterMultipleWithdrawRequestCreated
+    //     validateFinalState
+    // {
+    //     vm.startPrank(USDC_WHALE);
+    //     IERC20(asset).transfer(address(strategy), TEN_THOUSANDS_USDC);
+    //     uint256 strategyBalanceBefore = IERC20(asset).balanceOf(address(strategy));
+    //     int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+    //     _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
+    //     _updatePositionNetBalance(positionManager.positionNetBalance());
+    //     (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+    //     assertTrue(upkeepNeeded);
+    //     (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
+    //         abi.decode(performData, (bool, bool, bool, int256, bool));
+    //     assertFalse(rebalanceUpNeeded);
+    //     assertTrue(rebalanceDownNeeded);
+    //     assertTrue(liquidatable);
+    //     assertFalse(positionManagerNeedKeep);
+    //     console.log("currentLeverage", positionManager.currentLeverage());
+    //     vm.startPrank(forwarder);
+    //     _performKeep();
+    //     uint256 strategyBalanceAfter = IERC20(asset).balanceOf(address(strategy));
+    //     assertTrue(strategyBalanceAfter < strategyBalanceBefore);
+    //     console.log("resultedLeverage", positionManager.currentLeverage());
+    // }
 }
