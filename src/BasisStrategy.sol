@@ -621,29 +621,17 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
 
         (
-            bool rebalanceUpNeeded,
             bool rebalanceDownNeeded,
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep
-        ) = abi.decode(performData, (bool, bool, bool, int256, bool));
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
 
         $.strategyStatus = StrategyStatus.KEEPING;
 
-        if (rebalanceUpNeeded) {
-            // if reblance up is needed, we have to break normal deutilization of decreasing collateral
-            $.pendingDecreaseCollateral = 0;
-            IPositionManager _positionManager = $.positionManager;
-            uint256 deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
-                _positionManager, _positionManager.currentLeverage(), $.targetLeverage
-            );
-
-            if (_adjustPosition(0, deltaCollateralToDecrease, false)) {
-                $.processingRebalance = true;
-            } else {
-                $.strategyStatus = StrategyStatus.IDLE;
-            }
-        } else if (rebalanceDownNeeded) {
+        if (rebalanceDownNeeded) {
             // if reblance down is needed, we have to break normal deutilization of decreasing collateral
             $.pendingDecreaseCollateral = 0;
             IPositionManager _positionManager = $.positionManager;
@@ -705,8 +693,19 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             }
         } else if (positionManagerNeedKeep) {
             $.positionManager.keep();
-        } else if ($.pendingDecreaseCollateral > 0) {
+        } else if (decreaseCollateral) {
             if (!_adjustPosition(0, $.pendingDecreaseCollateral, false)) $.strategyStatus = StrategyStatus.IDLE;
+        } else if (rebalanceUpNeeded) {
+            IPositionManager _positionManager = $.positionManager;
+            uint256 deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
+                _positionManager, _positionManager.currentLeverage(), $.targetLeverage
+            );
+
+            if (_adjustPosition(0, deltaCollateralToDecrease, false)) {
+                $.processingRebalance = true;
+            } else {
+                $.strategyStatus = StrategyStatus.IDLE;
+            }
         }
     }
 
@@ -1084,6 +1083,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         int256 hedgeDeviationInTokens;
         bool positionManagerNeedKeep;
+        bool decreaseCollateral;
 
         (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) = _checkRebalance(params.leverages);
 
@@ -1112,7 +1112,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             rebalanceDownNeeded = params.idleAssets != 0 && params.idleAssets >= minIncreaseCollateral;
         }
 
-        if (rebalanceUpNeeded || rebalanceDownNeeded) {
+        if (rebalanceUpNeeded) {
             upkeepNeeded = true;
         } else {
             hedgeDeviationInTokens = _checkHedgeDeviation(
@@ -1127,6 +1127,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 } else {
                     (uint256 minDecreaseCollateral,) = params.positionManager.decreaseCollateralMinMax();
                     if (params.pendingDecreaseCollateral > minDecreaseCollateral) {
+                        decreaseCollateral = true;
+                        upkeepNeeded = true;
+                    } else if (rebalanceUpNeeded) {
                         upkeepNeeded = true;
                     }
                 }
@@ -1134,7 +1137,12 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
 
         performData = abi.encode(
-            rebalanceUpNeeded, rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep
+            rebalanceDownNeeded,
+            deleverageNeeded,
+            hedgeDeviationInTokens,
+            positionManagerNeedKeep,
+            decreaseCollateral,
+            rebalanceUpNeeded
         );
 
         return (upkeepNeeded, performData);
