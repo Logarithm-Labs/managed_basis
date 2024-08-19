@@ -63,7 +63,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 proccessedWithdrawAssets;
         uint256 currentLeverage;
         uint256 targetLeverage;
-        bool processingRebalance;
+        bool processingRebalanceDown;
     }
 
     struct InternalCheckUpkeep {
@@ -72,7 +72,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         address asset;
         address product;
         StrategyStatus status;
-        bool processingRebalance;
+        bool processingRebalanceDown;
         Leverages leverages;
         uint256 idleAssets;
         uint256 pendingDecreaseCollateral;
@@ -118,7 +118,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 pendingDecreaseCollateral;
         // status state
         StrategyStatus strategyStatus;
-        bool processingRebalance;
+        bool processingRebalanceDown;
         // withdraw state
         uint256 accRequestedWithdrawAssets;
         uint256 proccessedWithdrawAssets;
@@ -305,7 +305,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     /// Note: if idle assets is greater than the requested amount,
     /// then process the request directly, otherwise will be processed by deutilizing
     ///
-    /// @param reciever address to receive asset
+    /// @param receiver address to receive asset
     /// @param assets amount to be received
     function requestWithdraw(address receiver, uint256 assets) external onlyVault {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
@@ -350,7 +350,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             revert Errors.RequestAlreadyClaimed();
         }
 
-        bool _processingRebalance = $.processingRebalance;
+        bool _processingRebalanceDown = $.processingRebalanceDown;
         IBasisVault _vault = $.vault;
         IPositionManager _positionManager = $.positionManager;
         address _asset = _vault.asset();
@@ -373,7 +373,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 proccessedWithdrawAssets: _proccessedWithdrawAssets,
                 currentLeverage: _positionManager.currentLeverage(),
                 targetLeverage: $.targetLeverage,
-                processingRebalance: _processingRebalance
+                processingRebalanceDown: _processingRebalanceDown
             })
         );
 
@@ -439,7 +439,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 _targetLeverage = $.targetLeverage;
 
         // actual utilize amount is min of amount, idle assets and pending utilization
-        uint256 pendingUtilization_ = _pendingUtilization(idle, _targetLeverage, $.processingRebalance);
+        uint256 pendingUtilization_ = _pendingUtilization(idle, _targetLeverage, $.processingRebalanceDown);
         if (pendingUtilization_ == 0) {
             revert Errors.ZeroPendingUtilization();
         }
@@ -499,7 +499,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             revert Errors.InvalidStrategyStatus(uint8(strategyStatus_));
         }
 
-        bool _processingRebalance = $.processingRebalance;
+        bool _processingRebalanceDown = $.processingRebalanceDown;
         IBasisVault _vault = $.vault;
         IPositionManager _positionManager = $.positionManager;
         address _asset = _vault.asset();
@@ -521,7 +521,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 proccessedWithdrawAssets: $.proccessedWithdrawAssets,
                 currentLeverage: _positionManager.currentLeverage(),
                 targetLeverage: $.targetLeverage,
-                processingRebalance: _processingRebalance
+                processingRebalanceDown: _processingRebalanceDown
             })
         );
 
@@ -553,7 +553,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         $.pendingDeutilizedAssets = amountOut;
 
         uint256 collateralDeltaAmount;
-        if (!_processingRebalance) {
+        if (!_processingRebalanceDown) {
             if (amount == pendingDeutilization_ && totalSupply == 0) {
                 (, collateralDeltaAmount) = $.accRequestedWithdrawAssets.trySub($.proccessedWithdrawAssets + amountOut);
                 $.pendingDecreaseCollateral = collateralDeltaAmount;
@@ -592,7 +592,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 asset: _asset,
                 product: address($.product),
                 status: $.strategyStatus,
-                processingRebalance: $.processingRebalance,
+                processingRebalanceDown: $.processingRebalanceDown,
                 leverages: Leverages({
                     currentLeverage: currentLeverage,
                     targetLeverage: $.targetLeverage,
@@ -660,7 +660,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                         proccessedWithdrawAssets: $.proccessedWithdrawAssets,
                         currentLeverage: currentLeverage,
                         targetLeverage: targetLeverage,
-                        processingRebalance: $.processingRebalance
+                        processingRebalanceDown: $.processingRebalanceDown
                     })
                 );
                 (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
@@ -683,7 +683,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     idleAssets_ > deltaCollateralToIncrease ? deltaCollateralToIncrease : idleAssets_;
                 if (!_adjustPosition(0, collateralDeltaAmount, true)) $.strategyStatus = StrategyStatus.IDLE;
             }
-            $.processingRebalance = true;
+            $.processingRebalanceDown = true;
         } else if (hedgeDeviationInTokens != 0) {
             if (hedgeDeviationInTokens > 0) {
                 if (!_adjustPosition(uint256(hedgeDeviationInTokens), 0, false)) $.strategyStatus = StrategyStatus.IDLE;
@@ -701,10 +701,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             uint256 deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
                 _positionManager, _positionManager.currentLeverage(), $.targetLeverage
             );
-
-            if (_adjustPosition(0, deltaCollateralToDecrease, false)) {
-                $.processingRebalance = true;
-            } else {
+            if (!_adjustPosition(0, deltaCollateralToDecrease, false)) {
                 $.strategyStatus = StrategyStatus.IDLE;
             }
         }
@@ -743,14 +740,16 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
-        if ($.strategyStatus == StrategyStatus.IDLE) {
+        StrategyStatus status = $.strategyStatus;
+
+        if (status == StrategyStatus.IDLE) {
             revert Errors.InvalidCallback();
         }
 
         if (params.isIncrease) {
             _afterIncreasePosition(params);
         } else {
-            _afterDecreasePosition(params);
+            _afterDecreasePosition(params, status);
         }
 
         $.strategyStatus = StrategyStatus.IDLE;
@@ -783,8 +782,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         address _asset = _vault.asset();
         address _product = address($.product);
         uint256 idleAssets_ = _idleAssets(_asset, address(_vault), $.assetsToClaim);
-        bool _processingRebalance = $.processingRebalance;
-        pendingUtilizationInAsset = _pendingUtilization(idleAssets_, $.targetLeverage, _processingRebalance);
+        bool _processingRebalanceDown = $.processingRebalanceDown;
+        pendingUtilizationInAsset = _pendingUtilization(idleAssets_, $.targetLeverage, _processingRebalanceDown);
         pendingDeutilizationInProduct = _pendingDeutilization(
             InternalPendingDeutilization({
                 oracle: $.oracle,
@@ -798,7 +797,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 proccessedWithdrawAssets: $.proccessedWithdrawAssets,
                 currentLeverage: _positionManager.currentLeverage(),
                 targetLeverage: $.targetLeverage,
-                processingRebalance: _processingRebalance
+                processingRebalanceDown: _processingRebalanceDown
             })
         );
         return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
@@ -858,7 +857,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 proccessedWithdrawAssets: _proccessedWithdrawAssets,
                 currentLeverage: _positionManager.currentLeverage(),
                 targetLeverage: $.targetLeverage,
-                processingRebalance: $.processingRebalance
+                processingRebalanceDown: $.processingRebalanceDown
             })
         );
         (bool isExecuted,) = _isWithdrawRequestExecuted(
@@ -961,16 +960,19 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             );
         }
 
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded) =
+        (, bool rebalanceDownNeeded) =
             _checkNeedRebalance($.positionManager.currentLeverage(), $.targetLeverage, $.rebalanceDeviationThreshold);
         // only when rebalance was started, we need to check
-        $.processingRebalance = $.processingRebalance && (rebalanceUpNeeded || rebalanceDownNeeded);
+        $.processingRebalanceDown = $.processingRebalanceDown && rebalanceDownNeeded;
     }
 
-    function _afterDecreasePosition(IPositionManager.PositionManagerPayload calldata responseParams) private {
+    function _afterDecreasePosition(
+        IPositionManager.PositionManagerPayload calldata responseParams,
+        StrategyStatus status
+    ) private {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IPositionManager.PositionManagerPayload memory requestParams = $.requestParams;
-        bool _processingRebalance = $.processingRebalance;
+        bool _processingRebalanceDown = $.processingRebalanceDown;
         IBasisVault _vault = $.vault;
         address _asset = _vault.asset();
 
@@ -998,7 +1000,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 }
             }
 
-            if (_processingRebalance) {
+            if (_processingRebalanceDown) {
                 // release deutilized asset to idle when rebalance down
                 IERC20(_asset).safeTransfer(address(_vault), _pendingDeutilizedAssets);
                 uint256 idleAssets_ = _idleAssets(_asset, address(_vault), $.assetsToClaim);
@@ -1009,10 +1011,18 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 (uint256 processedAssets,) = _processPendingWithdrawRequests(_assetsToWithdraw);
                 IERC20(_asset).safeTransfer(address(_vault), processedAssets);
             }
+
+            (, bool rebalanceDownNeeded) = _checkNeedRebalance(
+                $.positionManager.currentLeverage(), $.targetLeverage, $.rebalanceDeviationThreshold
+            );
+            // only when rebalance was started, we need to check
+            $.processingRebalanceDown = _processingRebalanceDown && rebalanceDownNeeded;
         }
 
         if (responseParams.collateralDeltaAmount > 0) {
-            if (_processingRebalance) {
+            // the case when deutilizing for withdrawls and rebalancing Up
+            (, $.pendingDecreaseCollateral) = $.pendingDecreaseCollateral.trySub(responseParams.collateralDeltaAmount);
+            if (status == StrategyStatus.KEEPING) {
                 // release deutilized asset to idle when rebalance down
                 IERC20(_asset).safeTransferFrom(
                     address($.positionManager), address(_vault), responseParams.collateralDeltaAmount
@@ -1026,15 +1036,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 uint256 _assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
                 (uint256 processedAssets,) = _processPendingWithdrawRequests(_assetsToWithdraw);
                 IERC20(_asset).safeTransfer(address(_vault), processedAssets);
-                (, $.pendingDecreaseCollateral) =
-                    $.pendingDecreaseCollateral.trySub(responseParams.collateralDeltaAmount);
             }
         }
-
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded) =
-            _checkNeedRebalance($.positionManager.currentLeverage(), $.targetLeverage, $.rebalanceDeviationThreshold);
-        // only when rebalance was started, we need to check
-        $.processingRebalance = _processingRebalance && (rebalanceUpNeeded || rebalanceDownNeeded);
     }
 
     /// @dev process pending withdraw request
@@ -1088,13 +1091,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) = _checkRebalance(params.leverages);
 
-        if (!rebalanceUpNeeded && params.processingRebalance) {
-            (rebalanceUpNeeded,) = _checkNeedRebalance(
-                params.leverages.currentLeverage, params.leverages.targetLeverage, params.rebalanceDeviationThreshold
-            );
-        }
-
-        if (!rebalanceDownNeeded && params.processingRebalance) {
+        if (!rebalanceDownNeeded && params.processingRebalanceDown) {
             (, rebalanceDownNeeded) = _checkNeedRebalance(
                 params.leverages.currentLeverage, params.leverages.targetLeverage, params.rebalanceDeviationThreshold
             );
@@ -1108,7 +1105,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             rebalanceUpNeeded = deltaCollateralToDecrease >= minDecreaseCollateral;
         }
 
-        if (rebalanceDownNeeded && params.processingRebalance && !deleverageNeeded) {
+        if (rebalanceDownNeeded && params.processingRebalanceDown && !deleverageNeeded) {
             (uint256 minIncreaseCollateral,) = params.positionManager.increaseCollateralMinMax();
             rebalanceDownNeeded = params.idleAssets != 0 && params.idleAssets >= minIncreaseCollateral;
         }
@@ -1176,14 +1173,15 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         return totalPendingWithdraw_;
     }
 
-    function _pendingUtilization(uint256 idleAssets_, uint256 _targetLeverage, bool _processingRebalance)
+    function _pendingUtilization(uint256 idleAssets_, uint256 _targetLeverage, bool _processingRebalanceDown)
         public
         pure
         returns (uint256)
     {
         // don't use utilze function when rebalancing
-        return
-            _processingRebalance ? 0 : idleAssets_.mulDiv(_targetLeverage, Constants.FLOAT_PRECISION + _targetLeverage);
+        return _processingRebalanceDown
+            ? 0
+            : idleAssets_.mulDiv(_targetLeverage, Constants.FLOAT_PRECISION + _targetLeverage);
     }
 
     function _pendingIncreaseCollateral(uint256 idleAssets_, uint256 _targetLeverage) private pure returns (uint256) {
@@ -1198,7 +1196,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 positionSizeInTokens = params.positionManager.positionSizeInTokens();
 
         uint256 deutilization;
-        if (params.processingRebalance) {
+        if (params.processingRebalanceDown) {
             if (params.currentLeverage > params.targetLeverage) {
                 // deltaSizeToDecrease =  positionSize - targetLeverage * positionSize / currentLeverage
                 deutilization =
