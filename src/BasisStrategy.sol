@@ -446,6 +446,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         amount = amount > pendingUtilization_ ? pendingUtilization_ : amount;
 
+        (uint256 min, uint256 max) = $.positionManager.increaseSizeMinMax();
+        (min, max) = (
+            min == 0 ? 0 : $.oracle.convertTokenAmount(_asset, _product, min),
+            max == type(uint256).max ? type(uint256).max : $.oracle.convertTokenAmount(_asset, _product, max)
+        );
+        amount = _clamp(min, amount, max);
+
         // can only utilize when amount is positive
         if (amount == 0) {
             revert Errors.ZeroAmountUtilization();
@@ -473,7 +480,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 collateralDeltaAmount;
         if (pendingIncreaseCollateral_ > 0) {
             collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization_);
-            (uint256 min, uint256 max) = $.positionManager.increaseCollateralMinMax();
+            (min, max) = $.positionManager.increaseCollateralMinMax();
             collateralDeltaAmount = _clamp(min, collateralDeltaAmount, max);
         }
         _adjustPosition(amountOut, collateralDeltaAmount, true);
@@ -527,6 +534,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         amount = amount > pendingDeutilization_ ? pendingDeutilization_ : amount;
 
+        (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
+        (min, max) = (
+            min == 0 ? 0 : $.oracle.convertTokenAmount(_asset, _product, min),
+            max == type(uint256).max ? type(uint256).max : $.oracle.convertTokenAmount(_asset, _product, max)
+        );
+        amount = _clamp(min, amount, max);
+
         // can only deutilize when amount is positive
         if (amount == 0) {
             revert Errors.ZeroAmountUtilization();
@@ -554,9 +568,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         uint256 collateralDeltaAmount;
         if (!_processingRebalanceDown) {
-            if (amount == pendingDeutilization_ && totalSupply == 0) {
+            if (amount == pendingDeutilization_) {
                 (, collateralDeltaAmount) = $.accRequestedWithdrawAssets.trySub($.proccessedWithdrawAssets + amountOut);
                 $.pendingDecreaseCollateral = collateralDeltaAmount;
+                if (totalSupply != 0) {
+                    (min, max) = _positionManager.decreaseCollateralMinMax();
+                    collateralDeltaAmount = _clamp(min, collateralDeltaAmount, max);
+                }
             } else {
                 uint256 positionNetBalance = _positionManager.positionNetBalance();
                 (, positionNetBalance) = positionNetBalance.trySub($.pendingDecreaseCollateral);
@@ -1152,13 +1170,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     }
 
     /// @dev returns the spot assets value
-    function _utilizedAssets(address _asset, address _product, IOracle _oralce, IPositionManager _positionManager)
+    function _utilizedAssets(address _asset, address _product, IOracle _oracle, IPositionManager _positionManager)
         private
         view
         returns (uint256)
     {
         uint256 productBalance = IERC20(_product).balanceOf(address(this));
-        uint256 productValueInAssets = _oralce.convertTokenAmount(_product, _asset, productBalance);
+        uint256 productValueInAssets = _oracle.convertTokenAmount(_product, _asset, productBalance);
         return productValueInAssets + _positionManager.positionNetBalance();
     }
 
