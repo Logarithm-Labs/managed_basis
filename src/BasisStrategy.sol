@@ -559,6 +559,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 $.pendingDecreaseCollateral = collateralDeltaAmount;
             } else {
                 uint256 positionNetBalance = _positionManager.positionNetBalance();
+                (, positionNetBalance) = positionNetBalance.trySub($.pendingDecreaseCollateral);
                 uint256 positionSizeInTokens = _positionManager.positionSizeInTokens();
                 uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
                 $.pendingDecreaseCollateral += collateralDeltaToDecrease;
