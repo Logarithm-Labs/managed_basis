@@ -301,6 +301,12 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         _processPendingWithdrawRequests(idleAssets_);
     }
 
+    /// @dev request withdraw
+    /// Note: if idle assets is greater than the requested amount,
+    /// then process the request directly, otherwise will be processed by deutilizing
+    ///
+    /// @param reciever address to receive asset
+    /// @param assets amount to be received
     function requestWithdraw(address receiver, uint256 assets) external onlyVault {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IBasisVault _vault = $.vault;
@@ -765,6 +771,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         if (upkeepNeeded) return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+
+        // when strategy is in processing, return 0
+        // so that operator doesn't need to take care of status
+        if ($.strategyStatus != StrategyStatus.IDLE) {
+            return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
+        }
+
         IPositionManager _positionManager = $.positionManager;
         IBasisVault _vault = $.vault;
         address _asset = _vault.asset();
