@@ -43,21 +43,12 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         PAUSE
     }
 
-    struct WithdrawRequestState {
-        uint256 requestedAmount;
-        uint256 accRequestedWithdrawAssets;
-        uint256 requestTimestamp;
-        address receiver;
-        bool isClaimed;
-    }
-
     struct InternalPendingDeutilization {
         IOracle oracle;
         IPositionManager positionManager;
         address asset;
         address product;
         uint256 pendingDecreaseCollateral;
-        uint256 productBalance;
         uint256 totalSupply;
         uint256 accRequestedWithdrawAssets;
         uint256 proccessedWithdrawAssets;
@@ -120,8 +111,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         // withdraw state
         uint256 accRequestedWithdrawAssets;
         uint256 proccessedWithdrawAssets;
-        uint256 requestCounter;
-        mapping(bytes32 => WithdrawRequestState) withdrawRequests;
         // manual swap state
         mapping(address => bool) isSwapPool;
         address[] productToAssetSwapPath;
@@ -143,8 +132,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
-
-    event Claim(address indexed claimer, bytes32 requestId, uint256 amount);
 
     event UpdatePendingUtilization();
 
@@ -288,120 +275,34 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     //////////////////////////////////////////////////////////////*/
 
     // callable only by vault
-    function processPendingWithdrawRequests() public onlyVault {
-        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        IBasisVault _vault = $.vault;
-
-        uint256 idleAssets_ = _idleAssets(_vault.asset(), address(_vault), $.assetsToClaim);
-
-        _processPendingWithdrawRequests(idleAssets_);
+    function processPendingWithdrawRequests(uint256 assets) public onlyVault {
+        _processPendingWithdrawRequests(assets);
     }
 
     /// @dev request withdraw
-    /// Note: if idle assets is greater than the requested amount,
-    /// then process the request directly, otherwise will be processed by deutilizing
     ///
-    /// @param receiver address to receive asset
-    /// @param assets claiming assets
-    /// @param requestedWithdrawAssets assets to be deutilized
+    /// @param withdrawAssets assets to be deutilized
     ///
-    /// @return withdraw request key
-    function requestWithdraw(address receiver, uint256 assets, uint256 requestedWithdrawAssets)
-        external
-        onlyVault
-        returns (bytes32)
-    {
+    /// @return final accRequestedWithdrawAssets
+    function requestWithdraw(uint256 withdrawAssets) external onlyVault returns (uint256) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
-        uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + requestedWithdrawAssets;
+        uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + withdrawAssets;
         $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
-
-        uint256 counter = $.requestCounter;
-        bytes32 withdrawKey = getWithdrawKey(counter);
-        $.withdrawRequests[withdrawKey] = WithdrawRequestState({
-            requestedAmount: assets,
-            accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
-            requestTimestamp: block.timestamp,
-            receiver: receiver,
-            isClaimed: false
-        });
-
-        $.requestCounter++;
 
         emit UpdatePendingUtilization();
 
-        return withdrawKey;
+        return _accRequestedWithdrawAssets;
     }
 
-    function claim(bytes32 withdrawRequestKey) external onlyVault {
+    /// @dev executes the claiming of last withdraw request
+    function executeLastClaim(uint256 requestedAssets) external returns (uint256) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-
-        WithdrawRequestState memory withdrawState = $.withdrawRequests[withdrawRequestKey];
-
-        if (withdrawState.isClaimed) {
-            revert Errors.RequestAlreadyClaimed();
-        }
-
-        bool _processingRebalanceDown = $.processingRebalanceDown;
-        IBasisVault _vault = $.vault;
-        IPositionManager _positionManager = $.positionManager;
-        address _asset = _vault.asset();
-        address _product = address($.product);
-        uint256 productBalance = IERC20(_product).balanceOf(address(this));
-        uint256 totalSupply = _vault.totalSupply();
         uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
-        uint256 _proccessedWithdrawAssets = $.proccessedWithdrawAssets;
-
-        uint256 pendingDeutilization_ = _pendingDeutilization(
-            InternalPendingDeutilization({
-                oracle: $.oracle,
-                positionManager: _positionManager,
-                asset: _asset,
-                product: _product,
-                pendingDecreaseCollateral: $.pendingDecreaseCollateral,
-                productBalance: productBalance,
-                totalSupply: totalSupply,
-                accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
-                proccessedWithdrawAssets: _proccessedWithdrawAssets,
-                currentLeverage: _positionManager.currentLeverage(),
-                targetLeverage: $.targetLeverage,
-                processingRebalanceDown: _processingRebalanceDown
-            })
-        );
-
-        (bool isExecuted, bool isLast) = _isWithdrawRequestExecuted(
-            withdrawState,
-            pendingDeutilization_,
-            totalSupply,
-            _accRequestedWithdrawAssets,
-            _proccessedWithdrawAssets,
-            $.strategyStatus
-        );
-
-        if (!isExecuted) {
-            revert Errors.RequestNotExecuted();
-        }
-
-        withdrawState.isClaimed = true;
-
-        $.withdrawRequests[withdrawRequestKey] = withdrawState;
-
-        uint256 executedAmount;
-        // separate workflow for last redeem
-        if (isLast) {
-            executedAmount =
-                withdrawState.requestedAmount - (withdrawState.accRequestedWithdrawAssets - _proccessedWithdrawAssets);
-            $.proccessedWithdrawAssets = _accRequestedWithdrawAssets;
-            $.pendingDecreaseCollateral = 0;
-        } else {
-            executedAmount = withdrawState.requestedAmount;
-        }
-
-        $.assetsToClaim -= executedAmount;
-
-        IERC20(_asset).safeTransferFrom(address(_vault), withdrawState.receiver, executedAmount);
-
-        emit Claim(withdrawState.receiver, withdrawRequestKey, executedAmount);
+        uint256 executedAssets = requestedAssets - (_accRequestedWithdrawAssets - $.proccessedWithdrawAssets);
+        $.proccessedWithdrawAssets = _accRequestedWithdrawAssets;
+        delete $.pendingDecreaseCollateral;
+        return executedAssets;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -503,7 +404,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         IPositionManager _positionManager = $.positionManager;
         address _asset = _vault.asset();
         address _product = address($.product);
-        uint256 productBalance = IERC20(_product).balanceOf(address(this));
         uint256 totalSupply = _vault.totalSupply();
 
         // actual deutilize amount is min of amount, product balance and pending deutilization
@@ -514,7 +414,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 asset: _asset,
                 product: _product,
                 pendingDecreaseCollateral: $.pendingDecreaseCollateral,
-                productBalance: productBalance,
                 totalSupply: totalSupply,
                 accRequestedWithdrawAssets: $.accRequestedWithdrawAssets,
                 proccessedWithdrawAssets: $.proccessedWithdrawAssets,
@@ -664,7 +563,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                         asset: _asset,
                         product: _product,
                         pendingDecreaseCollateral: $.pendingDecreaseCollateral,
-                        productBalance: IERC20(_product).balanceOf(address(this)),
                         totalSupply: _vault.totalSupply(),
                         accRequestedWithdrawAssets: $.accRequestedWithdrawAssets,
                         proccessedWithdrawAssets: $.proccessedWithdrawAssets,
@@ -801,7 +699,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 asset: _asset,
                 product: _product,
                 pendingDecreaseCollateral: $.pendingDecreaseCollateral,
-                productBalance: IERC20(_product).balanceOf(address(this)),
                 totalSupply: _vault.totalSupply(),
                 accRequestedWithdrawAssets: $.accRequestedWithdrawAssets,
                 proccessedWithdrawAssets: $.proccessedWithdrawAssets,
@@ -827,49 +724,52 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         return _totalPendingWithdraw($.vault.asset(), $.accRequestedWithdrawAssets, $.proccessedWithdrawAssets);
     }
 
-    function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
+    /// @dev return executable state of withdraw request
+    ///
+    /// @param accRequestedWithdrawAssetsOfRequest accRequestedWithdrawAssets value of withdraw request
+    /// @param totalSupply is totalSupply of vault
+    ///
+    /// @return isExecuted tells whether a request is executed or not
+    /// @return isLast tells whether a request is last or not
+    function isWithdrawRequestExecuted(uint256 accRequestedWithdrawAssetsOfRequest, uint256 totalSupply)
+        external
+        view
+        returns (bool isExecuted, bool isLast)
+    {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        WithdrawRequestState memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
 
         IBasisVault _vault = $.vault;
         IPositionManager _positionManager = $.positionManager;
-        address _asset = _vault.asset();
-        address _product = address($.product);
-        uint256 productBalance = IERC20(_product).balanceOf(address(this));
-        uint256 totalSupply = _vault.totalSupply();
-        uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
-        uint256 _proccessedWithdrawAssets = $.proccessedWithdrawAssets;
 
-        uint256 pendingDeutilization_ = _pendingDeutilization(
+        uint256 pendingDeutilization = _pendingDeutilization(
             InternalPendingDeutilization({
                 oracle: $.oracle,
                 positionManager: _positionManager,
-                asset: _asset,
-                product: _product,
+                asset: _vault.asset(),
+                product: address($.product),
                 pendingDecreaseCollateral: $.pendingDecreaseCollateral,
-                productBalance: productBalance,
                 totalSupply: totalSupply,
-                accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
-                proccessedWithdrawAssets: _proccessedWithdrawAssets,
+                accRequestedWithdrawAssets: $.accRequestedWithdrawAssets,
+                proccessedWithdrawAssets: $.proccessedWithdrawAssets,
                 currentLeverage: _positionManager.currentLeverage(),
                 targetLeverage: $.targetLeverage,
-                processingRebalanceDown: $.processingRebalanceDown
+                processingRebalanceDown: false
             })
         );
-        (bool isExecuted,) = _isWithdrawRequestExecuted(
-            withdrawRequest,
-            pendingDeutilization_,
-            totalSupply,
-            _accRequestedWithdrawAssets,
-            _proccessedWithdrawAssets,
-            $.strategyStatus
-        );
 
-        return isExecuted && !withdrawRequest.isClaimed;
-    }
+        // separate worflow for last withdraw
+        // check if current withdrawRequest is last withdraw
+        if (totalSupply == 0 && accRequestedWithdrawAssetsOfRequest == $.accRequestedWithdrawAssets) {
+            isLast = true;
+        }
+        if (isLast) {
+            // last withdraw is claimable when deutilization is complete
+            isExecuted = pendingDeutilization == 0 && $.strategyStatus == StrategyStatus.IDLE;
+        } else {
+            isExecuted = withdrawRequest.accRequestedWithdrawAssets <= proccessedWithdrawAssets;
+        }
 
-    function getWithdrawKey(uint256 counter) public view returns (bytes32) {
-        return keccak256(abi.encodePacked(address(this), counter));
+        return (isExecuted, isLast);
     }
 
     function depositLimits() external view returns (uint256 userDepositLimit, uint256 strategyDepostLimit) {
@@ -1062,9 +962,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     assets = proccessedWithdrawAssetsAfter - _proccessedWithdrawAssets;
                 }
 
-                $.assetsToClaim += assets;
                 $.proccessedWithdrawAssets = proccessedWithdrawAssetsAfter;
                 processedAssets = assets;
+                $.vault.increaseAssetsToClaim(processedAssets);
             } else {
                 remainingAssets = assets;
             }
@@ -1169,7 +1069,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     }
 
     function _pendingDeutilization(InternalPendingDeutilization memory params) private view returns (uint256) {
-        if (params.totalSupply == 0) return params.productBalance;
+        uint256 productBalance = IERC20(params.product).balanceOf(address(this));
+
+        if (params.totalSupply == 0) return productBalance;
 
         uint256 positionSizeInTokens = params.positionManager.positionSizeInTokens();
 
@@ -1207,7 +1109,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             );
         }
 
-        deutilization = deutilization > params.productBalance ? params.productBalance : deutilization;
+        deutilization = deutilization > productBalance ? productBalance : deutilization;
 
         return deutilization;
     }
@@ -1309,29 +1211,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             }
         }
         return 0;
-    }
-
-    function _isWithdrawRequestExecuted(
-        WithdrawRequestState memory withdrawRequest,
-        uint256 pendingDeutilization,
-        uint256 totalSupply,
-        uint256 accRequestedWithdrawAssets,
-        uint256 proccessedWithdrawAssets,
-        StrategyStatus status
-    ) private pure returns (bool isExecuted, bool isLast) {
-        // separate worflow for last withdraw
-        // check if current withdrawRequest is last withdraw
-        if (totalSupply == 0 && withdrawRequest.accRequestedWithdrawAssets == accRequestedWithdrawAssets) {
-            isLast = true;
-        }
-        if (isLast) {
-            // last withdraw is claimable when deutilization is complete
-            isExecuted = pendingDeutilization == 0 && status == StrategyStatus.IDLE;
-        } else {
-            isExecuted = withdrawRequest.accRequestedWithdrawAssets <= proccessedWithdrawAssets;
-        }
-
-        return (isExecuted, isLast);
     }
 
     /// @dev collateral adjustment for rebalancing

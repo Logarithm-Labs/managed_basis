@@ -13,6 +13,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 
 import {Constants} from "src/libraries/utils/Constants.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title A basis vault
 /// @author Logarithm Labs
@@ -20,6 +21,14 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
+
+    struct WithdrawRequest {
+        uint256 requestedAssets;
+        uint256 accRequestedWithdrawAssets;
+        uint256 requestTimestamp;
+        address receiver;
+        bool isClaimed;
+    }
 
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
@@ -32,6 +41,8 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         uint256 exitCost;
         // asset state
         uint256 assetsToClaim; // asset balance of vault that is ready to claim
+        uint256 nonce;
+        mapping(bytes32 => WithdrawRequest) withdrawRequests;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisVault")) - 1)) & ~bytes32(uint256(0xff))
@@ -45,14 +56,25 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     }
 
     /*//////////////////////////////////////////////////////////////
-                            INITIALIZATION
+                            EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event WithdrawRequest(
+    event WithdrawRequested(
         address indexed caller, address indexed receiver, address indexed owner, bytes32 withdrawKey, uint256 assets
     );
 
-    event Claim(address indexed claimer, bytes32 requestId, uint256 assets);
+    event Claimed(address indexed claimer, bytes32 withdrawKey, uint256 assets);
+
+    /*//////////////////////////////////////////////////////////////
+                            MODIFIERS
+    //////////////////////////////////////////////////////////////*/
+
+    modifier onlyStrategy() {
+        if (msg.sender != address(_getBasisVaultStorage().strategy)) {
+            revert Errors.CallerNotStrategy();
+        }
+        _;
+    }
 
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
@@ -194,12 +216,6 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         return assets;
     }
 
-    /// @notice claim the processed withdraw request
-    function claim(bytes32 withdrawRequestKey) external virtual {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
-        $.strategy.claim(withdrawRequestKey);
-    }
-
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
@@ -209,7 +225,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
         _mint(receiver, shares);
 
-        $.strategy.processPendingWithdrawRequests();
+        $.strategy.processPendingWithdrawRequests(idleAssets());
 
         emit Deposit(caller, receiver, assets, shares);
     }
@@ -236,20 +252,90 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
         uint256 _idleAssets = idleAssets();
         if (_idleAssets >= assets) {
-            IERC20(_vault.asset()).safeTransferFrom(address(_vault), receiver, assets);
+            IERC20(asset()).safeTransfer(receiver, assets);
         } else {
-            uint256 pendingWithdraw = assets - _idleAssets;
+            // lock idle assets to claim
             $.assetsToClaim += _idleAssets;
-            bytes32 withdrawKey = $.strategy.requestWithdraw(receiver, assets, pendingWithdraw);
-            emit WithdrawRequest(caller, receiver, owner, withdrawKey, assets);
+
+            // request withdraw the remaining assets for strategy to deutilize
+            uint256 withdrawAssets = assets - _idleAssets;
+            uint256 accRequestedWithdrawAssets = $.strategy.requestWithdraw(withdrawAssets);
+            bytes32 withdrawKey = getWithdrawKey(_useNonce());
+            $.withdrawRequests[withdrawKey] = WithdrawRequest({
+                requestedAssets: assets,
+                accRequestedWithdrawAssets: accRequestedWithdrawAssets,
+                requestTimestamp: block.timestamp,
+                receiver: receiver,
+                isClaimed: false
+            });
+            emit WithdrawRequested(caller, receiver, owner, withdrawKey, assets);
         }
 
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
+    /// @notice claim the processed withdraw request
+    function claim(bytes32 withdrawRequestKey) external virtual {
+        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
+
+        if (withdrawRequest.isClaimed) {
+            revert Errors.RequestAlreadyClaimed();
+        }
+
+        (bool isExecuted, bool isLast) =
+            $.strategy.isWithdrawRequestExecuted(withdrawRequest.accRequestedWithdrawAssets, totalSupply());
+
+        if (!isExecuted) {
+            revert Errors.RequestNotExecuted();
+        }
+
+        withdrawRequest.isClaimed = true;
+
+        $.withdrawRequests[withdrawRequestKey] = withdrawRequest;
+
+        uint256 executedAssets;
+        // separate workflow for last redeem
+        if (isLast) {
+            executedAssets = $.strategy.executeLastClaim(withdrawRequest.requestedAssets);
+        } else {
+            executedAmount = withdrawRequest.requestedAssets;
+        }
+
+        $.assetsToClaim -= executedAssets;
+
+        IERC20(_asset).safeTransfer(withdrawRequest.receiver, executedAssets);
+
+        emit Claimed(withdrawRequest.receiver, withdrawRequestKey, executedAssets);
+    }
+
     function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
-        return $.strategy.isClaimable(withdrawRequestKey);
+        WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
+        (bool isExecuted,) =
+            $.strategy.isWithdrawRequestExecuted(withdrawRequest.accRequestedWithdrawAssets, totalSupply());
+
+        return isExecuted && !withdrawRequest.isClaimed;
+    }
+
+    function getWithdrawKey(uint256 nonce) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked(address(this), nonce));
+    }
+
+    function increaseAssetsToClaim(uint256 deltaAssets) public onlyStrategy {
+        BasisVaultStorage storage $ = _getBasisVaultStorage();
+
+        $.assetsToClaim += deltaAssets;
+    }
+
+    function _useNonce() internal returns (uint256) {
+        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        // For each vault, the nonce has an initial value of 0, can only be incremented by one, and cannot be
+        // decremented or reset. This guarantees that the nonce never overflows.
+        unchecked {
+            // It is important to do x++ and not ++x here.
+            return $.nonce++;
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
