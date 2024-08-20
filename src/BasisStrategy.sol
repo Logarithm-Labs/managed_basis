@@ -111,8 +111,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 hedgeDeviationThreshold;
         uint256 userDepositLimit;
         uint256 strategyDepostLimit;
-        // asset state
-        uint256 assetsToClaim; // asset balance of vault that is ready to claim
         // pending state
         uint256 pendingDeutilizedAssets;
         uint256 pendingDecreaseCollateral;
@@ -145,8 +143,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
-
-    event WithdrawRequest(address indexed receiver, bytes32 indexed withdrawKey, uint256 amount);
 
     event Claim(address indexed claimer, bytes32 requestId, uint256 amount);
 
@@ -306,39 +302,35 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     /// then process the request directly, otherwise will be processed by deutilizing
     ///
     /// @param receiver address to receive asset
-    /// @param assets amount to be received
-    function requestWithdraw(address receiver, uint256 assets) external onlyVault {
+    /// @param assets claiming assets
+    /// @param requestedWithdrawAssets assets to be deutilized
+    ///
+    /// @return withdraw request key
+    function requestWithdraw(address receiver, uint256 assets, uint256 requestedWithdrawAssets)
+        external
+        onlyVault
+        returns (bytes32)
+    {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        IBasisVault _vault = $.vault;
 
-        uint256 idleAssets_ = _idleAssets(_vault.asset(), address(_vault), $.assetsToClaim);
+        uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + requestedWithdrawAssets;
+        $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
 
-        if (idleAssets_ >= assets) {
-            IERC20(_vault.asset()).safeTransferFrom(address(_vault), receiver, assets);
-        } else {
-            $.assetsToClaim += idleAssets_;
+        uint256 counter = $.requestCounter;
+        bytes32 withdrawKey = getWithdrawKey(counter);
+        $.withdrawRequests[withdrawKey] = WithdrawRequestState({
+            requestedAmount: assets,
+            accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
+            requestTimestamp: block.timestamp,
+            receiver: receiver,
+            isClaimed: false
+        });
 
-            uint256 pendingWithdraw = assets - idleAssets_;
-
-            uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + pendingWithdraw;
-            $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
-
-            uint256 counter = $.requestCounter;
-            bytes32 withdrawKey = getWithdrawKey(counter);
-            $.withdrawRequests[withdrawKey] = WithdrawRequestState({
-                requestedAmount: assets,
-                accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
-                requestTimestamp: block.timestamp,
-                receiver: receiver,
-                isClaimed: false
-            });
-
-            $.requestCounter++;
-
-            emit WithdrawRequest(receiver, withdrawKey, assets);
-        }
+        $.requestCounter++;
 
         emit UpdatePendingUtilization();
+
+        return withdrawKey;
     }
 
     function claim(bytes32 withdrawRequestKey) external onlyVault {
@@ -821,30 +813,16 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
     }
 
-    /// @dev return total assets that includes idle, spot, hedge balances
-    function totalAssets() external view returns (uint256) {
+    /// @dev return assets that are utilized across spot and hedge
+    function utilizedAssets() public view returns (uint256) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        IBasisVault _vault = $.vault;
-        address _asset = _vault.asset();
         address _product = address($.product);
-        uint256 idleAssets_ = _idleAssets(_asset, _product, $.assetsToClaim);
-        uint256 utilizedAssets_ = _utilizedAssets(_asset, _product, $.oracle, $.positionManager);
-        uint256 _assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
-
-        (, uint256 totalAssets_) = ((utilizedAssets_ + idleAssets_) + _assetsToWithdraw).trySub(
-            ($.accRequestedWithdrawAssets - $.proccessedWithdrawAssets)
-        );
-        return totalAssets_;
+        uint256 productBalance = IERC20(_product).balanceOf(address(this));
+        uint256 productValueInAssets = $.oracle.convertTokenAmount(_product, $.vault.asset(), productBalance);
+        return productValueInAssets + $.positionManager.positionNetBalance();
     }
 
-    /// @dev return idle asset that can be claimed or used for utilizing
-    function idleAssets() external view returns (uint256) {
-        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        IBasisVault _vault = $.vault;
-        return _idleAssets(_vault.asset(), address(_vault), $.assetsToClaim);
-    }
-
-    function totalPendingWithdraw() external view returns (uint256) {
+    function totalPendingWithdraw() external view returns (int256) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         return _totalPendingWithdraw($.vault.asset(), $.accRequestedWithdrawAssets, $.proccessedWithdrawAssets);
     }
@@ -1164,31 +1142,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         return (upkeepNeeded, performData);
     }
 
-    function _idleAssets(address _asset, address _vault, uint256 _assetsToClaim) private view returns (uint256) {
-        uint256 assetsOfVault = IERC20(_asset).balanceOf(_vault);
-        return assetsOfVault - _assetsToClaim;
-    }
-
-    /// @dev returns the spot assets value
-    function _utilizedAssets(address _asset, address _product, IOracle _oracle, IPositionManager _positionManager)
-        private
-        view
-        returns (uint256)
-    {
-        uint256 productBalance = IERC20(_product).balanceOf(address(this));
-        uint256 productValueInAssets = _oracle.convertTokenAmount(_product, _asset, productBalance);
-        return productValueInAssets + _positionManager.positionNetBalance();
-    }
-
     function _totalPendingWithdraw(
-        address _asset,
         uint256 _accRequestedWithdrawAssets,
+        address _asset,
         uint256 _proccessedWithdrawAssets
-    ) private view returns (uint256) {
+    ) private view returns (int256) {
         uint256 _assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
-        (, uint256 totalPendingWithdraw_) =
-            _accRequestedWithdrawAssets.trySub(_proccessedWithdrawAssets + _assetsToWithdraw);
-        return totalPendingWithdraw_;
+        return _accRequestedWithdrawAssets.toInt256() - (_proccessedWithdrawAssets + _assetsToWithdraw).toInt256();
     }
 
     function _pendingUtilization(uint256 idleAssets_, uint256 _targetLeverage, bool _processingRebalanceDown)
@@ -1227,18 +1187,22 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
             if (positionSizeInAssets == 0 || positionNetBalance == 0) return 0;
 
-            uint256 totalPendingWithdraw_ =
+            int256 totalPendingWithdraw_ =
                 _totalPendingWithdraw(params.asset, params.accRequestedWithdrawAssets, params.proccessedWithdrawAssets);
 
+            if (totalPendingWithdraw_ <= 0) return 0;
+
+            uint256 totalPendingWithdrawAbs = uint256(totalPendingWithdraw_);
+
             if (
-                params.pendingDecreaseCollateral > totalPendingWithdraw_
+                params.pendingDecreaseCollateral.toInt256() > totalPendingWithdrawAbs
                     || params.pendingDecreaseCollateral >= (positionSizeInAssets + positionNetBalance)
             ) {
                 return 0;
             }
 
             deutilization = positionSizeInTokens.mulDiv(
-                totalPendingWithdraw_ - params.pendingDecreaseCollateral,
+                totalPendingWithdrawAbs - params.pendingDecreaseCollateral,
                 positionSizeInAssets + positionNetBalance - params.pendingDecreaseCollateral
             );
         }

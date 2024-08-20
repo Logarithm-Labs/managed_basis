@@ -8,9 +8,9 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {IBasisVault} from "src/interfaces/IBasisVault.sol";
 
 import {Constants} from "src/libraries/utils/Constants.sol";
 
@@ -19,6 +19,7 @@ import {Constants} from "src/libraries/utils/Constants.sol";
 contract BasisVault is Initializable, ERC4626Upgradeable {
     using Math for uint256;
     using SafeERC20 for IERC20;
+    using SafeCast for uint256;
 
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
@@ -29,6 +30,8 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         IBasisStrategy strategy;
         uint256 entryCost;
         uint256 exitCost;
+        // asset state
+        uint256 assetsToClaim; // asset balance of vault that is ready to claim
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisVault")) - 1)) & ~bytes32(uint256(0xff))
@@ -40,6 +43,16 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
             $.slot := BasisVaultStorageLocation
         }
     }
+
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    event WithdrawRequest(
+        address indexed caller, address indexed receiver, address indexed owner, bytes32 withdrawKey, uint256 assets
+    );
+
+    event Claim(address indexed claimer, bytes32 requestId, uint256 assets);
 
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
@@ -95,7 +108,12 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
-        return $.strategy.totalAssets();
+        IBasisStrategy _strategy = $.strategy;
+        return uint256((idleAssets() + _strategy.utilizedAssets()).toInt256() - _strategy.totalPendingWithdraw());
+    }
+
+    function idleAssets() public view returns (uint256) {
+        return IERC20(asset()).balanceOf(address(this)) - _getBasisVaultStorage().assetsToClaim;
     }
 
     /// @inheritdoc ERC4626Upgradeable
@@ -196,11 +214,6 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         emit Deposit(caller, receiver, assets, shares);
     }
 
-    function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
-        return $.strategy.isClaimable(withdrawRequestKey);
-    }
-
     /// @inheritdoc ERC4626Upgradeable
     function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
         internal
@@ -221,9 +234,22 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         // shares are burned and after the assets are transferred, which is a valid state.
         _burn(owner, shares);
 
-        $.strategy.requestWithdraw(receiver, assets);
+        uint256 _idleAssets = idleAssets();
+        if (_idleAssets >= assets) {
+            IERC20(_vault.asset()).safeTransferFrom(address(_vault), receiver, assets);
+        } else {
+            uint256 pendingWithdraw = assets - _idleAssets;
+            $.assetsToClaim += _idleAssets;
+            bytes32 withdrawKey = $.strategy.requestWithdraw(receiver, assets, pendingWithdraw);
+            emit WithdrawRequest(caller, receiver, owner, withdrawKey, assets);
+        }
 
         emit Withdraw(caller, receiver, owner, assets, shares);
+    }
+
+    function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
+        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        return $.strategy.isClaimable(withdrawRequestKey);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -241,5 +267,9 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
     function exitCost() external view returns (uint256) {
         return _getBasisVaultStorage().exitCost;
+    }
+
+    function assetsToClaim() external view returns (uint256) {
+        return _getBasisVaultStorage().assetsToClaim;
     }
 }
