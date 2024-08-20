@@ -131,7 +131,12 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     function totalAssets() public view virtual override returns (uint256 assets) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
         IBasisStrategy _strategy = $.strategy;
-        return uint256((idleAssets() + _strategy.utilizedAssets()).toInt256() - _strategy.totalPendingWithdraw());
+        int256 _totalAssets = (idleAssets() + _strategy.utilizedAssets()).toInt256() - _strategy.totalPendingWithdraw();
+        if (_totalAssets > 0) {
+            return uint256(_totalAssets);
+        } else {
+            return 0;
+        }
     }
 
     function idleAssets() public view returns (uint256) {
@@ -145,7 +150,13 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
             return assets;
         }
         // calculate the amount of assets that will be utilized
-        (, uint256 assetsToUtilize) = assets.trySub($.strategy.totalPendingWithdraw());
+        int256 totalPendingWithdraw = $.strategy.totalPendingWithdraw();
+        uint256 assetsToUtilize;
+        if (totalPendingWithdraw > 0) {
+            (, assetsToUtilize) = assets.trySub(uint256(totalPendingWithdraw));
+        } else {
+            assetsToUtilize = assets;
+        }
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
@@ -165,7 +176,13 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         uint256 assets = _convertToAssets(shares, Math.Rounding.Ceil);
 
         // calculate the amount of assets that will be utilized
-        (, uint256 assetsToUtilize) = assets.trySub($.strategy.totalPendingWithdraw());
+        int256 totalPendingWithdraw = $.strategy.totalPendingWithdraw();
+        uint256 assetsToUtilize;
+        if (totalPendingWithdraw > 0) {
+            (, assetsToUtilize) = assets.trySub(uint256(totalPendingWithdraw));
+        } else {
+            assetsToUtilize = assets;
+        }
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
@@ -183,7 +200,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
         // calc the amount of assets that can not be withdrawn via idle
-        (, uint256 assetsToDeutilize) = assets.trySub($.strategy.idleAssets());
+        (, uint256 assetsToDeutilize) = assets.trySub(idleAssets());
 
         // apply exit fee to assets that should be deutilized and add exit fee amount the asset amount
         if (assetsToDeutilize > 0) {
@@ -201,7 +218,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         uint256 assets = _convertToAssets(shares, Math.Rounding.Floor);
 
         // calculate the amount of assets that will be deutilized
-        (, uint256 assetsToDeutilize) = assets.trySub($.strategy.idleAssets());
+        (, uint256 assetsToDeutilize) = assets.trySub(idleAssets());
 
         // apply exit fee to the portion of assets that will be deutilized
         if (assetsToDeutilize > 0) {
@@ -299,12 +316,12 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         if (isLast) {
             executedAssets = $.strategy.executeLastClaim(withdrawRequest.requestedAssets);
         } else {
-            executedAmount = withdrawRequest.requestedAssets;
+            executedAssets = withdrawRequest.requestedAssets;
         }
 
         $.assetsToClaim -= executedAssets;
 
-        IERC20(_asset).safeTransfer(withdrawRequest.receiver, executedAssets);
+        IERC20(asset()).safeTransfer(withdrawRequest.receiver, executedAssets);
 
         emit Claimed(withdrawRequest.receiver, withdrawRequestKey, executedAssets);
     }
@@ -318,7 +335,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         return isExecuted && !withdrawRequest.isClaimed;
     }
 
-    function getWithdrawKey(uint256 nonce) public pure returns (bytes32) {
+    function getWithdrawKey(uint256 nonce) public view returns (bytes32) {
         return keccak256(abi.encodePacked(address(this), nonce));
     }
 
