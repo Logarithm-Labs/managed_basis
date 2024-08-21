@@ -370,10 +370,40 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         return keccak256(abi.encodePacked(address(this), nonce));
     }
 
-    function increaseAssetsToClaim(uint256 deltaAssets) public onlyStrategy {
+    /*//////////////////////////////////////////////////////////////
+                        PRIVATE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev return executable state of withdraw request
+    ///
+    /// @param accRequestedWithdrawAssetsOfRequest accRequestedWithdrawAssets value of withdraw request
+    ///
+    /// @return isExecuted tells whether a request is executed or not
+    /// @return isLast tells whether a request is last or not
+    function _isWithdrawRequestExecuted(uint256 accRequestedWithdrawAssetsOfRequest)
+        internal
+        view
+        returns (bool isExecuted, bool isLast)
+    {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
 
-        $.assetsToClaim += deltaAssets;
+        // separate worflow for last withdraw
+        // check if current withdrawRequest is last withdraw
+        if (totalSupply() == 0 && accRequestedWithdrawAssetsOfRequest == $.accRequestedWithdrawAssets) {
+            isLast = true;
+        }
+
+        if (isLast) {
+            // last withdraw is claimable when utilized assets is 0
+            // and asssetsToWithdraw is 0
+            uint256 utilizedAssets = $.strategy.utilizedAssets();
+            uint256 assetsToWithdraw = IERC20(asset()).balanceOf(address($.strategy));
+            isExecuted = utilizedAssets == 0 && assetsToWithdraw == 0;
+        } else {
+            isExecuted = accRequestedWithdrawAssetsOfRequest <= $.proccessedWithdrawAssets;
+        }
+
+        return (isExecuted, isLast);
     }
 
     function _useNonce() internal returns (uint256) {
