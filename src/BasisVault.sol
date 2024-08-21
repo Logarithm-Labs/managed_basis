@@ -291,6 +291,37 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
+    /// @notice process pending withdraw request with idle assets
+    /// Note: anyone can call this function
+    ///
+    /// @return processed assets
+    function processPendingWithdrawRequests() public returns (uint256) {
+        uint256 assets = idleAssets();
+        if (assets == 0) {
+            return 0;
+        } else {
+            BasisVaultStorage storage $ = _getBasisVaultStorage();
+            uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
+            uint256 _proccessedWithdrawAssets = $.proccessedWithdrawAssets;
+
+            // check if there is neccessarity to process withdraw requests
+            if (_proccessedWithdrawAssets < _accRequestedWithdrawAssets) {
+                uint256 assetsToBeProcessed = _accRequestedWithdrawAssets - _proccessedWithdrawAssets;
+                if (assetsToBeProcessed > assets) {
+                    $.proccessedWithdrawAssets += assets;
+                    $.assetsToClaim += assets;
+                    return assets;
+                } else {
+                    $.proccessedWithdrawAssets = _accRequestedWithdrawAssets;
+                    $.assetsToClaim += assetsToBeProcessed;
+                    return assetsToBeProcessed;
+                }
+            } else {
+                return 0;
+            }
+        }
+    }
+
     /// @notice claim the processed withdraw request
     function claim(bytes32 withdrawRequestKey) external virtual {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
