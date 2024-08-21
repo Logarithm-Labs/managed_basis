@@ -460,12 +460,16 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 collateralDeltaAmount;
         if (!_processingRebalanceDown) {
             if (amount == pendingDeutilization_) {
-                (, collateralDeltaAmount) = $.accRequestedWithdrawAssets.trySub($.proccessedWithdrawAssets + amountOut);
-                $.pendingDecreaseCollateral = collateralDeltaAmount;
+                int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
+                collateralDeltaAmount = totalPendingWithdraw > 0 ? uint256(totalPendingWithdraw) : 0;
                 if (totalSupply != 0) {
-                    (min, max) = _positionManager.decreaseCollateralMinMax();
-                    collateralDeltaAmount = _clamp(min, collateralDeltaAmount, max);
+                    // in case of not last withdrawing, full deutilization should guarantee that
+                    // all withdraw requests are processed
+                    // so if collateralDeltaAmount is smaller than min, then increase it by min
+                    (min,) = _positionManager.decreaseCollateralMinMax();
+                    if (collateralDeltaAmount < min) collateralDeltaAmount = min;
                 }
+                $.pendingDecreaseCollateral = collateralDeltaAmount;
             } else {
                 uint256 positionNetBalance = _positionManager.positionNetBalance();
                 (, positionNetBalance) = positionNetBalance.trySub($.pendingDecreaseCollateral);
