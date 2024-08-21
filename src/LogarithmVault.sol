@@ -17,7 +17,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title A basis vault
 /// @author Logarithm Labs
-contract BasisVault is Initializable, ERC4626Upgradeable {
+contract LogarithmVault is Initializable, ERC4626Upgradeable {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -34,8 +34,8 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
 
-    /// @custom:storage-location erc7201:logarithm.storage.BasisVault
-    struct BasisVaultStorage {
+    /// @custom:storage-location erc7201:logarithm.storage.LogarithmVault
+    struct LogarithmVaultStorage {
         IBasisStrategy strategy;
         uint256 entryCost;
         uint256 exitCost;
@@ -47,13 +47,13 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         mapping(bytes32 => WithdrawRequest) withdrawRequests;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisVault")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant BasisVaultStorageLocation =
-        0x3176332e209c21f110843843692adc742ac2f78c16c19930ebc0f9f8747e5200;
+    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.LogarithmVault")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant LogarithmVaultStorageLocation =
+        0xa6bd21c53796194571f225e7dc34d762d966d8495887cd7c53f8cab2693cb800;
 
-    function _getBasisVaultStorage() private pure returns (BasisVaultStorage storage $) {
+    function _getLogarithmVaultStorage() private pure returns (LogarithmVaultStorage storage $) {
         assembly {
-            $.slot := BasisVaultStorageLocation
+            $.slot := LogarithmVaultStorageLocation
         }
     }
 
@@ -66,17 +66,6 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     );
 
     event Claimed(address indexed claimer, bytes32 withdrawKey, uint256 assets);
-
-    /*//////////////////////////////////////////////////////////////
-                            MODIFIERS
-    //////////////////////////////////////////////////////////////*/
-
-    modifier onlyStrategy() {
-        if (msg.sender != address(_getBasisVaultStorage().strategy)) {
-            revert Errors.CallerNotStrategy();
-        }
-        _;
-    }
 
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
@@ -92,7 +81,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     ) external initializer {
         __ERC20_init_unchained(name_, symbol_);
         __ERC4626_init_unchained(IERC20(asset_));
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
         require(strategy_ != address(0));
         $.strategy = IBasisStrategy(strategy_);
@@ -105,7 +94,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
     /// @inheritdoc ERC4626Upgradeable
     function maxDeposit(address receiver) public view virtual override returns (uint256 allowed) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         (uint256 userDepositLimit, uint256 strategyDepositLimit) = $.strategy.depositLimits();
         if (userDepositLimit == type(uint256).max && strategyDepositLimit == type(uint256).max) {
             return type(uint256).max;
@@ -131,7 +120,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
     /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         int256 _totalAssets = (idleAssets() + $.strategy.utilizedAssets()).toInt256() - totalPendingWithdraw();
         if (_totalAssets > 0) {
             return uint256(_totalAssets);
@@ -142,7 +131,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
     /// @inheritdoc ERC4626Upgradeable
     function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         if (totalSupply() == 0) {
             return assets;
         }
@@ -166,7 +155,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
     /// @inheritdoc ERC4626Upgradeable
     function previewMint(uint256 shares) public view virtual override returns (uint256) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         if (totalSupply() == 0) {
             return shares;
         }
@@ -195,7 +184,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
     /// @inheritdoc ERC4626Upgradeable
     function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         // calc the amount of assets that can not be withdrawn via idle
         (, uint256 assetsToDeutilize) = assets.trySub(idleAssets());
 
@@ -211,7 +200,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
     /// @inheritdoc ERC4626Upgradeable
     function previewRedeem(uint256 shares) public view virtual override returns (uint256) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         uint256 assets = _convertToAssets(shares, Math.Rounding.Floor);
 
         // calculate the amount of assets that will be deutilized
@@ -248,7 +237,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         virtual
         override
     {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
@@ -297,7 +286,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         if (assets == 0) {
             return 0;
         } else {
-            BasisVaultStorage storage $ = _getBasisVaultStorage();
+            LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
             uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
             uint256 _proccessedWithdrawAssets = $.proccessedWithdrawAssets;
 
@@ -321,7 +310,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
     /// @notice claim the processed withdraw request
     function claim(bytes32 withdrawRequestKey) external virtual {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
 
         if (withdrawRequest.isClaimed) {
@@ -357,7 +346,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     }
 
     function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
         (bool isExecuted,) = _isWithdrawRequestExecuted(withdrawRequest.accRequestedWithdrawAssets);
 
@@ -366,12 +355,12 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
     /// @notice returns idle assets that can be claimed or utilized
     function idleAssets() public view returns (uint256) {
-        return IERC20(asset()).balanceOf(address(this)) - _getBasisVaultStorage().assetsToClaim;
+        return IERC20(asset()).balanceOf(address(this)) - _getLogarithmVaultStorage().assetsToClaim;
     }
 
     /// @notice returns pending withdraw assets that will be deutilized
     function totalPendingWithdraw() public view returns (int256) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         uint256 assetsToWithdraw = IERC20(asset()).balanceOf(address($.strategy));
         return $.accRequestedWithdrawAssets.toInt256() - ($.proccessedWithdrawAssets + assetsToWithdraw).toInt256();
     }
@@ -395,7 +384,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         view
         returns (bool isExecuted, bool isLast)
     {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
         // separate worflow for last withdraw
         // check if current withdrawRequest is last withdraw
@@ -417,7 +406,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     }
 
     function _useNonce() internal returns (uint256) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         // For each vault, the nonce has an initial value of 0, can only be incremented by one, and cannot be
         // decremented or reset. This guarantees that the nonce never overflows.
         unchecked {
@@ -431,19 +420,19 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     //////////////////////////////////////////////////////////////*/
 
     function strategy() external view returns (address) {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         return address($.strategy);
     }
 
     function entryCost() external view returns (uint256) {
-        return _getBasisVaultStorage().entryCost;
+        return _getLogarithmVaultStorage().entryCost;
     }
 
     function exitCost() external view returns (uint256) {
-        return _getBasisVaultStorage().exitCost;
+        return _getLogarithmVaultStorage().exitCost;
     }
 
     function assetsToClaim() external view returns (uint256) {
-        return _getBasisVaultStorage().assetsToClaim;
+        return _getLogarithmVaultStorage().assetsToClaim;
     }
 }
