@@ -11,7 +11,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {IBasisVault} from "src/interfaces/IBasisVault.sol";
+import {ILogarithmVault} from "src/interfaces/ILogarithmVault.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 
 import {InchAggregatorV6Logic} from "src/libraries/logic/InchAggregatorV6Logic.sol";
@@ -80,7 +80,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     struct BasisStrategyStorage {
         // addresses
         IERC20 product;
-        IBasisVault vault;
+        ILogarithmVault vault;
         IPositionManager positionManager;
         IOracle oracle;
         address operator;
@@ -170,7 +170,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     ) external initializer {
         __Ownable_init(msg.sender);
 
-        address _asset = IBasisVault(_vault).asset();
+        address _asset = ILogarithmVault(_vault).asset();
 
         // validation oracle
         if (IOracle(_oracle).getAssetPrice(_asset) == 0 || IOracle(_oracle).getAssetPrice(_product) == 0) revert();
@@ -178,7 +178,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         $.product = IERC20(_product);
-        $.vault = IBasisVault(_vault);
+        $.vault = ILogarithmVault(_vault);
         $.oracle = IOracle(_oracle);
         $.operator = _operator;
 
@@ -272,7 +272,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             revert Errors.InvalidStrategyStatus(uint8(strategyStatus_));
         }
 
-        IBasisVault _vault = $.vault;
+        ILogarithmVault _vault = $.vault;
         address _asset = _vault.asset();
         address _product = address($.product);
 
@@ -348,7 +348,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
 
         bool _processingRebalanceDown = $.processingRebalanceDown;
-        IBasisVault _vault = $.vault;
+        ILogarithmVault _vault = $.vault;
         IPositionManager _positionManager = $.positionManager;
         address _asset = _vault.asset();
         address _product = address($.product);
@@ -433,7 +433,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     function checkUpkeep(bytes memory) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
-        IBasisVault _vault = $.vault;
+        ILogarithmVault _vault = $.vault;
         address _asset = _vault.asset();
         uint256 idleAssets = _vault.idleAssets();
         uint256 currentLeverage = $.positionManager.currentLeverage();
@@ -489,7 +489,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             // if reblance down is needed, we have to break normal deutilization of decreasing collateral
             $.pendingDecreaseCollateral = 0;
             IPositionManager _positionManager = $.positionManager;
-            IBasisVault _vault = $.vault;
+            ILogarithmVault _vault = $.vault;
             address _asset = _vault.asset();
             uint256 idleAssets = _vault.idleAssets();
             uint256 currentLeverage = _positionManager.currentLeverage();
@@ -623,7 +623,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
 
         IPositionManager _positionManager = $.positionManager;
-        IBasisVault _vault = $.vault;
+        ILogarithmVault _vault = $.vault;
         address _asset = _vault.asset();
         address _product = address($.product);
         uint256 idleAssets = _vault.idleAssets();
@@ -714,7 +714,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             if (isWrongPositionSize) {
                 // status = StrategyStatus.PAUSE;
                 if (sizeDeltaDeviationInTokens < 0) {
-                    IBasisVault _vault = $.vault;
+                    ILogarithmVault _vault = $.vault;
                     // revert spot to make hedge size the same as spot
                     uint256 amountOut =
                         ManualSwapLogic.swap(uint256(-sizeDeltaDeviationInTokens), $.productToAssetSwapPath);
@@ -727,7 +727,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             requestParams.collateralDeltaAmount.trySub(responseParams.collateralDeltaAmount);
 
         if (revertCollateralDeltaAmount > 0) {
-            IBasisVault _vault = $.vault;
+            ILogarithmVault _vault = $.vault;
             IERC20(_vault.asset()).safeTransferFrom(
                 address($.positionManager), address(_vault), revertCollateralDeltaAmount
             );
@@ -746,7 +746,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IPositionManager.PositionManagerPayload memory requestParams = $.requestParams;
         bool _processingRebalanceDown = $.processingRebalanceDown;
-        IBasisVault _vault = $.vault;
+        ILogarithmVault _vault = $.vault;
         address _asset = _vault.asset();
 
         if (requestParams.sizeDeltaInTokens > 0) {
