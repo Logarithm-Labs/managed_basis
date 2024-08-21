@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 interface IPositionManager {
-    struct PositionManagerPayload {
+    struct AdjustPositionPayload {
         uint256 sizeDeltaInTokens;
         uint256 collateralDeltaAmount;
         bool isIncrease;
@@ -20,7 +20,7 @@ interface IPositionManager {
 
     function needKeep() external view returns (bool);
 
-    function adjustPosition(PositionManagerPayload calldata requestParams) external;
+    function adjustPosition(AdjustPositionPayload calldata requestParams) external;
 
     function increaseCollateralMinMax() external view returns (uint256 min, uint256 max);
 

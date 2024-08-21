@@ -106,7 +106,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         address[] productToAssetSwapPath;
         address[] assetToProductSwapPath;
         // adjust position
-        IPositionManager.PositionManagerPayload requestParams;
+        IPositionManager.AdjustPositionPayload requestParams;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisStrategy")) - 1)) & ~bytes32(uint256(0xff))
@@ -579,10 +579,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     }
 
     // callback function dispatcher
-    function afterAdjustPosition(IPositionManager.PositionManagerPayload calldata params)
-        external
-        onlyPositionManager
-    {
+    function afterAdjustPosition(IPositionManager.AdjustPositionPayload calldata params) external onlyPositionManager {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         StrategyStatus status = $.strategyStatus;
@@ -690,7 +687,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
 
         if (collateralDeltaAmount > 0 || sizeDeltaInTokens > 0) {
-            IPositionManager.PositionManagerPayload memory requestParams = IPositionManager.PositionManagerPayload({
+            IPositionManager.AdjustPositionPayload memory requestParams = IPositionManager.AdjustPositionPayload({
                 sizeDeltaInTokens: sizeDeltaInTokens,
                 collateralDeltaAmount: collateralDeltaAmount,
                 isIncrease: isIncrease
@@ -703,9 +700,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
     }
 
-    function _afterIncreasePosition(IPositionManager.PositionManagerPayload calldata responseParams) private {
+    function _afterIncreasePosition(IPositionManager.AdjustPositionPayload calldata responseParams) private {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        IPositionManager.PositionManagerPayload memory requestParams = $.requestParams;
+        IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
 
         if (requestParams.sizeDeltaInTokens > 0) {
             (bool isWrongPositionSize, int256 sizeDeltaDeviationInTokens) = _checkResultedPositionSize(
@@ -740,11 +737,11 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     }
 
     function _afterDecreasePosition(
-        IPositionManager.PositionManagerPayload calldata responseParams,
+        IPositionManager.AdjustPositionPayload calldata responseParams,
         StrategyStatus status
     ) private {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        IPositionManager.PositionManagerPayload memory requestParams = $.requestParams;
+        IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
         bool _processingRebalanceDown = $.processingRebalanceDown;
         ILogarithmVault _vault = $.vault;
         address _asset = _vault.asset();

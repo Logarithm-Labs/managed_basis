@@ -4,8 +4,7 @@ pragma solidity ^0.8.0;
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
-import "src/interfaces/IManagedBasisStrategy.sol";
-
+import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {ForkTest} from "./ForkTest.sol";
 import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -40,11 +39,11 @@ contract OffChainTest is ForkTest {
 
     function _fullOffChainExecute() internal {
         vm.startPrank(agent);
-        DataTypes.PositionManagerPayload memory request = _getRequest();
+        IPositionManager.AdjustPositionPayload memory request = _getRequest();
         console.log("requestSizeInTokens", request.sizeDeltaInTokens);
         console.log("requestCollateralDeltaAmount", request.collateralDeltaAmount);
         console.log("requestIsIncreasee", request.isIncrease);
-        DataTypes.PositionManagerPayload memory response = _executeRequest(request);
+        IPositionManager.AdjustPositionPayload memory response = _executeRequest(request);
         console.log("responseSizeInTokens", response.sizeDeltaInTokens);
         console.log("responseCollateralDeltaAmount", response.collateralDeltaAmount);
         console.log("responseIsIncreasee", response.isIncrease);
@@ -52,14 +51,14 @@ contract OffChainTest is ForkTest {
         vm.stopPrank();
     }
 
-    function _getRequest() internal view returns (DataTypes.PositionManagerPayload memory request) {
+    function _getRequest() internal view returns (IPositionManager.AdjustPositionPayload memory request) {
         OffChainPositionManager.RequestInfo memory requestInfo = positionManager.getLastRequest();
         request = requestInfo.request;
     }
 
-    function _executeRequest(DataTypes.PositionManagerPayload memory request)
+    function _executeRequest(IPositionManager.AdjustPositionPayload memory request)
         internal
-        returns (DataTypes.PositionManagerPayload memory response)
+        returns (IPositionManager.AdjustPositionPayload memory response)
     {
         if (request.isIncrease) {
             response.isIncrease = true;
@@ -92,9 +91,9 @@ contract OffChainTest is ForkTest {
         IERC20(asset_).transfer(address(this), netBalance);
     }
 
-    function _reportStateAndExecuteRequest(DataTypes.PositionManagerPayload memory response) internal {
+    function _reportStateAndExecuteRequest(IPositionManager.AdjustPositionPayload memory response) internal {
         uint256 markPrice = _getMarkPrice();
-        DataTypes.PositionManagerPayload memory params = DataTypes.PositionManagerPayload({
+        IPositionManager.AdjustPositionPayload memory params = IPositionManager.AdjustPositionPayload({
             sizeDeltaInTokens: response.sizeDeltaInTokens,
             collateralDeltaAmount: response.collateralDeltaAmount,
             isIncrease: response.isIncrease

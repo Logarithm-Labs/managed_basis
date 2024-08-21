@@ -5,17 +5,13 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
-import "src/interfaces/IManagedBasisStrategy.sol";
+import "src/interfaces/IBasisStrategy.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-
-import {DataTypes} from "src/libraries/utils/DataTypes.sol";
-
-import {console2 as console} from "forge-std/console2.sol";
 
 contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUpgradeable {
     using SafeCast for uint256;
@@ -29,8 +25,8 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
     }
 
     struct RequestInfo {
-        DataTypes.PositionManagerPayload request;
-        DataTypes.PositionManagerPayload response;
+        AdjustPositionPayload request;
+        AdjustPositionPayload response;
         uint256 requestTimestamp;
         uint256 responseRound;
         uint256 responseTimestamp;
@@ -176,7 +172,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
                         REQUEST LOGIC 
     //////////////////////////////////////////////////////////////*/
 
-    function adjustPosition(DataTypes.PositionManagerPayload memory params) external {
+    function adjustPosition(AdjustPositionPayload memory params) external {
         // increments round
         // stores position state from the previous round in the current round
         // stores request in the current round
@@ -265,7 +261,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         uint256 sizeInTokens,
         uint256 netBalance,
         uint256 markPrice,
-        DataTypes.PositionManagerPayload calldata params
+        AdjustPositionPayload calldata params
     ) external onlyAgent {
         // 1. increments round
         // 2. stores position state in the current round
@@ -290,7 +286,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
             }
         }
 
-        DataTypes.PositionManagerPayload memory response = DataTypes.PositionManagerPayload({
+        AdjustPositionPayload memory response = AdjustPositionPayload({
             sizeDeltaInTokens: params.sizeDeltaInTokens,
             collateralDeltaAmount: params.collateralDeltaAmount,
             isIncrease: params.isIncrease
@@ -305,7 +301,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         $.positionStates[round] = state;
         $.currentRound = round;
 
-        IManagedBasisStrategy($.strategy).afterAdjustPosition(params);
+        IBasisStrategy($.strategy).afterAdjustPosition(params);
 
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
 
