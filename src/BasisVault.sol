@@ -39,8 +39,10 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         IBasisStrategy strategy;
         uint256 entryCost;
         uint256 exitCost;
-        // asset state
+        // withdraw state
         uint256 assetsToClaim; // asset balance of vault that is ready to claim
+        uint256 accRequestedWithdrawAssets; // total requested withdraw assets
+        uint256 proccessedWithdrawAssets; // total processed assets
         uint256 nonce;
         mapping(bytes32 => WithdrawRequest) withdrawRequests;
     }
@@ -130,17 +132,12 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
-        IBasisStrategy _strategy = $.strategy;
-        int256 _totalAssets = (idleAssets() + _strategy.utilizedAssets()).toInt256() - _strategy.totalPendingWithdraw();
+        int256 _totalAssets = (idleAssets() + $.strategy.utilizedAssets()).toInt256() - totalPendingWithdraw();
         if (_totalAssets > 0) {
             return uint256(_totalAssets);
         } else {
             return 0;
         }
-    }
-
-    function idleAssets() public view returns (uint256) {
-        return IERC20(asset()).balanceOf(address(this)) - _getBasisVaultStorage().assetsToClaim;
     }
 
     /// @inheritdoc ERC4626Upgradeable
@@ -150,10 +147,10 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
             return assets;
         }
         // calculate the amount of assets that will be utilized
-        int256 totalPendingWithdraw = $.strategy.totalPendingWithdraw();
+        int256 _totalPendingWithdraw = totalPendingWithdraw();
         uint256 assetsToUtilize;
-        if (totalPendingWithdraw > 0) {
-            (, assetsToUtilize) = assets.trySub(uint256(totalPendingWithdraw));
+        if (_totalPendingWithdraw > 0) {
+            (, assetsToUtilize) = assets.trySub(uint256(_totalPendingWithdraw));
         } else {
             assetsToUtilize = assets;
         }
@@ -176,10 +173,10 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         uint256 assets = _convertToAssets(shares, Math.Rounding.Ceil);
 
         // calculate the amount of assets that will be utilized
-        int256 totalPendingWithdraw = $.strategy.totalPendingWithdraw();
+        int256 _totalPendingWithdraw = totalPendingWithdraw();
         uint256 assetsToUtilize;
-        if (totalPendingWithdraw > 0) {
-            (, assetsToUtilize) = assets.trySub(uint256(totalPendingWithdraw));
+        if (_totalPendingWithdraw > 0) {
+            (, assetsToUtilize) = assets.trySub(uint256(_totalPendingWithdraw));
         } else {
             assetsToUtilize = assets;
         }
@@ -235,14 +232,12 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
-        BasisVaultStorage storage $ = _getBasisVaultStorage();
-
         IERC20 _asset = IERC20(asset());
         _asset.safeTransferFrom(caller, address(this), assets);
 
         _mint(receiver, shares);
 
-        $.strategy.processPendingWithdrawRequests(idleAssets());
+        processPendingWithdrawRequests();
 
         emit Deposit(caller, receiver, assets, shares);
     }
@@ -276,11 +271,13 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
 
             // request withdraw the remaining assets for strategy to deutilize
             uint256 withdrawAssets = assets - _idleAssets;
-            uint256 accRequestedWithdrawAssets = $.strategy.requestWithdraw(withdrawAssets);
+            uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + withdrawAssets;
+            $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
+
             bytes32 withdrawKey = getWithdrawKey(_useNonce());
             $.withdrawRequests[withdrawKey] = WithdrawRequest({
                 requestedAssets: assets,
-                accRequestedWithdrawAssets: accRequestedWithdrawAssets,
+                accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
                 requestTimestamp: block.timestamp,
                 receiver: receiver,
                 isClaimed: false
@@ -331,8 +328,7 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
             revert Errors.RequestAlreadyClaimed();
         }
 
-        (bool isExecuted, bool isLast) =
-            $.strategy.isWithdrawRequestExecuted(withdrawRequest.accRequestedWithdrawAssets, totalSupply());
+        (bool isExecuted, bool isLast) = _isWithdrawRequestExecuted(withdrawRequest.accRequestedWithdrawAssets);
 
         if (!isExecuted) {
             revert Errors.RequestNotExecuted();
@@ -345,7 +341,10 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
         uint256 executedAssets;
         // separate workflow for last redeem
         if (isLast) {
-            executedAssets = $.strategy.executeLastClaim(withdrawRequest.requestedAssets);
+            uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
+            executedAssets =
+                withdrawRequest.requestedAssets - (_accRequestedWithdrawAssets - $.proccessedWithdrawAssets);
+            $.proccessedWithdrawAssets = _accRequestedWithdrawAssets;
         } else {
             executedAssets = withdrawRequest.requestedAssets;
         }
@@ -360,10 +359,21 @@ contract BasisVault is Initializable, ERC4626Upgradeable {
     function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
         BasisVaultStorage storage $ = _getBasisVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
-        (bool isExecuted,) =
-            $.strategy.isWithdrawRequestExecuted(withdrawRequest.accRequestedWithdrawAssets, totalSupply());
+        (bool isExecuted,) = _isWithdrawRequestExecuted(withdrawRequest.accRequestedWithdrawAssets);
 
         return isExecuted && !withdrawRequest.isClaimed;
+    }
+
+    /// @notice returns idle assets that can be claimed or utilized
+    function idleAssets() public view returns (uint256) {
+        return IERC20(asset()).balanceOf(address(this)) - _getBasisVaultStorage().assetsToClaim;
+    }
+
+    /// @notice returns pending withdraw assets that will be deutilized
+    function totalPendingWithdraw() public view returns (int256) {
+        BasisVaultStorage storage $ = _getBasisVaultStorage();
+        uint256 assetsToWithdraw = IERC20(asset()).balanceOf(address($.strategy));
+        return $.accRequestedWithdrawAssets.toInt256() - ($.proccessedWithdrawAssets + assetsToWithdraw).toInt256();
     }
 
     function getWithdrawKey(uint256 nonce) public view returns (bytes32) {
