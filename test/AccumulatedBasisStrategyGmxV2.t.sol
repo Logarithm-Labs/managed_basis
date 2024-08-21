@@ -139,8 +139,8 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         pathWeth[1] = UNISWAPV3_WETH_USDC;
         pathWeth[2] = WETH;
 
-        uint256 nextNonce = uint256(vm.getNonce(address(this)) + 4);
-        address preComputedStrategyAddress = vm.computeCreateAddress(address(this), nextNonce);
+        uint256 nextNonce = uint256(vm.getNonce(owner) + 3);
+        address preComputedStrategyAddress = vm.computeCreateAddress(owner, nextNonce);
 
         address vaultImpl = address(new LogarithmVault());
         address vaultProxy = address(
