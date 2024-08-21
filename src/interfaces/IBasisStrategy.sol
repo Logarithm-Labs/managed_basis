@@ -9,6 +9,7 @@ interface IBasisStrategy {
 
     function afterAdjustPosition(IPositionManager.AdjustPositionPayload calldata responseParams) external;
 
+    function vault() external view returns (address);
     function asset() external view returns (address);
     function product() external view returns (address);
     function positionManager() external view returns (address);

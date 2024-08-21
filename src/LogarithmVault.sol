@@ -72,20 +72,20 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable {
     //////////////////////////////////////////////////////////////*/
 
     function initialize(
-        string calldata name_,
-        string calldata symbol_,
+        address preComputedStrategyAddress,
         address asset_,
-        address strategy_,
         uint256 entryCost_,
-        uint256 exitCost_
+        uint256 exitCost_,
+        string calldata name_,
+        string calldata symbol_
     ) external initializer {
         __ERC20_init_unchained(name_, symbol_);
         __ERC4626_init_unchained(IERC20(asset_));
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
-        require(strategy_ != address(0));
-        $.strategy = IBasisStrategy(strategy_);
-        IERC20(asset_).approve(strategy_, type(uint256).max);
+        require(preComputedStrategyAddress != address(0));
+        $.strategy = IBasisStrategy(preComputedStrategyAddress);
+        IERC20(asset_).approve(preComputedStrategyAddress, type(uint256).max);
 
         require(entryCost_ < 1 ether && exitCost_ < 1 ether);
         $.entryCost = entryCost_;
@@ -434,5 +434,17 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable {
 
     function assetsToClaim() external view returns (uint256) {
         return _getLogarithmVaultStorage().assetsToClaim;
+    }
+
+    function accRequestedWithdrawAssets() external view returns (uint256) {
+        return _getLogarithmVaultStorage().accRequestedWithdrawAssets;
+    }
+
+    function proccessedWithdrawAssets() external view returns (uint256) {
+        return _getLogarithmVaultStorage().proccessedWithdrawAssets;
+    }
+
+    function withdrawRequests(bytes32 withdrawKey) external view returns (WithdrawRequest memory) {
+        return _getLogarithmVaultStorage().withdrawRequests[withdrawKey];
     }
 }

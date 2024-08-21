@@ -1074,6 +1074,14 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         return deltaCollateral;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        STORAGE GETTERS
+    //////////////////////////////////////////////////////////////*/
+
+    function vault() external view returns (address) {
+        return address(_getBasisStrategyStorage().vault);
+    }
+
     function positionManager() external view returns (address) {
         return address(_getBasisStrategyStorage().positionManager);
     }
@@ -1092,5 +1100,18 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
     function strategyStatus() external view returns (StrategyStatus) {
         return _getBasisStrategyStorage().strategyStatus;
+    }
+
+    function pendingIncreaseCollateral() external view returns (uint256) {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        return _pendingIncreaseCollateral($.vault.idleAssets(), $.targetLeverage);
+    }
+
+    function pendingDecreaseCollateral() external view returns (uint256) {
+        return _getBasisStrategyStorage().pendingDecreaseCollateral;
+    }
+
+    function processingRebalance() external view returns (bool) {
+        return _getBasisStrategyStorage().processingRebalanceDown;
     }
 }
