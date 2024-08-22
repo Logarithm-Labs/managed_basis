@@ -43,7 +43,7 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable {
         uint256 assetsToClaim; // asset balance of vault that is ready to claim
         uint256 accRequestedWithdrawAssets; // total requested withdraw assets
         uint256 proccessedWithdrawAssets; // total processed assets
-        uint256 nonce;
+        mapping(address => uint256) nonces;
         mapping(bytes32 => WithdrawRequest) withdrawRequests;
     }
 
@@ -263,7 +263,7 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable {
             uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + withdrawAssets;
             $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
 
-            bytes32 withdrawKey = getWithdrawKey(_useNonce());
+            bytes32 withdrawKey = getWithdrawKey(owner, _useNonce(owner));
             $.withdrawRequests[withdrawKey] = WithdrawRequest({
                 requestedAssets: assets,
                 accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
@@ -365,8 +365,8 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable {
         return $.accRequestedWithdrawAssets.toInt256() - ($.proccessedWithdrawAssets + assetsToWithdraw).toInt256();
     }
 
-    function getWithdrawKey(uint256 nonce) public view returns (bytes32) {
-        return keccak256(abi.encodePacked(address(this), nonce));
+    function getWithdrawKey(address user, uint256 nonce) public view returns (bytes32) {
+        return keccak256(abi.encodePacked(address(this), user, nonce));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -405,13 +405,13 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable {
         return (isExecuted, isLast);
     }
 
-    function _useNonce() internal returns (uint256) {
+    function _useNonce(address user) internal returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         // For each vault, the nonce has an initial value of 0, can only be incremented by one, and cannot be
         // decremented or reset. This guarantees that the nonce never overflows.
         unchecked {
             // It is important to do x++ and not ++x here.
-            return $.nonce++;
+            return $.nonces[user]++;
         }
     }
 
