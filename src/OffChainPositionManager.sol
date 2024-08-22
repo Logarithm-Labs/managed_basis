@@ -260,6 +260,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         state.timestamp = block.timestamp;
 
         $.positionStates[round] = state;
+        $.currentRound = round;
 
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
     }
