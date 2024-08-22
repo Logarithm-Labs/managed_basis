@@ -40,6 +40,8 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable
         IBasisStrategy strategy;
         uint256 entryCost;
         uint256 exitCost;
+        uint256 userDepositLimit;
+        uint256 vaultDepositLimit;
         // withdraw state
         uint256 assetsToClaim; // asset balance of vault that is ready to claim
         uint256 accRequestedWithdrawAssets; // total requested withdraw assets
@@ -88,6 +90,9 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable
         require(entryCost_ < 1 ether && exitCost_ < 1 ether);
         $.entryCost = entryCost_;
         $.exitCost = exitCost_;
+
+        $.userDepositLimit = type(uint256).max;
+        $.vaultDepositLimit = type(uint256).max;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -97,12 +102,20 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable
     function setStrategy(address _strategy) external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
-        address prevStrategy = $.strategy;
-        if (prevStrategy != address(0)) IERC20(asset_).approve(prevStrategy, 0);
+        IERC20 _asset = IERC20(asset());
+
+        address prevStrategy = address($.strategy);
+        if (prevStrategy != address(0)) _asset.approve(prevStrategy, 0);
 
         require(_strategy != address(0));
         $.strategy = IBasisStrategy(_strategy);
-        IERC20(asset_).approve(_strategy, type(uint256).max);
+        _asset.approve(_strategy, type(uint256).max);
+    }
+
+    function setDepositLimits(uint256 userLimit, uint256 vaultDepositLimit) external onlyOwner {
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        $.userDepositLimit = userLimit;
+        $.vaultDepositLimit = vaultDepositLimit;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -112,8 +125,10 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable
     /// @inheritdoc ERC4626Upgradeable
     function maxDeposit(address receiver) public view virtual override returns (uint256 allowed) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        (uint256 userDepositLimit, uint256 strategyDepositLimit) = $.strategy.depositLimits();
-        if (userDepositLimit == type(uint256).max && strategyDepositLimit == type(uint256).max) {
+        uint256 userDepositLimit = $.userDepositLimit;
+        uint256 vaultDepositLimit = $.vaultDepositLimit;
+
+        if (userDepositLimit == type(uint256).max && vaultDepositLimit == type(uint256).max) {
             return type(uint256).max;
         } else {
             uint256 sharesBalance = balanceOf(receiver);
@@ -121,7 +136,7 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable
             uint256 availableDepositorLimit =
                 userDepositLimit == type(uint256).max ? type(uint256).max : userDepositLimit - sharesValue;
             uint256 availableStrategyLimit =
-                strategyDepositLimit == type(uint256).max ? type(uint256).max : strategyDepositLimit - totalAssets();
+                vaultDepositLimit == type(uint256).max ? type(uint256).max : vaultDepositLimit - totalAssets();
             uint256 userBalance = IERC20(asset()).balanceOf(address(receiver));
             allowed =
                 availableDepositorLimit < availableStrategyLimit ? availableDepositorLimit : availableStrategyLimit;
@@ -384,6 +399,13 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable
 
     function getWithdrawKey(address user, uint256 nonce) public view returns (bytes32) {
         return keccak256(abi.encodePacked(address(this), user, nonce));
+    }
+
+    function depositLimits() external view returns (uint256 userDepositLimit, uint256 vaultDepositLimit) {
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        userDepositLimit = $.userDepositLimit;
+        vaultDepositLimit = $.vaultDepositLimit;
+        return (userDepositLimit, vaultDepositLimit);
     }
 
     /*//////////////////////////////////////////////////////////////

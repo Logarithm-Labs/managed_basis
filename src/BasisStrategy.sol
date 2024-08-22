@@ -93,8 +93,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         // strategy configuration
         uint256 rebalanceDeviationThreshold;
         uint256 hedgeDeviationThreshold;
-        uint256 userDepositLimit;
-        uint256 strategyDepostLimit;
         // pending state
         uint256 pendingDeutilizedAssets;
         uint256 pendingDecreaseCollateral;
@@ -191,8 +189,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         if (_safeMarginLeverage <= _maxLeverage) revert();
         $.safeMarginLeverage = _safeMarginLeverage;
 
-        $.userDepositLimit = type(uint256).max;
-        $.strategyDepostLimit = type(uint256).max;
         $.hedgeDeviationThreshold = 1e16; // 1%
         $.rebalanceDeviationThreshold = 1e16; // 1%
         _setManualSwapPath(_assetToProductSwapPath, _asset, _product);
@@ -245,12 +241,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             revert Errors.ZeroAddress();
         }
         _getBasisStrategyStorage().forwarder = _forwarder;
-    }
-
-    function setDepositLimits(uint256 userLimit, uint256 strategyLimit) external onlyOwner {
-        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        $.userDepositLimit = userLimit;
-        $.strategyDepostLimit = strategyLimit;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -644,13 +634,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 productBalance = IERC20(_product).balanceOf(address(this));
         uint256 productValueInAssets = $.oracle.convertTokenAmount(_product, $.vault.asset(), productBalance);
         return productValueInAssets + $.positionManager.positionNetBalance();
-    }
-
-    function depositLimits() external view returns (uint256 userDepositLimit, uint256 strategyDepostLimit) {
-        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        userDepositLimit = $.userDepositLimit;
-        strategyDepostLimit = $.strategyDepostLimit;
-        return (userDepositLimit, strategyDepostLimit);
     }
 
     function _adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease)

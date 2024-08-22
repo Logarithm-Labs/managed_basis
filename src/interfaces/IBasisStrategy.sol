@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 interface IBasisStrategy {
-    function depositLimits() external view returns (uint256 userDepositLimit, uint256 strategyDepostLimit);
     function utilizedAssets() external view returns (uint256);
 
     function afterAdjustPosition(IPositionManager.AdjustPositionPayload calldata responseParams) external;

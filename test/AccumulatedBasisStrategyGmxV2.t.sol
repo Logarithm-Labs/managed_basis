@@ -385,7 +385,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
 
     function _deposit(address from, uint256 assets) private {
         vm.startPrank(from);
-        IERC20(asset).approve(address(strategy), assets);
+        IERC20(asset).approve(address(vault), assets);
         StrategyState memory state0 = _getStrategyState();
         vault.deposit(assets, from);
         StrategyState memory state1 = _getStrategyState();
@@ -395,7 +395,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
     function _mint(address from, uint256 shares) private {
         vm.startPrank(from);
         uint256 assets = vault.previewMint(shares);
-        IERC20(asset).approve(address(strategy), assets);
+        IERC20(asset).approve(address(vault), assets);
         StrategyState memory state0 = _getStrategyState();
         vault.mint(shares, from);
         StrategyState memory state1 = _getStrategyState();
@@ -562,7 +562,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(vault.balanceOf(user2), shares);
         int256 pendingWithdrawAfter = vault.totalPendingWithdraw();
         assertEq(pendingWithdrawAfter + int256(THOUSAND_USDC), pendingWithdrawBefore);
-        assertFalse(vault.isClaimable(vault.getWithdrawKey(0)));
+        assertFalse(vault.isClaimable(vault.getWithdrawKey(user1, 0)));
     }
 
     function test_deposit_withPendingWithdraw_biggerThanTotalPendingWithdraw()
@@ -576,7 +576,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(vault.balanceOf(user2), shares);
         int256 pendingWithdrawAfter = vault.totalPendingWithdraw();
         assertEq(pendingWithdrawAfter, 0);
-        assertTrue(vault.isClaimable(vault.getWithdrawKey(0)));
+        assertTrue(vault.isClaimable(vault.getWithdrawKey(user1, 0)));
         assertTrue(pendingWithdrawBefore > 0);
         assertEq(vault.idleAssets(), TEN_THOUSANDS_USDC - uint256(pendingWithdrawBefore));
     }
@@ -653,7 +653,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         emit BasisStrategy.UpdatePendingUtilization();
         vm.startPrank(user1);
         vault.redeem(redeemShares, user1, user1);
-        bytes32 requestKey = vault.getWithdrawKey(0);
+        bytes32 requestKey = vault.getWithdrawKey(user1, 0);
         LogarithmVault.WithdrawRequest memory withdrawRequest = vault.withdrawRequests(requestKey);
         assertFalse(vault.isClaimable(requestKey));
         assertEq(withdrawRequest.requestedAssets, assets);
@@ -672,7 +672,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
     function test_deutilize_partial_withSingleRequest() public afterWithdrawRequestCreated validateFinalState {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization / 2);
-        bytes32 requestKey = vault.getWithdrawKey(0);
+        bytes32 requestKey = vault.getWithdrawKey(user1, 0);
         assertFalse(vault.isClaimable(requestKey));
         vm.expectRevert(Errors.RequestNotExecuted.selector);
         vm.startPrank(user1);
@@ -682,7 +682,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
     function test_deutilize_full_withSingleRequest() public afterWithdrawRequestCreated validateFinalState {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
-        bytes32 requestKey = vault.getWithdrawKey(0);
+        bytes32 requestKey = vault.getWithdrawKey(user1, 0);
         assertTrue(vault.isClaimable(requestKey));
 
         LogarithmVault.WithdrawRequest memory withdrawRequest = vault.withdrawRequests(requestKey);
@@ -701,10 +701,10 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization / 2);
 
-        bytes32 requestKey1 = vault.getWithdrawKey(0);
+        bytes32 requestKey1 = vault.getWithdrawKey(user1, 0);
         assertTrue(vault.isClaimable(requestKey1));
 
-        bytes32 requestKey2 = vault.getWithdrawKey(1);
+        bytes32 requestKey2 = vault.getWithdrawKey(user2, 0);
         assertFalse(vault.isClaimable(requestKey2));
 
         LogarithmVault.WithdrawRequest memory withdrawRequest1 = vault.withdrawRequests(requestKey1);
@@ -719,10 +719,10 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
 
-        bytes32 requestKey1 = vault.getWithdrawKey(0);
+        bytes32 requestKey1 = vault.getWithdrawKey(user1, 0);
         assertTrue(vault.isClaimable(requestKey1));
 
-        bytes32 requestKey2 = vault.getWithdrawKey(1);
+        bytes32 requestKey2 = vault.getWithdrawKey(user2, 0);
         assertTrue(vault.isClaimable(requestKey2));
 
         LogarithmVault.WithdrawRequest memory withdrawRequest1 = vault.withdrawRequests(requestKey1);
@@ -756,7 +756,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         _fullExcuteOrder();
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
 
-        bytes32 requestKey = vault.getWithdrawKey(0);
+        bytes32 requestKey = vault.getWithdrawKey(user1, 0);
         assertTrue(vault.proccessedWithdrawAssets() < vault.accRequestedWithdrawAssets());
         assertTrue(vault.isClaimable(requestKey));
 
@@ -946,7 +946,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
             IPositionManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: false})
         );
 
-        bytes32 requestKey = vault.getWithdrawKey(0);
+        bytes32 requestKey = vault.getWithdrawKey(user1, 0);
         assertFalse(vault.isClaimable(requestKey));
 
         uint256 productAfter = IERC20(product).balanceOf(address(strategy));
