@@ -497,7 +497,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                         positionManager: _positionManager,
                         asset: _asset,
                         product: _product,
-                        processingRebalanceDown: $.processingRebalanceDown
+                        processingRebalanceDown: true
                     })
                 );
                 (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
