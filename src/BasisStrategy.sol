@@ -647,7 +647,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         address _asset = $.vault.asset();
         address _product = address($.product);
         if (isIncrease && collateralDeltaAmount > 0) {
-            IERC20(_asset).safeTransfer(address($.positionManager), collateralDeltaAmount);
+            IERC20(_asset).safeTransferFrom(address($.vault), address($.positionManager), collateralDeltaAmount);
         }
 
         if (sizeDeltaInTokens > 0) {
@@ -837,7 +837,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             rebalanceDownNeeded = params.idleAssets != 0 && params.idleAssets >= minIncreaseCollateral;
         }
 
-        if (rebalanceUpNeeded) {
+        if (rebalanceDownNeeded) {
             upkeepNeeded = true;
         } else {
             hedgeDeviationInTokens = _checkHedgeDeviation(
