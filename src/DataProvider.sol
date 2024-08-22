@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.25;
 
-import {ManagedBasisStrategy} from "src/ManagedBasisStrategy.sol";
+import {BasisStrategy} from "src/BasisStrategy.sol";
+// import {ILogarithmVault} from "src/interfaces/ILogarithmVault.sol";
+import {LogarithmVault} from "src/LogarithmVault.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
@@ -18,7 +20,7 @@ contract DataProvider {
         uint256 productValueInAsset;
         uint256 assetsToWithdraw;
         uint256 assetsToClaim;
-        uint256 totalPendingWithdraw;
+        int256 totalPendingWithdraw;
         uint256 pendingIncreaseCollateral;
         uint256 pendingDecreaseCollateral;
         uint256 pendingUtilization;
@@ -37,8 +39,9 @@ contract DataProvider {
     }
 
     function getStrategyState(address _strategy) external view returns (StrategyState memory state) {
-        ManagedBasisStrategy strategy = ManagedBasisStrategy(_strategy);
+        BasisStrategy strategy = BasisStrategy(_strategy);
         IPositionManager positionManager = IPositionManager(strategy.positionManager());
+        LogarithmVault vault = LogarithmVault(strategy.vault());
         IOracle oracle = IOracle(strategy.oracle());
         address asset = strategy.asset();
         address product = strategy.product();
@@ -52,21 +55,21 @@ contract DataProvider {
         ) = abi.decode(performData, (bool, bool, bool, int256, bool));
 
         state.strategyStatus = uint8(strategy.strategyStatus());
-        state.totalSupply = strategy.totalSupply();
-        state.totalAssets = strategy.totalAssets();
+        state.totalSupply = vault.totalSupply();
+        state.totalAssets = vault.totalAssets();
         state.utilizedAssets = strategy.utilizedAssets();
-        state.idleAssets = strategy.idleAssets();
-        state.assetBalance = IERC20(asset).balanceOf(address(strategy));
+        state.idleAssets = vault.idleAssets();
+        state.assetBalance = IERC20(asset).balanceOf(address(vault));
         state.productBalance = IERC20(product).balanceOf(address(strategy));
         state.productValueInAsset = oracle.convertTokenAmount(product, asset, state.productBalance);
-        state.assetsToWithdraw = strategy.assetsToWithdraw();
-        state.assetsToClaim = strategy.assetsToClaim();
-        state.totalPendingWithdraw = strategy.totalPendingWithdraw();
+        state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
+        state.assetsToClaim = vault.assetsToClaim();
+        state.totalPendingWithdraw = vault.totalPendingWithdraw();
         state.pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
-        state.accRequestedWithdrawAssets = strategy.accRequestedWithdrawAssets();
-        state.proccessedWithdrawAssets = strategy.proccessedWithdrawAssets();
+        state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
+        state.proccessedWithdrawAssets = vault.proccessedWithdrawAssets();
         state.positionNetBalance = positionManager.positionNetBalance();
         state.positionLeverage = positionManager.currentLeverage();
         state.positionSizeInTokens = positionManager.positionSizeInTokens();

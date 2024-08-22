@@ -3,17 +3,16 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
-import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
+import {BasisStrategy} from "src/BasisStrategy.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {DataTypes} from "src/libraries/utils/DataTypes.sol";
 
 contract InchTest is Test {
     using stdStorage for StdStorage;
 
     address public owner;
-    AccumulatedBasisStrategy public strategy;
+    BasisStrategy public strategy;
     LogarithmOracle public oracle;
 
     address public USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
@@ -43,23 +42,16 @@ contract InchTest is Test {
         oracle = LogarithmOracle(oracleProxy);
 
         // deploy strategy
-        address strategyImpl = address(new AccumulatedBasisStrategy());
+        address strategyImpl = address(new BasisStrategy());
         address strategyProxy = address(
             new ERC1967Proxy(
                 strategyImpl,
                 abi.encodeWithSelector(
-                    AccumulatedBasisStrategy.initialize.selector,
-                    asset,
-                    product,
-                    owner,
-                    oracle,
-                    entryCost,
-                    exitCost,
-                    isLong
+                    BasisStrategy.initialize.selector, asset, product, owner, oracle, entryCost, exitCost, isLong
                 )
             )
         );
-        strategy = AccumulatedBasisStrategy(strategyProxy);
+        strategy = BasisStrategy(strategyProxy);
 
         // set oracle price feed
         address[] memory assets = new address[](2);
@@ -79,7 +71,7 @@ contract InchTest is Test {
         bytes memory data = generateInchCallData(asset, product, amount);
 
         // call utilize
-        strategy.utilize(amount, DataTypes.SwapType.INCH_V6, data);
+        strategy.utilize(amount, BasisStrategy.SwapType.INCH_V6, data);
         console.log("amountOut: ", IERC20(product).balanceOf(address(strategy)));
     }
 
@@ -90,7 +82,7 @@ contract InchTest is Test {
         bytes memory data = generateInchCallData(product, asset, amount);
 
         // call deutilize
-        strategy.deutilize(amount, DataTypes.SwapType.INCH_V6, data);
+        strategy.deutilize(amount, BasisStrategy.SwapType.INCH_V6, data);
         console.log("amountOut: ", IERC20(asset).balanceOf(address(strategy)));
     }
 
