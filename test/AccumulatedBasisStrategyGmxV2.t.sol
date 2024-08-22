@@ -59,6 +59,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         bool deleverageNeeded;
         bool rehedgeNeeded;
         bool positionManagerKeepNeeded;
+        bool decreaseCollateral;
     }
 
     address owner = makeAddr("owner");
@@ -139,21 +140,12 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         pathWeth[1] = UNISWAPV3_WETH_USDC;
         pathWeth[2] = WETH;
 
-        uint256 nextNonce = uint256(vm.getNonce(owner) + 3);
-        address preComputedStrategyAddress = vm.computeCreateAddress(owner, nextNonce);
-
         address vaultImpl = address(new LogarithmVault());
         address vaultProxy = address(
             new ERC1967Proxy(
                 vaultImpl,
                 abi.encodeWithSelector(
-                    LogarithmVault.initialize.selector,
-                    preComputedStrategyAddress,
-                    asset,
-                    entryCost,
-                    exitCost,
-                    "tt",
-                    "tt"
+                    LogarithmVault.initialize.selector, owner, asset, entryCost, exitCost, "tt", "tt"
                 )
             )
         );
@@ -182,7 +174,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         strategy = BasisStrategy(strategyProxy);
         vm.label(address(strategy), "strategy");
 
-        assertEq(address(strategy), preComputedStrategyAddress, "wrong precomputed strategy address");
+        vault.setStrategy(address(strategy));
 
         // deploy keeper
         address keeperImpl = address(new Keeper());
@@ -228,13 +220,6 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         IERC20(asset).transfer(user2, 10_000_000 * 1e6);
     }
 
-    function _moveTimestamp(uint256 deltaTime) internal {
-        address[] memory priceFeeds = new address[](2);
-        priceFeeds[0] = assetPriceFeed;
-        priceFeeds[1] = productPriceFeed;
-        _moveTimestamp(deltaTime, priceFeeds);
-    }
-
     function _getStrategyState() internal view returns (StrategyState memory state) {
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         bool rebalanceUpNeeded;
@@ -242,9 +227,16 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         bool deleverageNeeded;
         int256 hedgeDeviationInTokens;
         bool positionManagerNeedKeep;
+        bool decreaseCollateral;
         if (performData.length > 0) {
-            (rebalanceUpNeeded, rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep)
-            = abi.decode(performData, (bool, bool, bool, int256, bool));
+            (
+                rebalanceDownNeeded,
+                deleverageNeeded,
+                hedgeDeviationInTokens,
+                positionManagerNeedKeep,
+                decreaseCollateral,
+                rebalanceUpNeeded
+            ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         }
 
         state.strategyStatus = uint8(strategy.strategyStatus());
@@ -255,7 +247,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         state.assetBalance = IERC20(asset).balanceOf(address(vault));
         state.productBalance = IERC20(product).balanceOf(address(strategy));
         state.productValueInAsset = oracle.convertTokenAmount(product, asset, state.productBalance);
-        state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
+        state.assetsToWithdraw = IERC20(asset).balanceOf(address(vault));
         state.assetsToClaim = vault.assetsToClaim();
         state.totalPendingWithdraw = vault.totalPendingWithdraw();
         state.pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
@@ -275,6 +267,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         state.deleverageNeeded = deleverageNeeded;
         state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
         state.positionManagerKeepNeeded = positionManagerNeedKeep;
+        state.decreaseCollateral = decreaseCollateral;
     }
 
     function _logStrategyState(string memory stateName, StrategyState memory state) internal view {
@@ -321,7 +314,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         } else {
             assertEq(state.productBalance, state.positionSizeInTokens, "not 0 product exposure");
         }
-        assertFalse(state.processingRebalance);
+        assertFalse(state.processingRebalance, "processingRebalance");
         assertFalse(state.upkeepNeeded, "upkeep");
     }
 
@@ -417,7 +410,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         strategy.utilize(amount, BasisStrategy.SwapType.MANUAL, "");
         StrategyState memory state1 = _getStrategyState();
         _validateStateTransition(state0, state1);
-        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.UTILIZING));
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.UTILIZING));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
@@ -436,7 +429,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         StrategyState memory state1 = _getStrategyState();
         // can't guarantee 1% deviation due to price impact of uniswap
         // _validateStateTransition(state0, state1);
-        assertEq(uint256(strategy.strategyStatus()), uint256(DataTypes.StrategyStatus.DEUTILIZING));
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.DEUTILIZING));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
@@ -498,7 +491,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC);
         _mint(user1, shares);
         assertEq(vault.balanceOf(user1), shares);
-        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC);
+        assertEq(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC);
     }
 
     function test_previewDepositMint_whenNotUtilized() public afterDeposited {
@@ -517,7 +510,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _mint(user2, shares);
         assertEq(vault.balanceOf(user2), shares);
-        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC * 3 / 2);
+        assertEq(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC * 3 / 2);
     }
 
     function test_previewDepositMint_whenPartialUtilized() public afterPartialUtilized {
@@ -536,7 +529,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _mint(user2, shares);
         assertEq(vault.balanceOf(user2), shares);
-        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC);
+        assertEq(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC);
     }
 
     function test_previewDepositMint_whenFullUtilized() public afterFullUtilized {
@@ -555,7 +548,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC / 2);
         _mint(user2, shares);
         assertEq(vault.balanceOf(user2), shares);
-        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC / 2);
+        assertEq(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC / 2);
     }
 
     function test_previewDepositMint_withPendingWithdraw() public afterWithdrawRequestCreated {
@@ -605,7 +598,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         _utilize(pendingUtilizationInAsset / 2);
         uint256 totalAssets = vault.totalAssets();
         assertApproxEqRel(totalAssets, TEN_THOUSANDS_USDC, 0.99 ether);
-        assertEq(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC / 2);
+        assertEq(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC / 2);
         assertEq(IERC20(asset).balanceOf(address(positionManager)), 0);
         (pendingUtilizationInAsset,) = strategy.pendingUtilizations();
         pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
@@ -619,7 +612,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         _utilize(pendingUtilization);
         uint256 totalAssets = vault.totalAssets();
         assertApproxEqRel(totalAssets, TEN_THOUSANDS_USDC, 0.99 ether);
-        assertEq(IERC20(asset).balanceOf(address(strategy)), 0);
+        assertEq(IERC20(asset).balanceOf(address(vault)), 0);
         assertEq(IERC20(asset).balanceOf(address(positionManager)), 0);
         (pendingUtilization,) = strategy.pendingUtilizations();
         pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
@@ -662,8 +655,6 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         uint256 totalShares = vault.balanceOf(user1);
         uint256 redeemShares = totalShares * 2 / 3;
         uint256 assets = vault.previewRedeem(redeemShares);
-        vm.expectEmit();
-        emit BasisStrategy.UpdatePendingUtilization();
         vm.startPrank(user1);
         vault.redeem(redeemShares, user1, user1);
         bytes32 requestKey = vault.getWithdrawKey(user1, 0);
@@ -755,7 +746,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
 
     function test_deutilize_lastRedeemBelowrequestedAssets() public afterFullUtilized validateFinalState {
         // make last redeem
-        uint256 userShares = IERC20(address(strategy)).balanceOf(address(user1));
+        uint256 userShares = IERC20(address(vault)).balanceOf(address(user1));
         vm.startPrank(user1);
         vault.redeem(userShares, user1, user1);
 
@@ -792,11 +783,11 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 5 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertTrue(rebalanceUpNeeded);
         assertFalse(rebalanceDownNeeded);
-        assertFalse(liquidatable);
+        assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
 
         // position.sizeInUsd is changed due to realization of positive pnl
@@ -826,19 +817,19 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         validateFinalState
     {
         vm.startPrank(USDC_WHALE);
-        IERC20(asset).transfer(address(strategy), 100 * 1e6);
-        assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
+        IERC20(asset).transfer(address(vault), 100 * 1e6);
+        assertTrue(IERC20(asset).balanceOf(address(vault)) > 0);
 
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
-        assertFalse(liquidatable);
+        assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
 
         _performKeep();
@@ -861,11 +852,11 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
-        assertTrue(liquidatable, "liquidatable");
+        assertTrue(deleverageNeeded, "deleverageNeeded");
         assertFalse(positionManagerNeedKeep, "positionManagerNeedKeep");
 
         _performKeep();
@@ -877,20 +868,20 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         validateFinalState
     {
         vm.startPrank(USDC_WHALE);
-        IERC20(asset).transfer(address(strategy), 100 * 1e6);
-        assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
+        IERC20(asset).transfer(address(vault), 100 * 1e6);
+        assertTrue(IERC20(asset).balanceOf(address(vault)) > 0);
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
-        assertTrue(liquidatable);
+        assertTrue(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
         _performKeep();
-        assertTrue(IERC20(asset).balanceOf(address(strategy)) > 0);
+        assertTrue(IERC20(asset).balanceOf(address(vault)) > 0);
     }
 
     function test_performUpkeep_emergencyRebalanceDown_whenIdleEnough()
@@ -899,25 +890,24 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         validateFinalState
     {
         vm.startPrank(USDC_WHALE);
-        IERC20(asset).transfer(address(strategy), TEN_THOUSANDS_USDC);
-        uint256 strategyBalanceBefore = IERC20(asset).balanceOf(address(strategy));
+        IERC20(asset).transfer(address(vault), TEN_THOUSANDS_USDC);
+        uint256 vaultBalanceBefore = IERC20(asset).balanceOf(address(vault));
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE), "not idle");
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
-        assertTrue(upkeepNeeded);
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool liquidatable,, bool positionManagerNeedKeep) =
-            abi.decode(performData, (bool, bool, bool, int256, bool));
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
-        assertTrue(liquidatable);
-        assertFalse(positionManagerNeedKeep);
-        console.log("currentLeverage", positionManager.currentLeverage());
+        assertTrue(upkeepNeeded, "upkeepNeeded");
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertTrue(deleverageNeeded, "deleverageNeeded");
+        assertFalse(positionManagerNeedKeep, "rebalanceUpNeeded");
         vm.startPrank(forwarder);
         strategy.performUpkeep(performData);
         _fullExcuteOrder();
-        uint256 strategyBalanceAfter = IERC20(asset).balanceOf(address(strategy));
-        assertTrue(strategyBalanceAfter < strategyBalanceBefore);
-        console.log("resultedLeverage", positionManager.currentLeverage());
+        uint256 vaultBalanceAfter = IERC20(asset).balanceOf(address(strategy));
+        assertTrue(vaultBalanceAfter < vaultBalanceBefore);
     }
 
     function test_performUpkeep_hedgeDeviation_down() public afterMultipleWithdrawRequestCreated validateFinalState {
@@ -932,9 +922,8 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
             int256 hedgeDeviationInTokens,
             bool positionManagerNeedKeep,
             bool decreaseCollateral,
-            bool rebalanceUpNeeded,
-            uint256 deltaCollateralToDecrease
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
+            bool rebalanceUpNeeded
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertFalse(deleverageNeeded, "deleverageNeeded");
@@ -957,9 +946,8 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
             int256 hedgeDeviationInTokens,
             bool positionManagerNeedKeep,
             bool decreaseCollateral,
-            bool rebalanceUpNeeded,
-            uint256 deltaCollateralToDecrease
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
+            bool rebalanceUpNeeded
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertFalse(deleverageNeeded, "deleverageNeeded");
@@ -974,14 +962,14 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         _deposit(user1, TEN_THOUSANDS_USDC);
         (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
         _utilize(pendingUtilizationInAsset);
-        uint256 redeemShares1 = strategy.balanceOf(user1);
+        uint256 redeemShares1 = vault.balanceOf(user1);
         vm.startPrank(user1);
-        strategy.redeem(redeemShares1, user1, user1);
+        vault.redeem(redeemShares1, user1, user1);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         uint256 amount = pendingDeutilization * 9 / 10;
         vm.startPrank(operator);
-        strategy.deutilize(amount, DataTypes.SwapType.MANUAL, "");
+        strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
 
         _fullExcuteOrder();
 
@@ -993,9 +981,8 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
             int256 hedgeDeviationInTokens,
             bool positionManagerNeedKeep,
             bool decreaseCollateral,
-            bool rebalanceUpNeeded,
-            uint256 deltaCollateralToDecrease
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool, uint256));
+            bool rebalanceUpNeeded
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
 
         assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertFalse(deleverageNeeded, "deleverageNeeded");
@@ -1030,12 +1017,12 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
 
         assertEq(IERC20(asset).balanceOf(address(positionManager)), 0);
         assertEq(IERC20(product).balanceOf(address(strategy)), 0);
-        assertApproxEqRel(IERC20(asset).balanceOf(address(strategy)), TEN_THOUSANDS_USDC, 0.9999 ether);
+        assertApproxEqRel(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC, 0.9999 ether);
     }
 
     function test_afterAdjustPosition_revert_whenDeutilizing() public afterWithdrawRequestCreated {
         uint256 productBefore = IERC20(product).balanceOf(address(strategy));
-        uint256 assetsToWithdrawBefore = IERC20(asset).balanceOf(address(strategy));
+        uint256 assetsToWithdrawBefore = IERC20(asset).balanceOf(address(vault));
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         // bytes memory data = _generateInchCallData(product, asset, pendingDeutilization, address(strategy));
         vm.startPrank(operator);
@@ -1050,7 +1037,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertFalse(vault.isClaimable(requestKey));
 
         uint256 productAfter = IERC20(product).balanceOf(address(strategy));
-        uint256 assetsToWithdrawAfter = IERC20(asset).balanceOf(address(strategy));
+        uint256 assetsToWithdrawAfter = IERC20(asset).balanceOf(address(vault));
 
         assertEq(assetsToWithdrawAfter, assetsToWithdrawBefore);
         assertApproxEqRel(productAfter, productBefore, 0.9999 ether);
