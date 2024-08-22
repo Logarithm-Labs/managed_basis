@@ -118,6 +118,16 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable
         $.vaultDepositLimit = vaultDepositLimit;
     }
 
+    function setEntryCost(uint256 _entryCost) external onlyOwner {
+        require(_entryCost < 1 ether);
+        _getLogarithmVaultStorage().entryCost = _entryCost;
+    }
+
+    function setExitCost(uint256 _exitCost) external onlyOwner {
+        require(_exitCost < 1 ether);
+        _getLogarithmVaultStorage().exitCost = _exitCost;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         PUBLIC FUNCTIONS   
     //////////////////////////////////////////////////////////////*/
