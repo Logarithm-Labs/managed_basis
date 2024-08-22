@@ -101,6 +101,13 @@ library GmxV2Lib {
         uint256 collateralDeltaAmount
     ) external view returns (DecreasePositionResult memory result) {
         Position.Props memory position = _getPosition(params);
+
+        if (sizeDeltaInTokens == type(uint256).max) {
+            // in case when requesting full close
+            result.sizeDeltaUsdToDecrease = position.numbers.sizeInUsd;
+            return result;
+        }
+
         uint256 collateralTokenPrice = IOracle(oracle).getAssetPrice(position.addresses.collateralToken);
         Price.Props memory indexTokenPrice = _getPrice(oracle, params.market.indexToken);
         (int256 totalPositionPnlUsd,,) = _getPositionPnl(params, oracle, position.numbers.sizeInUsd);

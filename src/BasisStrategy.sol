@@ -408,7 +408,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         $.pendingDeutilizedAssets = amountOut;
 
         uint256 collateralDeltaAmount;
-        if (!_processingRebalanceDown) {
+        if (IERC20(_product).balanceOf(address(this)) == 0) {
+            // close hedge position
+            amount = type(uint256).max;
+        } else if (!_processingRebalanceDown) {
             if (amount == pendingDeutilization_) {
                 int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
                 collateralDeltaAmount = totalPendingWithdraw > 0 ? uint256(totalPendingWithdraw) : 0;
@@ -749,6 +752,11 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         ILogarithmVault _vault = $.vault;
         address _asset = address($.asset);
 
+        if (requestParams.sizeDeltaInTokens == type(uint256).max) {
+            // when closing hedge
+            requestParams.sizeDeltaInTokens = responseParams.sizeDeltaInTokens;
+        }
+
         if (requestParams.sizeDeltaInTokens > 0) {
             uint256 _pendingDeutilizedAssets = $.pendingDeutilizedAssets;
             delete $.pendingDeutilizedAssets;
@@ -779,14 +787,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 _vault.processPendingWithdrawRequests();
             } else {
                 // process withdraw request
-                uint256 assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
-                IERC20(_asset).safeTransfer(address(_vault), assetsToWithdraw);
-                uint256 processedAssets = _vault.processPendingWithdrawRequests();
-                // collect assets back to strategy except the processed assets
-                (, uint256 collectingAssets) = assetsToWithdraw.trySub(processedAssets);
-                if (collectingAssets > 0) {
-                    IERC20(_asset).safeTransferFrom(address(_vault), address(this), collectingAssets);
-                }
+                _processAssetsToWithdraw(_asset, _vault);
             }
 
             (, bool rebalanceDownNeeded) = _checkNeedRebalance(
@@ -809,15 +810,20 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 IERC20(_asset).safeTransferFrom(
                     address($.positionManager), address(this), responseParams.collateralDeltaAmount
                 );
-                uint256 assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
-                IERC20(_asset).safeTransfer(address(_vault), assetsToWithdraw);
-                uint256 processedAssets = _vault.processPendingWithdrawRequests();
-                // collect assets back to strategy except the processed assets
-                (, uint256 collectingAssets) = assetsToWithdraw.trySub(processedAssets);
-                if (collectingAssets > 0) {
-                    IERC20(_asset).safeTransferFrom(address(_vault), address(this), collectingAssets);
-                }
+                _processAssetsToWithdraw(_asset, _vault);
             }
+        }
+    }
+
+    /// @dev process assetsToWithdraw for the withdraw requests
+    function _processAssetsToWithdraw(address _asset, ILogarithmVault _vault) private {
+        uint256 assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
+        IERC20(_asset).safeTransfer(address(_vault), assetsToWithdraw);
+        uint256 processedAssets = _vault.processPendingWithdrawRequests();
+        // collect assets back to strategy except the processed assets
+        (, uint256 collectingAssets) = assetsToWithdraw.trySub(processedAssets);
+        if (collectingAssets > 0) {
+            IERC20(_asset).safeTransferFrom(address(_vault), address(this), collectingAssets);
         }
     }
 
