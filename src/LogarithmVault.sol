@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -15,9 +16,9 @@ import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
-/// @title A basis vault
+/// @title A logarithm vault
 /// @author Logarithm Labs
-contract LogarithmVault is Initializable, ERC4626Upgradeable {
+contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -72,25 +73,41 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable {
     //////////////////////////////////////////////////////////////*/
 
     function initialize(
-        address preComputedStrategyAddress,
+        address owner,
         address asset_,
         uint256 entryCost_,
         uint256 exitCost_,
         string calldata name_,
         string calldata symbol_
     ) external initializer {
+        __Ownable_init(owner);
         __ERC20_init_unchained(name_, symbol_);
         __ERC4626_init_unchained(IERC20(asset_));
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-
-        require(preComputedStrategyAddress != address(0));
-        $.strategy = IBasisStrategy(preComputedStrategyAddress);
-        IERC20(asset_).approve(preComputedStrategyAddress, type(uint256).max);
 
         require(entryCost_ < 1 ether && exitCost_ < 1 ether);
         $.entryCost = entryCost_;
         $.exitCost = exitCost_;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        ADMIN FUNCTIONS   
+    //////////////////////////////////////////////////////////////*/
+
+    function setStrategy(address _strategy) external onlyOwner {
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+
+        address prevStrategy = $.strategy;
+        if (prevStrategy != address(0)) IERC20(asset_).approve(prevStrategy, 0);
+
+        require(_strategy != address(0));
+        $.strategy = IBasisStrategy(_strategy);
+        IERC20(asset_).approve(_strategy, type(uint256).max);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        PUBLIC FUNCTIONS   
+    //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ERC4626Upgradeable
     function maxDeposit(address receiver) public view virtual override returns (uint256 allowed) {
