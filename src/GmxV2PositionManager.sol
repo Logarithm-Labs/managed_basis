@@ -643,11 +643,15 @@ contract GmxV2PositionManager is
             _getGmxV2PositionManagerStorage().sizeInTokensBefore = 0;
         }
         uint256 decreasingCollateralDeltaAmount = _getGmxV2PositionManagerStorage().decreasingCollateralDeltaAmount;
-        if (decreasingCollateralDeltaAmount > 0) {
+
+        if (sizeInTokensAfter == 0) {
             uint256 idleCollateralAmount = IERC20(collateralToken()).balanceOf(address(this));
-            callbackParams.collateralDeltaAmount = (
-                sizeInTokensAfter == 0 || idleCollateralAmount < decreasingCollateralDeltaAmount
-            ) ? idleCollateralAmount : decreasingCollateralDeltaAmount;
+            callbackParams.collateralDeltaAmount = idleCollateralAmount;
+        } else if (decreasingCollateralDeltaAmount > 0) {
+            uint256 idleCollateralAmount = IERC20(collateralToken()).balanceOf(address(this));
+            callbackParams.collateralDeltaAmount = (idleCollateralAmount < decreasingCollateralDeltaAmount)
+                ? idleCollateralAmount
+                : decreasingCollateralDeltaAmount;
             _getGmxV2PositionManagerStorage().decreasingCollateralDeltaAmount = 0;
         }
         IBasisStrategy(strategy()).afterAdjustPosition(callbackParams);
