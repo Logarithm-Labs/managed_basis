@@ -80,6 +80,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     struct BasisStrategyStorage {
         // addresses
         IERC20 product;
+        IERC20 asset;
         ILogarithmVault vault;
         IPositionManager positionManager;
         IOracle oracle;
@@ -176,6 +177,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         $.product = IERC20(_product);
+        $.asset = IERC20(_asset);
         $.vault = ILogarithmVault(_vault);
         $.oracle = IOracle(_oracle);
         $.operator = _operator;
@@ -281,7 +283,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
 
         ILogarithmVault _vault = $.vault;
-        address _asset = _vault.asset();
+        address _asset = address($.asset);
         address _product = address($.product);
 
         uint256 idleAssets = _vault.idleAssets();
@@ -358,7 +360,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         bool _processingRebalanceDown = $.processingRebalanceDown;
         ILogarithmVault _vault = $.vault;
         IPositionManager _positionManager = $.positionManager;
-        address _asset = _vault.asset();
+        address _asset = address($.asset);
         address _product = address($.product);
         uint256 totalSupply = _vault.totalSupply();
 
@@ -444,7 +446,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         ILogarithmVault _vault = $.vault;
-        address _asset = _vault.asset();
+        address _asset = address($.asset);
         uint256 idleAssets = _vault.idleAssets();
         uint256 currentLeverage = $.positionManager.currentLeverage();
 
@@ -500,7 +502,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             $.pendingDecreaseCollateral = 0;
             IPositionManager _positionManager = $.positionManager;
             ILogarithmVault _vault = $.vault;
-            address _asset = _vault.asset();
+            address _asset = address($.asset);
             uint256 idleAssets = _vault.idleAssets();
             uint256 currentLeverage = _positionManager.currentLeverage();
             uint256 targetLeverage = $.targetLeverage;
@@ -631,7 +633,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         IPositionManager _positionManager = $.positionManager;
         ILogarithmVault _vault = $.vault;
-        address _asset = _vault.asset();
+        address _asset = address($.asset);
         address _product = address($.product);
         uint256 idleAssets = _vault.idleAssets();
         bool _processingRebalanceDown = $.processingRebalanceDown;
@@ -662,7 +664,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         returns (bool)
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        address _asset = $.vault.asset();
+        address _asset = address($.asset);
         address _product = address($.product);
         if (isIncrease && collateralDeltaAmount > 0) {
             IERC20(_asset).safeTransferFrom(address($.vault), address($.positionManager), collateralDeltaAmount);
@@ -718,7 +720,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     // revert spot to make hedge size the same as spot
                     uint256 amountOut =
                         ManualSwapLogic.swap(uint256(-sizeDeltaDeviationInTokens), $.productToAssetSwapPath);
-                    IERC20(_vault.asset()).safeTransfer(address(_vault), amountOut);
+                    IERC20($.asset).safeTransfer(address(_vault), amountOut);
                 }
             }
         }
@@ -728,9 +730,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         if (revertCollateralDeltaAmount > 0) {
             ILogarithmVault _vault = $.vault;
-            IERC20(_vault.asset()).safeTransferFrom(
-                address($.positionManager), address(_vault), revertCollateralDeltaAmount
-            );
+            IERC20($.asset).safeTransferFrom(address($.positionManager), address(_vault), revertCollateralDeltaAmount);
         }
 
         (, bool rebalanceDownNeeded) =
@@ -747,7 +747,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
         bool _processingRebalanceDown = $.processingRebalanceDown;
         ILogarithmVault _vault = $.vault;
-        address _asset = _vault.asset();
+        address _asset = address($.asset);
 
         if (requestParams.sizeDeltaInTokens > 0) {
             uint256 _pendingDeutilizedAssets = $.pendingDeutilizedAssets;
@@ -1094,7 +1094,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     }
 
     function asset() external view returns (address) {
-        return address(_getBasisStrategyStorage().vault.asset());
+        return address(_getBasisStrategyStorage().asset);
     }
 
     function product() external view returns (address) {
