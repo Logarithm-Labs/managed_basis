@@ -179,19 +179,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         $.vault = ILogarithmVault(_vault);
         $.oracle = IOracle(_oracle);
         $.operator = _operator;
-
-        if (_targetLeverage == 0) revert();
-        $.targetLeverage = _targetLeverage;
-        if (_minLeverage >= _targetLeverage) revert();
-        $.minLeverage = _minLeverage;
-        if (_maxLeverage <= _targetLeverage) revert();
-        $.maxLeverage = _maxLeverage;
-        if (_safeMarginLeverage <= _maxLeverage) revert();
-        $.safeMarginLeverage = _safeMarginLeverage;
-
         $.hedgeDeviationThreshold = 1e16; // 1%
         $.rebalanceDeviationThreshold = 1e16; // 1%
         _setManualSwapPath(_assetToProductSwapPath, _asset, _product);
+        _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
     }
 
     function _setManualSwapPath(address[] calldata _assetToProductSwapPath, address _asset, address _product) private {
@@ -225,8 +216,26 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         $.productToAssetSwapPath = _productToAssetSwapPath;
     }
 
+    function _setLeverages(
+        uint256 _targetLeverage,
+        uint256 _minLeverage,
+        uint256 _maxLeverage,
+        uint256 _safeMarginLeverage
+    ) private {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+
+        if (_targetLeverage == 0) revert();
+        $.targetLeverage = _targetLeverage;
+        if (_minLeverage >= _targetLeverage) revert();
+        $.minLeverage = _minLeverage;
+        if (_maxLeverage <= _targetLeverage) revert();
+        $.maxLeverage = _maxLeverage;
+        if (_safeMarginLeverage <= _maxLeverage) revert();
+        $.safeMarginLeverage = _safeMarginLeverage;
+    }
+
     /*//////////////////////////////////////////////////////////////
-                        CONFIGURATION   
+                        ADMIN FUNCTIONS   
     //////////////////////////////////////////////////////////////*/
 
     function setPositionManager(address _positionManager) external onlyOwner {
@@ -241,6 +250,15 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             revert Errors.ZeroAddress();
         }
         _getBasisStrategyStorage().forwarder = _forwarder;
+    }
+
+    function setLeverages(
+        uint256 _targetLeverage,
+        uint256 _minLeverage,
+        uint256 _maxLeverage,
+        uint256 _safeMarginLeverage
+    ) external onlyOwner {
+        _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
     }
 
     /*//////////////////////////////////////////////////////////////
