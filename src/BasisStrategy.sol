@@ -399,7 +399,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     (min,) = _positionManager.decreaseCollateralMinMax();
                     if (collateralDeltaAmount < min) collateralDeltaAmount = min;
                 }
-                $.pendingDecreaseCollateral = collateralDeltaAmount;
+                // pendingDecreaseCollateral is used when partial deutilizing
+                // when full deutilization, we don't need
+                $.pendingDecreaseCollateral = 0;
             } else {
                 uint256 positionNetBalance = _positionManager.positionNetBalance();
                 (, positionNetBalance) = positionNetBalance.trySub($.pendingDecreaseCollateral);
