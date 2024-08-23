@@ -425,6 +425,16 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                             KEEPER LOGIC   
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice anyone can call this to process
+    /// asset balance of this contract for the pending withdrawals
+    /// Note: has effect only when idle
+    function processAssetsToWithdraw() public {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        if ($.strategyStatus == StrategyStatus.IDLE) {
+            _processAssetsToWithdraw(address($.asset), $.vault);
+        }
+    }
+
     function checkUpkeep(bytes memory) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
