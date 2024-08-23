@@ -298,10 +298,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         amount = amount > pendingUtilization ? pendingUtilization : amount;
 
         (uint256 min, uint256 max) = $.positionManager.increaseSizeMinMax();
-        (min, max) = (
-            min == 0 ? 0 : $.oracle.convertTokenAmount(_asset, _product, min),
-            max == type(uint256).max ? type(uint256).max : $.oracle.convertTokenAmount(_asset, _product, max)
-        );
         amount = _clamp(min, amount, max);
 
         // can only utilize when amount is positive
@@ -377,10 +373,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         amount = amount > pendingDeutilization_ ? pendingDeutilization_ : amount;
 
         (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
-        (min, max) = (
-            min == 0 ? 0 : $.oracle.convertTokenAmount(_asset, _product, min),
-            max == type(uint256).max ? type(uint256).max : $.oracle.convertTokenAmount(_asset, _product, max)
-        );
         amount = _clamp(min, amount, max);
 
         // can only deutilize when amount is positive
@@ -524,11 +516,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     })
                 );
                 (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
-                (min, max) = (
-                    min == 0 ? 0 : $.oracle.convertTokenAmount(_asset, _product, min),
-                    max == type(uint256).max ? type(uint256).max : $.oracle.convertTokenAmount(_asset, _product, max)
-                );
-
                 // @issue amount can be 0 because of clamping that breaks emergency rebalance down
                 amount = _clamp(min, amount, max);
                 if (amount > 0) {
@@ -1044,17 +1031,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             int256 hedgeDeviationInTokens = hedgeExposure.toInt256() - spotExposure.toInt256();
             if (hedgeDeviationInTokens > 0) {
                 (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
-                (min, max) = (
-                    min == 0 ? 0 : _oracle.convertTokenAmount(_asset, _product, min),
-                    max == type(uint256).max ? type(uint256).max : _oracle.convertTokenAmount(_asset, _product, max)
-                );
                 return int256(_clamp(min, uint256(hedgeDeviationInTokens), max));
             } else {
                 (uint256 min, uint256 max) = _positionManager.increaseSizeMinMax();
-                (min, max) = (
-                    min == 0 ? 0 : _oracle.convertTokenAmount(_asset, _product, min),
-                    max == type(uint256).max ? type(uint256).max : _oracle.convertTokenAmount(_asset, _product, max)
-                );
                 return -int256(_clamp(min, uint256(-hedgeDeviationInTokens), max));
             }
         }

@@ -469,7 +469,19 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
 
     function increaseSizeMinMax() external view returns (uint256 min, uint256 max) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        return ($.increaseSizeMinMax[0], $.increaseSizeMinMax[1]);
+        address asset = $.collateralToken;
+        address product = $.indexToken;
+        IOracle _oracle = IOracle($.oracle);
+
+        min = $.increaseSizeMinMax[0];
+        max = $.increaseSizeMinMax[1];
+
+        (min, max) = (
+            min == 0 ? 0 : _oracle.convertTokenAmount(asset, product, min),
+            max == type(uint256).max ? type(uint256).max : _oracle.convertTokenAmount(asset, product, max)
+        );
+
+        return (min, max);
     }
 
     function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
@@ -479,7 +491,20 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
 
     function decreaseSizeMinMax() external view returns (uint256 min, uint256 max) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        return ($.decreaseSizeMinMax[0], $.decreaseSizeMinMax[1]);
+
+        address asset = $.collateralToken;
+        address product = $.indexToken;
+        IOracle _oracle = IOracle($.oracle);
+
+        min = $.decreaseSizeMinMax[0];
+        max = $.decreaseSizeMinMax[1];
+
+        (min, max) = (
+            min == 0 ? 0 : _oracle.convertTokenAmount(asset, product, min),
+            max == type(uint256).max ? type(uint256).max : _oracle.convertTokenAmount(asset, product, max)
+        );
+
+        return (min, max);
     }
 
     function limitDecreaseCollateral() external view returns (uint256) {
