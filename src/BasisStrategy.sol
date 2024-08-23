@@ -720,7 +720,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         (, uint256 revertCollateralDeltaAmount) =
             requestParams.collateralDeltaAmount.trySub(responseParams.collateralDeltaAmount);
 
-        if (revertCollateralDeltaAmount > 0) {
+        if (
+            revertCollateralDeltaAmount.mulDiv(Constants.FLOAT_PRECISION, requestParams.collateralDeltaAmount)
+                > $.hedgeDeviationThreshold
+        ) {
             IERC20($.asset).safeTransferFrom(address($.positionManager), address($.vault), revertCollateralDeltaAmount);
         }
 
