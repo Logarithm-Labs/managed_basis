@@ -779,9 +779,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 // release deutilized asset to idle when rebalance down
                 IERC20(_asset).safeTransfer(address(_vault), _pendingDeutilizedAssets);
                 _vault.processPendingWithdrawRequests();
-            } else {
-                // process withdraw request
-                _processAssetsToWithdraw(_asset, _vault);
             }
 
             (, bool rebalanceDownNeeded) = _checkNeedRebalance(
@@ -795,7 +792,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             // the case when deutilizing for withdrawls and rebalancing Up
             (, $.pendingDecreaseCollateral) = $.pendingDecreaseCollateral.trySub(responseParams.collateralDeltaAmount);
             if (status == StrategyStatus.KEEPING) {
-                // release deutilized asset to idle when rebalance down
+                // release deutilized asset to idle when rebalance up
                 IERC20(_asset).safeTransferFrom(
                     address($.positionManager), address(_vault), responseParams.collateralDeltaAmount
                 );
@@ -804,9 +801,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 IERC20(_asset).safeTransferFrom(
                     address($.positionManager), address(this), responseParams.collateralDeltaAmount
                 );
-                _processAssetsToWithdraw(_asset, _vault);
             }
         }
+        // process withdraw request
+        _processAssetsToWithdraw(_asset, _vault);
     }
 
     /// @dev process assetsToWithdraw for the withdraw requests
