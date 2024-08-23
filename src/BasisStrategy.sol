@@ -123,8 +123,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event UpdatePendingUtilization();
-
     event Utilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
 
     event Deutilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
@@ -605,8 +603,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
 
         $.strategyStatus = StrategyStatus.IDLE;
-
-        emit UpdatePendingUtilization();
 
         emit UpdateStrategyStatus(StrategyStatus.IDLE);
 
