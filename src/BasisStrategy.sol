@@ -51,28 +51,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         bool processingRebalanceDown;
     }
 
-    struct InternalCheckUpkeep {
-        IOracle oracle;
-        IPositionManager positionManager;
-        address asset;
-        address product;
-        StrategyStatus status;
-        bool processingRebalanceDown;
-        Leverages leverages;
-        uint256 idleAssets;
-        uint256 pendingDecreaseCollateral;
-        uint256 hedgeDeviationThreshold;
-        uint256 rebalanceDeviationThreshold;
-    }
-
-    struct Leverages {
-        uint256 currentLeverage;
-        uint256 targetLeverage;
-        uint256 minLeverage;
-        uint256 maxLeverage;
-        uint256 safeMarginLeverage;
-    }
-
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -450,31 +428,58 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     function checkUpkeep(bytes memory) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
-        ILogarithmVault _vault = $.vault;
-        address _asset = address($.asset);
-        uint256 idleAssets = _vault.idleAssets();
-        uint256 currentLeverage = $.positionManager.currentLeverage();
+        if ($.strategyStatus != StrategyStatus.IDLE) {
+            return (upkeepNeeded, performData);
+        }
 
-        (upkeepNeeded, performData) = _checkUpkeep(
-            InternalCheckUpkeep({
-                oracle: $.oracle,
-                positionManager: $.positionManager,
-                asset: _asset,
-                product: address($.product),
-                status: $.strategyStatus,
-                processingRebalanceDown: $.processingRebalanceDown,
-                leverages: Leverages({
-                    currentLeverage: currentLeverage,
-                    targetLeverage: $.targetLeverage,
-                    minLeverage: $.minLeverage,
-                    maxLeverage: $.maxLeverage,
-                    safeMarginLeverage: $.safeMarginLeverage
-                }),
-                pendingDecreaseCollateral: $.pendingDecreaseCollateral,
-                idleAssets: idleAssets,
-                hedgeDeviationThreshold: $.hedgeDeviationThreshold,
-                rebalanceDeviationThreshold: $.rebalanceDeviationThreshold
-            })
+        ILogarithmVault _vault = $.vault;
+        IPositionManager _positionManager = $.positionManager;
+        uint256 idleAssets = _vault.idleAssets();
+        uint256 currentLeverage = _positionManager.currentLeverage();
+
+        int256 hedgeDeviationInTokens;
+        bool positionManagerNeedKeep;
+
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) =
+            _checkRebalance(currentLeverage, $.minLeverage, $.maxLeverage, $.safeMarginLeverage);
+
+        if (!rebalanceDownNeeded && $.processingRebalanceDown) {
+            (, rebalanceDownNeeded) =
+                _checkNeedRebalance(currentLeverage, $.targetLeverage, $.rebalanceDeviationThreshold);
+        }
+
+        if (rebalanceUpNeeded) {
+            uint256 deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
+                _positionManager.positionNetBalance(), currentLeverage, $.targetLeverage
+            );
+            uint256 limitDecreaseCollateral = _positionManager.limitDecreaseCollateral();
+            rebalanceUpNeeded = deltaCollateralToDecrease >= limitDecreaseCollateral;
+        }
+
+        if (rebalanceDownNeeded && $.processingRebalanceDown && !deleverageNeeded) {
+            (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
+            rebalanceDownNeeded = idleAssets != 0 && idleAssets >= minIncreaseCollateral;
+        }
+
+        if (rebalanceDownNeeded) {
+            upkeepNeeded = true;
+        } else {
+            hedgeDeviationInTokens =
+                _checkHedgeDeviation(_positionManager, address($.product), $.hedgeDeviationThreshold);
+            if (hedgeDeviationInTokens != 0) {
+                upkeepNeeded = true;
+            } else {
+                positionManagerNeedKeep = _positionManager.needKeep();
+                if (positionManagerNeedKeep) {
+                    upkeepNeeded = true;
+                } else if (rebalanceUpNeeded) {
+                    upkeepNeeded = true;
+                }
+            }
+        }
+
+        performData = abi.encode(
+            rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep, rebalanceUpNeeded
         );
 
         return (upkeepNeeded, performData);
@@ -816,66 +821,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
     }
 
-    function _checkUpkeep(InternalCheckUpkeep memory params)
-        private
-        view
-        returns (bool upkeepNeeded, bytes memory performData)
-    {
-        if (params.status != StrategyStatus.IDLE) {
-            return (upkeepNeeded, performData);
-        }
-
-        int256 hedgeDeviationInTokens;
-        bool positionManagerNeedKeep;
-
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) = _checkRebalance(params.leverages);
-
-        if (!rebalanceDownNeeded && params.processingRebalanceDown) {
-            (, rebalanceDownNeeded) = _checkNeedRebalance(
-                params.leverages.currentLeverage, params.leverages.targetLeverage, params.rebalanceDeviationThreshold
-            );
-        }
-
-        if (rebalanceUpNeeded) {
-            uint256 deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
-                params.positionManager.positionNetBalance(),
-                params.leverages.currentLeverage,
-                params.leverages.targetLeverage
-            );
-            uint256 limitDecreaseCollateral = params.positionManager.limitDecreaseCollateral();
-            rebalanceUpNeeded = deltaCollateralToDecrease >= limitDecreaseCollateral;
-        }
-
-        if (rebalanceDownNeeded && params.processingRebalanceDown && !deleverageNeeded) {
-            (uint256 minIncreaseCollateral,) = params.positionManager.increaseCollateralMinMax();
-            rebalanceDownNeeded = params.idleAssets != 0 && params.idleAssets >= minIncreaseCollateral;
-        }
-
-        if (rebalanceDownNeeded) {
-            upkeepNeeded = true;
-        } else {
-            hedgeDeviationInTokens = _checkHedgeDeviation(
-                params.oracle, params.positionManager, params.asset, params.product, params.hedgeDeviationThreshold
-            );
-            if (hedgeDeviationInTokens != 0) {
-                upkeepNeeded = true;
-            } else {
-                positionManagerNeedKeep = params.positionManager.needKeep();
-                if (positionManagerNeedKeep) {
-                    upkeepNeeded = true;
-                } else if (rebalanceUpNeeded) {
-                    upkeepNeeded = true;
-                }
-            }
-        }
-
-        performData = abi.encode(
-            rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep, rebalanceUpNeeded
-        );
-
-        return (upkeepNeeded, performData);
-    }
-
     function _pendingUtilization(uint256 idleAssets, uint256 _targetLeverage, bool _processingRebalanceDown)
         public
         pure
@@ -910,6 +855,22 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 deutilization = positionSizeInTokens - positionSizeInTokens.mulDiv(_targeLeverage, currentLeverage);
             }
         } else {
+            // the following equations are guaranteed when deutilizing to withdraw
+            // pendingDeutilizationInAsset + collateralDeltaToDecrease = totalPendingWithdraw
+            // collateralDeltaToDecrease = positionNetBalance * pendingDeutilization / positionSizeInTokens
+            // pendingDeutilizationInAsset + positionNetBalance * pendingDeutilization / positionSizeInTokens = totalPendingWithdraw
+            // pendingDeutilizationInAsset = pendingDeutilization * productPrice / assetPrice
+            // pendingDeutilization * productPrice / assetPrice + positionNetBalance * pendingDeutilization / positionSizeInTokens =
+            // = totalPendingWithdraw
+            // pendingDeutilization * (productPrice / assetPrice + positionNetBalance / positionSizeInTokens) = totalPendingWithdraw
+            // pendingDeutilization * (productPrice * positionSizeInTokens + assetPrice * positionNetBalance) /
+            // / (assetPrice * positionSizeInTokens) = totalPendingWithdraw
+            // pendingDeutilization * (positionSizeUsd + positionNetBalanceUsd) / (assetPrice * positionSizeInTokens) = totalPendingWithdraw
+            // pendingDeutilization = totalPendingWithdraw * assetPrice * positionSizeInTokens / (positionSizeUsd + positionNetBalanceUsd)
+            // pendingDeutilization = positionSizeInTokens * totalPendingWithdrawUsd / (positionSizeUsd + positionNetBalanceUsd)
+            // pendingDeutilization = positionSizeInTokens *
+            // * (totalPendingWithdrawUsd/assetPrice) / (positionSizeUsd/assetPrice + positionNetBalanceUsd/assetPrice)
+            // pendingDeutilization = positionSizeInTokens * totalPendingWithdraw / (positionSizeInAssets + positionNetBalance)
             uint256 positionSizeInAssets =
                 $.oracle.convertTokenAmount(params.product, params.asset, positionSizeInTokens);
             uint256 positionNetBalance = params.positionManager.positionNetBalance();
@@ -975,37 +936,34 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         return (rebalanceUpNeeded, rebalanceDownNeeded);
     }
 
-    function _checkRebalance(Leverages memory leverages)
-        internal
-        pure
-        returns (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded)
-    {
-        if (leverages.currentLeverage > leverages.maxLeverage) {
+    function _checkRebalance(
+        uint256 currentLeverage,
+        uint256 _minLeverage,
+        uint256 _maxLeverage,
+        uint256 _safeMarginLeverage
+    ) internal pure returns (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) {
+        if (currentLeverage > _maxLeverage) {
             rebalanceDownNeeded = true;
-            if (leverages.currentLeverage > leverages.safeMarginLeverage) {
+            if (currentLeverage > _safeMarginLeverage) {
                 deleverageNeeded = true;
             }
         }
 
-        if (leverages.currentLeverage != 0 && leverages.currentLeverage < leverages.minLeverage) {
+        if (currentLeverage != 0 && currentLeverage < _minLeverage) {
             rebalanceUpNeeded = true;
         }
     }
 
-    /// @param _oracle IOracle
     /// @param _positionManager IPositionManager
-    /// @param _asset address
     /// @param _product address
     /// @param _hedgeDeviationThreshold uint256
     ///
     /// @return hedge deviation of int type
-    function _checkHedgeDeviation(
-        IOracle _oracle,
-        IPositionManager _positionManager,
-        address _asset,
-        address _product,
-        uint256 _hedgeDeviationThreshold
-    ) internal view returns (int256) {
+    function _checkHedgeDeviation(IPositionManager _positionManager, address _product, uint256 _hedgeDeviationThreshold)
+        internal
+        view
+        returns (int256)
+    {
         uint256 spotExposure = IERC20(_product).balanceOf(address(this));
         uint256 hedgeExposure = _positionManager.positionSizeInTokens();
         if (spotExposure == 0) {
