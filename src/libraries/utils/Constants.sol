@@ -3,7 +3,4 @@ pragma solidity ^0.8.0;
 
 library Constants {
     uint256 internal constant FLOAT_PRECISION = 1e18;
-    uint8 internal constant DECIMAL_OFFSET = 2;
-    uint256 internal constant REBALANCE_LEVERAGE_DEVIATION_THRESHOLD = 0.01 ether;
-    uint256 internal constant SIZE_DELTA_DEVIATION_THRESHOLD = 0.01 ether;
 }
