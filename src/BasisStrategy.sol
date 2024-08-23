@@ -730,8 +730,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             requestParams.collateralDeltaAmount.trySub(responseParams.collateralDeltaAmount);
 
         if (revertCollateralDeltaAmount > 0) {
-            ILogarithmVault _vault = $.vault;
-            IERC20($.asset).safeTransferFrom(address($.positionManager), address(_vault), revertCollateralDeltaAmount);
+            IERC20($.asset).safeTransferFrom(address($.positionManager), address($.vault), revertCollateralDeltaAmount);
         }
 
         (, bool rebalanceDownNeeded) =
@@ -762,7 +761,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, $.hedgeDeviationThreshold
             );
             if (isWrongPositionSize) {
-                // status = StrategyStatus.PAUSE;
                 if (sizeDeltaDeviationInTokens < 0) {
                     uint256 sizeDeltaDeviationInTokensAbs = uint256(-sizeDeltaDeviationInTokens);
                     uint256 assetsToBeReverted;
@@ -773,7 +771,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                             sizeDeltaDeviationInTokensAbs, requestParams.sizeDeltaInTokens
                         );
                     }
-
                     ManualSwapLogic.swap(assetsToBeReverted, $.assetToProductSwapPath);
                     _pendingDeutilizedAssets -= assetsToBeReverted;
                 }
