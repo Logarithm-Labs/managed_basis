@@ -47,6 +47,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         IPositionManager positionManager;
         address asset;
         address product;
+        uint256 totalSupply;
         bool processingRebalanceDown;
     }
 
@@ -318,7 +319,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         uint256 pendingIncreaseCollateral_ = _pendingIncreaseCollateral(idleAssets, _targetLeverage);
         uint256 collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization);
-        (min,) = $.positionManager.increaseCollateralMinMax();
+        (uint256 min,) = $.positionManager.increaseCollateralMinMax();
         if (collateralDeltaAmount < min || !_adjustPosition(amountOut, collateralDeltaAmount, true)) {
             // if increasing collateral is smaller than min
             // or if position adjustment request is failed
@@ -362,6 +363,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 positionManager: _positionManager,
                 asset: _asset,
                 product: _product,
+                totalSupply: totalSupply,
                 processingRebalanceDown: _processingRebalanceDown
             })
         );
@@ -398,6 +400,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 collateralDeltaAmount;
         if (!_processingRebalanceDown) {
             if (amount == pendingDeutilization_) {
+                // when full deutilizing
                 int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
                 collateralDeltaAmount = totalPendingWithdraw > 0 ? uint256(totalPendingWithdraw) : 0;
                 if (totalSupply != 0) {
@@ -407,20 +410,32 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     (min,) = _positionManager.decreaseCollateralMinMax();
                     if (collateralDeltaAmount < min) collateralDeltaAmount = min;
                 } else {
-                    // close hedge position
+                    // in case of redeeming all by users, close hedge position
                     amount = type(uint256).max;
                 }
                 // pendingDecreaseCollateral is used when partial deutilizing
                 // when full deutilization, we don't need
                 $.pendingDecreaseCollateral = 0;
             } else {
+                // when partial deutilizing
                 uint256 positionNetBalance = _positionManager.positionNetBalance();
-                (, positionNetBalance) = positionNetBalance.trySub($.pendingDecreaseCollateral);
+                uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
+                if (_pendingDecreaseCollateral > 0) {
+                    (, positionNetBalance) = positionNetBalance.trySub(_pendingDecreaseCollateral);
+                }
                 uint256 positionSizeInTokens = _positionManager.positionSizeInTokens();
                 uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
-                $.pendingDecreaseCollateral += collateralDeltaToDecrease;
+                collateralDeltaToDecrease += _pendingDecreaseCollateral;
+                uint256 limitDecreaseCollateral = _positionManager.limitDecreaseCollateral();
+                if (collateralDeltaToDecrease < limitDecreaseCollateral) {
+                    $.pendingDecreaseCollateral = collateralDeltaToDecrease;
+                } else {
+                    collateralDeltaAmount = collateralDeltaToDecrease;
+                }
             }
         }
+
+        // the return value of this operation should be true, due to above checks
         _adjustPosition(amount, collateralDeltaAmount, false);
 
         $.strategyStatus = StrategyStatus.DEUTILIZING;
@@ -508,6 +523,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                         positionManager: _positionManager,
                         asset: _asset,
                         product: _product,
+                        totalSupply: _vault.totalSupply(),
                         processingRebalanceDown: true
                     })
                 );
@@ -629,6 +645,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 positionManager: _positionManager,
                 asset: _asset,
                 product: _product,
+                totalSupply: _vault.totalSupply(),
                 processingRebalanceDown: _processingRebalanceDown
             })
         );
@@ -898,7 +915,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         uint256 productBalance = IERC20(params.product).balanceOf(address(this));
-        if ($.vault.totalSupply() == 0) return productBalance;
+        if (params.totalSupply == 0) return productBalance;
 
         uint256 positionSizeInTokens = params.positionManager.positionSizeInTokens();
         uint256 deutilization;
