@@ -400,10 +400,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         $.pendingDeutilizedAssets = amountOut;
 
         uint256 collateralDeltaAmount;
-        if (IERC20(_product).balanceOf(address(this)) == 0) {
-            // close hedge position
-            amount = type(uint256).max;
-        } else if (!_processingRebalanceDown) {
+        if (!_processingRebalanceDown) {
             if (amount == pendingDeutilization_) {
                 int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
                 collateralDeltaAmount = totalPendingWithdraw > 0 ? uint256(totalPendingWithdraw) : 0;
@@ -413,6 +410,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     // so if collateralDeltaAmount is smaller than min, then increase it by min
                     (min,) = _positionManager.decreaseCollateralMinMax();
                     if (collateralDeltaAmount < min) collateralDeltaAmount = min;
+                } else {
+                    // close hedge position
+                    amount = type(uint256).max;
                 }
                 // pendingDecreaseCollateral is used when partial deutilizing
                 // when full deutilization, we don't need
