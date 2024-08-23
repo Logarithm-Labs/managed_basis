@@ -326,7 +326,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             // then revert utilizing
             // this is because only increasing size without collateral resulted in
             // increasing the position's leverage
-            ManualSwapLogic.swap(amountOut, $.productToAssetSwapPath);
+            uint256 revertedAssets = ManualSwapLogic.swap(amountOut, $.productToAssetSwapPath);
+            IERC20(_asset).safeTransfer(address(_vault), revertedAssets);
             $.strategyStatus = StrategyStatus.IDLE;
         } else {
             $.strategyStatus = StrategyStatus.UTILIZING;
