@@ -47,12 +47,12 @@ contract DataProvider {
         address product = strategy.product();
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         (
-            bool rebalanceUpNeeded,
             bool rebalanceDownNeeded,
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep
-        ) = abi.decode(performData, (bool, bool, bool, int256, bool));
+            bool positionManagerNeedKeep,
+            bool rebalanceUpNeeded
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool));
 
         state.strategyStatus = uint8(strategy.strategyStatus());
         state.totalSupply = vault.totalSupply();

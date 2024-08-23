@@ -498,9 +498,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
             bool positionManagerNeedKeep,
-            bool decreaseCollateral,
             bool rebalanceUpNeeded
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool));
 
         $.strategyStatus = StrategyStatus.KEEPING;
 
@@ -511,19 +510,17 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             ILogarithmVault _vault = $.vault;
             address _asset = address($.asset);
             uint256 idleAssets = _vault.idleAssets();
-            uint256 currentLeverage = _positionManager.currentLeverage();
-            uint256 targetLeverage = $.targetLeverage;
-            uint256 deltaCollateralToIncrease =
-                _calculateDeltaCollateralForRebalance(_positionManager, currentLeverage, targetLeverage);
+            uint256 deltaCollateralToIncrease = _calculateDeltaCollateralForRebalance(
+                _positionManager.positionNetBalance(), _positionManager.currentLeverage(), $.targetLeverage
+            );
             (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
 
             if (deleverageNeeded && (deltaCollateralToIncrease > idleAssets || minIncreaseCollateral > idleAssets)) {
-                address _product = address($.product);
                 uint256 amount = _pendingDeutilization(
                     InternalPendingDeutilization({
                         positionManager: _positionManager,
                         asset: _asset,
-                        product: _product,
+                        product: address($.product),
                         totalSupply: _vault.totalSupply(),
                         processingRebalanceDown: true
                     })
@@ -554,12 +551,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             }
         } else if (positionManagerNeedKeep) {
             $.positionManager.keep();
-        } else if (decreaseCollateral) {
-            if (!_adjustPosition(0, $.pendingDecreaseCollateral, false)) $.strategyStatus = StrategyStatus.IDLE;
         } else if (rebalanceUpNeeded) {
             IPositionManager _positionManager = $.positionManager;
             uint256 deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
-                _positionManager, _positionManager.currentLeverage(), $.targetLeverage
+                _positionManager.positionNetBalance(), _positionManager.currentLeverage(), $.targetLeverage
             );
             if (!_adjustPosition(0, deltaCollateralToDecrease, false)) {
                 $.strategyStatus = StrategyStatus.IDLE;
@@ -833,7 +828,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         int256 hedgeDeviationInTokens;
         bool positionManagerNeedKeep;
-        bool decreaseCollateral;
 
         (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) = _checkRebalance(params.leverages);
 
@@ -845,10 +839,12 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         if (rebalanceUpNeeded) {
             uint256 deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
-                params.positionManager, params.leverages.currentLeverage, params.leverages.targetLeverage
+                params.positionManager.positionNetBalance(),
+                params.leverages.currentLeverage,
+                params.leverages.targetLeverage
             );
-            (uint256 minDecreaseCollateral,) = params.positionManager.decreaseCollateralMinMax();
-            rebalanceUpNeeded = deltaCollateralToDecrease >= minDecreaseCollateral;
+            uint256 limitDecreaseCollateral = params.positionManager.limitDecreaseCollateral();
+            rebalanceUpNeeded = deltaCollateralToDecrease >= limitDecreaseCollateral;
         }
 
         if (rebalanceDownNeeded && params.processingRebalanceDown && !deleverageNeeded) {
@@ -868,25 +864,14 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 positionManagerNeedKeep = params.positionManager.needKeep();
                 if (positionManagerNeedKeep) {
                     upkeepNeeded = true;
-                } else {
-                    (uint256 minDecreaseCollateral,) = params.positionManager.decreaseCollateralMinMax();
-                    if (params.pendingDecreaseCollateral > minDecreaseCollateral) {
-                        decreaseCollateral = true;
-                        upkeepNeeded = true;
-                    } else if (rebalanceUpNeeded) {
-                        upkeepNeeded = true;
-                    }
+                } else if (rebalanceUpNeeded) {
+                    upkeepNeeded = true;
                 }
             }
         }
 
         performData = abi.encode(
-            rebalanceDownNeeded,
-            deleverageNeeded,
-            hedgeDeviationInTokens,
-            positionManagerNeedKeep,
-            decreaseCollateral,
-            rebalanceUpNeeded
+            rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep, rebalanceUpNeeded
         );
 
         return (upkeepNeeded, performData);
@@ -1055,11 +1040,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     /// targetCollateral = notional / targetLeverage
     /// targetCollateral = collateral * currentLeverage  / targetLeverage
     function _calculateDeltaCollateralForRebalance(
-        IPositionManager _positionManager,
+        uint256 positionNetBalance,
         uint256 _currentLeverage,
         uint256 _targetLeverage
-    ) internal view returns (uint256) {
-        uint256 positionNetBalance = _positionManager.positionNetBalance();
+    ) internal pure returns (uint256) {
         uint256 targetCollateral = positionNetBalance.mulDiv(_currentLeverage, _targetLeverage);
         uint256 deltaCollateral;
         if (_currentLeverage > _targetLeverage) {
