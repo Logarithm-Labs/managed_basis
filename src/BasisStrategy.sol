@@ -283,13 +283,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
 
         ILogarithmVault _vault = $.vault;
-        address _asset = address($.asset);
-        address _product = address($.product);
-
         uint256 idleAssets = _vault.idleAssets();
+        address _asset = address($.asset);
         uint256 _targetLeverage = $.targetLeverage;
 
-        // actual utilize amount is min of amount, idle assets and pending utilization
         uint256 pendingUtilization = _pendingUtilization(idleAssets, _targetLeverage, $.processingRebalanceDown);
         if (pendingUtilization == 0) {
             revert Errors.ZeroPendingUtilization();
@@ -297,23 +294,19 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         amount = amount > pendingUtilization ? pendingUtilization : amount;
 
-        (uint256 min, uint256 max) = $.positionManager.increaseSizeMinMax();
-        amount = _clamp(min, amount, max);
-
         // can only utilize when amount is positive
         if (amount == 0) {
             revert Errors.ZeroAmountUtilization();
         }
 
         uint256 amountOut;
-        bool success;
         IERC20(_asset).safeTransferFrom(address(_vault), address(this), amount);
         if (swapType == SwapType.INCH_V6) {
-            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, _asset, _product, true, swapData);
+            bool success;
+            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, _asset, address($.product), true, swapData);
             if (!success) {
                 emit SwapFailed();
                 $.strategyStatus = StrategyStatus.IDLE;
-                emit UpdateStrategyStatus(StrategyStatus.IDLE);
                 return;
             }
         } else if (swapType == SwapType.MANUAL) {
@@ -324,18 +317,21 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
 
         uint256 pendingIncreaseCollateral_ = _pendingIncreaseCollateral(idleAssets, _targetLeverage);
-        uint256 collateralDeltaAmount;
-        if (pendingIncreaseCollateral_ > 0) {
-            collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization);
-            (min, max) = $.positionManager.increaseCollateralMinMax();
-            collateralDeltaAmount = _clamp(min, collateralDeltaAmount, max);
+        uint256 collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization);
+        (min,) = $.positionManager.increaseCollateralMinMax();
+        if (collateralDeltaAmount < min || !_adjustPosition(amountOut, collateralDeltaAmount, true)) {
+            // if increasing collateral is smaller than min
+            // or if position adjustment request is failed
+            // then revert utilizing
+            // this is because only increasing size without collateral resulted in
+            // increasing the position's leverage
+            ManualSwapLogic.swap(amountOut, $.productToAssetSwapPath);
+            $.strategyStatus = StrategyStatus.IDLE;
+        } else {
+            $.strategyStatus = StrategyStatus.UTILIZING;
+            emit UpdateStrategyStatus(StrategyStatus.UTILIZING);
+            emit Utilize(msg.sender, amount, amountOut);
         }
-        _adjustPosition(amountOut, collateralDeltaAmount, true);
-
-        $.strategyStatus = StrategyStatus.UTILIZING;
-        emit UpdateStrategyStatus(StrategyStatus.UTILIZING);
-
-        emit Utilize(msg.sender, amount, amountOut);
     }
 
     /// @dev deutilize product
@@ -656,9 +652,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         address _asset = address($.asset);
         address _product = address($.product);
-        if (isIncrease && collateralDeltaAmount > 0) {
-            IERC20(_asset).safeTransferFrom(address($.vault), address($.positionManager), collateralDeltaAmount);
-        }
 
         if (sizeDeltaInTokens > 0) {
             uint256 min;
@@ -666,10 +659,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             if (isIncrease) (min, max) = $.positionManager.increaseSizeMinMax();
             else (min, max) = $.positionManager.decreaseSizeMinMax();
 
-            (min, max) = (
-                min == 0 ? 0 : $.oracle.convertTokenAmount(_asset, _product, min),
-                max == type(uint256).max ? type(uint256).max : $.oracle.convertTokenAmount(_asset, _product, max)
-            );
             sizeDeltaInTokens = _clamp(min, sizeDeltaInTokens, max);
         }
 
@@ -679,6 +668,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             if (isIncrease) (min, max) = $.positionManager.increaseCollateralMinMax();
             else (min, max) = $.positionManager.decreaseCollateralMinMax();
             collateralDeltaAmount = _clamp(min, collateralDeltaAmount, max);
+        }
+
+        if (isIncrease && collateralDeltaAmount > 0) {
+            IERC20(_asset).safeTransferFrom(address($.vault), address($.positionManager), collateralDeltaAmount);
         }
 
         if (collateralDeltaAmount > 0 || sizeDeltaInTokens > 0) {
