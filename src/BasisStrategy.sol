@@ -159,7 +159,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         $.oracle = IOracle(_oracle);
         $.operator = _operator;
         $.hedgeDeviationThreshold = 1e16; // 1%
-        $.rebalanceDeviationThreshold = 1e16; // 1%
+        $.rebalanceDeviationThreshold = 1e17; // 10%
         _setManualSwapPath(_assetToProductSwapPath, _asset, _product);
         _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
     }
