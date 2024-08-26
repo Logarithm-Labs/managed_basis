@@ -533,26 +533,21 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             IPositionManager _positionManager = $.positionManager;
             ILogarithmVault _vault = $.vault;
             IERC20 _asset = $.asset;
+            uint256 currentLeverage = _positionManager.currentLeverage();
             uint256 idleAssets = _vault.idleAssets();
             uint256 assetsToWithdraw = _asset.balanceOf(address(this));
             uint256 assetsToIncrease = idleAssets + assetsToWithdraw;
             uint256 deltaCollateralToIncrease = _calculateDeltaCollateralForRebalance(
-                _positionManager.positionNetBalance(), _positionManager.currentLeverage(), $.targetLeverage
+                _positionManager.positionNetBalance(), currentLeverage, $.targetLeverage
             );
             (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
 
             if (deltaCollateralToIncrease < minIncreaseCollateral) deltaCollateralToIncrease = minIncreaseCollateral;
 
             if (deleverageNeeded && (deltaCollateralToIncrease > assetsToIncrease)) {
-                uint256 amount = _pendingDeutilization(
-                    InternalPendingDeutilization({
-                        positionManager: _positionManager,
-                        asset: address(_asset),
-                        product: address($.product),
-                        totalSupply: _vault.totalSupply(),
-                        processingRebalanceDown: true
-                    })
-                );
+                uint256 _maxLeverage = $.maxLeverage;
+                (, uint256 deltaLeverage) = currentLeverage.trySub(_maxLeverage);
+                uint256 amount = _positionManager.positionSizeInTokens().mulDiv(deltaLeverage, currentLeverage);
                 (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
                 // @issue amount can be 0 because of clamping that breaks emergency rebalance down
                 amount = _clamp(min, amount, max);
