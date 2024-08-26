@@ -740,14 +740,18 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             }
         }
 
-        (, uint256 revertCollateralDeltaAmount) =
-            requestParams.collateralDeltaAmount.trySub(responseParams.collateralDeltaAmount);
+        if (requestParams.collateralDeltaAmount > 0) {
+            (, uint256 revertCollateralDeltaAmount) =
+                requestParams.collateralDeltaAmount.trySub(responseParams.collateralDeltaAmount);
 
-        if (
-            revertCollateralDeltaAmount.mulDiv(Constants.FLOAT_PRECISION, requestParams.collateralDeltaAmount)
-                > $.hedgeDeviationThreshold
-        ) {
-            IERC20($.asset).safeTransferFrom(address($.positionManager), address($.vault), revertCollateralDeltaAmount);
+            if (
+                revertCollateralDeltaAmount.mulDiv(Constants.FLOAT_PRECISION, requestParams.collateralDeltaAmount)
+                    > $.hedgeDeviationThreshold
+            ) {
+                IERC20($.asset).safeTransferFrom(
+                    address($.positionManager), address($.vault), revertCollateralDeltaAmount
+                );
+            }
         }
 
         (, bool rebalanceDownNeeded) =
