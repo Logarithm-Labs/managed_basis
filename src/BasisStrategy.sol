@@ -391,6 +391,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 } else {
                     // in case of redeeming all by users, close hedge position
                     amount = type(uint256).max;
+                    collateralDeltaAmount = type(uint256).max;
                 }
                 // pendingDecreaseCollateral is used when partial deutilizing
                 // when full deutilization, we don't need
