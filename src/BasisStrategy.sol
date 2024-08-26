@@ -560,15 +560,22 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     $.strategyStatus = StrategyStatus.IDLE;
                 }
             } else {
-                // prioritize assetsToWithdraw to do rebalancing up
-                if (assetsToWithdraw > deltaCollateralToIncrease) {
-                    $.asset.safeTransfer(address($.vault), deltaCollateralToIncrease);
-                    if (!_adjustPosition(0, deltaCollateralToIncrease, true)) $.strategyStatus = StrategyStatus.IDLE;
+                // prioritize idleAssets to do rebalancing up
+                if (idleAssets < deltaCollateralToIncrease) {
+                    uint256 shortfall = deltaCollateralToIncrease - idleAssets;
+                    if (shortfall > assetsToWithdraw) {
+                        $.asset.safeTransfer(address($.vault), assetsToWithdraw);
+                        if (!_adjustPosition(0, assetsToIncrease, true)) $.strategyStatus = StrategyStatus.IDLE;
+                    } else {
+                        $.asset.safeTransfer(address($.vault), shortfall);
+                        if (!_adjustPosition(0, deltaCollateralToIncrease, true)) {
+                            $.strategyStatus = StrategyStatus.IDLE;
+                        }
+                    }
                 } else {
-                    if (assetsToWithdraw > 0) $.asset.safeTransfer(address($.vault), assetsToWithdraw);
-                    uint256 collateralDeltaAmount =
-                        assetsToIncrease > deltaCollateralToIncrease ? deltaCollateralToIncrease : assetsToIncrease;
-                    if (!_adjustPosition(0, collateralDeltaAmount, true)) $.strategyStatus = StrategyStatus.IDLE;
+                    if (!_adjustPosition(0, deltaCollateralToIncrease, true)) {
+                        $.strategyStatus = StrategyStatus.IDLE;
+                    }
                 }
             }
             $.processingRebalanceDown = true;
