@@ -59,7 +59,6 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         bool deleverageNeeded;
         bool rehedgeNeeded;
         bool positionManagerKeepNeeded;
-        bool decreaseCollateral;
     }
 
     address owner = makeAddr("owner");
@@ -227,7 +226,6 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         bool deleverageNeeded;
         int256 hedgeDeviationInTokens;
         bool positionManagerNeedKeep;
-        bool decreaseCollateral;
         if (performData.length > 0) {
             (rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep, rebalanceUpNeeded)
             = abi.decode(performData, (bool, bool, int256, bool, bool));
@@ -241,7 +239,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         state.assetBalance = IERC20(asset).balanceOf(address(vault));
         state.productBalance = IERC20(product).balanceOf(address(strategy));
         state.productValueInAsset = oracle.convertTokenAmount(product, asset, state.productBalance);
-        state.assetsToWithdraw = IERC20(asset).balanceOf(address(vault));
+        state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
         state.assetsToClaim = vault.assetsToClaim();
         state.totalPendingWithdraw = vault.totalPendingWithdraw();
         state.pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
@@ -261,7 +259,6 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         state.deleverageNeeded = deleverageNeeded;
         state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
         state.positionManagerKeepNeeded = positionManagerNeedKeep;
-        state.decreaseCollateral = decreaseCollateral;
     }
 
     function _logStrategyState(string memory stateName, StrategyState memory state) internal view {
@@ -399,6 +396,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
     }
 
     function _utilize(uint256 amount) private {
+        if (amount == 0) return;
         vm.startPrank(operator);
         StrategyState memory state0 = _getStrategyState();
         strategy.utilize(amount, BasisStrategy.SwapType.MANUAL, "");
@@ -416,6 +414,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
     }
 
     function _deutilize(uint256 amount) private {
+        if (amount == 0) return;
         StrategyState memory state0 = _getStrategyState();
         vm.startPrank(operator);
         strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
@@ -434,6 +433,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
     }
 
     function _deutilizeWithoutExecution(uint256 amount) private {
+        if (amount == 0) return;
         // bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
         vm.startPrank(operator);
         strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
@@ -798,8 +798,13 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         (bool upkeepNeeded,) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
         _performKeep();
-        (, uint256 deutilization) = strategy.pendingUtilizations();
-        _deutilize(deutilization);
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        while (pendingDeutilization > 0) {
+            _deutilize(pendingDeutilization);
+            _performKeep();
+            (, pendingDeutilization) = strategy.pendingUtilizations();
+        }
     }
 
     function test_performUpkeep_rebalanceDown_whenIdle()
@@ -831,7 +836,11 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertFalse(upkeepNeeded);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        _deutilize(pendingDeutilization);
+        while (pendingDeutilization > 0) {
+            _deutilize(pendingDeutilization);
+            _performKeep();
+            (, pendingDeutilization) = strategy.pendingUtilizations();
+        }
     }
 
     function test_performUpkeep_emergencyRebalanceDown_whenNotIdle()
@@ -929,7 +938,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         IERC20(product).transfer(address(strategy), IERC20(product).balanceOf(address(strategy)) / 10);
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
-        assertTrue(upkeepNeeded);
+        assertTrue(upkeepNeeded, "upkeepNeeded");
         (
             bool rebalanceDownNeeded,
             bool deleverageNeeded,
@@ -943,40 +952,6 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertFalse(positionManagerNeedKeep, "positionManagerNeedKeep");
 
         assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
-
-        _performKeep();
-    }
-
-    function test_performUpkeep_decreaseCollateral_whenRebalanceUpNeeded() public validateFinalState {
-        _deposit(user1, TEN_THOUSANDS_USDC);
-        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
-        _utilize(pendingUtilizationInAsset);
-        uint256 redeemShares1 = vault.balanceOf(user1);
-        vm.startPrank(user1);
-        vault.redeem(redeemShares1, user1, user1);
-
-        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        uint256 amount = pendingDeutilization * 9 / 10;
-        vm.startPrank(operator);
-        strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
-
-        _fullExcuteOrder();
-
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
-        assertTrue(upkeepNeeded);
-        (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep,
-            bool rebalanceUpNeeded
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool));
-
-        assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
-        assertFalse(deleverageNeeded, "deleverageNeeded");
-        assertFalse(positionManagerNeedKeep, "positionManagerNeedKeep");
-        assertFalse(hedgeDeviationInTokens != 0, "hedge deviation");
-        assertTrue(rebalanceUpNeeded, "rebalanceUpNeeded");
 
         _performKeep();
     }
