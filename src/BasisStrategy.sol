@@ -637,7 +637,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         if (params.isIncrease) {
             _afterIncreasePosition(params);
         } else {
-            _afterDecreasePosition(params, status);
+            _afterDecreasePosition(params);
         }
 
         $.strategyStatus = StrategyStatus.IDLE;
@@ -765,18 +765,16 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     address($.positionManager), address($.vault), revertCollateralDeltaAmount
                 );
             }
-        }
 
-        (, bool rebalanceDownNeeded) =
-            _checkNeedRebalance($.positionManager.currentLeverage(), $.targetLeverage, $.rebalanceDeviationThreshold);
-        // only when rebalance was started, we need to check
-        $.processingRebalanceDown = $.processingRebalanceDown && rebalanceDownNeeded;
+            (, bool rebalanceDownNeeded) = _checkNeedRebalance(
+                $.positionManager.currentLeverage(), $.targetLeverage, $.rebalanceDeviationThreshold
+            );
+            // only when rebalance was started, we need to check
+            $.processingRebalanceDown = $.processingRebalanceDown && rebalanceDownNeeded;
+        }
     }
 
-    function _afterDecreasePosition(
-        IPositionManager.AdjustPositionPayload calldata responseParams,
-        StrategyStatus status
-    ) private {
+    function _afterDecreasePosition(IPositionManager.AdjustPositionPayload calldata responseParams) private {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
         bool _processingRebalanceDown = $.processingRebalanceDown;
