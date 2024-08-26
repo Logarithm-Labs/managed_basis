@@ -976,7 +976,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             if (hedgeExposure == 0) {
                 return 0;
             } else {
-                return -hedgeExposure.toInt256();
+                return hedgeExposure.toInt256();
             }
         }
         uint256 hedgeDeviation = hedgeExposure.mulDiv(Constants.FLOAT_PRECISION, spotExposure);
