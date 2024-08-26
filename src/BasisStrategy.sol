@@ -827,6 +827,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     /// @dev process assetsToWithdraw for the withdraw requests
     function _processAssetsToWithdraw(address _asset, ILogarithmVault _vault) private {
         uint256 assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
+        if (assetsToWithdraw == 0) return;
         IERC20(_asset).safeTransfer(address(_vault), assetsToWithdraw);
         uint256 processedAssets = _vault.processPendingWithdrawRequests();
         // collect assets back to strategy except the processed assets
