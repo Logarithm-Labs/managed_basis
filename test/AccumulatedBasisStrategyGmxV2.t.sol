@@ -442,7 +442,6 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
 
     function _performKeep() private {
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
-
         while (upkeepNeeded) {
             vm.startPrank(forwarder);
             StrategyState memory state0 = _getStrategyState();
@@ -787,34 +786,10 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         _performKeep();
     }
 
-    function test_performUpkeep_rebalanceDown_whenNoIdle()
-        public
-        afterMultipleWithdrawRequestCreated
-        validateFinalState
-    {
-        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
-        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
-        assertEq(vault.idleAssets(), 0);
-        (bool upkeepNeeded,) = strategy.checkUpkeep("");
-        assertTrue(upkeepNeeded);
-        _performKeep();
-
-        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        while (pendingDeutilization > 0) {
-            _deutilize(pendingDeutilization);
-            _performKeep();
-            (, pendingDeutilization) = strategy.pendingUtilizations();
-        }
-    }
-
-    function test_performUpkeep_rebalanceDown_whenIdle()
-        public
-        afterMultipleWithdrawRequestCreated
-        validateFinalState
-    {
+    function test_performUpkeep_rebalanceDown_whenIdleEnough() public afterFullUtilized validateFinalState {
         vm.startPrank(USDC_WHALE);
-        IERC20(asset).transfer(address(vault), 100 * 1e6);
-        assertTrue(IERC20(asset).balanceOf(address(vault)) > 0);
+        IERC20(asset).transfer(address(vault), 10000 * 1e6);
+        IERC20(asset).transfer(address(strategy), 10000 * 1e6);
 
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
@@ -830,10 +805,95 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
 
         _performKeep();
 
-        assertEq(vault.idleAssets(), 0);
+        uint256 assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
+        assertEq(assetsToWithdraw, 10000 * 1e6, "assetsToWithdraw");
+        assertTrue(vault.idleAssets() < 10000 * 1e6, "idleAssets");
+    }
 
-        (upkeepNeeded,) = strategy.checkUpkeep("");
-        assertFalse(upkeepNeeded);
+    function test_performUpkeep_rebalanceDown_whenIdleNotEnough_assetsToWithdrawEnough()
+        public
+        afterFullUtilized
+        validateFinalState
+    {
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(vault), 10 * 1e6);
+        IERC20(asset).transfer(address(strategy), 10000 * 1e6);
+
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool));
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        assertFalse(deleverageNeeded);
+        assertFalse(positionManagerNeedKeep);
+
+        _performKeep();
+
+        uint256 assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
+        assertTrue(assetsToWithdraw < 10000 * 1e6, "assetsToWithdraw");
+        assertEq(vault.idleAssets(), 0, "idleAssets");
+    }
+
+    function test_performUpkeep_rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough()
+        public
+        afterFullUtilized
+        validateFinalState
+    {
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(vault), 10 * 1e6);
+        IERC20(asset).transfer(address(strategy), 10 * 1e6);
+
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool));
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        assertFalse(deleverageNeeded);
+        assertFalse(positionManagerNeedKeep);
+
+        _performKeep();
+
+        uint256 assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
+        assertEq(assetsToWithdraw, 0, "assetsToWithdraw");
+        assertEq(vault.idleAssets(), 0, "idleAssets");
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        while (pendingDeutilization > 0) {
+            _deutilize(pendingDeutilization);
+            _performKeep();
+            (, pendingDeutilization) = strategy.pendingUtilizations();
+        }
+    }
+
+    function test_performUpkeep_rebalanceDown_whenNoIdle_NoAssetsToWithdraw()
+        public
+        afterFullUtilized
+        validateFinalState
+    {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool));
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        assertFalse(deleverageNeeded);
+        assertFalse(positionManagerNeedKeep);
+        uint256 leverageBefore = positionManager.currentLeverage();
+        _performKeep();
+        uint256 leverageAfter = positionManager.currentLeverage();
+        assertEq(leverageBefore, leverageAfter, "leverage not changed");
+        assertEq(strategy.processingRebalance(), true);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         while (pendingDeutilization > 0) {
