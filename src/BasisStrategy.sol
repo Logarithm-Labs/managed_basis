@@ -541,10 +541,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             );
             (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
 
-            if (
-                deleverageNeeded
-                    && (deltaCollateralToIncrease > assetsToIncrease || minIncreaseCollateral > assetsToIncrease)
-            ) {
+            if (deltaCollateralToIncrease < minIncreaseCollateral) deltaCollateralToIncrease = minIncreaseCollateral;
+
+            if (deleverageNeeded && (deltaCollateralToIncrease > assetsToIncrease)) {
                 uint256 amount = _pendingDeutilization(
                     InternalPendingDeutilization({
                         positionManager: _positionManager,
