@@ -546,14 +546,14 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             if (deltaCollateralToIncrease < minIncreaseCollateral) deltaCollateralToIncrease = minIncreaseCollateral;
 
             if (deleverageNeeded && (deltaCollateralToIncrease > assetsToIncrease)) {
-                uint256 _maxLeverage = $.maxLeverage;
-                (, uint256 deltaLeverage) = currentLeverage.trySub(_maxLeverage);
+                (, uint256 deltaLeverage) = currentLeverage.trySub($.maxLeverage);
                 uint256 amount = _positionManager.positionSizeInTokens().mulDiv(deltaLeverage, currentLeverage);
                 (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
                 // @issue amount can be 0 because of clamping that breaks emergency rebalance down
                 amount = _clamp(min, amount, max);
                 if (amount > 0) {
-                    ManualSwapLogic.swap(amount, $.productToAssetSwapPath);
+                    uint256 amountOut = ManualSwapLogic.swap(amount, $.productToAssetSwapPath);
+                    $.pendingDeutilizedAssets = amountOut;
                     // produced asset shouldn't go to idle until position size is decreased
                     _adjustPosition(amount, 0, false);
                 } else {
@@ -806,7 +806,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                         );
                     }
                     ManualSwapLogic.swap(assetsToBeReverted, $.assetToProductSwapPath);
-                    _pendingDeutilizedAssets -= assetsToBeReverted;
                 }
             }
 
