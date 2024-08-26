@@ -682,8 +682,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         returns (bool)
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        address _asset = address($.asset);
-        address _product = address($.product);
 
         if (sizeDeltaInTokens > 0) {
             uint256 min;
@@ -703,7 +701,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         }
 
         if (isIncrease && collateralDeltaAmount > 0) {
-            IERC20(_asset).safeTransferFrom(address($.vault), address($.positionManager), collateralDeltaAmount);
+            $.asset.safeTransferFrom(address($.vault), address($.positionManager), collateralDeltaAmount);
         }
 
         if (collateralDeltaAmount > 0 || sizeDeltaInTokens > 0) {
