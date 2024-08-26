@@ -446,7 +446,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         ILogarithmVault _vault = $.vault;
         IPositionManager _positionManager = $.positionManager;
-        uint256 idleAssets = _vault.idleAssets();
+
         uint256 currentLeverage = _positionManager.currentLeverage();
         bool _processingRebalanceDown = $.processingRebalanceDown;
 
@@ -475,8 +475,11 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         // and when processingRebalanceDown is true
         // and when deleverageNeeded is false
         if (rebalanceDownNeeded && _processingRebalanceDown && !deleverageNeeded) {
+            uint256 idleAssets = _vault.idleAssets();
+            uint256 assetsToWithdraw = $.asset.balanceOf(address(this));
+            uint256 assetsToIncrease = idleAssets + assetsToWithdraw;
             (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
-            rebalanceDownNeeded = idleAssets != 0 && idleAssets >= minIncreaseCollateral;
+            rebalanceDownNeeded = assetsToIncrease != 0 && assetsToIncrease >= minIncreaseCollateral;
         }
 
         if (rebalanceDownNeeded) {
@@ -529,18 +532,23 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             $.pendingDecreaseCollateral = 0;
             IPositionManager _positionManager = $.positionManager;
             ILogarithmVault _vault = $.vault;
-            address _asset = address($.asset);
+            IERC20 _asset = $.asset;
             uint256 idleAssets = _vault.idleAssets();
+            uint256 assetsToWithdraw = _asset.balanceOf(address(this));
+            uint256 assetsToIncrease = idleAssets + assetsToWithdraw;
             uint256 deltaCollateralToIncrease = _calculateDeltaCollateralForRebalance(
                 _positionManager.positionNetBalance(), _positionManager.currentLeverage(), $.targetLeverage
             );
             (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
 
-            if (deleverageNeeded && (deltaCollateralToIncrease > idleAssets || minIncreaseCollateral > idleAssets)) {
+            if (
+                deleverageNeeded
+                    && (deltaCollateralToIncrease > assetsToIncrease || minIncreaseCollateral > assetsToIncrease)
+            ) {
                 uint256 amount = _pendingDeutilization(
                     InternalPendingDeutilization({
                         positionManager: _positionManager,
-                        asset: _asset,
+                        asset: address(_asset),
                         product: address($.product),
                         totalSupply: _vault.totalSupply(),
                         processingRebalanceDown: true
@@ -557,9 +565,16 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     $.strategyStatus = StrategyStatus.IDLE;
                 }
             } else {
-                uint256 collateralDeltaAmount =
-                    idleAssets > deltaCollateralToIncrease ? deltaCollateralToIncrease : idleAssets;
-                if (!_adjustPosition(0, collateralDeltaAmount, true)) $.strategyStatus = StrategyStatus.IDLE;
+                // prioritize assetsToWithdraw to do rebalancing up
+                if (assetsToWithdraw > deltaCollateralToIncrease) {
+                    $.asset.safeTransfer(address($.vault), deltaCollateralToIncrease);
+                    if (!_adjustPosition(0, deltaCollateralToIncrease, true)) $.strategyStatus = StrategyStatus.IDLE;
+                } else {
+                    if (assetsToWithdraw > 0) $.asset.safeTransfer(address($.vault), assetsToWithdraw);
+                    uint256 collateralDeltaAmount =
+                        assetsToIncrease > deltaCollateralToIncrease ? deltaCollateralToIncrease : assetsToIncrease;
+                    if (!_adjustPosition(0, collateralDeltaAmount, true)) $.strategyStatus = StrategyStatus.IDLE;
+                }
             }
             $.processingRebalanceDown = true;
         } else if (hedgeDeviationInTokens != 0) {
@@ -766,7 +781,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
         bool _processingRebalanceDown = $.processingRebalanceDown;
         ILogarithmVault _vault = $.vault;
-        address _asset = address($.asset);
+        IERC20 _asset = $.asset;
 
         if (requestParams.sizeDeltaInTokens == type(uint256).max) {
             // when closing hedge
@@ -795,12 +810,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 }
             }
 
-            if (_processingRebalanceDown) {
-                // release deutilized asset to idle when rebalance down
-                IERC20(_asset).safeTransfer(address(_vault), _pendingDeutilizedAssets);
-                _vault.processPendingWithdrawRequests();
-            }
-
             (, bool rebalanceDownNeeded) = _checkNeedRebalance(
                 $.positionManager.currentLeverage(), $.targetLeverage, $.rebalanceDeviationThreshold
             );
@@ -811,20 +820,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         if (responseParams.collateralDeltaAmount > 0) {
             // the case when deutilizing for withdrawls and rebalancing Up
             (, $.pendingDecreaseCollateral) = $.pendingDecreaseCollateral.trySub(responseParams.collateralDeltaAmount);
-            if (status == StrategyStatus.KEEPING) {
-                // release deutilized asset to idle when rebalance up
-                IERC20(_asset).safeTransferFrom(
-                    address($.positionManager), address(_vault), responseParams.collateralDeltaAmount
-                );
-                _vault.processPendingWithdrawRequests();
-            } else {
-                IERC20(_asset).safeTransferFrom(
-                    address($.positionManager), address(this), responseParams.collateralDeltaAmount
-                );
-            }
+            _asset.safeTransferFrom(address($.positionManager), address(this), responseParams.collateralDeltaAmount);
         }
         // process withdraw request
-        _processAssetsToWithdraw(_asset, _vault);
+        _processAssetsToWithdraw(address(_asset), _vault);
     }
 
     /// @dev process assetsToWithdraw for the withdraw requests
