@@ -263,8 +263,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 idleAssets = _vault.idleAssets();
         address _asset = address($.asset);
         uint256 _targetLeverage = $.targetLeverage;
+        bool _processingRebalanceDown = $.processingRebalanceDown;
 
-        uint256 pendingUtilization = _pendingUtilization(idleAssets, _targetLeverage, $.processingRebalanceDown);
+        uint256 pendingUtilization = _pendingUtilization(idleAssets, _targetLeverage, _processingRebalanceDown);
         if (pendingUtilization == 0) {
             revert Errors.ZeroPendingUtilization();
         }
@@ -293,7 +294,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             revert Errors.UnsupportedSwapType();
         }
 
-        uint256 pendingIncreaseCollateral_ = _pendingIncreaseCollateral(idleAssets, _targetLeverage);
+        uint256 pendingIncreaseCollateral_ =
+            _pendingIncreaseCollateral(idleAssets, _targetLeverage, _processingRebalanceDown);
         uint256 collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization);
         (uint256 min,) = $.positionManager.increaseCollateralMinMax();
         if (collateralDeltaAmount < min || !_adjustPosition(amountOut, collateralDeltaAmount, true)) {
@@ -446,6 +448,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         IPositionManager _positionManager = $.positionManager;
         uint256 idleAssets = _vault.idleAssets();
         uint256 currentLeverage = _positionManager.currentLeverage();
+        bool _processingRebalanceDown = $.processingRebalanceDown;
 
         int256 hedgeDeviationInTokens;
         bool positionManagerNeedKeep;
@@ -453,11 +456,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) =
             _checkRebalance(currentLeverage, $.minLeverage, $.maxLeverage, $.safeMarginLeverage);
 
-        if (!rebalanceDownNeeded && $.processingRebalanceDown) {
+        // check if strategy is in rebalancing down and currentLeverage is not near to target
+        if (!rebalanceDownNeeded && _processingRebalanceDown) {
             (, rebalanceDownNeeded) =
                 _checkNeedRebalance(currentLeverage, $.targetLeverage, $.rebalanceDeviationThreshold);
         }
 
+        // perform upkeep only when deltaCollateralToDecrease is more than and equal to limit amount
         if (rebalanceUpNeeded) {
             uint256 deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
                 _positionManager.positionNetBalance(), currentLeverage, $.targetLeverage
@@ -466,7 +471,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             rebalanceUpNeeded = deltaCollateralToDecrease >= limitDecreaseCollateral;
         }
 
-        if (rebalanceDownNeeded && $.processingRebalanceDown && !deleverageNeeded) {
+        // deutilize when idle assets are not enough to increase collateral
+        // and when processingRebalanceDown is true
+        // and when deleverageNeeded is false
+        if (rebalanceDownNeeded && _processingRebalanceDown && !deleverageNeeded) {
             (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
             rebalanceDownNeeded = idleAssets != 0 && idleAssets >= minIncreaseCollateral;
         }
@@ -840,10 +848,14 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             : idleAssets.mulDiv(_targetLeverage, Constants.FLOAT_PRECISION + _targetLeverage);
     }
 
-    function _pendingIncreaseCollateral(uint256 idleAssets, uint256 _targetLeverage) private pure returns (uint256) {
-        return idleAssets.mulDiv(
-            Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + _targetLeverage, Math.Rounding.Ceil
-        );
+    function _pendingIncreaseCollateral(uint256 idleAssets, uint256 _targetLeverage, bool _processingRebalanceDown)
+        private
+        pure
+        returns (uint256)
+    {
+        return _processingRebalanceDown
+            ? idleAssets
+            : idleAssets.mulDiv(Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + _targetLeverage, Math.Rounding.Ceil);
     }
 
     function _pendingDeutilization(InternalPendingDeutilization memory params) private view returns (uint256) {
@@ -853,45 +865,28 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         if (params.totalSupply == 0) return productBalance;
 
         uint256 positionSizeInTokens = params.positionManager.positionSizeInTokens();
+        uint256 positionSizeInAssets = $.oracle.convertTokenAmount(params.product, params.asset, positionSizeInTokens);
+        uint256 positionNetBalance = params.positionManager.positionNetBalance();
+
+        if (positionSizeInAssets == 0 || positionNetBalance == 0) return 0;
+
         uint256 deutilization;
         if (params.processingRebalanceDown) {
             // for rebalance
             uint256 currentLeverage = params.positionManager.currentLeverage();
-            uint256 _targeLeverage = $.targetLeverage;
-            if (currentLeverage > _targeLeverage) {
-                // deltaSizeToDecrease =  positionSize - targetLeverage * positionSize / currentLeverage
-                deutilization = positionSizeInTokens - positionSizeInTokens.mulDiv(_targeLeverage, currentLeverage);
+            uint256 _targetLeverage = $.targetLeverage;
+            if (currentLeverage > _targetLeverage) {
+                uint256 denoLeverage =
+                    currentLeverage + _targetLeverage.mulDiv(positionSizeInAssets, positionNetBalance);
+                uint256 deltaLeverage = currentLeverage - _targetLeverage;
+                deutilization = positionSizeInTokens.mulDiv(deltaLeverage, denoLeverage);
             }
         } else {
-            // the following equations are guaranteed when deutilizing to withdraw
-            // pendingDeutilizationInAsset + collateralDeltaToDecrease = totalPendingWithdraw
-            // collateralDeltaToDecrease = positionNetBalance * pendingDeutilization / positionSizeInTokens
-            // pendingDeutilizationInAsset + positionNetBalance * pendingDeutilization / positionSizeInTokens = totalPendingWithdraw
-            // pendingDeutilizationInAsset = pendingDeutilization * productPrice / assetPrice
-            // pendingDeutilization * productPrice / assetPrice + positionNetBalance * pendingDeutilization / positionSizeInTokens =
-            // = totalPendingWithdraw
-            // pendingDeutilization * (productPrice / assetPrice + positionNetBalance / positionSizeInTokens) = totalPendingWithdraw
-            // pendingDeutilization * (productPrice * positionSizeInTokens + assetPrice * positionNetBalance) /
-            // / (assetPrice * positionSizeInTokens) = totalPendingWithdraw
-            // pendingDeutilization * (positionSizeUsd + positionNetBalanceUsd) / (assetPrice * positionSizeInTokens) = totalPendingWithdraw
-            // pendingDeutilization = totalPendingWithdraw * assetPrice * positionSizeInTokens / (positionSizeUsd + positionNetBalanceUsd)
-            // pendingDeutilization = positionSizeInTokens * totalPendingWithdrawUsd / (positionSizeUsd + positionNetBalanceUsd)
-            // pendingDeutilization = positionSizeInTokens *
-            // * (totalPendingWithdrawUsd/assetPrice) / (positionSizeUsd/assetPrice + positionNetBalanceUsd/assetPrice)
-            // pendingDeutilization = positionSizeInTokens * totalPendingWithdraw / (positionSizeInAssets + positionNetBalance)
-            uint256 positionSizeInAssets =
-                $.oracle.convertTokenAmount(params.product, params.asset, positionSizeInTokens);
-            uint256 positionNetBalance = params.positionManager.positionNetBalance();
-
-            if (positionSizeInAssets == 0 || positionNetBalance == 0) return 0;
-
             int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
-
             if (totalPendingWithdraw <= 0) return 0;
 
             uint256 totalPendingWithdrawAbs = uint256(totalPendingWithdraw);
             uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
-
             if (
                 _pendingDecreaseCollateral > totalPendingWithdrawAbs
                     || _pendingDecreaseCollateral >= (positionSizeInAssets + positionNetBalance)
@@ -914,7 +909,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         result = value < min ? 0 : (value > max ? max : value);
     }
 
-    // @dev should be called under the condition that sizeDeltaInTokensReq != 0
+    /// @dev should be called under the condition that sizeDeltaInTokensReq != 0
+    /// Note: check if resulted position size is in allowed deviation
     function _checkResultedPositionSize(
         uint256 sizeDeltaInTokensResp,
         uint256 sizeDeltaInTokensReq,
@@ -927,6 +923,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         return (isWrongPositionSize, sizeDeltaDeviationInTokens);
     }
 
+    /// @dev check if current leverage is not near to the target leverage
     function _checkNeedRebalance(
         uint256 _currentLeverage,
         uint256 _targetLeverage,
@@ -944,6 +941,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         return (rebalanceUpNeeded, rebalanceDownNeeded);
     }
 
+    /// @dev check if current leverage is out of the min and max leverage
     function _checkRebalance(
         uint256 currentLeverage,
         uint256 _minLeverage,
@@ -1049,7 +1047,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
     function pendingIncreaseCollateral() external view returns (uint256) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        return _pendingIncreaseCollateral($.vault.idleAssets(), $.targetLeverage);
+        return _pendingIncreaseCollateral($.vault.idleAssets(), $.targetLeverage, $.processingRebalanceDown);
     }
 
     function pendingDecreaseCollateral() external view returns (uint256) {
