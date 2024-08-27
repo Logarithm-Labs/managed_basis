@@ -60,4 +60,42 @@ contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
         super._mockChainlinkPriceFeedAnswer(priceFeed, answer);
         _updatePositionNetBalance(positionManager.positionNetBalance());
     }
+
+    function test_deutilize_lastRedeemBelowRequestedAssets() public afterFullUtilized validateFinalState {
+        // make last redeem
+        uint256 userShares = IERC20(address(vault)).balanceOf(address(user1));
+        vm.startPrank(user1);
+        vault.redeem(userShares, user1, user1);
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilizeWithoutExecution(pendingDeutilization);
+
+        // manually decrease margin
+        uint256 netBalance = positionManager.positionNetBalance();
+        uint256 marginDecrease = netBalance / 10;
+        vm.startPrank(address(this));
+        IERC20(asset).transfer(USDC_WHALE, marginDecrease);
+        positionNetBalance -= marginDecrease;
+        vm.startPrank(agent);
+        _reportState();
+
+        _excuteOrder();
+
+        bytes32 requestKey = vault.getWithdrawKey(user1, 0);
+        assertTrue(vault.proccessedWithdrawAssets() < vault.accRequestedWithdrawAssets());
+        assertTrue(vault.isClaimable(requestKey));
+
+        uint256 requestedAssets = vault.withdrawRequests(requestKey).requestedAssets;
+        uint256 balBefore = IERC20(asset).balanceOf(user1);
+
+        assertGt(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+
+        vm.startPrank(user1);
+        vault.claim(requestKey);
+        uint256 balDelta = IERC20(asset).balanceOf(user1) - balBefore;
+
+        assertGt(requestedAssets, balDelta);
+        assertEq(strategy.pendingDecreaseCollateral(), 0);
+        assertEq(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+    }
 }

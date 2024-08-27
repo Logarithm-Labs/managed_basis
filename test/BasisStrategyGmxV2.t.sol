@@ -10,6 +10,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ForkTest} from "./base/ForkTest.sol";
 import {GmxV2Test} from "./base/GmxV2Test.sol";
 
+import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
@@ -112,5 +113,39 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         assertEq(IERC20(asset).balanceOf(address(_positionManager())), 0);
         assertEq(IERC20(product).balanceOf(address(strategy)), 0);
         assertApproxEqRel(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC, 0.9999 ether);
+    }
+
+    function test_deutilize_lastRedeemBelowRequestedAssets() public afterFullUtilized validateFinalState {
+        // make last redeem
+        uint256 userShares = IERC20(address(vault)).balanceOf(address(user1));
+        vm.startPrank(user1);
+        vault.redeem(userShares, user1, user1);
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilizeWithoutExecution(pendingDeutilization);
+
+        // decrease margin
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 105 / 100);
+
+        _excuteOrder();
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
+
+        bytes32 requestKey = vault.getWithdrawKey(user1, 0);
+        assertTrue(vault.proccessedWithdrawAssets() < vault.accRequestedWithdrawAssets());
+        assertTrue(vault.isClaimable(requestKey));
+
+        uint256 requestedAssets = vault.withdrawRequests(requestKey).requestedAssets;
+        uint256 balBefore = IERC20(asset).balanceOf(user1);
+
+        assertGt(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+
+        vm.startPrank(user1);
+        vault.claim(requestKey);
+        uint256 balDelta = IERC20(asset).balanceOf(user1) - balBefore;
+
+        assertGt(requestedAssets, balDelta);
+        assertEq(strategy.pendingDecreaseCollateral(), 0);
+        assertEq(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
     }
 }

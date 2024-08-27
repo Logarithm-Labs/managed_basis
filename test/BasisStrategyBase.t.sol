@@ -387,7 +387,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
     }
 
-    function _deutilizeWithoutExecution(uint256 amount) private {
+    function _deutilizeWithoutExecution(uint256 amount) internal {
         if (amount == 0) return;
         // bytes memory data = _generateInchCallData(product, asset, amount, address(strategy));
         vm.startPrank(operator);
@@ -687,40 +687,6 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         vault.claim(requestKey2);
         uint256 balanceAfter2 = IERC20(asset).balanceOf(user2);
         assertEq(balanceBefore2 + withdrawRequest2.requestedAssets, balanceAfter2);
-    }
-
-    function test_deutilize_lastRedeemBelowrequestedAssets() public afterFullUtilized validateFinalState {
-        // make last redeem
-        uint256 userShares = IERC20(address(vault)).balanceOf(address(user1));
-        vm.startPrank(user1);
-        vault.redeem(userShares, user1, user1);
-
-        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        _deutilizeWithoutExecution(pendingDeutilization);
-
-        // decrease margin
-        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
-        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 105 / 100);
-
-        _excuteOrder();
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
-
-        bytes32 requestKey = vault.getWithdrawKey(user1, 0);
-        assertTrue(vault.proccessedWithdrawAssets() < vault.accRequestedWithdrawAssets());
-        assertTrue(vault.isClaimable(requestKey));
-
-        uint256 requestedAssets = vault.withdrawRequests(requestKey).requestedAssets;
-        uint256 balBefore = IERC20(asset).balanceOf(user1);
-
-        assertGt(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
-
-        vm.startPrank(user1);
-        vault.claim(requestKey);
-        uint256 balDelta = IERC20(asset).balanceOf(user1) - balBefore;
-
-        assertGt(requestedAssets, balDelta);
-        assertEq(strategy.pendingDecreaseCollateral(), 0);
-        assertEq(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
     }
 
     function test_performUpkeep_rebalanceUp() public afterMultipleWithdrawRequestCreated {
