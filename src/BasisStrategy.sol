@@ -868,22 +868,30 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 positionSizeInTokens = params.positionManager.positionSizeInTokens();
         uint256 positionSizeInAssets = $.oracle.convertTokenAmount(params.product, params.asset, positionSizeInTokens);
         uint256 positionNetBalance = params.positionManager.positionNetBalance();
-
         if (positionSizeInAssets == 0 || positionNetBalance == 0) return 0;
 
+        int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
         uint256 deutilization;
         if (params.processingRebalanceDown) {
             // for rebalance
             uint256 currentLeverage = params.positionManager.currentLeverage();
             uint256 _targetLeverage = $.targetLeverage;
             if (currentLeverage > _targetLeverage) {
-                uint256 denoLeverage =
-                    currentLeverage + _targetLeverage.mulDiv(positionSizeInAssets, positionNetBalance);
+                // calculate deutilization product
+                // when totalPendingWithdraw is enough big to prevent increasing collalteral
                 uint256 deltaLeverage = currentLeverage - _targetLeverage;
-                deutilization = positionSizeInTokens.mulDiv(deltaLeverage, denoLeverage);
+                deutilization = positionSizeInTokens.mulDiv(deltaLeverage, currentLeverage);
+                uint256 deutilizationInAsset = $.oracle.convertTokenAmount(params.product, params.asset, deutilization);
+                uint256 totalPendingWithdrawAbs = totalPendingWithdraw < 0 ? 0 : uint256(totalPendingWithdraw);
+
+                // when totalPendingWithdraw is not enough big to prevent increasing collalteral
+                if (totalPendingWithdrawAbs < deutilizationInAsset) {
+                    uint256 num = deltaLeverage + _targetLeverage.mulDiv(totalPendingWithdrawAbs, positionNetBalance);
+                    uint256 den = currentLeverage + _targetLeverage.mulDiv(positionSizeInAssets, positionNetBalance);
+                    deutilization = positionSizeInTokens.mulDiv(num, den);
+                }
             }
         } else {
-            int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
             if (totalPendingWithdraw <= 0) return 0;
 
             uint256 totalPendingWithdrawAbs = uint256(totalPendingWithdraw);
