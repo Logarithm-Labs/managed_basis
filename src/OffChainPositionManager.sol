@@ -5,7 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
-import "src/interfaces/IBasisStrategy.sol";
+import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -31,7 +31,6 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         uint256 responseRound;
         uint256 responseTimestamp;
         bool isReported;
-        bool isSuccess;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -104,9 +103,9 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
 
-    function setAgent(address agent) external onlyOwner {
+    function setAgent(address _agent) external onlyOwner {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        $.agent = agent;
+        $.agent = _agent;
     }
 
     function setSizeMinMax(
@@ -399,8 +398,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
     function currentLeverage() public view returns (uint256 leverage) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         PositionState memory state = $.positionStates[$.currentRound];
-        uint256 initialNetBalance =
-            state.netBalance + $.pendingCollateralIncrease + IERC20($.collateralToken).balanceOf(address(this));
+        uint256 initialNetBalance = state.netBalance + $.pendingCollateralIncrease;
 
         uint256 positionValue =
             IOracle($.oracle).convertTokenAmount($.indexToken, $.collateralToken, state.sizeInTokens);
@@ -422,6 +420,11 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
     /*//////////////////////////////////////////////////////////////
                         EXERNAL STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
+
+    function agent() external view returns (address) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.agent;
+    }
 
     function lastRequestRound() external view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
