@@ -1042,6 +1042,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         return address(_getBasisStrategyStorage().oracle);
     }
 
+    function forwarder() external view returns (address) {
+        return _getBasisStrategyStorage().forwarder;
+    }
+
     function asset() external view returns (address) {
         return address(_getBasisStrategyStorage().asset);
     }

@@ -426,6 +426,11 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         return $.agent;
     }
 
+    function oracle() external view returns (address) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.oracle;
+    }
+
     function lastRequestRound() external view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.lastRequestRound;
