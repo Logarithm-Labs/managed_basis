@@ -102,6 +102,9 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         oracle = LogarithmOracle(oracleProxy);
         vm.label(address(oracle), "oracle");
 
+        // mock uniswap
+        _mockUniswapPool(UNISWAPV3_WETH_USDC, oracleProxy);
+
         // set oracle price feed
         address[] memory assets = new address[](2);
         address[] memory feeds = new address[](2);
@@ -292,6 +295,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         console.log("deleverageNeeded", state.deleverageNeeded);
         console.log("rehedgeNeeded", state.rehedgeNeeded);
         console.log("positionManagerNeedKeep", state.positionManagerKeepNeeded);
+        console.log("processingRebalance", state.processingRebalance);
         console.log("");
     }
 

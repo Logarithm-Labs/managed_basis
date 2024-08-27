@@ -4,10 +4,12 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
+import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
 import {MockPriceFeed} from "../mock/MockPriceFeed.sol";
 import {ArbGasInfoMock} from "../mock/ArbGasInfoMock.sol";
 import {ArbSysMock} from "../mock/ArbSysMock.sol";
+import {UniswapV3MockPool} from "../mock/UniswapV3MockPool.sol";
 
 contract ForkTest is Test {
     uint256 constant USDC_PRECISION = 1e6;
@@ -53,5 +55,12 @@ contract ForkTest is Test {
         for (uint256 i; i < len; i++) {
             MockPriceFeed(priceFeeds[i]).setUpdatedAt(targetTimestamp);
         }
+    }
+
+    function _mockUniswapPool(address pool, address oracle) internal {
+        address token0 = IUniswapV3Pool(pool).token0();
+        address token1 = IUniswapV3Pool(pool).token1();
+        address mockPool = address(new UniswapV3MockPool(token0, token1, oracle));
+        vm.etch(pool, mockPool.code);
     }
 }
