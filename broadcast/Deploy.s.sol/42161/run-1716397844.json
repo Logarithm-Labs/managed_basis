@@ -395,7 +395,7 @@
     }
   ],
   "libraries": [
-    "src/libraries/InchAggregatorV6Logic.sol:InchAggregatorV6Logic:0x230e11FB0c6A6ee3c5242FCBea09b6de6cd7b48C"
+    "src/libraries/logic/InchAggregatorV6Logic.sol:InchAggregatorV6Logic:0x230e11FB0c6A6ee3c5242FCBea09b6de6cd7b48C"
   ],
   "pending": [],
   "returns": {},

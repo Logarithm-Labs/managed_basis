@@ -1,4 +1,13 @@
-22 May 2024 at 21:18:15
-Oracle deployed at: 0x4050c50B7C198AC010Ecd8F2591F7d92c6e3Ea6a
-Strategy deployed at: 0x9bd2042eE0E48066A3c321edAc090042a808F787
+13 Aug 2024 at 12:05:57
+Oracle deployed at: 0x8A260451534bb06795b26A054E63621322D3D179
+Strategy deployed at: 0x75032ea6f276DE687a4c7cd82BE3b91E2D321ed1
+Position manager deployed at: 0xaeAA443b04201edDc78129a140C325134C2b47D1
 
+13 Aug 2024 at 21:30:01
+Data Provider deployed at:  0x8fc78eD7Bec63d40bcd1e18A748c36cdC69C3f91
+
+19 Aug 2024 at 14:45:19
+Oracle deployed at: 0xE9F183d352eE21E3BEBEB3B27bc43Eae9A633d5b
+Strategy deployed at: 0xA05833a544b34EcE44C0c2034Ab2296090E5109c
+Position manager deployed at: 0x554F54caEA7c2EDA630F9d71fa03d58F9B30D1e0
+Data Provider deployed at:  0x5Fd515f9CBdf75C4E72c68c48d62019a0E5831f9

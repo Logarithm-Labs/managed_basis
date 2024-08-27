@@ -2,64 +2,89 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
-import "src/ManagedBasisStrategy.sol";
+import {AccumulatedBasisStrategy} from "src/AccumulatedBasisStrategy.sol";
+import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-contract ProtTest is Test {
+contract ProdTest is Test {
+    using Math for uint256;
 
-    ManagedBasisStrategy public strategy = ManagedBasisStrategy(0x9bd2042eE0E48066A3c321edAc090042a808F787);
-    address public operator = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
+    uint256 PRECISION = 1e18;
+
+    AccumulatedBasisStrategy public strategy = AccumulatedBasisStrategy(0xC69c6A3228BB8EE5Bdd0C656eEA43Bf8713B0740);
+    OffChainPositionManager public positionManager;
+    address public asset;
+    address public product;
+
+    function setUp() public {
+        asset = strategy.asset();
+        product = strategy.product();
+        positionManager = OffChainPositionManager(strategy.positionManager());
+    }
 
     function test_run() public {
-        vm.startPrank(operator);
-        callYull(address(strategy));
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool statusKeep, bool hedgeDeviation, bool decreaseCollateral) = abi.decode(performData, (bool, bool, bool));
+        console.log("upkeepNeeded", upkeepNeeded);
+        console.log("statusKeep", statusKeep);
+        console.log("hedgeDeviation", hedgeDeviation);
+        console.log("decreaseCollateral", decreaseCollateral);
+
+        _logState();
     }
 
-    function callYull(address target) public {
-        assembly {
-            let mptr := mload(0x40)
-            let oldMptr := mptr
-            mstore(add(mptr, 0x0), 0x4f4284ac)
-            mstore(add(mptr, 0x20), 0x00000000000000000000000000000000000000000000000000000000000f4240)
-            mstore(add(mptr, 0x40), 0x0000000000000000000000000000000000000000000000000000000000000001)
-            mstore(add(mptr, 0x60), 0x0000000000000000000000000000000000000000000000000000000000000060)
-            mstore(add(mptr, 0x80), 0x0000000000000000000000000000000000000000000000000000000000000388)
-            mstore(add(mptr, 0xa0), 0x07ed2379000000000000000000000000e37e799d5077682fa0a244d46e5649f7)
-            mstore(add(mptr, 0xc0), 0x1457bd09000000000000000000000000af88d065e77c8cc2239327c5edb3a432)
-            mstore(add(mptr, 0xe0), 0x268e583100000000000000000000000082af49447d8a07e3bd95bd0d56f35241)
-            mstore(add(mptr, 0x100), 0x523fbab1000000000000000000000000e37e799d5077682fa0a244d46e5649f7)
-            mstore(add(mptr, 0x120), 0x1457bd090000000000000000000000004f42fa2f07f81e6e1d348245ecb7ebff)
-            mstore(add(mptr, 0x140), 0xc5267be000000000000000000000000000000000000000000000000000000000)
-            mstore(add(mptr, 0x160), 0x000f42400000000000000000000000000000000000000000000000000000fdfd)
-            mstore(add(mptr, 0x180), 0x651fbbb000000000000000000000000000000000000000000000000000000000)
-            mstore(add(mptr, 0x1a0), 0x0000000000000000000000000000000000000000000000000000000000000000)
-            mstore(add(mptr, 0x1c0), 0x0000012000000000000000000000000000000000000000000000000000000000)
-            mstore(add(mptr, 0x1e0), 0x0000023a00000000000000000000000000000000000000000000021c0001ee00)
-            mstore(add(mptr, 0x200), 0x01c000a007e5c0d2000000000000000000000000000000000000000000000000)
-            mstore(add(mptr, 0x220), 0x00019c00004f02a0000000000000000000000000000000000000000000000000)
-            mstore(add(mptr, 0x240), 0x00000000000f1de8ee63c1e501a17afcab059f3c6751f5b64347b5a503c32918)
-            mstore(add(mptr, 0x260), 0x68af88d065e77c8cc2239327c5edb3a432268e583100a0c9e75c480000000000)
-            mstore(add(mptr, 0x280), 0x000000310100000000000000000000000000000000000000000000000000011f)
-            mstore(add(mptr, 0x2a0), 0x0000d051000c8fa74c7b2de5a92b39217dc98d2d609439a2e5fd086bc7cd5c48)
-            mstore(add(mptr, 0x2c0), 0x1dcc9c85ebe478a1c0b69fcbb90044394747c500000000000000000000000000)
-            mstore(add(mptr, 0x2e0), 0x0000000000000000000000000000000000000000000000000000000000000000)
-            mstore(add(mptr, 0x300), 0x0000000000000000000000000000000000000200000000000000000000000000)
-            mstore(add(mptr, 0x320), 0x0000000000000000000000000000000000000000000000000000000000000000)
-            mstore(add(mptr, 0x340), 0x000000000000000000000000001388be98489b00000000000000000000000000)
-            mstore(add(mptr, 0x360), 0x0000000000000000000000000000000000000002a00000000000000000000000)
-            mstore(add(mptr, 0x380), 0x000000000000000000000000000000ea74a6877314ee63c1e5007cccba38e2d9)
-            mstore(add(mptr, 0x3a0), 0x59fe135e79aebb57ccb27b128358fd086bc7cd5c481dcc9c85ebe478a1c0b69f)
-            mstore(add(mptr, 0x3c0), 0xcbb980a06c4eca2782af49447d8a07e3bd95bd0d56f35241523fbab111111112)
-            mstore(add(mptr, 0x3e0), 0x5421ca6dc452d289314280a0f8842a650020d6bdbf7882af49447d8a07e3bd95)
-            mstore(add(mptr, 0x400), 0xbd0d56f35241523fbab1111111125421ca6dc452d289314280a0f8842a650000)
-            mstore(add(mptr, 0x420), 0x00000000cc51b9ac000000000000000000000000000000000000000000000000)
-            mstore(0x40, add(mptr, 0x440))
-            let start := add(oldMptr, 28)
-            let length := sub(mload(0x40), start)
-            let success := call(740000, target, 0, start, length, 0x00, 0x00)
-            if iszero(success) {
-                revert(0, 0)
+    function _logState() internal view {
+        uint256 productBalance = IERC20(product).balanceOf(address(strategy));
+        uint256 positionSizeInTokens = positionManager.positionSizeInTokens();
+        (uint256 hedgeDeviation, bool hedgeDeviationIncrease) =
+            _checkHedgeDeviation(productBalance, positionSizeInTokens);
+        uint256 positionNetBalance = positionManager.positionNetBalance();
+        uint256 totalAssets = strategy.totalAssets();
+        uint256 utilizedAssets = strategy.utilizedAssets();
+        uint256 idleAssets = strategy.idleAssets();
+        uint256 totalPendingWithdraw = strategy.totalPendingWithdraw();
+        uint256 assetsToClaim = strategy.assetsToClaim();
+        uint256 assetsToWithdraw = strategy.assetsToWithdraw();
+
+        console.log("totalAssets", totalAssets);
+        console.log("utilizedAssets", utilizedAssets);
+        console.log("idleAssets", idleAssets);
+        console.log("totalPendingWithdraw", totalPendingWithdraw);
+        console.log("strategyAssetBalance", IERC20(asset).balanceOf(address(this)));
+        console.log("assetsToClaim", assetsToClaim);
+        console.log("assetsToWithdraw", assetsToWithdraw);
+
+        console.log("positionNetBalance", positionNetBalance);
+        console.log("productBalance", productBalance);
+        console.log("positionSizeInTokens", positionSizeInTokens);
+        console.log("hedgeDeviationIncrease", hedgeDeviationIncrease);
+        console.log("hedgeDeviation", hedgeDeviation);
+        console.log();
+    }
+
+    function _checkHedgeDeviation(uint256 spotExposure, uint256 hedgeExposure)
+        internal
+        view
+        returns (uint256 hedgeDeviationInTokens, bool isIncrease)
+    {
+        if (spotExposure == 0) {
+            if (hedgeExposure == 0) {
+                return (0, false);
+            } else {
+                return (hedgeExposure, false);
             }
         }
+        uint256 hedgeDeviationThreshold = strategy.hedgeDeviationThreshold();
+        uint256 hedgeDeviation = hedgeExposure.mulDiv(PRECISION, spotExposure);
+        if (hedgeDeviation > PRECISION + hedgeDeviationThreshold) {
+            // strategy is overhedged, need to decrease position size
+            isIncrease = false;
+            hedgeDeviationInTokens = hedgeExposure - spotExposure;
+        } else if (hedgeDeviation < PRECISION - hedgeDeviationThreshold) {
+            // strategy is underhedged, need to increase position size
+            isIncrease = true;
+            hedgeDeviationInTokens = spotExposure - hedgeExposure;
+        }
     }
-    
 }

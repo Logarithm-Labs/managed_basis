@@ -3,14 +3,28 @@ src = 'src'
 out = 'out'
 libs = ['lib']
 eth-rpc-url = "https://arb-mainnet.g.alchemy.com/v2/PeyMa7ljzBjqJxkH6AnLfVH8zRWOtE1n"
-block_number = 216317138   
-fork_block_number = 216317138   
+# block_number = 220831280
+# fork_block_number = 220831280
 solc = '0.8.25'
-optimizer_runs = 0
 ffi = true
 yul = true
 via_ir = true
-fs_permissions = [{ access = "write", path = "./"}]
+fs_permissions = [{ access = "read-write", path = "./" }]
 evm_version = 'shanghai'
+gas_reports = ["GmxV2PositionManager"]
+show_progress = true
+# threads = 1
+
+[rpc_endpoints]
+# All available network keywords:
+# https://github.com/foundry-rs/forge-std/blob/ff4bf7db008d096ea5a657f2c20516182252a3ed/src/StdCheats.sol#L255-L271
+arbitrum_one = "${ARBITRUM_ONE_RPC_URL}"
+
+# [profile.default.optimizer_details.yulDetails]
+# stackAllocation = true
+# optimizerSteps = "dhfoDgvulfnTUtnIf[xa[r]EscLMcCTUtTOntnfDIulLculVcul[j]Tpeulxa[rul]xa[r]cLgvifCTUca[r]LSsTOtfDnca[r]Iulc]jmul[jul]VcTOculjmul"
+
+# [etherscan]
+# arbitrum_one = { key = "${ARBITRUM_ONE_API_KEY}" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

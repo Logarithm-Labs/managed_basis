@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+pragma solidity ^0.8.0;
+
 import "forge-std/Test.sol";
-import {ManagedBasisStrategy} from "src/ManagedBasisStrategy.sol";
+import {BasisStrategy} from "src/BasisStrategy.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-
-pragma solidity ^0.8.0;
 
 contract InchTest is Test {
     using stdStorage for StdStorage;
 
     address public owner;
-    ManagedBasisStrategy public strategy;
+    BasisStrategy public strategy;
     LogarithmOracle public oracle;
 
     address public USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
@@ -42,16 +42,16 @@ contract InchTest is Test {
         oracle = LogarithmOracle(oracleProxy);
 
         // deploy strategy
-        address strategyImpl = address(new ManagedBasisStrategy());
+        address strategyImpl = address(new BasisStrategy());
         address strategyProxy = address(
             new ERC1967Proxy(
                 strategyImpl,
                 abi.encodeWithSelector(
-                    ManagedBasisStrategy.initialize.selector, asset, product, owner, oracle, entryCost, exitCost, isLong
+                    BasisStrategy.initialize.selector, asset, product, owner, oracle, entryCost, exitCost, isLong
                 )
             )
         );
-        strategy = ManagedBasisStrategy(strategyProxy);
+        strategy = BasisStrategy(strategyProxy);
 
         // set oracle price feed
         address[] memory assets = new address[](2);
@@ -62,10 +62,6 @@ contract InchTest is Test {
         feeds[1] = productPriceFeed;
 
         oracle.setPriceFeeds(assets, feeds);
-
-        // grant operator role to owner
-        strategy.grantRole(strategy.OPERATOR_ROLE(), owner);
-        assertEq(strategy.hasRole(strategy.OPERATOR_ROLE(), owner), true);
     }
 
     function test_inchUtilize() public {
@@ -75,9 +71,8 @@ contract InchTest is Test {
         bytes memory data = generateInchCallData(asset, product, amount);
 
         // call utilize
-        uint256 amountOut = strategy.utilize(amount, ManagedBasisStrategy.SwapType.INCH_V6, data);
-        assertEq(amountOut, IERC20(product).balanceOf(address(strategy)));
-        console.log("amountOut: ", amountOut);
+        strategy.utilize(amount, BasisStrategy.SwapType.INCH_V6, data);
+        console.log("amountOut: ", IERC20(product).balanceOf(address(strategy)));
     }
 
     function test_inchDeutilize() public {
@@ -87,9 +82,8 @@ contract InchTest is Test {
         bytes memory data = generateInchCallData(product, asset, amount);
 
         // call deutilize
-        uint256 amountOut = strategy.deutilize(amount, ManagedBasisStrategy.SwapType.INCH_V6, data);
-        assertEq(amountOut, IERC20(asset).balanceOf(address(strategy)));
-        console.log("amountOut: ", amountOut);
+        strategy.deutilize(amount, BasisStrategy.SwapType.INCH_V6, data);
+        console.log("amountOut: ", IERC20(asset).balanceOf(address(strategy)));
     }
 
     function writeTokenBalance(address who, address token, uint256 amt) internal {
