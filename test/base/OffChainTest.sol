@@ -38,22 +38,14 @@ contract OffChainTest is ForkTest {
     }
 
     function _fullOffChainExecute() internal {
-        vm.startPrank(agent);
-        IPositionManager.AdjustPositionPayload memory request = _getRequest();
-        console.log("requestSizeInTokens", request.sizeDeltaInTokens);
-        console.log("requestCollateralDeltaAmount", request.collateralDeltaAmount);
-        console.log("requestIsIncreasee", request.isIncrease);
-        IPositionManager.AdjustPositionPayload memory response = _executeRequest(request);
-        console.log("responseSizeInTokens", response.sizeDeltaInTokens);
-        console.log("responseCollateralDeltaAmount", response.collateralDeltaAmount);
-        console.log("responseIsIncreasee", response.isIncrease);
-        _reportStateAndExecuteRequest(response);
-        vm.stopPrank();
-    }
-
-    function _getRequest() internal view returns (IPositionManager.AdjustPositionPayload memory request) {
         OffChainPositionManager.RequestInfo memory requestInfo = positionManager.getLastRequest();
-        request = requestInfo.request;
+        if (!requestInfo.isReported) {
+            vm.startPrank(agent);
+            IPositionManager.AdjustPositionPayload memory request = requestInfo.request;
+            IPositionManager.AdjustPositionPayload memory response = _executeRequest(request);
+            _reportStateAndExecuteRequest(response);
+            vm.stopPrank();
+        }
     }
 
     function _executeRequest(IPositionManager.AdjustPositionPayload memory request)
@@ -98,9 +90,6 @@ contract OffChainTest is ForkTest {
             collateralDeltaAmount: response.collateralDeltaAmount,
             isIncrease: response.isIncrease
         });
-        console.log("positionSizeInTokens", positionSizeInTokens);
-        console.log("positionNetBalance", positionNetBalance);
-        console.log("markPrice", markPrice);
         positionManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
     }
 
