@@ -44,7 +44,7 @@ contract ForkTest is Test {
         MockPriceFeed(priceFeed).setOracleData(roundID, answer, startedAt, updatedAt, answeredInRound, decimals);
     }
 
-    function _mockChainlinkPriceFeedAnswer(address priceFeed, int256 answer) internal {
+    function _mockChainlinkPriceFeedAnswer(address priceFeed, int256 answer) internal virtual {
         MockPriceFeed(priceFeed).updatePrice(answer);
     }
 
