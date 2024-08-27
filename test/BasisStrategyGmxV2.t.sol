@@ -452,9 +452,7 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
             strategy.performUpkeep(performData);
             StrategyState memory state1 = _getStrategyState();
 
-            // in case of emergency rebalance down, can't guarantee totalAssets deviation is less than 1%
-            // due to uniswap price impact
-            // _validateStateTransition(state0, state1);
+            _validateStateTransition(state0, state1);
 
             state0 = state1;
             _fullExcuteOrder();
