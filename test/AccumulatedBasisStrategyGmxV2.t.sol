@@ -870,11 +870,8 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(vault.idleAssets(), 0, "idleAssets");
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        while (pendingDeutilization > 0) {
-            _deutilize(pendingDeutilization);
-            _performKeep();
-            (, pendingDeutilization) = strategy.pendingUtilizations();
-        }
+        _deutilize(pendingDeutilization);
+        _performKeep();
     }
 
     function test_performUpkeep_rebalanceDown_whenNoIdle_NoAssetsToWithdraw()
@@ -900,11 +897,77 @@ contract BasisStrategyGmxV2Test is InchTest, GmxV2Test {
         assertEq(strategy.processingRebalance(), true);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        while (pendingDeutilization > 0) {
-            _deutilize(pendingDeutilization);
-            _performKeep();
-            (, pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        _performKeep();
+    }
+
+    function test_performUpkeep_rebalanceDown_deutilize_withLessPendingWithdrawals()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool));
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        assertFalse(deleverageNeeded);
+        assertFalse(positionManagerNeedKeep);
+        uint256 leverageBefore = positionManager.currentLeverage();
+        _performKeep();
+        uint256 leverageAfter = positionManager.currentLeverage();
+        assertEq(leverageBefore, leverageAfter, "leverage not changed");
+        assertEq(strategy.processingRebalance(), true);
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        (upkeepNeeded, performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded, "upkeep is needed");
+        if (upkeepNeeded) {
+            vm.startPrank(forwarder);
+            strategy.performUpkeep(performData);
+            _fullExcuteOrder();
         }
+    }
+
+    function test_performUpkeep_rebalanceDown_deutilize_withGreaterPendingWithdrawals()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
+        uint256 redeemShares1 = vault.balanceOf(user1) / 2;
+        vm.startPrank(user1);
+        vault.redeem(redeemShares1, user1, user1);
+
+        uint256 redeemShares2 = vault.balanceOf(user2) / 2;
+        vm.startPrank(user2);
+        vault.redeem(redeemShares2, user2, user2);
+
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool));
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        assertFalse(deleverageNeeded);
+        assertFalse(positionManagerNeedKeep);
+        uint256 leverageBefore = positionManager.currentLeverage();
+        _performKeep();
+        uint256 leverageAfter = positionManager.currentLeverage();
+        assertEq(leverageBefore, leverageAfter, "leverage not changed");
+        assertEq(strategy.processingRebalance(), true);
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        (upkeepNeeded,) = strategy.checkUpkeep("");
+        assertFalse(upkeepNeeded, "upkeep is not needed");
     }
 
     function test_performUpkeep_emergencyRebalanceDown_whenNotIdle()
