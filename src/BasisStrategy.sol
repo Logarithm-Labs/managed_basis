@@ -453,6 +453,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         int256 hedgeDeviationInTokens;
         bool positionManagerNeedKeep;
+        bool decreaseCollateral;
 
         (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) =
             _checkRebalance(currentLeverage, $.minLeverage, $.maxLeverage, $.safeMarginLeverage);
@@ -494,14 +495,36 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 positionManagerNeedKeep = _positionManager.needKeep();
                 if (positionManagerNeedKeep) {
                     upkeepNeeded = true;
-                } else if (rebalanceUpNeeded) {
-                    upkeepNeeded = true;
+                } else {
+                    (uint256 minDecreaseCollateral,) = _positionManager.decreaseCollateralMinMax();
+                    if (minDecreaseCollateral != 0 && $.pendingDecreaseCollateral >= minDecreaseCollateral) {
+                        uint256 pendingDeutilization_ = _pendingDeutilization(
+                            InternalPendingDeutilization({
+                                positionManager: _positionManager,
+                                asset: address($.asset),
+                                product: address($.product),
+                                totalSupply: _vault.totalSupply(),
+                                processingRebalanceDown: false
+                            })
+                        );
+                        if (pendingDeutilization_ == 0) {
+                            decreaseCollateral = true;
+                            upkeepNeeded = true;
+                        }
+                    } else if (rebalanceUpNeeded) {
+                        upkeepNeeded = true;
+                    }
                 }
             }
         }
 
         performData = abi.encode(
-            rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep, rebalanceUpNeeded
+            rebalanceDownNeeded,
+            deleverageNeeded,
+            hedgeDeviationInTokens,
+            positionManagerNeedKeep,
+            decreaseCollateral,
+            rebalanceUpNeeded
         );
 
         return (upkeepNeeded, performData);
@@ -523,8 +546,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
             bool positionManagerNeedKeep,
+            bool decreaseCollateral,
             bool rebalanceUpNeeded
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool));
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
 
         $.strategyStatus = StrategyStatus.KEEPING;
 
@@ -589,6 +613,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             }
         } else if (positionManagerNeedKeep) {
             $.positionManager.keep();
+        } else if (decreaseCollateral) {
+            if (!_adjustPosition(0, $.pendingDecreaseCollateral, false)) {
+                $.strategyStatus = StrategyStatus.IDLE;
+            }
         } else if (rebalanceUpNeeded) {
             IPositionManager _positionManager = $.positionManager;
             uint256 deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
