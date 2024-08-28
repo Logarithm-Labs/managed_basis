@@ -34,8 +34,10 @@ contract DataProvider {
         bool rebalanceUpNeeded;
         bool rebalanceDownNeeded;
         bool deleverageNeeded;
+        bool decreaseCollateral;
         bool rehedgeNeeded;
         bool positionManagerKeepNeeded;
+        bool processingRebalanceDown;
     }
 
     function getStrategyState(address _strategy) external view returns (StrategyState memory state) {
@@ -51,8 +53,9 @@ contract DataProvider {
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
             bool positionManagerNeedKeep,
+            bool decreaseCollateral,
             bool rebalanceUpNeeded
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool));
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
 
         state.strategyStatus = uint8(strategy.strategyStatus());
         state.totalSupply = vault.totalSupply();
@@ -77,7 +80,9 @@ contract DataProvider {
         state.rebalanceUpNeeded = rebalanceUpNeeded;
         state.rebalanceDownNeeded = rebalanceDownNeeded;
         state.deleverageNeeded = deleverageNeeded;
+        state.decreaseCollateral = decreaseCollateral;
         state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
         state.positionManagerKeepNeeded = positionManagerNeedKeep;
+        state.processingRebalanceDown = strategy.processingRebalance();
     }
 }
