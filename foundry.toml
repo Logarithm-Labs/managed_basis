@@ -19,12 +19,3 @@ show_progress = true
 # All available network keywords:
 # https://github.com/foundry-rs/forge-std/blob/ff4bf7db008d096ea5a657f2c20516182252a3ed/src/StdCheats.sol#L255-L271
 arbitrum_one = "${ARBITRUM_ONE_RPC_URL}"
-
-# [profile.default.optimizer_details.yulDetails]
-# stackAllocation = true
-# optimizerSteps = "dhfoDgvulfnTUtnIf[xa[r]EscLMcCTUtTOntnfDIulLculVcul[j]Tpeulxa[rul]xa[r]cLgvifCTUca[r]LSsTOtfDnca[r]Iulc]jmul[jul]VcTOculjmul"
-
-# [etherscan]
-# arbitrum_one = { key = "${ARBITRUM_ONE_API_KEY}" }
-
-# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
