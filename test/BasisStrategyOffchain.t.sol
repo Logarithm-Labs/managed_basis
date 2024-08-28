@@ -19,6 +19,7 @@ import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {BasisStrategy} from "src/BasisStrategy.sol";
 
 import {console} from "forge-std/console.sol";
 
@@ -97,5 +98,35 @@ contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
         assertGt(requestedAssets, balDelta);
         assertEq(strategy.pendingDecreaseCollateral(), 0);
         assertEq(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+    }
+
+    function test_performUpkeep_decreaseCollateral() public afterMultipleWithdrawRequestCreated validateFinalState {
+        uint256 increaseCollateralMin = 5 * 1e6;
+        uint256 increaseCollateralMax = type(uint256).max;
+        uint256 decreaseCollateralMin = 10 * 1e6;
+        uint256 decreaseCollateralMax = type(uint256).max;
+        uint256 limitDecreaseCollateral = 50 * 1e6;
+        vm.startPrank(owner);
+        positionManager.setCollateralMinMax(
+            increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
+        );
+        positionManager.setLimitDecreaseCollateral(limitDecreaseCollateral);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        uint256 amount = pendingDeutilization * 9 / 10;
+        _deutilize(amount);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        vm.startPrank(operator);
+        strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
+        _deposit(user1, 400_000_000);
+        _excuteOrder();
+
+        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        assertTrue(upkeepNeeded, "upkeepNeeded");
+        (,,,, bool decreaseCollateral,) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+        assertTrue(decreaseCollateral, "decreaseCollateral");
+        assertTrue(strategy.pendingDecreaseCollateral() > 0, "0 pendingDecreaseCollateral");
+        _performKeep();
+        assertTrue(strategy.pendingDecreaseCollateral() == 0, "not 0 pendingDecreaseCollateral");
     }
 }
