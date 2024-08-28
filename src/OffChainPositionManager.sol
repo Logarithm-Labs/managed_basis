@@ -13,7 +13,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUpgradeable {
+contract OffChainPositionManager is UUPSUpgradeable, OwnableUpgradeable, IPositionManager {
     using SafeCast for uint256;
     using Math for uint256;
 

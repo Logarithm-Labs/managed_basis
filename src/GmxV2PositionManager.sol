@@ -32,11 +32,11 @@ import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 /// @title A gmx position manager
 /// @author Logarithm Labs
 contract GmxV2PositionManager is
+    Initializable,
+    OwnableUpgradeable,
     IPositionManager,
     IOrderCallbackReceiver,
-    IGasFeeCallbackReceiver,
-    Initializable,
-    OwnableUpgradeable
+    IGasFeeCallbackReceiver
 {
     using Math for uint256;
     using SafeERC20 for IERC20;

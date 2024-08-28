@@ -13,7 +13,7 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
-contract LogarithmOracle is IOracle, UUPSUpgradeable, Ownable2StepUpgradeable {
+contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
     uint256 public constant FLOAT_PRECISION = 1e30;
 
     /*//////////////////////////////////////////////////////////////
