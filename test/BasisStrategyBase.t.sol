@@ -179,11 +179,18 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         bool rebalanceUpNeeded;
         bool rebalanceDownNeeded;
         bool deleverageNeeded;
+        bool decreaseCollateral;
         int256 hedgeDeviationInTokens;
         bool positionManagerNeedKeep;
         if (performData.length > 0) {
-            (rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, positionManagerNeedKeep, rebalanceUpNeeded)
-            = abi.decode(performData, (bool, bool, int256, bool, bool));
+            (
+                rebalanceDownNeeded,
+                deleverageNeeded,
+                hedgeDeviationInTokens,
+                positionManagerNeedKeep,
+                decreaseCollateral,
+                rebalanceUpNeeded
+            ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         }
 
         state.strategyStatus = uint8(strategy.strategyStatus());
@@ -694,8 +701,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 5 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertTrue(rebalanceUpNeeded);
         assertFalse(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -717,8 +724,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -745,8 +752,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -773,8 +780,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -801,8 +808,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -828,8 +835,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -869,8 +876,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -896,8 +903,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertTrue(deleverageNeeded, "deleverageNeeded");
@@ -918,8 +925,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertTrue(deleverageNeeded);
@@ -941,8 +948,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE), "not idle");
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool));
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertTrue(deleverageNeeded, "deleverageNeeded");
@@ -965,8 +972,9 @@ abstract contract BasisStrategyBaseTest is ForkTest {
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
             bool positionManagerNeedKeep,
+            ,
             bool rebalanceUpNeeded
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool));
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertFalse(deleverageNeeded, "deleverageNeeded");
@@ -988,8 +996,9 @@ abstract contract BasisStrategyBaseTest is ForkTest {
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
             bool positionManagerNeedKeep,
+            ,
             bool rebalanceUpNeeded
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool));
+        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertFalse(deleverageNeeded, "deleverageNeeded");
