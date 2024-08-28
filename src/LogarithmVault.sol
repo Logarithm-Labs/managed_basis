@@ -5,20 +5,20 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
+import {ManagedVault} from "src/ManagedVault.sol";
 
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title A logarithm vault
 /// @author Logarithm Labs
-contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable {
+contract LogarithmVault is Initializable, ManagedVault {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -75,16 +75,14 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable
     //////////////////////////////////////////////////////////////*/
 
     function initialize(
-        address owner,
+        address owner_,
         address asset_,
         uint256 entryCost_,
         uint256 exitCost_,
         string calldata name_,
         string calldata symbol_
     ) external initializer {
-        __Ownable_init(owner);
-        __ERC20_init_unchained(name_, symbol_);
-        __ERC4626_init_unchained(IERC20(asset_));
+        __ManagedVault_init(owner_, asset_, name_, symbol_);
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
         require(entryCost_ < 1 ether && exitCost_ < 1 ether);
@@ -263,6 +261,8 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable
 
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        accrueManagementFee();
+
         IERC20 _asset = IERC20(asset());
         _asset.safeTransferFrom(caller, address(this), assets);
 
@@ -279,6 +279,8 @@ contract LogarithmVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable
         virtual
         override
     {
+        accrueManagementFee();
+
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
         if (caller != owner) {

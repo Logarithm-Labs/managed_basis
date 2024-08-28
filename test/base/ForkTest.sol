@@ -57,6 +57,11 @@ contract ForkTest is Test {
         }
     }
 
+    function _moveTimestamp(uint256 deltaTime) internal {
+        uint256 targetTimestamp = vm.getBlockTimestamp() + deltaTime;
+        vm.warp(targetTimestamp);
+    }
+
     function _mockUniswapPool(address pool, address oracle) internal {
         address token0 = IUniswapV3Pool(pool).token0();
         address token1 = IUniswapV3Pool(pool).token1();
