@@ -31,7 +31,7 @@ contract ManagedVaultSpecTest is ForkTest {
         vault = new ManagedVaultSpec();
         vault.initialize(owner, USDC, "tt", "tt");
         vault.setFeeRecipient(recipient);
-        vault.setApy(0.1 ether); // 10%
+        vault.setManagementFee(0.1 ether); // 10%
 
         // top up user1
         vm.startPrank(USDC_WHALE);

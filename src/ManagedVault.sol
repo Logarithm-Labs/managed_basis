@@ -21,7 +21,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     /// @custom:storage-location erc7201:logarithm.storage.ManagedVault
     struct ManagedVaultStorage {
         address feeRecipient;
-        uint256 apy;
+        uint256 managementFee;
         uint256 lastAccruedTimestamp;
     }
 
@@ -60,12 +60,12 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         _getManagedVaultStorage().feeRecipient = recipient;
     }
 
-    /// @notice set APY of management fee
+    /// @notice set managementFee of management fee
     ///
     /// @param value 1 ether means 100%
-    function setApy(uint256 value) external onlyOwner {
+    function setManagementFee(uint256 value) external onlyOwner {
         require(value < 1 ether);
-        _getManagedVaultStorage().apy = value;
+        _getManagedVaultStorage().managementFee = value;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -78,13 +78,13 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     function accrueManagementFee() public {
         address _feeRecipient = _getManagedVaultStorage().feeRecipient;
         if (_feeRecipient == address(0)) return;
-        uint256 _apy = _getManagedVaultStorage().apy;
-        if (_apy == 0) return;
+        uint256 _managementFee = _getManagedVaultStorage().managementFee;
+        if (_managementFee == 0) return;
         uint256 lastAccruedTimestamp = _getManagedVaultStorage().lastAccruedTimestamp;
         _getManagedVaultStorage().lastAccruedTimestamp = block.timestamp;
         if (lastAccruedTimestamp == 0) return;
         uint256 duration = block.timestamp - lastAccruedTimestamp;
-        uint256 accruedFee = _apy.mulDiv(duration, 365 days);
+        uint256 accruedFee = _managementFee.mulDiv(duration, 365 days);
         uint256 accuredShares = totalSupply().mulDiv(accruedFee, Constants.FLOAT_PRECISION);
         _mint(_feeRecipient, accuredShares);
     }
@@ -93,7 +93,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         return _getManagedVaultStorage().feeRecipient;
     }
 
-    function apy() external view returns (uint256) {
-        return _getManagedVaultStorage().apy;
+    function managementFee() external view returns (uint256) {
+        return _getManagedVaultStorage().managementFee;
     }
 }
