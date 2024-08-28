@@ -6,8 +6,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "src/externals/1inch/interfaces/IAggregationRouterV6.sol";
 import "src/externals/uniswap/interfaces/IUniswapPool.sol";
 
-import "src/libraries/AddressLib.sol";
-import "src/libraries/ProtocolLib.sol";
+import "./AddressLib.sol";
+import "./ProtocolLib.sol";
 
 library InchAggregatorV6Logic {
     using AddressLib for Address;

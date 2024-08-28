@@ -25,9 +25,9 @@ import {IOracle} from "src/interfaces/IOracle.sol";
 import {IKeeper} from "src/interfaces/IKeeper.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
-import {ConfigKeys} from "src/libraries/ConfigKeys.sol";
+import {ConfigKeys} from "src/libraries/utils/ConfigKeys.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
-import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
+import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 
 /// @title A gmx position manager
 /// @author Logarithm Labs

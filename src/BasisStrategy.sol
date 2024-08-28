@@ -14,8 +14,8 @@ import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 import {ILogarithmVault} from "src/interfaces/ILogarithmVault.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 
-import {InchAggregatorV6Logic} from "src/libraries/logic/InchAggregatorV6Logic.sol";
-import {ManualSwapLogic} from "src/libraries/ManualSwapLogic.sol";
+import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
+import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 

@@ -8,7 +8,7 @@ import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
-import {GmxV2Lib} from "src/libraries/GmxV2Lib.sol";
+import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
 
 contract GmxV2Test is ForkTest {

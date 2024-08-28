@@ -59,7 +59,7 @@ contract DataProvider {
         state.totalAssets = vault.totalAssets();
         state.utilizedAssets = strategy.utilizedAssets();
         state.idleAssets = vault.idleAssets();
-        state.assetBalance = IERC20(asset).balanceOf(address(vault));
+        state.assetBalance = IERC20(asset).balanceOf(address(vault)) + IERC20(asset).balanceOf(address(strategy));
         state.productBalance = IERC20(product).balanceOf(address(strategy));
         state.productValueInAsset = oracle.convertTokenAmount(product, asset, state.productBalance);
         state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
