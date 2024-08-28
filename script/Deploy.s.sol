@@ -9,6 +9,9 @@ import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
+
 contract DeployScript is Script {
     address constant owner = 0xd1DD21D53eC43C8FE378E51029Aa3F380b229c98;
     address constant operator = 0x78057a43dDc57792340BC19E50e1011F8DAdEd01;
@@ -44,36 +47,40 @@ contract DeployScript is Script {
     uint256 constant decreaseCollateralMax = type(uint256).max;
     uint256 constant limitDecreaseCollateral = 50 * 1e6;
 
+    LogarithmOracle public oracle = LogarithmOracle(0x26aD95BDdc540ac3Af223F3eB6aA07C13d7e08c9);
+
     function run() public {
         vm.startBroadcast();
-        // deploy LogarithmOracle
-        address oracleImpl = address(new LogarithmOracle());
-        address oracleProxy =
-            address(new ERC1967Proxy(oracleImpl, abi.encodeWithSelector(LogarithmOracle.initialize.selector, owner)));
-        LogarithmOracle oracle = LogarithmOracle(oracleProxy);
-        address oracleOwner = oracle.owner();
-        require(oracleOwner == owner, "Oracle owner is not the expected owner");
+        // // deploy LogarithmOracle
+        // address oracleImpl = address(new LogarithmOracle());
+        // address oracleProxy =
+        //     address(new ERC1967Proxy(oracleImpl, abi.encodeWithSelector(LogarithmOracle.initialize.selector, owner)));
+        // LogarithmOracle oracle = LogarithmOracle(oracleProxy);
+        // address oracleOwner = oracle.owner();
+        // require(oracleOwner == owner, "Oracle owner is not the expected owner");
 
-        // set oracle price feed
-        address[] memory assets = new address[](2);
-        address[] memory feeds = new address[](2);
-        uint256[] memory heartbeats = new uint256[](2);
-        assets[0] = asset;
-        assets[1] = product;
-        feeds[0] = assetPriceFeed;
-        feeds[1] = productPriceFeed;
-        heartbeats[0] = 24 * 3600;
-        heartbeats[1] = 24 * 3600;
-        oracle.setPriceFeeds(assets, feeds);
-        oracle.setHeartbeats(feeds, heartbeats);
+        // // set oracle price feed
+        // address[] memory assets = new address[](2);
+        // address[] memory feeds = new address[](2);
+        // uint256[] memory heartbeats = new uint256[](2);
+        // assets[0] = asset;
+        // assets[1] = product;
+        // feeds[0] = assetPriceFeed;
+        // feeds[1] = productPriceFeed;
+        // heartbeats[0] = 24 * 3600;
+        // heartbeats[1] = 24 * 3600;
+        // oracle.setPriceFeeds(assets, feeds);
+        // oracle.setHeartbeats(feeds, heartbeats);
 
-        console.log("Oracle deployed at", address(oracle));
+        // console.log("Oracle deployed at", address(oracle));
 
         // deploy LogarithmVault
         address vaultImpl = address(new LogarithmVault());
+        address vaultBeacon = address(new UpgradeableBeacon(vaultImpl, owner));
+        console.log("Vault Beacon deployed at", vaultBeacon);
         address vaultProxy = address(
-            new ERC1967Proxy(
-                vaultImpl,
+            new BeaconProxy(
+                vaultBeacon,
                 abi.encodeWithSelector(
                     LogarithmVault.initialize.selector, owner, asset, entryCost, exitCost, "tt", "tt"
                 )
@@ -91,9 +98,11 @@ contract DeployScript is Script {
 
         // deploy BasisStrategy
         address strategyImpl = address(new BasisStrategy());
+        address strategyBeacon = address(new UpgradeableBeacon(strategyImpl, owner));
+        console.log("Strategy Beacon deployed at", strategyBeacon);
         address strategyProxy = address(
-            new ERC1967Proxy(
-                strategyImpl,
+            new BeaconProxy(
+                strategyBeacon,
                 abi.encodeWithSelector(
                     BasisStrategy.initialize.selector,
                     product,
@@ -115,9 +124,11 @@ contract DeployScript is Script {
 
         // deploy OffChainPositionManager
         address positionManagerImpl = address(new OffChainPositionManager());
+        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
+        console.log("PositionManager Beacon deployed at", positionManagerBeacon);
         address positionManagerProxy = address(
-            new ERC1967Proxy(
-                positionManagerImpl,
+            new BeaconProxy(
+                positionManagerBeacon,
                 abi.encodeWithSelector(
                     OffChainPositionManager.initialize.selector,
                     address(strategy),
