@@ -10,10 +10,10 @@ import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-contract OffChainPositionManager is UUPSUpgradeable, OwnableUpgradeable, IPositionManager {
+contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPositionManager {
     using SafeCast for uint256;
     using Math for uint256;
 
@@ -100,8 +100,6 @@ contract OffChainPositionManager is UUPSUpgradeable, OwnableUpgradeable, IPositi
         // strategy is trusted
         IERC20(collateralToken_).approve(strategy_, type(uint256).max);
     }
-
-    function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
 
     function setAgent(address _agent) external onlyOwner {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
