@@ -261,8 +261,6 @@ contract LogarithmVault is Initializable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
-        accrueManagementFee();
-
         IERC20 _asset = IERC20(asset());
         _asset.safeTransferFrom(caller, address(this), assets);
 
@@ -279,8 +277,6 @@ contract LogarithmVault is Initializable, ManagedVault {
         virtual
         override
     {
-        accrueManagementFee();
-
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
         if (caller != owner) {
