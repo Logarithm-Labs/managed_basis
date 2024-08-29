@@ -3,13 +3,14 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
 import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract UpgradePositionManagerScript is Script {
-    OffChainPositionManager public positionManger = OffChainPositionManager(0x554F54caEA7c2EDA630F9d71fa03d58F9B30D1e0);
+    UpgradeableBeacon positionManagerBeacon = UpgradeableBeacon(0xe5227e7432c9AdEE1404885c5aaD506954A08A74);
 
     function run() public {
         vm.startBroadcast();
         address positionManagerImpl = address(new OffChainPositionManager());
-        positionManger.upgradeToAndCall(positionManagerImpl, "");
+        positionManagerBeacon.upgradeTo(positionManagerImpl);
     }
 }
