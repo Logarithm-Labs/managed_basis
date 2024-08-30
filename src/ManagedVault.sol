@@ -77,15 +77,18 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
         address _feeRecipient = _getManagedVaultStorage().feeRecipient;
 
-        if (from == _feeRecipient && to != address(0)) {
-            revert Errors.ManagementFeeTransfer(_feeRecipient);
+        if (_feeRecipient != address(0)) {
+            if (from == _feeRecipient && to != address(0)) {
+                revert Errors.ManagementFeeTransfer(_feeRecipient);
+            }
+
+            if ((from == address(0) && to != _feeRecipient) || (from != _feeRecipient && to == address(0))) {
+                // called when minting to none of recipient
+                // or when buring from none of recipient
+                _accrueManagementFee(_feeRecipient);
+            }
         }
 
-        if ((from == address(0) && to != _feeRecipient) || (from != _feeRecipient && to == address(0))) {
-            // called when minting to none of recipient
-            // or when buring from none of recipient
-            _accrueManagementFee(_feeRecipient);
-        }
         super._update(from, to, value);
     }
 
