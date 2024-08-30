@@ -85,6 +85,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         address[] assetToProductSwapPath;
         // adjust position
         IPositionManager.AdjustPositionPayload requestParams;
+        uint256 deutilizationThreshold; // new state variable to account for deutilization dust
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisStrategy")) - 1)) & ~bytes32(uint256(0xff))
@@ -160,8 +161,15 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         $.operator = _operator;
         $.hedgeDeviationThreshold = 1e16; // 1%
         $.rebalanceDeviationThreshold = 1e17; // 10%
+        $.deutilizationThreshold = 1e16; // 1%
         _setManualSwapPath(_assetToProductSwapPath, _asset, _product);
         _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
+    }
+
+    // adding deutilizationThreshold state variable to the deployed strategy
+    function reinitialize() external reinitializer(2) {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        $.deutilizationThreshold = 1e16; // 1%
     }
 
     function _setManualSwapPath(address[] calldata _assetToProductSwapPath, address _asset, address _product) private {
@@ -297,16 +305,20 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 pendingIncreaseCollateral_ =
             _pendingIncreaseCollateral(idleAssets, _targetLeverage, _processingRebalanceDown);
         uint256 collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization);
-        (uint256 min,) = $.positionManager.increaseCollateralMinMax();
-        if (collateralDeltaAmount < min || !_adjustPosition(amountOut, collateralDeltaAmount, true)) {
+        // (uint256 min,) = $.positionManager.increaseCollateralMinMax();
+        if (!_adjustPosition(amountOut, collateralDeltaAmount, true)) {
+            // @fix Numa: we don't need to do swap back, it would be better to simply revert the transaction if
+            // _adjustPosition returns false (both size and collateral are clamped to zero).
+            // if only collateralDeltaAmount is clamped to zero then _adjustPosition will just skip requesting
+            // collateral, which is fine for small amounts, increase in leverage would be insignificant
+
             // if increasing collateral is smaller than min
             // or if position adjustment request is failed
             // then revert utilizing
             // this is because only increasing size without collateral resulted in
             // increasing the position's leverage
-            uint256 revertedAssets = ManualSwapLogic.swap(amountOut, $.productToAssetSwapPath);
-            IERC20(_asset).safeTransfer(address(_vault), revertedAssets);
-            $.strategyStatus = StrategyStatus.IDLE;
+
+            revert Errors.ZeroAmountUtilization();
         } else {
             $.strategyStatus = StrategyStatus.UTILIZING;
             emit UpdateStrategyStatus(StrategyStatus.UTILIZING);
@@ -378,21 +390,31 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         uint256 collateralDeltaAmount;
         if (!_processingRebalanceDown) {
-            if (amount == pendingDeutilization_) {
+            // @note Numa: relativeThreshold and absoluteThreshold are used introduced to prevent leaving dust deutilization
+            // in the strategy. If deutilization amount is over relativeThreshold or absoluteThreshold, then the strategy
+            // should behave like it is a full deutilize.
+            uint256 relativeThreshold = pendingDeutilization_.mulDiv(
+                Constants.FLOAT_PRECISION - $.deutilizationThreshold, Constants.FLOAT_PRECISION
+            );
+            (, uint256 absoluteThreshold) = pendingDeutilization_.trySub(min);
+            if (amount > relativeThreshold || amount > absoluteThreshold) {
                 // when full deutilizing
                 int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
                 collateralDeltaAmount = totalPendingWithdraw > 0 ? uint256(totalPendingWithdraw) : 0;
-                if (totalSupply != 0) {
-                    // in case of not last withdrawing, full deutilization should guarantee that
-                    // all withdraw requests are processed
-                    // so if collateralDeltaAmount is smaller than min, then increase it by min
-                    (min,) = _positionManager.decreaseCollateralMinMax();
-                    if (collateralDeltaAmount < min) collateralDeltaAmount = min;
-                } else {
+                // @fix Numa: we should not guarantee that all withdraw requests are processed after full deutilization.
+                // In case of full deutilization, we only send collateral decrease request if it greater then Min.
+                // In prod we will have minCollateralDecrease around 500 USDC, so that execution cost would be below 0.2%.
+                // If there is a very small withdraw request, it should not be processed with full deutilization.
+                // With small vault totalAssets 500 USDC can create signifficant leverage impact.
+                // We would process such small withdraws manually be making deposits once per day to match withdraw requests.
+                // We can skip clamping here as it will be done in the _adjustPosition function.
+
+                if (totalSupply == 0) {
                     // in case of redeeming all by users, close hedge position
                     amount = type(uint256).max;
                     collateralDeltaAmount = type(uint256).max;
                 }
+
                 // pendingDecreaseCollateral is used when partial deutilizing
                 // when full deutilization, we don't need
                 $.pendingDecreaseCollateral = 0;

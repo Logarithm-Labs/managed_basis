@@ -47,15 +47,23 @@ contract DataProvider {
         IOracle oracle = IOracle(strategy.oracle());
         address asset = strategy.asset();
         address product = strategy.product();
+        bool rebalanceDownNeeded;
+        bool deleverageNeeded;
+        int256 hedgeDeviationInTokens;
+        bool positionManagerNeedKeep;
+        bool decreaseCollateral;
+        bool rebalanceUpNeeded;
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
-        (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep,
-            bool decreaseCollateral,
-            bool rebalanceUpNeeded
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+        if (performData.length > 0) {
+            (
+                rebalanceDownNeeded,
+                deleverageNeeded,
+                hedgeDeviationInTokens,
+                positionManagerNeedKeep,
+                decreaseCollateral,
+                rebalanceUpNeeded
+            ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+        }
 
         state.strategyStatus = uint8(strategy.strategyStatus());
         state.totalSupply = vault.totalSupply();
