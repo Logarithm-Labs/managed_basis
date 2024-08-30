@@ -6,9 +6,6 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
 
-import {IConfig} from "src/interfaces/IConfig.sol";
-
-import {ConfigKeys} from "src/libraries/utils/ConfigKeys.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
 contract Keeper is UUPSUpgradeable, Ownable2StepUpgradeable {
@@ -18,7 +15,7 @@ contract Keeper is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     /// @custom:storage-location erc7201:logarithm.storage.Keeper
     struct KeeperStorage {
-        address config;
+        mapping(address positionManager => bool) isPositionManager;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.Keeper")) - 1)) & ~bytes32(uint256(0xff))
@@ -39,9 +36,8 @@ contract Keeper is UUPSUpgradeable, Ownable2StepUpgradeable {
                         INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address owner_, address config_) external initializer {
+    function initialize(address owner_) external initializer {
         __Ownable_init(owner_);
-        _getKeeperStorage().config = config_;
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
@@ -55,6 +51,10 @@ contract Keeper is UUPSUpgradeable, Ownable2StepUpgradeable {
     /*//////////////////////////////////////////////////////////////
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    function registerPositionManager(address positionManager, bool allowed) external onlyOwner {
+        _getKeeperStorage().isPositionManager[positionManager] = allowed;
+    }
 
     /// @notice withdraw ETH for operators
     function withdraw(uint256 amount) external onlyOwner {
@@ -79,7 +79,7 @@ contract Keeper is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     function _onlyPositionManager(address caller) private view {
-        if (!IConfig(_getKeeperStorage().config).getBool(ConfigKeys.isPositionManagerKey(caller))) {
+        if (!_getKeeperStorage().isPositionManager[caller]) {
             revert Errors.CallerNotPositionManager();
         }
     }

@@ -8,6 +8,11 @@ contract MockStrategy {
     uint256 public sizeDeltaInTokens;
     uint256 public executionCost;
     uint256 public collateralDelta;
+    address public oracle;
+
+    constructor(address _oracle) {
+        oracle = _oracle;
+    }
 
     function asset() public pure returns (address) {
         return 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // usdc

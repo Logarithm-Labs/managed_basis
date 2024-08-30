@@ -16,8 +16,6 @@ import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
-import {Config} from "src/Config.sol";
-import {ConfigKeys} from "src/libraries/utils/ConfigKeys.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {Keeper} from "src/Keeper.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";

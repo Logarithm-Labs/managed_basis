@@ -20,12 +20,11 @@ import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Order} from "src/externals/gmx-v2/libraries/Order.sol";
 
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {IConfig} from "src/interfaces/IConfig.sol";
+import {IGmxConfig} from "src/interfaces/IGmxConfig.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 import {IKeeper} from "src/interfaces/IKeeper.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
-import {ConfigKeys} from "src/libraries/utils/ConfigKeys.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 
@@ -73,6 +72,8 @@ contract GmxV2PositionManager is
     /// @custom:storage-location erc7201:logarithm.storage.GmxV2PositionManager
     struct GmxV2PositionManagerStorage {
         // configuration
+        address oracle;
+        address keeper;
         address config;
         address strategy;
         address marketToken;
@@ -134,22 +135,29 @@ contract GmxV2PositionManager is
                             INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address owner_, address strategy_, address config_) external initializer {
+    function initialize(address owner_, address strategy_, address config_, address keeper_, address marketKey_)
+        external
+        initializer
+    {
         __Ownable_init(owner_);
         address asset = address(IBasisStrategy(strategy_).asset());
         address product = address(IBasisStrategy(strategy_).product());
-        address marketKey = IConfig(config_).getAddress(ConfigKeys.gmxMarketKey(asset, product));
-        if (marketKey == address(0)) {
+
+        if (marketKey_ == address(0) || keeper_ == address(0)) {
             revert Errors.InvalidMarket();
         }
-        address dataStore = IConfig(config_).getAddress(ConfigKeys.GMX_DATA_STORE);
-        address reader = IConfig(config_).getAddress(ConfigKeys.GMX_READER);
-        Market.Props memory market = IReader(reader).getMarket(dataStore, marketKey);
+
+        address dataStore = IGmxConfig(config_).dataStore();
+        address reader = IGmxConfig(config_).reader();
+        Market.Props memory market = IReader(reader).getMarket(dataStore, marketKey_);
         // assuming short position open
         if ((market.longToken != asset && market.shortToken != asset) || (market.indexToken != product)) {
             revert Errors.InvalidInitializationAssets();
         }
+
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        $.keeper = keeper_;
+        $.oracle = IBasisStrategy(strategy_).oracle();
         $.config = config_;
         $.strategy = strategy_;
         $.marketToken = market.marketToken;
@@ -214,9 +222,9 @@ contract GmxV2PositionManager is
         if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount == 0) {
             revert Errors.InvalidAdjustmentParams();
         }
-        address _config = config();
+        IGmxConfig _config = config();
         GmxV2Lib.GmxParams memory gmxParams = _getGmxParams(_config);
-        address _oracle = IConfig(_config).getAddress(ConfigKeys.ORACLE);
+        address _oracle = _getGmxV2PositionManagerStorage().oracle;
         address _collateralToken = collateralToken();
         uint256 idleCollateralAmount = IERC20(_collateralToken).balanceOf(address(this));
         if (params.isIncrease) {
@@ -224,9 +232,7 @@ contract GmxV2PositionManager is
                 revert Errors.NotEnoughCollateral();
             }
             if (idleCollateralAmount > 0) {
-                IERC20(_collateralToken).safeTransfer(
-                    IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT), idleCollateralAmount
-                );
+                IERC20(_collateralToken).safeTransfer(_config.orderVault(), idleCollateralAmount);
             }
             uint256 sizeDeltaUsd;
             if (params.sizeDeltaInTokens > 0) {
@@ -238,13 +244,13 @@ contract GmxV2PositionManager is
                 InternalCreateOrderParams({
                     isLong: isLong(),
                     isIncrease: true,
-                    exchangeRouter: IConfig(_config).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER),
-                    orderVault: IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT),
+                    exchangeRouter: _config.exchangeRouter(),
+                    orderVault: _config.orderVault(),
                     collateralToken: _collateralToken,
                     collateralDeltaAmount: idleCollateralAmount,
                     sizeDeltaUsd: sizeDeltaUsd,
-                    callbackGasLimit: IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT),
-                    referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
+                    callbackGasLimit: _config.callbackGasLimit(),
+                    referralCode: _config.referralCode()
                 })
             );
             _getGmxV2PositionManagerStorage().status = Status.INCREASE;
@@ -275,15 +281,15 @@ contract GmxV2PositionManager is
                     InternalCreateOrderParams({
                         isLong: isLong(),
                         isIncrease: false,
-                        exchangeRouter: IConfig(_config).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER),
-                        orderVault: IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT),
+                        exchangeRouter: _config.exchangeRouter(),
+                        orderVault: _config.orderVault(),
                         collateralToken: _collateralToken,
                         collateralDeltaAmount: !decreaseResult.isIncreaseCollateral
                             ? decreaseResult.initialCollateralDeltaAmount
                             : 0,
                         sizeDeltaUsd: decreaseResult.sizeDeltaUsdToDecrease,
-                        callbackGasLimit: IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT),
-                        referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
+                        callbackGasLimit: _config.callbackGasLimit(),
+                        referralCode: _config.referralCode()
                     })
                 );
                 if (decreaseResult.sizeDeltaUsdToIncrease > 0) {
@@ -292,13 +298,13 @@ contract GmxV2PositionManager is
                         InternalCreateOrderParams({
                             isLong: isLong(),
                             isIncrease: true,
-                            exchangeRouter: IConfig(_config).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER),
-                            orderVault: IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT),
+                            exchangeRouter: _config.exchangeRouter(),
+                            orderVault: _config.orderVault(),
                             collateralToken: _collateralToken,
                             collateralDeltaAmount: 0,
                             sizeDeltaUsd: decreaseResult.sizeDeltaUsdToIncrease,
-                            callbackGasLimit: IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT),
-                            referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
+                            callbackGasLimit: _config.callbackGasLimit(),
+                            referralCode: _config.referralCode()
                         })
                     );
                 } else {
@@ -314,23 +320,21 @@ contract GmxV2PositionManager is
         // if there is idle collateral, then increase that amount to settle the claimable funding
         // otherwise, decrease collateral by 1 to settle
         address _collateralToken = collateralToken();
-        address _config = config();
+        IGmxConfig _config = config();
         uint256 idleCollateralAmount = IERC20(_collateralToken).balanceOf(address(this));
         if (idleCollateralAmount > 0) {
-            IERC20(_collateralToken).safeTransfer(
-                IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT), idleCollateralAmount
-            );
+            IERC20(_collateralToken).safeTransfer(_config.orderVault(), idleCollateralAmount);
             _createOrder(
                 InternalCreateOrderParams({
                     isLong: isLong(),
                     isIncrease: true,
-                    exchangeRouter: IConfig(_config).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER),
-                    orderVault: IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT),
+                    exchangeRouter: _config.exchangeRouter(),
+                    orderVault: _config.orderVault(),
                     collateralToken: _collateralToken,
                     collateralDeltaAmount: idleCollateralAmount,
                     sizeDeltaUsd: 0,
-                    callbackGasLimit: IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT),
-                    referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
+                    callbackGasLimit: _config.callbackGasLimit(),
+                    referralCode: _config.referralCode()
                 })
             );
         } else {
@@ -338,13 +342,13 @@ contract GmxV2PositionManager is
                 InternalCreateOrderParams({
                     isLong: isLong(),
                     isIncrease: false,
-                    exchangeRouter: IConfig(_config).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER),
-                    orderVault: IConfig(_config).getAddress(ConfigKeys.GMX_ORDER_VAULT),
+                    exchangeRouter: _config.exchangeRouter(),
+                    orderVault: _config.orderVault(),
                     collateralToken: _collateralToken,
                     collateralDeltaAmount: 1,
                     sizeDeltaUsd: 0,
-                    callbackGasLimit: IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT),
-                    referralCode: IConfig(_config).getBytes32(ConfigKeys.GMX_REFERRAL_CODE)
+                    callbackGasLimit: _config.callbackGasLimit(),
+                    referralCode: _config.referralCode()
                 })
             );
         }
@@ -355,7 +359,7 @@ contract GmxV2PositionManager is
     /// Note: collateral funding amount is transfered to this position manager
     ///       otherwise, transfered to strategy
     function claimFunding() public {
-        IExchangeRouter exchangeRouter = IExchangeRouter(IConfig(config()).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER));
+        IExchangeRouter exchangeRouter = IExchangeRouter(config().exchangeRouter());
         address _shortToken = shortToken();
         address _longToken = longToken();
         address _collateralToken = collateralToken();
@@ -395,7 +399,7 @@ contract GmxV2PositionManager is
     /// @param token token address derived from the gmx event: ClaimableCollateralUpdated
     /// @param timeKey timeKey value derived from the gmx event: ClaimableCollateralUpdated
     function claimCollateral(address token, uint256 timeKey) external {
-        IExchangeRouter exchangeRouter = IExchangeRouter(IConfig(config()).getAddress(ConfigKeys.GMX_EXCHANGE_ROUTER));
+        IExchangeRouter exchangeRouter = IExchangeRouter(config().exchangeRouter());
         address[] memory markets = new address[](1);
         markets[0] = marketToken();
         address[] memory tokens = new address[](1);
@@ -501,11 +505,9 @@ contract GmxV2PositionManager is
     /// Note: should exclude the claimable funding amounts until claiming them
     ///       and include the pending asset token amount and idle assets
     function positionNetBalance() public view returns (uint256) {
-        address _config = config();
+        IGmxConfig _config = config();
         (uint256 remainingCollateral,) = GmxV2Lib.getRemainingCollateralAndClaimableFundingAmount(
-            _getGmxParams(_config),
-            IConfig(_config).getAddress(ConfigKeys.ORACLE),
-            IConfig(_config).getAddress(ConfigKeys.GMX_REFERRAL_STORAGE)
+            _getGmxParams(_config), _getGmxV2PositionManagerStorage().oracle, _config.referralStorage()
         );
 
         return remainingCollateral + IERC20(collateralToken()).balanceOf(address(this))
@@ -514,11 +516,9 @@ contract GmxV2PositionManager is
 
     /// @notice current leverage of position that is based on gmx's calculation
     function currentLeverage() external view returns (uint256) {
-        address _config = config();
+        IGmxConfig _config = config();
         return GmxV2Lib.getCurrentLeverage(
-            _getGmxParams(_config),
-            IConfig(_config).getAddress(ConfigKeys.ORACLE),
-            IConfig(_config).getAddress(ConfigKeys.GMX_REFERRAL_STORAGE)
+            _getGmxParams(_config), _getGmxV2PositionManagerStorage().oracle, _config.referralStorage()
         );
     }
 
@@ -532,11 +532,8 @@ contract GmxV2PositionManager is
     /// @return feeIncrease the execution fee for increase
     /// @return feeDecrease the execution fee for decrease
     function getExecutionFee() public view returns (uint256 feeIncrease, uint256 feeDecrease) {
-        address _config = config();
-        return GmxV2Lib.getExecutionFee(
-            IConfig(_config).getAddress(ConfigKeys.GMX_DATA_STORE),
-            IConfig(_config).getUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT)
-        );
+        IGmxConfig _config = config();
+        return GmxV2Lib.getExecutionFee(IGmxConfig(_config).dataStore(), _config.callbackGasLimit());
     }
 
     function getClaimableFundingAmounts()
@@ -544,11 +541,9 @@ contract GmxV2PositionManager is
         view
         returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount)
     {
-        address _config = config();
+        IGmxConfig _config = config();
         (claimableLongTokenAmount, claimableShortTokenAmount) = GmxV2Lib.getClaimableFundingAmounts(
-            _getGmxParams(_config),
-            IConfig(_config).getAddress(ConfigKeys.ORACLE),
-            IConfig(_config).getAddress(ConfigKeys.GMX_REFERRAL_STORAGE)
+            _getGmxParams(_config), _getGmxV2PositionManagerStorage().oracle, _config.referralStorage()
         );
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
@@ -557,18 +552,16 @@ contract GmxV2PositionManager is
     ///      or if idle collateral is bigger than minimum requriement so that
     ///      the position can be settled to add it to position's collateral
     function needKeep() external view returns (bool) {
-        address _config = config();
+        IGmxConfig _config = config();
         address _collateralToken = collateralToken();
-        address oralcle = IConfig(_config).getAddress(ConfigKeys.ORACLE);
+        address oralcle = _getGmxV2PositionManagerStorage().oracle;
         uint256 idleCollateralAmount = IERC20(_collateralToken).balanceOf(address(this));
         uint256 idleCollateralAmountUsd = IOracle(oralcle).getAssetPrice(_collateralToken) * idleCollateralAmount;
         if (idleCollateralAmountUsd > MIN_IDLE_COLLATERAL_USD) {
             return true;
         }
         (uint256 remainingCollateral, uint256 claimableTokenAmount) = GmxV2Lib
-            .getRemainingCollateralAndClaimableFundingAmount(
-            _getGmxParams(_config), oralcle, IConfig(_config).getAddress(ConfigKeys.GMX_REFERRAL_STORAGE)
-        );
+            .getRemainingCollateralAndClaimableFundingAmount(_getGmxParams(_config), oralcle, _config.referralStorage());
         if (remainingCollateral > 0) {
             return claimableTokenAmount.mulDiv(PRECISION, remainingCollateral) > maxClaimableFundingShare();
         } else {
@@ -661,7 +654,7 @@ contract GmxV2PositionManager is
         IBasisStrategy(strategy()).afterAdjustPosition(callbackParams);
     }
 
-    function _getGmxParams(address _config) private view returns (GmxV2Lib.GmxParams memory) {
+    function _getGmxParams(IGmxConfig _config) private view returns (GmxV2Lib.GmxParams memory) {
         Market.Props memory market = Market.Props({
             marketToken: marketToken(),
             indexToken: indexToken(),
@@ -670,8 +663,8 @@ contract GmxV2PositionManager is
         });
         return GmxV2Lib.GmxParams({
             market: market,
-            dataStore: IConfig(_config).getAddress(ConfigKeys.GMX_DATA_STORE),
-            reader: IConfig(_config).getAddress(ConfigKeys.GMX_READER),
+            dataStore: _config.dataStore(),
+            reader: _config.reader(),
             account: address(this),
             collateralToken: collateralToken(),
             isLong: isLong()
@@ -704,7 +697,7 @@ contract GmxV2PositionManager is
     /// @dev validate if the caller is OrderHandler of gmx
     function _validateOrderHandler(bytes32 orderKey, bool isIncrease) private view {
         if (
-            msg.sender != IConfig(config()).getAddress(ConfigKeys.GMX_ORDER_HANDLER)
+            msg.sender != config().orderHandler()
                 || (
                     isIncrease
                         ? orderKey != _getGmxV2PositionManagerStorage().pendingIncreaseOrderKey
@@ -732,9 +725,9 @@ contract GmxV2PositionManager is
                         STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function config() public view returns (address) {
+    function config() public view returns (IGmxConfig) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.config;
+        return IGmxConfig($.config);
     }
 
     function collateralToken() public view returns (address) {
@@ -749,7 +742,7 @@ contract GmxV2PositionManager is
 
     function keeper() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return IConfig($.config).getAddress(ConfigKeys.KEEPER);
+        return $.keeper;
     }
 
     function marketToken() public view returns (address) {

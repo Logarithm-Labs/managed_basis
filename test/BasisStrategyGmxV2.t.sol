@@ -20,8 +20,7 @@ import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
-import {Config} from "src/Config.sol";
-import {ConfigKeys} from "src/libraries/utils/ConfigKeys.sol";
+import {GmxConfig} from "src/GmxConfig.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
 import {Keeper} from "src/Keeper.sol";
 import {BasisStrategy} from "src/BasisStrategy.sol";
@@ -34,34 +33,19 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
 
     function _initTest() internal override {
         // deploy config
-        Config config = new Config();
-        config.initialize(owner);
-
-        config.setAddress(ConfigKeys.GMX_EXCHANGE_ROUTER, GMX_EXCHANGE_ROUTER);
-        config.setAddress(ConfigKeys.GMX_DATA_STORE, GMX_DATA_STORE);
-        config.setAddress(ConfigKeys.GMX_ORDER_HANDLER, GMX_ORDER_HANDLER);
-        config.setAddress(ConfigKeys.GMX_ORDER_VAULT, GMX_ORDER_VAULT);
-        config.setAddress(ConfigKeys.GMX_REFERRAL_STORAGE, IOrderHandler(GMX_ORDER_HANDLER).referralStorage());
-        config.setAddress(ConfigKeys.GMX_READER, GMX_READER);
-        config.setAddress(ConfigKeys.ORACLE, address(oracle));
-
-        config.setAddress(ConfigKeys.gmxMarketKey(asset, product), GMX_ETH_USDC_MARKET);
-
-        config.setUint(ConfigKeys.GMX_CALLBACK_GAS_LIMIT, 2_000_000);
+        GmxConfig config = new GmxConfig();
+        config.initialize(owner, GMX_EXCHANGE_ROUTER, GMX_READER);
         vm.label(address(config), "config");
 
         // deploy keeper
         address keeperImpl = address(new Keeper());
-        address keeperProxy = address(
-            new ERC1967Proxy(keeperImpl, abi.encodeWithSelector(Keeper.initialize.selector, owner, address(config)))
-        );
+        address keeperProxy =
+            address(new ERC1967Proxy(keeperImpl, abi.encodeWithSelector(Keeper.initialize.selector, owner)));
         keeper = Keeper(payable(keeperProxy));
         vm.label(address(keeper), "keeper");
 
         // topup keeper with some native token, in practice, its don't through keeper
         vm.deal(address(keeper), 1 ether);
-
-        config.setAddress(ConfigKeys.KEEPER, address(keeper));
 
         // deploy positionManager impl
         address positionManagerImpl = address(new GmxV2PositionManager());
@@ -72,7 +56,12 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
             new BeaconProxy(
                 positionManagerBeacon,
                 abi.encodeWithSelector(
-                    GmxV2PositionManager.initialize.selector, owner, address(strategy), address(config)
+                    GmxV2PositionManager.initialize.selector,
+                    owner,
+                    address(strategy),
+                    address(config),
+                    address(keeper),
+                    GMX_ETH_USDC_MARKET
                 )
             )
         );
@@ -81,8 +70,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         vm.label(address(positionManager), "positionManager");
 
         strategy.setPositionManager(positionManagerProxy);
-
-        config.setBool(ConfigKeys.isPositionManagerKey(address(positionManager)), true);
+        keeper.registerPositionManager(positionManagerProxy, true);
     }
 
     function _positionManager() internal view override returns (IPositionManager) {
