@@ -759,7 +759,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     function test_needKeep_funding() public afterHavingPosition {
         _moveTimestampWithPriceFeed(2 * 24 * 3600);
         vm.startPrank(address(owner));
-        positionManager.setMaxClaimableFundingShare(0.0001 ether);
+        GmxConfig(address(positionManager.config())).setMaxClaimableFundingShare(0.0001 ether);
         bool result = positionManager.needKeep();
         assertTrue(result);
     }
@@ -767,7 +767,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     function test_performUpkeep_keep_decreaseCollateral() public afterHavingPosition {
         _moveTimestampWithPriceFeed(2 * 24 * 3600);
         vm.startPrank(address(owner));
-        positionManager.setMaxClaimableFundingShare(0.0001 ether);
+        GmxConfig(address(positionManager.config())).setMaxClaimableFundingShare(0.0001 ether);
         (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
         assertTrue(claimableLongAmount > 0);
         assertTrue(claimableShortAmount > 0);
@@ -793,7 +793,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     function test_performUpkeep_keep_increaseCollateral() public afterHavingPosition {
         _moveTimestampWithPriceFeed(2 * 24 * 3600);
         vm.startPrank(address(owner));
-        positionManager.setMaxClaimableFundingShare(0.0001 ether);
+        GmxConfig(address(positionManager.config())).setMaxClaimableFundingShare(0.0001 ether);
         (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
         assertTrue(claimableLongAmount > 0);
         assertTrue(claimableShortAmount > 0);

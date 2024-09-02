@@ -22,6 +22,8 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
         address reader;
         uint256 callbackGasLimit;
         bytes32 referralCode;
+        uint256 maxClaimableFundingShare;
+        uint256 limitDecreaseCollateral;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxConfig")) - 1)) & ~bytes32(uint256(0xff))
@@ -44,6 +46,9 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
         _updateAddresses(exchageRouter_, reader_);
         $.callbackGasLimit = 2_000_000;
         $.referralCode = bytes32(0);
+        $.maxClaimableFundingShare = 1e16; // 1%
+        // placeholder constant to avoid contract size bloat
+        $.limitDecreaseCollateral = 100 * 1e6;
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
@@ -73,6 +78,15 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
 
     function setReferralCode(bytes32 referralCode_) external onlyOwner {
         _getGmxConfigStorage().referralCode = referralCode_;
+    }
+
+    function setMaxClaimableFundingShare(uint256 _maxClaimableFundingShare) external onlyOwner {
+        require(_maxClaimableFundingShare < 1 ether);
+        _getGmxConfigStorage().maxClaimableFundingShare = _maxClaimableFundingShare;
+    }
+
+    function setLimitDecreaseCollateral(uint256 _limit) external onlyOwner {
+        _getGmxConfigStorage().limitDecreaseCollateral = _limit;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -109,5 +123,13 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
 
     function referralCode() external view returns (bytes32) {
         return _getGmxConfigStorage().referralCode;
+    }
+
+    function maxClaimableFundingShare() external view returns (uint256) {
+        return _getGmxConfigStorage().maxClaimableFundingShare;
+    }
+
+    function limitDecreaseCollateral() external view returns (uint256) {
+        return _getGmxConfigStorage().limitDecreaseCollateral;
     }
 }

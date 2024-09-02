@@ -17,4 +17,8 @@ interface IGmxConfig {
     function callbackGasLimit() external view returns (uint256);
 
     function referralCode() external view returns (bytes32);
+
+    function maxClaimableFundingShare() external view returns (uint256);
+
+    function limitDecreaseCollateral() external view returns (uint256);
 }

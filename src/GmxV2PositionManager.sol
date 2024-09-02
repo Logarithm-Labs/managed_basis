@@ -82,7 +82,6 @@ contract GmxV2PositionManager is
         address shortToken;
         address collateralToken;
         bool isLong;
-        uint256 maxClaimableFundingShare;
         // state
         Status status;
         // bytes32 activeRequestId;
@@ -92,7 +91,6 @@ contract GmxV2PositionManager is
         // this value is set only when changing position sizes
         uint256 sizeInTokensBefore;
         uint256 decreasingCollateralDeltaAmount;
-        uint256 limitDecreaseCollateral;
     }
     // min max
     // uint256[2] increaseSizeMinMax;
@@ -167,11 +165,6 @@ contract GmxV2PositionManager is
         $.collateralToken = asset;
         $.isLong = false;
 
-        $.maxClaimableFundingShare = 1e16; // 1%
-
-        // placeholder constant to avoid contract size bloat
-        $.limitDecreaseCollateral = 100 * 1e6;
-
         // $.increaseSizeMinMax = [0, type(uint256).max];
         // $.increaseCollateralMinMax = [0, type(uint256).max];
         // $.decreaseSizeMinMax = [0, type(uint256).max];
@@ -212,11 +205,6 @@ contract GmxV2PositionManager is
     //     $.increaseCollateralMinMax = [increaseCollateralMin, increaseCollateralMax];
     //     $.decreaseCollateralMinMax = [decreaseCollateralMin, decreaseCollateralMax];
     // }
-
-    function setMaxClaimableFundingShare(uint256 _maxClaimableFundingShare) external onlyOwner {
-        require(_maxClaimableFundingShare < 1 ether);
-        _getGmxV2PositionManagerStorage().maxClaimableFundingShare = _maxClaimableFundingShare;
-    }
 
     function adjustPosition(AdjustPositionPayload calldata params) external onlyStrategy whenNotPending {
         if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount == 0) {
@@ -771,7 +759,7 @@ contract GmxV2PositionManager is
     }
 
     function maxClaimableFundingShare() public view returns (uint256) {
-        return _getGmxV2PositionManagerStorage().maxClaimableFundingShare;
+        return config().maxClaimableFundingShare();
     }
 
     function pendingIncreaseOrderKey() public view returns (bytes32) {
@@ -803,7 +791,6 @@ contract GmxV2PositionManager is
     }
 
     function limitDecreaseCollateral() external view returns (uint256) {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.limitDecreaseCollateral;
+        config().limitDecreaseCollateral();
     }
 }
