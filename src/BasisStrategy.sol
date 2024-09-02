@@ -270,11 +270,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         ILogarithmVault _vault = $.vault;
         uint256 idleAssets = _vault.idleAssets();
+        uint256 totalSupply = _vault.totalSupply();
         address _asset = address($.asset);
         uint256 _targetLeverage = $.targetLeverage;
         bool _processingRebalanceDown = $.processingRebalanceDown;
 
-        uint256 pendingUtilization = _pendingUtilization(idleAssets, _targetLeverage, _processingRebalanceDown);
+        uint256 pendingUtilization =
+            _pendingUtilization(totalSupply, idleAssets, _targetLeverage, _processingRebalanceDown);
         if (pendingUtilization == 0) {
             revert Errors.ZeroPendingUtilization();
         }
@@ -706,29 +708,31 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         returns (uint256 pendingUtilizationInAsset, uint256 pendingDeutilizationInProduct)
     {
         (bool upkeepNeeded,) = checkUpkeep("");
-        if (upkeepNeeded) return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
+        if (upkeepNeeded) return (0, 0);
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         // when strategy is in processing, return 0
         // so that operator doesn't need to take care of status
         if ($.strategyStatus != StrategyStatus.IDLE) {
-            return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
+            return (0, 0);
         }
 
-        IPositionManager _positionManager = $.positionManager;
         ILogarithmVault _vault = $.vault;
+        IPositionManager _positionManager = $.positionManager;
+        uint256 totalSupply = _vault.totalSupply();
         address _asset = address($.asset);
         address _product = address($.product);
         uint256 idleAssets = _vault.idleAssets();
         bool _processingRebalanceDown = $.processingRebalanceDown;
-        pendingUtilizationInAsset = _pendingUtilization(idleAssets, $.targetLeverage, _processingRebalanceDown);
+        pendingUtilizationInAsset =
+            _pendingUtilization(totalSupply, idleAssets, $.targetLeverage, _processingRebalanceDown);
         pendingDeutilizationInProduct = _pendingDeutilization(
             InternalPendingDeutilization({
                 positionManager: _positionManager,
                 asset: _asset,
                 product: _product,
-                totalSupply: _vault.totalSupply(),
+                totalSupply: totalSupply,
                 processingRebalanceDown: _processingRebalanceDown
             })
         );
@@ -896,15 +900,18 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         _vault.processPendingWithdrawRequests();
     }
 
-    function _pendingUtilization(uint256 idleAssets, uint256 _targetLeverage, bool _processingRebalanceDown)
-        public
-        pure
-        returns (uint256)
-    {
-        // don't use utilze function when rebalancing
-        return _processingRebalanceDown
-            ? 0
-            : idleAssets.mulDiv(_targetLeverage, Constants.FLOAT_PRECISION + _targetLeverage);
+    function _pendingUtilization(
+        uint256 totalSupply,
+        uint256 idleAssets,
+        uint256 _targetLeverage,
+        bool _processingRebalanceDown
+    ) public pure returns (uint256) {
+        // don't use utilze function when rebalancing or when totalSupply is zero
+        if (totalSupply == 0 || _processingRebalanceDown) {
+            return 0;
+        } else {
+            return idleAssets.mulDiv(_targetLeverage, Constants.FLOAT_PRECISION + _targetLeverage);
+        }
     }
 
     function _pendingIncreaseCollateral(uint256 idleAssets, uint256 _targetLeverage, bool _processingRebalanceDown)

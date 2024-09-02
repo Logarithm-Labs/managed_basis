@@ -247,7 +247,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         });
 
         if (params.isIncrease) {
-            $.pendingCollateralIncrease -= params.collateralDeltaAmount;
+            $.pendingCollateralIncrease = 0;
         } else {
             if (params.collateralDeltaAmount > 0) {
                 _transferFromAgent(params.collateralDeltaAmount);
