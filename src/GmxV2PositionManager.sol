@@ -533,7 +533,7 @@ contract GmxV2PositionManager is
     /// @return feeDecrease the execution fee for decrease
     function getExecutionFee() public view returns (uint256 feeIncrease, uint256 feeDecrease) {
         IGmxConfig _config = config();
-        return GmxV2Lib.getExecutionFee(IGmxConfig(_config).dataStore(), _config.callbackGasLimit());
+        return GmxV2Lib.getExecutionFee(_config.dataStore(), _config.callbackGasLimit());
     }
 
     function getClaimableFundingAmounts()
