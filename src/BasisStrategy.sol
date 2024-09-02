@@ -160,6 +160,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         $.vault = ILogarithmVault(_vault);
         $.oracle = IOracle(_oracle);
         $.operator = _operator;
+        $.responseDeviationThreshold = 1e16;
         $.hedgeDeviationThreshold = 1e16; // 1%
         $.rebalanceDeviationThreshold = 1e17; // 10%
         $.deutilizationThreshold = 1e16; // 1%
