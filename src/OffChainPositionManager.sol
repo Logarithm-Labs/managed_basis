@@ -101,6 +101,11 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         IERC20(collateralToken_).approve(strategy_, type(uint256).max);
     }
 
+    function reinitialize() external reinitializer(2) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        $.pendingCollateralIncrease = 0;
+    }
+
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
 
     function setAgent(address _agent) external onlyOwner {
@@ -286,7 +291,7 @@ contract OffChainPositionManager is IPositionManager, UUPSUpgradeable, OwnableUp
         });
 
         if (params.isIncrease) {
-            $.pendingCollateralIncrease -= params.collateralDeltaAmount;
+            $.pendingCollateralIncrease = 0;
         } else {
             if (params.collateralDeltaAmount > 0) {
                 _transferFromAgent(params.collateralDeltaAmount);
