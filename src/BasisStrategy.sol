@@ -73,6 +73,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         // strategy configuration
         uint256 rebalanceDeviationThreshold;
         uint256 hedgeDeviationThreshold;
+        uint256 responseDeviationThreshold;
         // pending state
         uint256 pendingDeutilizedAssets;
         uint256 pendingDecreaseCollateral;
@@ -246,6 +247,12 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 _safeMarginLeverage
     ) external onlyOwner {
         _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
+    }
+
+    function unpause() external onlyOwner {
+        // callable only when status is KEEPING
+        require(_getBasisStrategyStorage().strategyStatus == StrategyStatus.KEEPING);
+        _getBasisStrategyStorage().strategyStatus = StrategyStatus.IDLE;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -790,32 +797,30 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
 
         if (requestParams.sizeDeltaInTokens > 0) {
-            (bool isWrongPositionSize, int256 sizeDeltaDeviationInTokens) = _checkResultedPositionSize(
-                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, $.hedgeDeviationThreshold
+            (bool exceedsThreshold, int256 sizeDeviation) = _checkResponseDeviation(
+                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, $.responseDeviationThreshold
             );
-            if (isWrongPositionSize) {
-                // status = StrategyStatus.PAUSE;
-                if (sizeDeltaDeviationInTokens < 0) {
-                    ILogarithmVault _vault = $.vault;
+            if (exceedsThreshold) {
+                $.strategyStatus = StrategyStatus.PAUSE;
+                if (sizeDeviation < 0) {
                     // revert spot to make hedge size the same as spot
-                    uint256 amountOut =
-                        ManualSwapLogic.swap(uint256(-sizeDeltaDeviationInTokens), $.productToAssetSwapPath);
-                    IERC20($.asset).safeTransfer(address(_vault), amountOut);
+                    uint256 amountOut = ManualSwapLogic.swap(uint256(-sizeDeviation), $.productToAssetSwapPath);
+                    IERC20($.asset).safeTransfer(address($.vault), amountOut);
                 }
             }
         }
 
         if (requestParams.collateralDeltaAmount > 0) {
-            (, uint256 revertCollateralDeltaAmount) =
-                requestParams.collateralDeltaAmount.trySub(responseParams.collateralDeltaAmount);
-
-            if (
-                revertCollateralDeltaAmount.mulDiv(Constants.FLOAT_PRECISION, requestParams.collateralDeltaAmount)
-                    > $.hedgeDeviationThreshold
-            ) {
-                IERC20($.asset).safeTransferFrom(
-                    address($.positionManager), address($.vault), revertCollateralDeltaAmount
-                );
+            (bool exceedsThreshold, int256 collateralDeviation) = _checkResponseDeviation(
+                responseParams.collateralDeltaAmount, requestParams.collateralDeltaAmount, $.responseDeviationThreshold
+            );
+            if (exceedsThreshold) {
+                $.strategyStatus = StrategyStatus.PAUSE;
+                if (collateralDeviation < 0) {
+                    IERC20($.asset).safeTransferFrom(
+                        address($.positionManager), address($.vault), uint256(-collateralDeviation)
+                    );
+                }
             }
 
             (, bool rebalanceDownNeeded) = _checkNeedRebalance(
@@ -836,24 +841,25 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         if (requestParams.sizeDeltaInTokens == type(uint256).max) {
             // when closing hedge
             requestParams.sizeDeltaInTokens = responseParams.sizeDeltaInTokens;
+            requestParams.collateralDeltaAmount = responseParams.collateralDeltaAmount;
         }
 
         if (requestParams.sizeDeltaInTokens > 0) {
             uint256 _pendingDeutilizedAssets = $.pendingDeutilizedAssets;
             delete $.pendingDeutilizedAssets;
-            (bool isWrongPositionSize, int256 sizeDeltaDeviationInTokens) = _checkResultedPositionSize(
-                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, $.hedgeDeviationThreshold
+            (bool exceedsThreshold, int256 sizeDeviation) = _checkResponseDeviation(
+                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, $.responseDeviationThreshold
             );
-            if (isWrongPositionSize) {
-                if (sizeDeltaDeviationInTokens < 0) {
-                    uint256 sizeDeltaDeviationInTokensAbs = uint256(-sizeDeltaDeviationInTokens);
+            if (exceedsThreshold) {
+                $.strategyStatus = StrategyStatus.PAUSE;
+                if (sizeDeviation < 0) {
+                    uint256 sizeDeviationAbs = uint256(-sizeDeviation);
                     uint256 assetsToBeReverted;
-                    if (sizeDeltaDeviationInTokensAbs == requestParams.sizeDeltaInTokens) {
+                    if (sizeDeviationAbs == requestParams.sizeDeltaInTokens) {
                         assetsToBeReverted = _pendingDeutilizedAssets;
                     } else {
-                        assetsToBeReverted = _pendingDeutilizedAssets.mulDiv(
-                            sizeDeltaDeviationInTokensAbs, requestParams.sizeDeltaInTokens
-                        );
+                        assetsToBeReverted =
+                            _pendingDeutilizedAssets.mulDiv(sizeDeviationAbs, requestParams.sizeDeltaInTokens);
                     }
                     ManualSwapLogic.swap(assetsToBeReverted, $.assetToProductSwapPath);
                 }
@@ -864,6 +870,15 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             );
             // only when rebalance was started, we need to check
             $.processingRebalanceDown = _processingRebalanceDown && rebalanceDownNeeded;
+        }
+
+        if (requestParams.collateralDeltaAmount > 0) {
+            (bool exceedsThreshold, int256 collateralDeviation) = _checkResponseDeviation(
+                responseParams.collateralDeltaAmount, requestParams.collateralDeltaAmount, $.responseDeviationThreshold
+            );
+            if (exceedsThreshold) {
+                $.strategyStatus = StrategyStatus.PAUSE;
+            }
         }
 
         if (responseParams.collateralDeltaAmount > 0) {
@@ -968,18 +983,18 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         result = value < min ? 0 : (value > max ? max : value);
     }
 
-    /// @dev should be called under the condition that sizeDeltaInTokensReq != 0
-    /// Note: check if resulted position size is in allowed deviation
-    function _checkResultedPositionSize(
-        uint256 sizeDeltaInTokensResp,
-        uint256 sizeDeltaInTokensReq,
-        uint256 _hedgeDeviationThreshold
-    ) internal pure returns (bool isWrongPositionSize, int256 sizeDeltaDeviationInTokens) {
-        sizeDeltaDeviationInTokens = sizeDeltaInTokensResp.toInt256() - sizeDeltaInTokensReq.toInt256();
-        isWrongPositionSize = (
-            sizeDeltaDeviationInTokens < 0 ? uint256(-sizeDeltaDeviationInTokens) : uint256(sizeDeltaDeviationInTokens)
-        ).mulDiv(Constants.FLOAT_PRECISION, sizeDeltaInTokensReq) > _hedgeDeviationThreshold;
-        return (isWrongPositionSize, sizeDeltaDeviationInTokens);
+    /// @dev should be called under the condition that valueReq != 0
+    /// Note: check if response of position adjustment is in allowed deviation
+    function _checkResponseDeviation(uint256 valueResp, uint256 valueReq, uint256 _responseDeviationThreshold)
+        internal
+        pure
+        returns (bool exceedsThreshold, int256 deviation)
+    {
+        deviation = valueResp.toInt256() - valueReq.toInt256();
+        exceedsThreshold = (deviation < 0 ? uint256(-deviation) : uint256(deviation)).mulDiv(
+            Constants.FLOAT_PRECISION, valueReq
+        ) > _responseDeviationThreshold;
+        return (exceedsThreshold, deviation);
     }
 
     /// @dev check if current leverage is not near to the target leverage
