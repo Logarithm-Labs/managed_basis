@@ -791,6 +791,6 @@ contract GmxV2PositionManager is
     }
 
     function limitDecreaseCollateral() external view returns (uint256) {
-        config().limitDecreaseCollateral();
+        return config().limitDecreaseCollateral();
     }
 }

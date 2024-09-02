@@ -21,6 +21,7 @@ import {Keeper} from "src/Keeper.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategy} from "src/BasisStrategy.sol";
 import {LogarithmVault} from "src/LogarithmVault.sol";
+import {StrategyConfig} from "src/StrategyConfig.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
@@ -131,6 +132,9 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         vault = LogarithmVault(vaultProxy);
         vm.label(address(vault), "vault");
 
+        StrategyConfig config = new StrategyConfig();
+        config.initialize(owner);
+
         // deploy strategy
         address strategyImpl = address(new BasisStrategy());
         address strategyProxy = address(
@@ -138,6 +142,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
                 strategyImpl,
                 abi.encodeWithSelector(
                     BasisStrategy.initialize.selector,
+                    address(config),
                     product,
                     address(vault),
                     oracle,
