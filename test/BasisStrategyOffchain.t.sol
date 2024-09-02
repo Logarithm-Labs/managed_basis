@@ -20,11 +20,17 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {BasisStrategy} from "src/BasisStrategy.sol";
+import {OffchainConfig} from "src/OffchainConfig.sol";
 
 import {console} from "forge-std/console.sol";
 
 contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
     function _initTest() internal override {
+        // deploy config
+        OffchainConfig config = new OffchainConfig();
+        config.initialize(owner);
+        vm.label(address(config), "config");
+
         // deploy position manager
         address positionManagerImpl = address(new OffChainPositionManager());
         address positionManagerProxy = address(
@@ -32,6 +38,7 @@ contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
                 positionManagerImpl,
                 abi.encodeWithSelector(
                     OffChainPositionManager.initialize.selector,
+                    address(config),
                     address(strategy),
                     agent,
                     address(oracle),
@@ -107,10 +114,11 @@ contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
         uint256 decreaseCollateralMax = type(uint256).max;
         uint256 limitDecreaseCollateral = 50 * 1e6;
         vm.startPrank(owner);
-        positionManager.setCollateralMinMax(
+        address _config = address(positionManager.config());
+        OffchainConfig(_config).setCollateralMinMax(
             increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
         );
-        positionManager.setLimitDecreaseCollateral(limitDecreaseCollateral);
+        OffchainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         uint256 amount = pendingDeutilization * 9 / 10;
         _deutilize(amount);

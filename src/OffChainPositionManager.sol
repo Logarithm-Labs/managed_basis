@@ -6,6 +6,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
+import {IOffchainConfig} from "src/interfaces/IOffchainConfig.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -40,16 +41,13 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
     /// @custom:storage-location erc7201:logarithm.storage.OffChainPositionManager
     struct OffChainPositionManagerStorage {
         // configuration
+        address config;
         address strategy;
         address agent;
         address oracle;
         address indexToken;
         address collateralToken;
         bool isLong;
-        uint256[2] increaseSizeMinMax;
-        uint256[2] increaseCollateralMinMax;
-        uint256[2] decreaseSizeMinMax;
-        uint256[2] decreaseCollateralMinMax;
         // position state
         uint256 currentRound;
         uint256 lastRequestRound;
@@ -57,7 +55,6 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         mapping(uint256 round => PositionState) positionStates;
         mapping(uint256 round => RequestInfo) requests;
         uint256[] requestRounds;
-        uint256 limitDecreaseCollateral;
     }
 
     uint256 private constant PRECISION = 1e18;
@@ -77,6 +74,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
     //////////////////////////////////////////////////////////////*/
 
     function initialize(
+        address config_,
         address strategy_,
         address agent_,
         address oracle_,
@@ -86,16 +84,13 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
     ) external initializer {
         __Ownable_init(msg.sender);
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        $.config = config_;
         $.strategy = strategy_;
         $.agent = agent_;
         $.oracle = oracle_;
         $.indexToken = indexToken_;
         $.collateralToken = collateralToken_;
         $.isLong = isLong_;
-        $.increaseSizeMinMax = [0, type(uint256).max];
-        $.increaseCollateralMinMax = [0, type(uint256).max];
-        $.decreaseSizeMinMax = [0, type(uint256).max];
-        $.decreaseCollateralMinMax = [0, type(uint256).max];
 
         // strategy is trusted
         IERC20(collateralToken_).approve(strategy_, type(uint256).max);
@@ -104,36 +99,6 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
     function setAgent(address _agent) external onlyOwner {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         $.agent = _agent;
-    }
-
-    function setSizeMinMax(
-        uint256 increaseSizeMin,
-        uint256 increaseSizeMax,
-        uint256 decreaseSizeMin,
-        uint256 decreaseSizeMax
-    ) external onlyOwner {
-        require(increaseSizeMin < increaseSizeMax && decreaseSizeMin < decreaseSizeMax);
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        $.increaseSizeMinMax = [increaseSizeMin, increaseSizeMax];
-        $.decreaseSizeMinMax = [decreaseSizeMin, decreaseSizeMax];
-    }
-
-    function setCollateralMinMax(
-        uint256 increaseCollateralMin,
-        uint256 increaseCollateralMax,
-        uint256 decreaseCollateralMin,
-        uint256 decreaseCollateralMax
-    ) external onlyOwner {
-        require(increaseCollateralMin < increaseCollateralMax && decreaseCollateralMin < decreaseCollateralMax);
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        $.increaseCollateralMinMax = [increaseCollateralMin, increaseCollateralMax];
-        $.decreaseCollateralMinMax = [decreaseCollateralMin, decreaseCollateralMax];
-    }
-
-    function setLimitDecreaseCollateral(uint256 limit) external onlyOwner {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        require(limit > $.decreaseCollateralMinMax[0]);
-        $.limitDecreaseCollateral = limit;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -191,19 +156,18 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
 
         if (params.isIncrease) {
             if (params.collateralDeltaAmount > 0) {
+                (uint256 minIncreaseCollateral, uint256 maxIncreaseCollateral) = config().increaseCollateralMinMax();
                 if (
-                    params.collateralDeltaAmount < $.increaseCollateralMinMax[0]
-                        || params.collateralDeltaAmount > $.increaseCollateralMinMax[1]
+                    params.collateralDeltaAmount < minIncreaseCollateral
+                        || params.collateralDeltaAmount > maxIncreaseCollateral
                 ) {
                     revert Errors.InvalidCollateralRequest(params.collateralDeltaAmount, true);
                 }
                 _transferToAgent(params.collateralDeltaAmount);
             }
             if (params.sizeDeltaInTokens > 0) {
-                if (
-                    params.sizeDeltaInTokens < $.increaseSizeMinMax[0]
-                        || params.sizeDeltaInTokens > $.increaseSizeMinMax[1]
-                ) {
+                (uint256 minIncreaseSize, uint256 maxIncreaseSize) = increaseSizeMinMax();
+                if (params.sizeDeltaInTokens < minIncreaseSize || params.sizeDeltaInTokens > maxIncreaseSize) {
                     revert Errors.InvalidCollateralRequest(params.sizeDeltaInTokens, true);
                 }
             }
@@ -211,18 +175,17 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
             emit RequestIncreasePosition(params.collateralDeltaAmount, params.sizeDeltaInTokens, round);
         } else {
             if (params.collateralDeltaAmount > 0) {
+                (uint256 minDecreaseCollateral, uint256 maxDecreaseCollateral) = config().decreaseCollateralMinMax();
                 if (
-                    params.collateralDeltaAmount < $.decreaseCollateralMinMax[0]
-                        || params.collateralDeltaAmount > $.decreaseCollateralMinMax[1]
+                    params.collateralDeltaAmount < minDecreaseCollateral
+                        || params.collateralDeltaAmount > maxDecreaseCollateral
                 ) {
                     revert Errors.InvalidCollateralRequest(params.collateralDeltaAmount, false);
                 }
             }
             if (params.sizeDeltaInTokens > 0) {
-                if (
-                    params.sizeDeltaInTokens < $.decreaseSizeMinMax[0]
-                        || params.sizeDeltaInTokens > $.decreaseSizeMinMax[1]
-                ) {
+                (uint256 minDecreaseSize, uint256 maxDecreaseSize) = decreaseSizeMinMax();
+                if (params.sizeDeltaInTokens < minDecreaseSize || params.sizeDeltaInTokens > maxDecreaseSize) {
                     revert Errors.InvalidCollateralRequest(params.sizeDeltaInTokens, false);
                 }
             }
@@ -419,6 +382,11 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
                         EXERNAL STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
 
+    function config() public view returns (IOffchainConfig) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return IOffchainConfig($.config);
+    }
+
     function agent() external view returns (address) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.agent;
@@ -470,18 +438,16 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
     function keep() external pure {}
 
     function increaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        return ($.increaseCollateralMinMax[0], $.increaseCollateralMinMax[1]);
+        return config().increaseCollateralMinMax();
     }
 
-    function increaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+    function increaseSizeMinMax() public view returns (uint256 min, uint256 max) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         address asset = $.collateralToken;
         address product = $.indexToken;
         IOracle _oracle = IOracle($.oracle);
 
-        min = $.increaseSizeMinMax[0];
-        max = $.increaseSizeMinMax[1];
+        (min, max) = config().increaseSizeMinMax();
 
         (min, max) = (
             min == 0 ? 0 : _oracle.convertTokenAmount(asset, product, min),
@@ -492,19 +458,17 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
     }
 
     function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        return ($.decreaseCollateralMinMax[0], $.decreaseCollateralMinMax[1]);
+        return config().decreaseCollateralMinMax();
     }
 
-    function decreaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+    function decreaseSizeMinMax() public view returns (uint256 min, uint256 max) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
         address asset = $.collateralToken;
         address product = $.indexToken;
         IOracle _oracle = IOracle($.oracle);
 
-        min = $.decreaseSizeMinMax[0];
-        max = $.decreaseSizeMinMax[1];
+        (min, max) = config().decreaseSizeMinMax();
 
         (min, max) = (
             min == 0 ? 0 : _oracle.convertTokenAmount(asset, product, min),
@@ -515,7 +479,6 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
     }
 
     function limitDecreaseCollateral() external view returns (uint256) {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        return $.limitDecreaseCollateral;
+        return config().limitDecreaseCollateral();
     }
 }
