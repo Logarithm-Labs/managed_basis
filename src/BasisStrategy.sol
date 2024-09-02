@@ -893,12 +893,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
         if (assetsToWithdraw == 0) return;
         IERC20(_asset).safeTransfer(address(_vault), assetsToWithdraw);
-        uint256 processedAssets = _vault.processPendingWithdrawRequests();
-        // collect assets back to strategy except the processed assets
-        (, uint256 collectingAssets) = assetsToWithdraw.trySub(processedAssets);
-        if (collectingAssets > 0) {
-            IERC20(_asset).safeTransferFrom(address(_vault), address(this), collectingAssets);
-        }
+        _vault.processPendingWithdrawRequests();
     }
 
     function _pendingUtilization(uint256 idleAssets, uint256 _targetLeverage, bool _processingRebalanceDown)
