@@ -20,8 +20,8 @@ library Errors {
     error CallerNotFactory();
     /// @notice only callable by strategy
     error CallerNotStrategy();
-    /// @notice only callable by keeper
-    error CallerNotKeeper();
+    /// @notice only callable by gmxGasStation
+    error CallerNotGmxGasStation();
     /// @notice invalid maket config when deploying pos manager
     error InvalidMarket();
     /// @notice asset and product are not matched with short and long tokens

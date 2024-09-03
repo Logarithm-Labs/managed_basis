@@ -22,14 +22,14 @@ import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
 import {GmxConfig} from "src/GmxConfig.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {Keeper} from "src/Keeper.sol";
+import {GmxGasStation} from "src/GmxGasStation.sol";
 import {BasisStrategy} from "src/BasisStrategy.sol";
 import {LogarithmVault} from "src/LogarithmVault.sol";
 
 import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
 
 contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
-    Keeper keeper;
+    GmxGasStation gmxGasStation;
 
     function _initTest() internal override {
         // deploy config
@@ -37,15 +37,15 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         config.initialize(owner, GMX_EXCHANGE_ROUTER, GMX_READER);
         vm.label(address(config), "config");
 
-        // deploy keeper
-        address keeperImpl = address(new Keeper());
-        address keeperProxy =
-            address(new ERC1967Proxy(keeperImpl, abi.encodeWithSelector(Keeper.initialize.selector, owner)));
-        keeper = Keeper(payable(keeperProxy));
-        vm.label(address(keeper), "keeper");
+        // deploy gmxGasStation
+        address gmxGasStationImpl = address(new GmxGasStation());
+        address gmxGasStationProxy =
+            address(new ERC1967Proxy(gmxGasStationImpl, abi.encodeWithSelector(GmxGasStation.initialize.selector, owner)));
+        gmxGasStation = GmxGasStation(payable(gmxGasStationProxy));
+        vm.label(address(gmxGasStation), "gmxGasStation");
 
-        // topup keeper with some native token, in practice, its don't through keeper
-        vm.deal(address(keeper), 1 ether);
+        // topup gmxGasStation with some native token, in practice, its don't through gmxGasStation
+        vm.deal(address(gmxGasStation), 1 ether);
 
         // deploy positionManager impl
         address positionManagerImpl = address(new GmxV2PositionManager());
@@ -60,7 +60,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
                     owner,
                     address(strategy),
                     address(config),
-                    address(keeper),
+                    address(gmxGasStation),
                     GMX_ETH_USDC_MARKET
                 )
             )
@@ -70,7 +70,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         vm.label(address(positionManager), "positionManager");
 
         strategy.setPositionManager(positionManagerProxy);
-        keeper.registerPositionManager(positionManagerProxy, true);
+        gmxGasStation.registerPositionManager(positionManagerProxy, true);
     }
 
     function _positionManager() internal view override returns (IPositionManager) {

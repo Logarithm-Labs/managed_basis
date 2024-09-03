@@ -17,7 +17,7 @@ import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {Keeper} from "src/Keeper.sol";
+import {GmxGasStation} from "src/GmxGasStation.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategy} from "src/BasisStrategy.sol";
 import {LogarithmVault} from "src/LogarithmVault.sol";

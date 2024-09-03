@@ -8,22 +8,23 @@ import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.s
 
 import {Errors} from "src/libraries/utils/Errors.sol";
 
-contract Keeper is UUPSUpgradeable, Ownable2StepUpgradeable {
+contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
 
-    /// @custom:storage-location erc7201:logarithm.storage.Keeper
-    struct KeeperStorage {
+    /// @custom:storage-location erc7201:logarithm.storage.GmxGasStation
+    struct GmxGasStationStorage {
         mapping(address positionManager => bool) isPositionManager;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.Keeper")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant KeeperStorageLocation = 0x63dafe2512cb44a709d10b12940dfa0f3fb2d081570628c61db84f8f1956ef00;
+    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxGasStation")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant GmxGasStationStorageLocation =
+        0x63dafe2512cb44a709d10b12940dfa0f3fb2d081570628c61db84f8f1956ef00;
 
-    function _getKeeperStorage() private pure returns (KeeperStorage storage $) {
+    function _getGmxGasStationStorage() private pure returns (GmxGasStationStorage storage $) {
         assembly {
-            $.slot := KeeperStorageLocation
+            $.slot := GmxGasStationStorageLocation
         }
     }
 
@@ -53,7 +54,7 @@ contract Keeper is UUPSUpgradeable, Ownable2StepUpgradeable {
     //////////////////////////////////////////////////////////////*/
 
     function registerPositionManager(address positionManager, bool allowed) external onlyOwner {
-        _getKeeperStorage().isPositionManager[positionManager] = allowed;
+        _getGmxGasStationStorage().isPositionManager[positionManager] = allowed;
     }
 
     /// @notice withdraw ETH for operators
@@ -79,7 +80,7 @@ contract Keeper is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     function _onlyPositionManager(address caller) private view {
-        if (!_getKeeperStorage().isPositionManager[caller]) {
+        if (!_getGmxGasStationStorage().isPositionManager[caller]) {
             revert Errors.CallerNotPositionManager();
         }
     }
