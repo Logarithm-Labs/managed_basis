@@ -150,11 +150,11 @@ contract DeployScript is Script {
         vault.setStrategy(address(strategy));
         strategy.setPositionManager(address(positionManager));
         strategy.setForwarder(forwarder);
-        positionManager.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
-        positionManager.setCollateralMinMax(
-            increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
-        );
-        positionManager.setLimitDecreaseCollateral(limitDecreaseCollateral);
+        // positionManager.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
+        // positionManager.setCollateralMinMax(
+        //     increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
+        // );
+        // positionManager.setLimitDecreaseCollateral(limitDecreaseCollateral);
         require(vault.strategy() == address(strategy), "Vault strategy is not the expected strategy");
         require(
             strategy.positionManager() == address(positionManager),

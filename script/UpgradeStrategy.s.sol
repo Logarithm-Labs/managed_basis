@@ -18,7 +18,7 @@ contract UpgradeStrategyScript is Script {
         vm.startBroadcast();
         address strategyImpl = address(new BasisStrategy());
         beacon.upgradeTo(strategyImpl);
-        strategy.reinitialize();
+        // strategy.reinitialize();
 
         DataProvider.StrategyState memory state1 = dataProvider.getStrategyState(address(strategy));
         _logState(state1);

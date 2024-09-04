@@ -47,7 +47,6 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
         $.callbackGasLimit = 2_000_000;
         $.referralCode = bytes32(0);
         $.maxClaimableFundingShare = 1e16; // 1%
-        // placeholder constant to avoid contract size bloat
         $.limitDecreaseCollateral = 100 * 1e6;
     }
 
