@@ -13,16 +13,16 @@ import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 import {ILogarithmVault} from "src/interfaces/ILogarithmVault.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
-import {IStrategyConfig} from "src/interfaces/IStrategyConfig.sol";
 
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
+import {console2 as console} from "forge-std/console2.sol";
 
 /// @title A basis strategy
 /// @author Logarithm Labs
-contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
+contract BasisStrategyForEtch is Initializable, OwnableUpgradeable, IBasisStrategy {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -66,12 +66,14 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         IOracle oracle;
         address operator;
         address forwarder;
-        address config;
         // leverage state
         uint256 targetLeverage;
         uint256 minLeverage;
         uint256 maxLeverage;
         uint256 safeMarginLeverage;
+        // strategy configuration
+        uint256 rebalanceDeviationThreshold;
+        uint256 hedgeDeviationThreshold;
         // pending state
         uint256 pendingDeutilizedAssets;
         uint256 pendingDecreaseCollateral;
@@ -84,6 +86,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         address[] assetToProductSwapPath;
         // adjust position
         IPositionManager.AdjustPositionPayload requestParams;
+        uint256 deutilizationThreshold; // new state variable to account for deutilization dust
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisStrategy")) - 1)) & ~bytes32(uint256(0xff))
@@ -133,7 +136,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
     //////////////////////////////////////////////////////////////*/
 
     function initialize(
-        address _config,
         address _product,
         address _vault,
         address _oracle,
@@ -149,10 +151,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         address _asset = ILogarithmVault(_vault).asset();
 
         // validation oracle
-        if (
-            _config == address(0) || IOracle(_oracle).getAssetPrice(_asset) == 0
-                || IOracle(_oracle).getAssetPrice(_product) == 0
-        ) revert();
+        if (IOracle(_oracle).getAssetPrice(_asset) == 0 || IOracle(_oracle).getAssetPrice(_product) == 0) revert();
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
@@ -161,10 +160,17 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         $.vault = ILogarithmVault(_vault);
         $.oracle = IOracle(_oracle);
         $.operator = _operator;
-        $.config = _config;
-
+        $.hedgeDeviationThreshold = 1e16; // 1%
+        $.rebalanceDeviationThreshold = 1e17; // 10%
+        $.deutilizationThreshold = 1e16; // 1%
         _setManualSwapPath(_assetToProductSwapPath, _asset, _product);
         _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
+    }
+
+    // adding deutilizationThreshold state variable to the deployed strategy
+    function reinitialize() external reinitializer(2) {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        $.deutilizationThreshold = 1e16; // 1%
     }
 
     function _setManualSwapPath(address[] calldata _assetToProductSwapPath, address _asset, address _product) private {
@@ -234,13 +240,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         _getBasisStrategyStorage().forwarder = _forwarder;
     }
 
-    function setOperator(address _operator) external onlyOwner {
-        if (_operator == address(0)) {
-            revert Errors.ZeroAddress();
-        }
-        _getBasisStrategyStorage().operator = _operator;
-    }
-
     function setLeverages(
         uint256 _targetLeverage,
         uint256 _minLeverage,
@@ -248,12 +247,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 _safeMarginLeverage
     ) external onlyOwner {
         _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
-    }
-
-    function unpause() external onlyOwner {
-        // callable only when status is KEEPING
-        require(_getBasisStrategyStorage().strategyStatus == StrategyStatus.KEEPING);
-        _getBasisStrategyStorage().strategyStatus = StrategyStatus.IDLE;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -277,13 +270,11 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
         ILogarithmVault _vault = $.vault;
         uint256 idleAssets = _vault.idleAssets();
-        uint256 totalSupply = _vault.totalSupply();
         address _asset = address($.asset);
         uint256 _targetLeverage = $.targetLeverage;
         bool _processingRebalanceDown = $.processingRebalanceDown;
 
-        uint256 pendingUtilization =
-            _pendingUtilization(totalSupply, idleAssets, _targetLeverage, _processingRebalanceDown);
+        uint256 pendingUtilization = _pendingUtilization(idleAssets, _targetLeverage, _processingRebalanceDown);
         if (pendingUtilization == 0) {
             revert Errors.ZeroPendingUtilization();
         }
@@ -404,11 +395,17 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             // in the strategy. If deutilization amount is over relativeThreshold or absoluteThreshold, then the strategy
             // should behave like it is a full deutilize.
             uint256 relativeThreshold = pendingDeutilization_.mulDiv(
-                Constants.FLOAT_PRECISION - config().deutilizationThreshold(), Constants.FLOAT_PRECISION
+                Constants.FLOAT_PRECISION - $.deutilizationThreshold, Constants.FLOAT_PRECISION
             );
             (, uint256 absoluteThreshold) = pendingDeutilization_.trySub(min);
+            console.log("relativeThreshold", relativeThreshold);
+            console.log("absoluteThreshold", absoluteThreshold);
+            console.log("pendingDeutilization_", pendingDeutilization_);
+            console.log("amount", amount);
             if (amount > relativeThreshold || amount > absoluteThreshold) {
                 // when full deutilizing
+                int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
+                collateralDeltaAmount = totalPendingWithdraw > 0 ? uint256(totalPendingWithdraw) : 0;
                 // @fix Numa: we should not guarantee that all withdraw requests are processed after full deutilization.
                 // In case of full deutilization, we only send collateral decrease request if it greater then Min.
                 // In prod we will have minCollateralDecrease around 500 USDC, so that execution cost would be below 0.2%.
@@ -421,18 +418,11 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     // in case of redeeming all by users, close hedge position
                     amount = type(uint256).max;
                     collateralDeltaAmount = type(uint256).max;
-                    $.pendingDecreaseCollateral = 0;
-                } else {
-                    // @fix Numa: if collateralDeltaAmount will be clamped to 0, then we need to reflect it in pendingDecreaseCollateral
-                    (min, max) = _positionManager.decreaseCollateralMinMax();
-                    int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
-                    uint256 pendingWithdraw = totalPendingWithdraw > 0 ? uint256(totalPendingWithdraw) : 0;
-                    collateralDeltaAmount = _clamp(min, pendingWithdraw, max);
-                    $.pendingDecreaseCollateral = pendingWithdraw - collateralDeltaAmount;
                 }
 
                 // pendingDecreaseCollateral is used when partial deutilizing
                 // when full deutilization, we don't need
+                $.pendingDecreaseCollateral = 0;
             } else {
                 // when partial deutilizing
                 uint256 positionNetBalance = _positionManager.positionNetBalance();
@@ -451,6 +441,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                 }
             }
         }
+        console.log("collateralDeltaAmount", collateralDeltaAmount);
 
         // the return value of this operation should be true, due to above checks
         _adjustPosition(amount, collateralDeltaAmount, false);
@@ -498,7 +489,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         // check if strategy is in rebalancing down and currentLeverage is not near to target
         if (!rebalanceDownNeeded && _processingRebalanceDown) {
             (, rebalanceDownNeeded) =
-                _checkNeedRebalance(currentLeverage, $.targetLeverage, config().rebalanceDeviationThreshold());
+                _checkNeedRebalance(currentLeverage, $.targetLeverage, $.rebalanceDeviationThreshold);
         }
 
         // perform upkeep only when deltaCollateralToDecrease is more than and equal to limit amount
@@ -525,7 +516,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             upkeepNeeded = true;
         } else {
             hedgeDeviationInTokens =
-                _checkHedgeDeviation(_positionManager, address($.product), config().hedgeDeviationThreshold());
+                _checkHedgeDeviation(_positionManager, address($.product), $.hedgeDeviationThreshold);
             if (hedgeDeviationInTokens != 0) {
                 upkeepNeeded = true;
             } else {
@@ -720,31 +711,29 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         returns (uint256 pendingUtilizationInAsset, uint256 pendingDeutilizationInProduct)
     {
         (bool upkeepNeeded,) = checkUpkeep("");
-        if (upkeepNeeded) return (0, 0);
+        if (upkeepNeeded) return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         // when strategy is in processing, return 0
         // so that operator doesn't need to take care of status
         if ($.strategyStatus != StrategyStatus.IDLE) {
-            return (0, 0);
+            return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
         }
 
-        ILogarithmVault _vault = $.vault;
         IPositionManager _positionManager = $.positionManager;
-        uint256 totalSupply = _vault.totalSupply();
+        ILogarithmVault _vault = $.vault;
         address _asset = address($.asset);
         address _product = address($.product);
         uint256 idleAssets = _vault.idleAssets();
         bool _processingRebalanceDown = $.processingRebalanceDown;
-        pendingUtilizationInAsset =
-            _pendingUtilization(totalSupply, idleAssets, $.targetLeverage, _processingRebalanceDown);
+        pendingUtilizationInAsset = _pendingUtilization(idleAssets, $.targetLeverage, _processingRebalanceDown);
         pendingDeutilizationInProduct = _pendingDeutilization(
             InternalPendingDeutilization({
                 positionManager: _positionManager,
                 asset: _asset,
                 product: _product,
-                totalSupply: totalSupply,
+                totalSupply: _vault.totalSupply(),
                 processingRebalanceDown: _processingRebalanceDown
             })
         );
@@ -796,6 +785,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             });
             $.requestParams = requestParams;
             $.positionManager.adjustPosition(requestParams);
+            console.log("sizeDeltaInTokens", sizeDeltaInTokens);
+            console.log("collateralDeltaAmount", collateralDeltaAmount);
+            console.log("isIncrease", isIncrease);
             return true;
         } else {
             return false;
@@ -807,36 +799,36 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
 
         if (requestParams.sizeDeltaInTokens > 0) {
-            (bool exceedsThreshold, int256 sizeDeviation) = _checkResponseDeviation(
-                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, config().responseDeviationThreshold()
+            (bool isWrongPositionSize, int256 sizeDeltaDeviationInTokens) = _checkResultedPositionSize(
+                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, $.hedgeDeviationThreshold
             );
-            if (exceedsThreshold) {
-                $.strategyStatus = StrategyStatus.PAUSE;
-                if (sizeDeviation < 0) {
+            if (isWrongPositionSize) {
+                // status = StrategyStatus.PAUSE;
+                if (sizeDeltaDeviationInTokens < 0) {
+                    ILogarithmVault _vault = $.vault;
                     // revert spot to make hedge size the same as spot
-                    uint256 amountOut = ManualSwapLogic.swap(uint256(-sizeDeviation), $.productToAssetSwapPath);
-                    IERC20($.asset).safeTransfer(address($.vault), amountOut);
+                    uint256 amountOut =
+                        ManualSwapLogic.swap(uint256(-sizeDeltaDeviationInTokens), $.productToAssetSwapPath);
+                    IERC20($.asset).safeTransfer(address(_vault), amountOut);
                 }
             }
         }
 
         if (requestParams.collateralDeltaAmount > 0) {
-            (bool exceedsThreshold, int256 collateralDeviation) = _checkResponseDeviation(
-                responseParams.collateralDeltaAmount,
-                requestParams.collateralDeltaAmount,
-                config().responseDeviationThreshold()
-            );
-            if (exceedsThreshold) {
-                $.strategyStatus = StrategyStatus.PAUSE;
-                if (collateralDeviation < 0) {
-                    IERC20($.asset).safeTransferFrom(
-                        address($.positionManager), address($.vault), uint256(-collateralDeviation)
-                    );
-                }
+            (, uint256 revertCollateralDeltaAmount) =
+                requestParams.collateralDeltaAmount.trySub(responseParams.collateralDeltaAmount);
+
+            if (
+                revertCollateralDeltaAmount.mulDiv(Constants.FLOAT_PRECISION, requestParams.collateralDeltaAmount)
+                    > $.hedgeDeviationThreshold
+            ) {
+                IERC20($.asset).safeTransferFrom(
+                    address($.positionManager), address($.vault), revertCollateralDeltaAmount
+                );
             }
 
             (, bool rebalanceDownNeeded) = _checkNeedRebalance(
-                $.positionManager.currentLeverage(), $.targetLeverage, config().rebalanceDeviationThreshold()
+                $.positionManager.currentLeverage(), $.targetLeverage, $.rebalanceDeviationThreshold
             );
             // only when rebalance was started, we need to check
             $.processingRebalanceDown = $.processingRebalanceDown && rebalanceDownNeeded;
@@ -853,46 +845,34 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         if (requestParams.sizeDeltaInTokens == type(uint256).max) {
             // when closing hedge
             requestParams.sizeDeltaInTokens = responseParams.sizeDeltaInTokens;
-            requestParams.collateralDeltaAmount = responseParams.collateralDeltaAmount;
         }
 
         if (requestParams.sizeDeltaInTokens > 0) {
             uint256 _pendingDeutilizedAssets = $.pendingDeutilizedAssets;
             delete $.pendingDeutilizedAssets;
-            (bool exceedsThreshold, int256 sizeDeviation) = _checkResponseDeviation(
-                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, config().responseDeviationThreshold()
+            (bool isWrongPositionSize, int256 sizeDeltaDeviationInTokens) = _checkResultedPositionSize(
+                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, $.hedgeDeviationThreshold
             );
-            if (exceedsThreshold) {
-                $.strategyStatus = StrategyStatus.PAUSE;
-                if (sizeDeviation < 0) {
-                    uint256 sizeDeviationAbs = uint256(-sizeDeviation);
+            if (isWrongPositionSize) {
+                if (sizeDeltaDeviationInTokens < 0) {
+                    uint256 sizeDeltaDeviationInTokensAbs = uint256(-sizeDeltaDeviationInTokens);
                     uint256 assetsToBeReverted;
-                    if (sizeDeviationAbs == requestParams.sizeDeltaInTokens) {
+                    if (sizeDeltaDeviationInTokensAbs == requestParams.sizeDeltaInTokens) {
                         assetsToBeReverted = _pendingDeutilizedAssets;
                     } else {
-                        assetsToBeReverted =
-                            _pendingDeutilizedAssets.mulDiv(sizeDeviationAbs, requestParams.sizeDeltaInTokens);
+                        assetsToBeReverted = _pendingDeutilizedAssets.mulDiv(
+                            sizeDeltaDeviationInTokensAbs, requestParams.sizeDeltaInTokens
+                        );
                     }
                     ManualSwapLogic.swap(assetsToBeReverted, $.assetToProductSwapPath);
                 }
             }
 
             (, bool rebalanceDownNeeded) = _checkNeedRebalance(
-                $.positionManager.currentLeverage(), $.targetLeverage, config().rebalanceDeviationThreshold()
+                $.positionManager.currentLeverage(), $.targetLeverage, $.rebalanceDeviationThreshold
             );
             // only when rebalance was started, we need to check
             $.processingRebalanceDown = _processingRebalanceDown && rebalanceDownNeeded;
-        }
-
-        if (requestParams.collateralDeltaAmount > 0) {
-            (bool exceedsThreshold,) = _checkResponseDeviation(
-                responseParams.collateralDeltaAmount,
-                requestParams.collateralDeltaAmount,
-                config().responseDeviationThreshold()
-            );
-            if (exceedsThreshold) {
-                $.strategyStatus = StrategyStatus.PAUSE;
-            }
         }
 
         if (responseParams.collateralDeltaAmount > 0) {
@@ -909,21 +889,23 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         uint256 assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
         if (assetsToWithdraw == 0) return;
         IERC20(_asset).safeTransfer(address(_vault), assetsToWithdraw);
-        _vault.processPendingWithdrawRequests();
+        uint256 processedAssets = _vault.processPendingWithdrawRequests();
+        // collect assets back to strategy except the processed assets
+        (, uint256 collectingAssets) = assetsToWithdraw.trySub(processedAssets);
+        if (collectingAssets > 0) {
+            IERC20(_asset).safeTransferFrom(address(_vault), address(this), collectingAssets);
+        }
     }
 
-    function _pendingUtilization(
-        uint256 totalSupply,
-        uint256 idleAssets,
-        uint256 _targetLeverage,
-        bool _processingRebalanceDown
-    ) public pure returns (uint256) {
-        // don't use utilze function when rebalancing or when totalSupply is zero
-        if (totalSupply == 0 || _processingRebalanceDown) {
-            return 0;
-        } else {
-            return idleAssets.mulDiv(_targetLeverage, Constants.FLOAT_PRECISION + _targetLeverage);
-        }
+    function _pendingUtilization(uint256 idleAssets, uint256 _targetLeverage, bool _processingRebalanceDown)
+        public
+        pure
+        returns (uint256)
+    {
+        // don't use utilze function when rebalancing
+        return _processingRebalanceDown
+            ? 0
+            : idleAssets.mulDiv(_targetLeverage, Constants.FLOAT_PRECISION + _targetLeverage);
     }
 
     function _pendingIncreaseCollateral(uint256 idleAssets, uint256 _targetLeverage, bool _processingRebalanceDown)
@@ -995,18 +977,18 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         result = value < min ? 0 : (value > max ? max : value);
     }
 
-    /// @dev should be called under the condition that valueReq != 0
-    /// Note: check if response of position adjustment is in allowed deviation
-    function _checkResponseDeviation(uint256 valueResp, uint256 valueReq, uint256 _responseDeviationThreshold)
-        internal
-        pure
-        returns (bool exceedsThreshold, int256 deviation)
-    {
-        deviation = valueResp.toInt256() - valueReq.toInt256();
-        exceedsThreshold = (deviation < 0 ? uint256(-deviation) : uint256(deviation)).mulDiv(
-            Constants.FLOAT_PRECISION, valueReq
-        ) > _responseDeviationThreshold;
-        return (exceedsThreshold, deviation);
+    /// @dev should be called under the condition that sizeDeltaInTokensReq != 0
+    /// Note: check if resulted position size is in allowed deviation
+    function _checkResultedPositionSize(
+        uint256 sizeDeltaInTokensResp,
+        uint256 sizeDeltaInTokensReq,
+        uint256 _hedgeDeviationThreshold
+    ) internal pure returns (bool isWrongPositionSize, int256 sizeDeltaDeviationInTokens) {
+        sizeDeltaDeviationInTokens = sizeDeltaInTokensResp.toInt256() - sizeDeltaInTokensReq.toInt256();
+        isWrongPositionSize = (
+            sizeDeltaDeviationInTokens < 0 ? uint256(-sizeDeltaDeviationInTokens) : uint256(sizeDeltaDeviationInTokens)
+        ).mulDiv(Constants.FLOAT_PRECISION, sizeDeltaInTokensReq) > _hedgeDeviationThreshold;
+        return (isWrongPositionSize, sizeDeltaDeviationInTokens);
     }
 
     /// @dev check if current leverage is not near to the target leverage
@@ -1119,10 +1101,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         return address(_getBasisStrategyStorage().oracle);
     }
 
-    function operator() external view returns (address) {
-        return _getBasisStrategyStorage().operator;
-    }
-
     function forwarder() external view returns (address) {
         return _getBasisStrategyStorage().forwarder;
     }
@@ -1133,10 +1111,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
     function product() external view returns (address) {
         return address(_getBasisStrategyStorage().product);
-    }
-
-    function config() public view returns (IStrategyConfig) {
-        return IStrategyConfig(_getBasisStrategyStorage().config);
     }
 
     function strategyStatus() external view returns (StrategyStatus) {
