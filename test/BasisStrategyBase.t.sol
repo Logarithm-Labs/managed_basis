@@ -226,7 +226,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         state.positionManagerKeepNeeded = positionManagerNeedKeep;
     }
 
-    function _logStrategyState(string memory stateName, StrategyState memory state) internal view {
+    function _logStrategyState(string memory stateName, StrategyState memory state) internal pure {
         console.log("===================");
         console.log(stateName);
         console.log("===================");
@@ -405,12 +405,28 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.DEUTILIZING));
     }
 
-    function _performKeep() internal {
+    function _checkUpkeep(string memory operation)
+        internal
+        view
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
+        uint256 beginGas = gasleft();
+        (upkeepNeeded, performData) = strategy.checkUpkeep("");
+        uint256 gasWasted = beginGas - gasleft();
+        console.log(string(abi.encodePacked(operation, ":checkUpkeep: ")), gasWasted);
+    }
+
+    function _performKeep(string memory operation) internal {
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        uint256 step;
         while (upkeepNeeded) {
             vm.startPrank(forwarder);
             StrategyState memory state0 = _getStrategyState();
+            uint256 startGas = gasleft();
             strategy.performUpkeep(performData);
+            uint256 gasWasted = startGas - gasleft();
+            step++;
+            console.log(string(abi.encodePacked(operation, ":performUpkeep - ", step, ": ")), gasWasted);
             StrategyState memory state1 = _getStrategyState();
             _validateStateTransition(state0, state1);
 
@@ -716,7 +732,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
     function test_performUpkeep_rebalanceUp() public afterMultipleWithdrawRequestCreated {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 5 / 10);
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceUp");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             abi.decode(performData, (bool, bool, int256, bool, bool, bool));
@@ -728,7 +744,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         // position.sizeInUsd is changed due to realization of positive pnl
         // so need to execute performUpKeep several times
 
-        _performKeep();
+        _performKeep("rebalanceUp");
     }
 
     function test_performUpkeep_rebalanceDown_whenIdleEnough() public afterFullUtilized validateFinalState {
@@ -738,8 +754,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
-
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             abi.decode(performData, (bool, bool, int256, bool, bool, bool));
@@ -748,7 +763,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
 
-        _performKeep();
+        _performKeep("rebalanceDown_whenIdleEnough");
 
         uint256 assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
         assertEq(assetsToWithdraw, 10000 * 1e6, "assetsToWithdraw");
@@ -766,8 +781,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
-
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) =
+            _checkUpkeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             abi.decode(performData, (bool, bool, int256, bool, bool, bool));
@@ -776,7 +791,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
 
-        _performKeep();
+        _performKeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawEnough");
 
         uint256 assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
         assertTrue(assetsToWithdraw < 10000 * 1e6, "assetsToWithdraw");
@@ -795,7 +810,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
 
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) =
+            _checkUpkeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             abi.decode(performData, (bool, bool, int256, bool, bool, bool));
@@ -804,7 +820,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
 
-        _performKeep();
+        _performKeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
 
         uint256 assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
         assertEq(assetsToWithdraw, 0, "assetsToWithdraw");
@@ -812,7 +828,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
-        _performKeep();
+        _performKeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
     }
 
     function test_performUpkeep_rebalanceDown_whenNoIdle_NoAssetsToWithdraw()
@@ -823,7 +839,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
 
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) =
+            _checkUpkeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             abi.decode(performData, (bool, bool, int256, bool, bool, bool));
@@ -832,14 +849,14 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
         uint256 leverageBefore = _positionManager().currentLeverage();
-        _performKeep();
+        _performKeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
         uint256 leverageAfter = _positionManager().currentLeverage();
         assertEq(leverageBefore, leverageAfter, "leverage not changed");
         assertEq(strategy.processingRebalance(), true);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
-        _performKeep();
+        _performKeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
     }
 
     function test_performUpkeep_rebalanceDown_deutilize_withLessPendingWithdrawals()
@@ -850,7 +867,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
 
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) =
+            _checkUpkeep("rebalanceDown_deutilize_withLessPendingWithdrawals");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             abi.decode(performData, (bool, bool, int256, bool, bool, bool));
@@ -859,14 +877,14 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
         uint256 leverageBefore = _positionManager().currentLeverage();
-        _performKeep();
+        _performKeep("rebalanceDown_deutilize_withLessPendingWithdrawals");
         uint256 leverageAfter = _positionManager().currentLeverage();
         assertEq(leverageBefore, leverageAfter, "leverage not changed");
         assertEq(strategy.processingRebalance(), true);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
-        (upkeepNeeded, performData) = strategy.checkUpkeep("");
+        (upkeepNeeded, performData) = _checkUpkeep("rebalanceDown_deutilize_withLessPendingWithdrawals");
         assertTrue(upkeepNeeded, "upkeep is needed");
         if (upkeepNeeded) {
             vm.startPrank(forwarder);
@@ -891,7 +909,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
 
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) =
+            _checkUpkeep("rebalanceDown_deutilize_withGreaterPendingWithdrawal");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             abi.decode(performData, (bool, bool, int256, bool, bool, bool));
@@ -900,14 +919,14 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
         uint256 leverageBefore = _positionManager().currentLeverage();
-        _performKeep();
+        _performKeep("rebalanceDown_deutilize_withGreaterPendingWithdrawal");
         uint256 leverageAfter = _positionManager().currentLeverage();
         assertEq(leverageBefore, leverageAfter, "leverage not changed");
         assertEq(strategy.processingRebalance(), true);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
-        (upkeepNeeded,) = strategy.checkUpkeep("");
+        (upkeepNeeded,) = _checkUpkeep("rebalanceDown_deutilize_withGreaterPendingWithdrawal");
         assertFalse(upkeepNeeded, "upkeep is not needed");
     }
 
@@ -918,7 +937,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
     {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenNotIdle");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             abi.decode(performData, (bool, bool, int256, bool, bool, bool));
@@ -927,7 +946,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertTrue(deleverageNeeded, "deleverageNeeded");
         assertFalse(positionManagerNeedKeep, "positionManagerNeedKeep");
 
-        _performKeep();
+        _performKeep("emergencyRebalanceDown_whenNotIdle");
     }
 
     function test_performUpkeep_emergencyRebalanceDown_whenIdleNotEnough()
@@ -940,7 +959,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertTrue(IERC20(asset).balanceOf(address(vault)) > 0);
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             abi.decode(performData, (bool, bool, int256, bool, bool, bool));
@@ -948,7 +967,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertTrue(rebalanceDownNeeded);
         assertTrue(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
-        _performKeep();
+        _performKeep("emergencyRebalanceDown_whenIdleNotEnough");
         assertTrue(IERC20(asset).balanceOf(address(vault)) > 0);
     }
 
@@ -963,7 +982,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE), "not idle");
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             abi.decode(performData, (bool, bool, int256, bool, bool, bool));
@@ -982,7 +1001,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         vm.startPrank(address(strategy));
         IERC20(product).transfer(address(this), IERC20(product).balanceOf(address(strategy)) / 10);
 
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeDeviation_down");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         (
             bool rebalanceDownNeeded,
@@ -999,14 +1018,14 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
 
-        _performKeep();
+        _performKeep("hedgeDeviation_down");
     }
 
     function test_performUpkeep_hedgeDeviation_up() public afterMultipleWithdrawRequestCreated validateFinalState {
         vm.startPrank(address(WETH_WHALE));
         IERC20(product).transfer(address(strategy), IERC20(product).balanceOf(address(strategy)) / 10);
 
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeDeviation_up");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         (
             bool rebalanceDownNeeded,
@@ -1023,7 +1042,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
 
-        _performKeep();
+        _performKeep("hedgeDeviation_up");
     }
 
     /*//////////////////////////////////////////////////////////////
