@@ -234,6 +234,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         _getBasisStrategyStorage().forwarder = _forwarder;
     }
 
+    function setOperator(address _operator) external onlyOwner {
+        if (_operator == address(0)) {
+            revert Errors.ZeroAddress();
+        }
+        _getBasisStrategyStorage().operator = _operator;
+    }
+
     function setLeverages(
         uint256 _targetLeverage,
         uint256 _minLeverage,
@@ -1105,6 +1112,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
     function oracle() external view returns (address) {
         return address(_getBasisStrategyStorage().oracle);
+    }
+
+    function operator() external view returns (address) {
+        return _getBasisStrategyStorage().operator;
     }
 
     function forwarder() external view returns (address) {
