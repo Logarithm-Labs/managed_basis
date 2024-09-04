@@ -8,7 +8,6 @@ import {DataProvider} from "src/DataProvider.sol";
 import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {BasisStrategyForEtch} from "test/mock/BasisStrategyForEtch.sol";
 
 contract ProdTest is Test {
     address constant operator = 0x78057a43dDc57792340BC19E50e1011F8DAdEd01;
@@ -28,14 +27,6 @@ contract ProdTest is Test {
     function test_run() public {
         vm.createSelectFork(rpcUrl, 250085385);
         vm.startPrank(operator);
-
-        UpgradeableBeacon strategyBeacon = UpgradeableBeacon(0xc14Da39589AB11746A46939e7Ba4e58Cb43d3b24);
-        address implemetation = strategyBeacon.implementation();
-        address etchImpl = address(new BasisStrategyForEtch());
-        vm.etch(implemetation, etchImpl.code);
-
-        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        strategy.deutilize(pendingDeutilization, BasisStrategy.SwapType.MANUAL, "");
     }
 
     function test_getState() public {
