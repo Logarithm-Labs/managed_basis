@@ -234,6 +234,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
         _getBasisStrategyStorage().forwarder = _forwarder;
     }
 
+    function setOperator(address _operator) external onlyOwner {
+        if (_operator == address(0)) {
+            revert Errors.ZeroAddress();
+        }
+        _getBasisStrategyStorage().operator = _operator;
+    }
+
     function setLeverages(
         uint256 _targetLeverage,
         uint256 _minLeverage,
@@ -402,8 +409,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
             (, uint256 absoluteThreshold) = pendingDeutilization_.trySub(min);
             if (amount > relativeThreshold || amount > absoluteThreshold) {
                 // when full deutilizing
-                int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
-                collateralDeltaAmount = totalPendingWithdraw > 0 ? uint256(totalPendingWithdraw) : 0;
                 // @fix Numa: we should not guarantee that all withdraw requests are processed after full deutilization.
                 // In case of full deutilization, we only send collateral decrease request if it greater then Min.
                 // In prod we will have minCollateralDecrease around 500 USDC, so that execution cost would be below 0.2%.
@@ -416,11 +421,18 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
                     // in case of redeeming all by users, close hedge position
                     amount = type(uint256).max;
                     collateralDeltaAmount = type(uint256).max;
+                    $.pendingDecreaseCollateral = 0;
+                } else {
+                    // @fix Numa: if collateralDeltaAmount will be clamped to 0, then we need to reflect it in pendingDecreaseCollateral
+                    (min, max) = _positionManager.decreaseCollateralMinMax();
+                    int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
+                    uint256 pendingWithdraw = totalPendingWithdraw > 0 ? uint256(totalPendingWithdraw) : 0;
+                    collateralDeltaAmount = _clamp(min, pendingWithdraw, max);
+                    $.pendingDecreaseCollateral = pendingWithdraw - collateralDeltaAmount;
                 }
 
                 // pendingDecreaseCollateral is used when partial deutilizing
                 // when full deutilization, we don't need
-                $.pendingDecreaseCollateral = 0;
             } else {
                 // when partial deutilizing
                 uint256 positionNetBalance = _positionManager.positionNetBalance();
@@ -1105,6 +1117,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy {
 
     function oracle() external view returns (address) {
         return address(_getBasisStrategyStorage().oracle);
+    }
+
+    function operator() external view returns (address) {
+        return _getBasisStrategyStorage().operator;
     }
 
     function forwarder() external view returns (address) {

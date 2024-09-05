@@ -21,7 +21,7 @@ contract UpgradeOffChainPositionManagerScript is Script {
         vm.startBroadcast();
         address impl = address(new OffChainPositionManager());
         beacon.upgradeTo(impl);
-        positionManager.reinitialize();
+        // positionManager.reinitialize();
 
         DataProvider.StrategyState memory state0 = dataProvider.getStrategyState(address(strategy));
         _logState(state0);
