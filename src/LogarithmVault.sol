@@ -497,4 +497,8 @@ contract LogarithmVault is Initializable, ManagedVault {
     function withdrawRequests(bytes32 withdrawKey) external view returns (WithdrawRequest memory) {
         return _getLogarithmVaultStorage().withdrawRequests[withdrawKey];
     }
+
+    function nonces(address user) external view returns (uint256) {
+        return _getLogarithmVaultStorage().nonces[user];
+    }
 }

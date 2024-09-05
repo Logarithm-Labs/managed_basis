@@ -10,14 +10,9 @@ contract UpgradeVaultScript is Script {
     LogarithmVault public vault = LogarithmVault(0xDe56f312464F95C06EeCF4391f930877Fe4D7d93);
 
     function run() public {
-        require(vault.isClaimable(bytes32(0)));
-
         vm.startBroadcast();
-
         // upgrade vault beacon
         address vaultImpl = address(new LogarithmVault());
         vaultBeacon.upgradeTo(vaultImpl);
-
-        require(!vault.isClaimable(bytes32(0)));
     }
 }
