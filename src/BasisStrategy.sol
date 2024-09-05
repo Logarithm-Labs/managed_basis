@@ -592,7 +592,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
     }
 
     /// @inheritdoc AutomationCompatibleInterface
-    function performUpkeep(bytes calldata performData) external {
+    function performUpkeep(bytes calldata performData) public {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         if (msg.sender != $.forwarder) {
@@ -666,6 +666,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             if (!_adjustPosition(0, deltaCollateralToDecrease, false)) {
                 $.strategyStatus = StrategyStatus.IDLE;
             }
+        }
+    }
+
+    function manualPerformUpkeep() external {
+        (bool upkeepNeeded, bytes memory performData) = checkUpkeep("");
+        if (upkeepNeeded) {
+            performUpkeep(performData);
         }
     }
 
