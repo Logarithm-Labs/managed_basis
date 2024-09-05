@@ -193,7 +193,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
                 positionManagerNeedKeep,
                 decreaseCollateral,
                 rebalanceUpNeeded
-            ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            ) = _decodePerformData(performData);
         }
 
         state.strategyStatus = uint8(strategy.strategyStatus());
@@ -288,6 +288,36 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         // if (state0.positionLeverage != 0 && state1.positionLeverage != 0) {
         //     assertApproxEqRel(state0.positionLeverage, state1.positionLeverage, 0.01 ether, "position leverage");
         // }
+    }
+
+    function _decodePerformData(bytes memory performData)
+        internal
+        pure
+        returns (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded
+        )
+    {
+        uint256 emergencyDeutilizationAmount;
+        uint256 deltaCollateralToIncrease;
+        uint256 deltaCollateralToDecrease;
+
+        (
+            emergencyDeutilizationAmount,
+            deltaCollateralToIncrease,
+            hedgeDeviationInTokens,
+            positionManagerNeedKeep,
+            decreaseCollateral,
+            deltaCollateralToDecrease
+        ) = abi.decode(performData, (uint256, uint256, int256, bool, bool, uint256));
+
+        rebalanceDownNeeded = emergencyDeutilizationAmount > 0 || deltaCollateralToIncrease > 0;
+        deleverageNeeded = emergencyDeutilizationAmount > 0;
+        rebalanceUpNeeded = deltaCollateralToDecrease > 0;
     }
 
     modifier afterDeposited() {
@@ -735,7 +765,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceUp");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            _decodePerformData(performData);
         assertTrue(rebalanceUpNeeded);
         assertFalse(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -757,7 +787,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            _decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -785,7 +815,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
             _checkUpkeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            _decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -814,7 +844,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
             _checkUpkeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            _decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -843,7 +873,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
             _checkUpkeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            _decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -871,7 +901,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
             _checkUpkeep("rebalanceDown_deutilize_withLessPendingWithdrawals");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            _decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -913,7 +943,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
             _checkUpkeep("rebalanceDown_deutilize_withGreaterPendingWithdrawal");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            _decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertFalse(deleverageNeeded);
@@ -940,7 +970,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenNotIdle");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            _decodePerformData(performData);
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertTrue(deleverageNeeded, "deleverageNeeded");
@@ -962,7 +992,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            _decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         assertTrue(deleverageNeeded);
@@ -985,7 +1015,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            _decodePerformData(performData);
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertTrue(deleverageNeeded, "deleverageNeeded");
@@ -1010,7 +1040,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
             bool positionManagerNeedKeep,
             ,
             bool rebalanceUpNeeded
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+        ) = _decodePerformData(performData);
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertFalse(deleverageNeeded, "deleverageNeeded");
@@ -1034,7 +1064,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
             bool positionManagerNeedKeep,
             ,
             bool rebalanceUpNeeded
-        ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+        ) = _decodePerformData(performData);
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertFalse(deleverageNeeded, "deleverageNeeded");

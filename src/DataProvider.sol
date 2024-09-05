@@ -93,4 +93,34 @@ contract DataProvider {
         state.positionManagerKeepNeeded = positionManagerNeedKeep;
         state.processingRebalanceDown = strategy.processingRebalance();
     }
+
+    function _decodePerformData(bytes memory performData)
+        internal
+        pure
+        returns (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            bool decreaseCollateral,
+            bool rebalanceUpNeeded
+        )
+    {
+        uint256 emergencyDeutilizationAmount;
+        uint256 deltaCollateralToIncrease;
+        uint256 deltaCollateralToDecrease;
+
+        (
+            emergencyDeutilizationAmount,
+            deltaCollateralToIncrease,
+            hedgeDeviationInTokens,
+            positionManagerNeedKeep,
+            decreaseCollateral,
+            deltaCollateralToDecrease
+        ) = abi.decode(performData, (uint256, uint256, int256, bool, bool, uint256));
+
+        rebalanceDownNeeded = emergencyDeutilizationAmount > 0 || deltaCollateralToIncrease > 0;
+        deleverageNeeded = emergencyDeutilizationAmount > 0;
+        rebalanceUpNeeded = deltaCollateralToDecrease > 0;
+    }
 }

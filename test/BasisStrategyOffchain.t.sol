@@ -131,7 +131,7 @@ contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("decreaseCollateral");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (,,,, bool decreaseCollateral,) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+        (,,,, bool decreaseCollateral,) = _decodePerformData(performData);
         assertTrue(decreaseCollateral, "decreaseCollateral");
         assertTrue(strategy.pendingDecreaseCollateral() > 0, "0 pendingDecreaseCollateral");
         _performKeep("decreaseCollateral");
