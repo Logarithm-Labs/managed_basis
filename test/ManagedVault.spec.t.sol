@@ -22,7 +22,7 @@ contract ManagedVaultSpecTest is ForkTest {
     address user = makeAddr("user");
     address recipient = makeAddr("recipient");
 
-    uint256 constant TEN_THOUSAND_USDC = 1000 * 1e6;
+    uint256 constant TEN_THOUSAND = 1000 * 1e6;
 
     ManagedVaultSpec vault;
 
@@ -32,82 +32,94 @@ contract ManagedVaultSpecTest is ForkTest {
         vault = new ManagedVaultSpec();
         vault.initialize(owner, USDC, "tt", "tt");
         vault.setFeeRecipient(recipient);
-        vault.setManagementFee(0.1 ether); // 10%
+        vault.setMgmtFee(0.1 ether); // 10%
 
         // top up user1
         vm.startPrank(USDC_WHALE);
         IERC20(USDC).transfer(user, 10_000_000 * 1e6);
     }
 
-    function _deposit(address _user, uint256 _amount) internal {
+    function _mint(address _user, uint256 _shares) internal {
+        uint256 assets = vault.previewMint(_shares);
         vm.startPrank(_user);
-        IERC20(USDC).approve(address(vault), _amount);
-        vault.deposit(_amount, _user);
+        IERC20(USDC).approve(address(vault), assets);
+        vault.mint(_shares, _user);
     }
 
-    function test_accrueManagementFee_withNoDeposit() public {
+    function test_mint() public {
+        _mint(user, TEN_THOUSAND);
         _moveTimestamp(36.5 days);
-        uint256 shares = vault.claimableManagementFee();
+        _mint(user, TEN_THOUSAND);
+        _moveTimestamp(36.5 days);
+        vault.accrueMgmtFeeShares();
+        uint256 sharesBefore = vault.balanceOf(user);
+        _mint(user, TEN_THOUSAND);
+        assertEq(sharesBefore + TEN_THOUSAND, vault.balanceOf(user));
+    }
+
+    function test_accrueMgmtFee_withNoDeposit() public {
+        _moveTimestamp(36.5 days);
+        uint256 shares = vault.accruedMgmtFeeShares();
         assertEq(shares, 0, "shares 0");
     }
 
-    function test_accrueManagementFee_withFirstDeposit() public {
-        _deposit(user, TEN_THOUSAND_USDC);
+    function test_accrueMgmtFee_withFirstDeposit() public {
+        _mint(user, TEN_THOUSAND);
         _moveTimestamp(36.5 days);
-        uint256 shares = vault.claimableManagementFee();
-        assertEq(shares, TEN_THOUSAND_USDC / 100, "1/100 of shares");
+        uint256 shares = vault.accruedMgmtFeeShares();
+        assertEq(shares, TEN_THOUSAND / 100, "1/100 of shares");
     }
 
-    function test_accrueManagementFee_withDeposits() public {
-        _deposit(user, TEN_THOUSAND_USDC);
+    function test_accrueMgmtFee_withDeposits() public {
+        _mint(user, TEN_THOUSAND);
         _moveTimestamp(36.5 days);
-        _deposit(user, TEN_THOUSAND_USDC);
-        assertEq(vault.balanceOf(recipient), TEN_THOUSAND_USDC / 100);
+        _mint(user, TEN_THOUSAND);
+        assertEq(vault.balanceOf(recipient), TEN_THOUSAND / 100, "1/100 of shares");
         _moveTimestamp(36.5 days);
-        uint256 shares = vault.claimableManagementFee();
-        assertEq(shares, TEN_THOUSAND_USDC * 2 / 100, "2/100 of shares");
-        vault.accrueManagementFee();
-        assertEq(vault.balanceOf(recipient), TEN_THOUSAND_USDC * 3 / 100, "3/100 of shares minted");
+        uint256 shares = vault.accruedMgmtFeeShares();
+        assertEq(shares, TEN_THOUSAND * 2 / 100, "2/100 of assets");
+        vault.accrueMgmtFeeShares();
+        assertEq(vault.balanceOf(recipient), TEN_THOUSAND * 3 / 100, "3/100 of shares assets");
     }
 
     function test_update_feeRecipientCantTransfer() public {
-        _deposit(user, TEN_THOUSAND_USDC);
+        _mint(user, TEN_THOUSAND);
         _moveTimestamp(36.5 days);
-        _deposit(user, TEN_THOUSAND_USDC);
+        _mint(user, TEN_THOUSAND);
 
-        vm.expectRevert(abi.encodeWithSelector(Errors.ManagementFeeTransfer.selector, recipient));
+        vm.expectRevert(abi.encodeWithSelector(Errors.MgmtFeeTransfer.selector, recipient));
         vm.startPrank(recipient);
         vault.transfer(user, 1000);
     }
 
     function test_update_redeemOfUserShare() public {
-        _deposit(user, TEN_THOUSAND_USDC);
+        _mint(user, TEN_THOUSAND);
         _moveTimestamp(36.5 days);
-        _deposit(user, TEN_THOUSAND_USDC);
+        _mint(user, TEN_THOUSAND);
         _moveTimestamp(36.5 days);
-        assertEq(vault.balanceOf(recipient), TEN_THOUSAND_USDC / 100);
+        assertEq(vault.balanceOf(recipient), TEN_THOUSAND / 100);
         vm.startPrank(user);
-        vault.redeem(TEN_THOUSAND_USDC, user, user);
-        assertEq(vault.balanceOf(user), TEN_THOUSAND_USDC);
-        assertEq(vault.balanceOf(recipient), TEN_THOUSAND_USDC * 3 / 100);
+        vault.redeem(TEN_THOUSAND, user, user);
+        assertEq(vault.balanceOf(user), TEN_THOUSAND);
+        assertEq(vault.balanceOf(recipient), TEN_THOUSAND * 3 / 100);
     }
 
     function test_update_redeemOfRecipientShare() public {
-        _deposit(user, TEN_THOUSAND_USDC);
+        _mint(user, TEN_THOUSAND);
         _moveTimestamp(36.5 days);
-        _deposit(user, TEN_THOUSAND_USDC);
+        _mint(user, TEN_THOUSAND);
         _moveTimestamp(36.5 days);
-        assertEq(vault.balanceOf(recipient), TEN_THOUSAND_USDC / 100);
+        assertEq(vault.balanceOf(recipient), TEN_THOUSAND / 100);
 
-        assertEq(vault.claimableManagementFee(), TEN_THOUSAND_USDC * 2 / 100);
+        assertEq(vault.accruedMgmtFeeShares(), TEN_THOUSAND * 2 / 100);
 
         // redeem half share of recipient
         vm.startPrank(recipient);
-        vault.redeem(TEN_THOUSAND_USDC / 200, recipient, recipient);
-        assertEq(vault.balanceOf(recipient), TEN_THOUSAND_USDC / 200);
+        vault.redeem(TEN_THOUSAND / 200, recipient, recipient);
+        assertEq(vault.balanceOf(recipient), TEN_THOUSAND / 200);
 
-        assertEq(vault.claimableManagementFee(), TEN_THOUSAND_USDC * 2 / 100);
-        vault.accrueManagementFee();
-        assertEq(vault.balanceOf(recipient), TEN_THOUSAND_USDC * 2 / 100 + TEN_THOUSAND_USDC / 200);
+        assertEq(vault.accruedMgmtFeeShares(), TEN_THOUSAND * 2 / 100);
+        vault.accrueMgmtFeeShares();
+        assertEq(vault.balanceOf(recipient), TEN_THOUSAND * 2 / 100 + TEN_THOUSAND / 200);
     }
 }

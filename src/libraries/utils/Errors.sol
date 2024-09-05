@@ -99,5 +99,5 @@ library Errors {
     error InvalidSizeRequest(uint256 sizeDeltaInTokens, bool isIncrease);
 
     // vault
-    error ManagementFeeTransfer(address feeRecipient);
+    error MgmtFeeTransfer(address feeRecipient);
 }
