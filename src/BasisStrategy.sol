@@ -592,7 +592,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
     }
 
     /// @inheritdoc AutomationCompatibleInterface
-    function performUpkeep(bytes calldata performData) public {
+    function performUpkeep(bytes memory performData) public {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         if (msg.sender != $.forwarder) {
