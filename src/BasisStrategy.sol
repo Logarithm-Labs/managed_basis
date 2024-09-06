@@ -520,15 +520,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             upkeepNeeded = true;
 
             uint256 idleAssets = _vault.idleAssets();
-            uint256 assetsToWithdraw = $.asset.balanceOf(address(this));
-            uint256 assetsToIncrease = idleAssets + assetsToWithdraw;
             (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
 
             // deutilize when idle assets are not enough to increase collateral
             // and when processingRebalanceDown is true
             // and when deleverageNeeded is false
             if (_processingRebalanceDown && !deleverageNeeded) {
-                upkeepNeeded = assetsToIncrease != 0 && assetsToIncrease >= minIncreaseCollateral;
+                upkeepNeeded = idleAssets != 0 && idleAssets >= minIncreaseCollateral;
             }
 
             deltaCollateralToIncrease = _calculateDeltaCollateralForRebalance(
@@ -539,7 +537,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
                 deltaCollateralToIncrease = minIncreaseCollateral;
             }
 
-            if (deleverageNeeded && (deltaCollateralToIncrease > assetsToIncrease)) {
+            if (deleverageNeeded && (deltaCollateralToIncrease > idleAssets)) {
                 (, uint256 deltaLeverage) = currentLeverage.trySub(_maxLeverage);
                 emergencyDeutilizationAmount =
                     _positionManager.positionSizeInTokens().mulDiv(deltaLeverage, currentLeverage);
@@ -625,29 +623,12 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         } else if (deltaCollateralToIncrease > 0) {
             $.pendingDecreaseCollateral = 0;
             $.processingRebalanceDown = true;
-
-            ILogarithmVault _vault = $.vault;
-            uint256 idleAssets = _vault.idleAssets();
-            uint256 assetsToWithdraw = $.asset.balanceOf(address(this));
-            uint256 assetsToIncrease = idleAssets + assetsToWithdraw;
-
-            // prioritize idleAssets to do rebalancing down
-            if (idleAssets < deltaCollateralToIncrease) {
-                uint256 shortfall = deltaCollateralToIncrease - idleAssets;
-                if (shortfall > assetsToWithdraw) {
-                    if (assetsToWithdraw > 0) $.asset.safeTransfer(address(_vault), assetsToWithdraw);
-                    if (!_adjustPosition(0, assetsToIncrease, true)) $.strategyStatus = StrategyStatus.IDLE;
-                } else {
-                    $.asset.safeTransfer(address(_vault), shortfall);
-                    if (!_adjustPosition(0, deltaCollateralToIncrease, true)) {
-                        $.strategyStatus = StrategyStatus.IDLE;
-                    }
-                }
-            } else {
-                if (!_adjustPosition(0, deltaCollateralToIncrease, true)) {
-                    $.strategyStatus = StrategyStatus.IDLE;
-                }
-            }
+            uint256 idleAssets = $.vault.idleAssets();
+            if (
+                !_adjustPosition(
+                    0, idleAssets < deltaCollateralToIncrease ? idleAssets : deltaCollateralToIncrease, true
+                )
+            ) $.strategyStatus = StrategyStatus.IDLE;
         } else if (hedgeDeviationInTokens != 0) {
             if (hedgeDeviationInTokens > 0) {
                 if (!_adjustPosition(uint256(hedgeDeviationInTokens), 0, false)) $.strategyStatus = StrategyStatus.IDLE;

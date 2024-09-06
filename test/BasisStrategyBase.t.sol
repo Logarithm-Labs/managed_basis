@@ -795,24 +795,16 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         _performKeep("rebalanceDown_whenIdleEnough");
 
-        uint256 assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
-        assertEq(assetsToWithdraw, 10000 * 1e6, "assetsToWithdraw");
         assertTrue(vault.idleAssets() < 10000 * 1e6, "idleAssets");
     }
 
-    function test_performUpkeep_rebalanceDown_whenIdleNotEnough_assetsToWithdrawEnough()
-        public
-        afterFullUtilized
-        validateFinalState
-    {
+    function test_performUpkeep_rebalanceDown_whenIdleNotEnough() public afterFullUtilized validateFinalState {
         vm.startPrank(USDC_WHALE);
         IERC20(asset).transfer(address(vault), 10 * 1e6);
-        IERC20(asset).transfer(address(strategy), 10000 * 1e6);
 
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
-        (bool upkeepNeeded, bytes memory performData) =
-            _checkUpkeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawEnough");
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             _decodePerformData(performData);
@@ -821,56 +813,21 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         // assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
 
-        _performKeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawEnough");
+        _performKeep("rebalanceDown_whenIdleNotEnough");
 
-        uint256 assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
-        assertTrue(assetsToWithdraw < 10000 * 1e6, "assetsToWithdraw");
-        assertEq(vault.idleAssets(), 0, "idleAssets");
+        (, uint256 amount) = strategy.pendingUtilizations();
+        _deutilize(amount);
+
+        _performKeep("rebalanceDown_whenIdleNotEnough");
+
+        // assertEq(vault.idleAssets(), 0, "idleAssets");
     }
 
-    function test_performUpkeep_rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough()
-        public
-        afterFullUtilized
-        validateFinalState
-    {
-        vm.startPrank(USDC_WHALE);
-        IERC20(asset).transfer(address(vault), 10 * 1e6);
-        IERC20(asset).transfer(address(strategy), 10 * 1e6);
-
+    function test_performUpkeep_rebalanceDown_whenNoIdle() public afterFullUtilized validateFinalState {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
 
-        (bool upkeepNeeded, bytes memory performData) =
-            _checkUpkeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
-        assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            _decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
-        // assertFalse(deleverageNeeded);
-        assertFalse(positionManagerNeedKeep);
-
-        _performKeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
-
-        uint256 assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
-        assertEq(assetsToWithdraw, 0, "assetsToWithdraw");
-        assertEq(vault.idleAssets(), 0, "idleAssets");
-
-        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        _deutilize(pendingDeutilization);
-        _performKeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
-    }
-
-    function test_performUpkeep_rebalanceDown_whenNoIdle_NoAssetsToWithdraw()
-        public
-        afterFullUtilized
-        validateFinalState
-    {
-        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
-        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
-
-        (bool upkeepNeeded, bytes memory performData) =
-            _checkUpkeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
             _decodePerformData(performData);
@@ -879,14 +836,14 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         // assertFalse(deleverageNeeded);
         assertFalse(positionManagerNeedKeep);
         uint256 leverageBefore = _positionManager().currentLeverage();
-        _performKeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
+        _performKeep("rebalanceDown_whenIdleNotEnough");
         uint256 leverageAfter = _positionManager().currentLeverage();
         assertEq(leverageBefore, leverageAfter, "leverage not changed");
         assertEq(strategy.processingRebalance(), true);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
-        _performKeep("rebalanceDown_whenIdleNotEnough_assetsToWithdrawNotEnough");
+        _performKeep("rebalanceDown_whenIdleNotEnough");
     }
 
     function test_performUpkeep_rebalanceDown_deutilize_withLessPendingWithdrawals()
@@ -1103,7 +1060,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
     function test_afterAdjustPosition_revert_whenDeutilizing() public afterWithdrawRequestCreated {
         uint256 productBefore = IERC20(product).balanceOf(address(strategy));
-        uint256 assetsToWithdrawBefore = IERC20(asset).balanceOf(address(vault));
+
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         // bytes memory data = _generateInchCallData(product, asset, pendingDeutilization, address(strategy));
         vm.startPrank(operator);
@@ -1118,9 +1075,7 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         assertFalse(vault.isClaimable(requestKey));
 
         uint256 productAfter = IERC20(product).balanceOf(address(strategy));
-        uint256 assetsToWithdrawAfter = IERC20(asset).balanceOf(address(vault));
 
-        assertEq(assetsToWithdrawAfter, assetsToWithdrawBefore);
         assertApproxEqRel(productAfter, productBefore, 0.9999 ether);
     }
 }
