@@ -430,6 +430,10 @@ contract LogarithmVault is Initializable, ManagedVault {
         view
         returns (bool isExecuted, bool isLast)
     {
+        // @fix Numa: should return false if withdraw request was not issued (accRequestedWithdrawAssetsOfRequest is zero)
+        if (accRequestedWithdrawAssetsOfRequest == 0) {
+            return (false, false);
+        }
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
         // separate worflow for last withdraw
@@ -492,5 +496,9 @@ contract LogarithmVault is Initializable, ManagedVault {
 
     function withdrawRequests(bytes32 withdrawKey) external view returns (WithdrawRequest memory) {
         return _getLogarithmVaultStorage().withdrawRequests[withdrawKey];
+    }
+
+    function nonces(address user) external view returns (uint256) {
+        return _getLogarithmVaultStorage().nonces[user];
     }
 }
