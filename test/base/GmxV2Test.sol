@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import {ForkTest} from "./ForkTest.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
+
+import {PositionMngerForkTest} from "./PositionMngerForkTest.sol";
 
 import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
@@ -10,8 +14,11 @@ import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
+import {GmxGasStation} from "src/GmxGasStation.sol";
+import {GmxConfig} from "src/GmxConfig.sol";
+import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 
-contract GmxV2Test is ForkTest {
+contract GmxV2Test is PositionMngerForkTest {
     address constant GMX_DATA_STORE = 0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8;
     address constant GMX_EXCHANGE_ROUTER = 0x69C527fC77291722b52649E45c838e41be8Bf5d5;
     address constant GMX_ORDER_HANDLER = 0xB0Fc2a48b873da40e7bc25658e5E6137616AC2Ee;
@@ -24,9 +31,59 @@ contract GmxV2Test is ForkTest {
 
     GmxV2PositionManager positionManager;
 
-    function _fullExcuteOrder() internal {
+    function _initPositionManager(address owner, address strategy) internal override returns (address) {
+        vm.startPrank(owner);
+        // deploy config
+        GmxConfig config = new GmxConfig();
+        config.initialize(owner, GMX_EXCHANGE_ROUTER, GMX_READER);
+        vm.label(address(config), "config");
+
+        // deploy gmxGasStation
+        address gmxGasStationImpl = address(new GmxGasStation());
+        address gmxGasStationProxy = address(
+            new ERC1967Proxy(gmxGasStationImpl, abi.encodeWithSelector(GmxGasStation.initialize.selector, owner))
+        );
+        GmxGasStation gmxGasStation = GmxGasStation(payable(gmxGasStationProxy));
+        vm.label(address(gmxGasStation), "gmxGasStation");
+
+        // topup gmxGasStation with some native token, in practice, its don't through gmxGasStation
+        vm.deal(address(gmxGasStation), 10000 ether);
+
+        // deploy positionManager impl
+        address positionManagerImpl = address(new GmxV2PositionManager());
+        // deploy positionManager beacon
+        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
+        // deploy positionMnager beacon proxy
+        address positionManagerProxy = address(
+            new BeaconProxy(
+                positionManagerBeacon,
+                abi.encodeWithSelector(
+                    GmxV2PositionManager.initialize.selector,
+                    owner,
+                    strategy,
+                    address(config),
+                    address(gmxGasStation),
+                    GMX_ETH_USDC_MARKET
+                )
+            )
+        );
+        positionManager = GmxV2PositionManager(payable(positionManagerProxy));
+
+        vm.label(address(positionManager), "positionManager");
+
+        gmxGasStation.registerPositionManager(positionManagerProxy, true);
+        vm.stopPrank();
+
+        return address(positionManager);
+    }
+
+    function _excuteOrder() internal override {
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         _executeOrder(positionManager.pendingIncreaseOrderKey());
+    }
+
+    function _positionManager() internal view override returns (IPositionManager) {
+        return IPositionManager(positionManager);
     }
 
     function _executeOrder(bytes32 key) internal {

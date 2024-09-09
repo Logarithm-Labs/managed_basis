@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import {GmxV2Test} from "./base/GmxV2Test.sol";
+import {GmxV2Test} from "test/base/GmxV2Test.sol";
 
 import {console} from "forge-std/console.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
@@ -15,7 +15,7 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 
-import {MockStrategy} from "./mock/MockStrategy.sol";
+import {MockStrategy} from "test/mock/MockStrategy.sol";
 
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
 import {GmxConfig} from "src/GmxConfig.sol";
@@ -70,45 +70,14 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         _mockChainlinkPriceFeed(assetPriceFeed);
         _mockChainlinkPriceFeed(productPriceFeed);
 
-        // deploy config
-        GmxConfig config = new GmxConfig();
-        config.initialize(owner, GMX_EXCHANGE_ROUTER, GMX_READER);
-
         strategy = new MockStrategy(address(oracle));
 
-        // deploy gmxGasStation
-        address gmxGasStationImpl = address(new GmxGasStation());
-        address gmxGasStationProxy =
-            address(new ERC1967Proxy(gmxGasStationImpl, abi.encodeWithSelector(GmxGasStation.initialize.selector, owner)));
-        gmxGasStation = GmxGasStation(payable(gmxGasStationProxy));
+        address positionManagerAddr = _initPositionManager(owner, address(strategy));
 
-        // deploy positionManager impl
-        address positionManagerImpl = address(new GmxV2PositionManager());
-        // deploy positionManager beacon
-        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
-        // deploy positionMnager beacon proxy
-        address positionManagerProxy = address(
-            new BeaconProxy(
-                positionManagerBeacon,
-                abi.encodeWithSelector(
-                    GmxV2PositionManager.initialize.selector,
-                    owner,
-                    address(strategy),
-                    address(config),
-                    address(gmxGasStation),
-                    GMX_ETH_USDC_MARKET
-                )
-            )
-        );
-        positionManager = GmxV2PositionManager(payable(positionManagerProxy));
+        strategy.setPositionManager(positionManagerAddr);
 
-        strategy.setPositionManager(positionManagerProxy);
-
-        gmxGasStation.registerPositionManager(address(positionManager), true);
-
-        // topup gmxGasStation with some native token, in practice, its don't through gmxGasStation
-        vm.deal(address(gmxGasStation), 1 ether);
         vm.stopPrank();
+
         (increaseFee, decreaseFee) = positionManager.getExecutionFee();
         assert(increaseFee > 0);
         assert(decreaseFee > 0);

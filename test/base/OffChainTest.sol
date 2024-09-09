@@ -1,16 +1,23 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
+
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import {ForkTest} from "./ForkTest.sol";
+import {PositionMngerForkTest} from "./PositionMngerForkTest.sol";
 import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {OffchainConfig} from "src/OffchainConfig.sol";
+
 import {console2 as console} from "forge-std/console2.sol";
 
-contract OffChainTest is ForkTest {
+contract OffChainTest is PositionMngerForkTest {
     using Math for uint256;
 
     // off chain exchange state variables
@@ -27,17 +34,57 @@ contract OffChainTest is ForkTest {
     address public asset_;
     address public product_;
 
-    function _initOffChainTest(address _asset, address _product, address _oracle) internal {
-        asset_ = _asset;
-        product_ = _product;
-        oracle_ = IOracle(_oracle);
+    function _initPositionManager(address owner, address strategy) internal override returns (address) {
+        vm.startPrank(owner);
+        // deploy config
+        OffchainConfig config = new OffchainConfig();
+        config.initialize(owner);
+        vm.label(address(config), "config");
+
+        address oracle = IBasisStrategy(strategy).oracle();
+        address product = IBasisStrategy(strategy).product();
+        address asset = IBasisStrategy(strategy).asset();
+
+        // deploy position manager
+        address positionManagerImpl = address(new OffChainPositionManager());
+        address positionManagerProxy = address(
+            new ERC1967Proxy(
+                positionManagerImpl,
+                abi.encodeWithSelector(
+                    OffChainPositionManager.initialize.selector,
+                    address(config),
+                    strategy,
+                    agent,
+                    oracle,
+                    product,
+                    asset,
+                    false
+                )
+            )
+        );
+        positionManager = OffChainPositionManager(positionManagerProxy);
+        vm.label(address(positionManager), "positionManager");
+
+        asset_ = asset;
+        product_ = product;
+        oracle_ = IOracle(oracle);
+
         vm.startPrank(address(this));
-        IERC20(_asset).approve(agent, type(uint256).max);
+        IERC20(asset).approve(agent, type(uint256).max);
         vm.startPrank(agent);
-        IERC20(_asset).approve(address(positionManager), type(uint256).max);
+        IERC20(asset).approve(positionManagerProxy, type(uint256).max);
+        vm.stopPrank();
+
+        return positionManagerProxy;
     }
 
-    function _fullOffChainExecute() internal {
+    function _initOffChainTest(address _asset, address _product, address _oracle) internal {}
+
+    function _positionManager() internal view override returns (IPositionManager) {
+        return IPositionManager(positionManager);
+    }
+
+    function _excuteOrder() internal override {
         OffChainPositionManager.RequestInfo memory requestInfo = positionManager.getLastRequest();
         if (!requestInfo.isReported) {
             vm.startPrank(agent);

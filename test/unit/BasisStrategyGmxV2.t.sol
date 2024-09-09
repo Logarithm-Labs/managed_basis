@@ -7,8 +7,8 @@ import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/Upgradeabl
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {ForkTest} from "./base/ForkTest.sol";
-import {GmxV2Test} from "./base/GmxV2Test.sol";
+import {ForkTest} from "test/base/ForkTest.sol";
+import {GmxV2Test} from "test/base/GmxV2Test.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
@@ -22,65 +22,12 @@ import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
 import {GmxConfig} from "src/GmxConfig.sol";
 import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {GmxGasStation} from "src/GmxGasStation.sol";
 import {BasisStrategy} from "src/BasisStrategy.sol";
 import {LogarithmVault} from "src/LogarithmVault.sol";
 
 import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
 
 contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
-    GmxGasStation gmxGasStation;
-
-    function _initTest() internal override {
-        // deploy config
-        GmxConfig config = new GmxConfig();
-        config.initialize(owner, GMX_EXCHANGE_ROUTER, GMX_READER);
-        vm.label(address(config), "config");
-
-        // deploy gmxGasStation
-        address gmxGasStationImpl = address(new GmxGasStation());
-        address gmxGasStationProxy =
-            address(new ERC1967Proxy(gmxGasStationImpl, abi.encodeWithSelector(GmxGasStation.initialize.selector, owner)));
-        gmxGasStation = GmxGasStation(payable(gmxGasStationProxy));
-        vm.label(address(gmxGasStation), "gmxGasStation");
-
-        // topup gmxGasStation with some native token, in practice, its don't through gmxGasStation
-        vm.deal(address(gmxGasStation), 1 ether);
-
-        // deploy positionManager impl
-        address positionManagerImpl = address(new GmxV2PositionManager());
-        // deploy positionManager beacon
-        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
-        // deploy positionMnager beacon proxy
-        address positionManagerProxy = address(
-            new BeaconProxy(
-                positionManagerBeacon,
-                abi.encodeWithSelector(
-                    GmxV2PositionManager.initialize.selector,
-                    owner,
-                    address(strategy),
-                    address(config),
-                    address(gmxGasStation),
-                    GMX_ETH_USDC_MARKET
-                )
-            )
-        );
-        positionManager = GmxV2PositionManager(payable(positionManagerProxy));
-
-        vm.label(address(positionManager), "positionManager");
-
-        strategy.setPositionManager(positionManagerProxy);
-        gmxGasStation.registerPositionManager(positionManagerProxy, true);
-    }
-
-    function _positionManager() internal view override returns (IPositionManager) {
-        return IPositionManager(positionManager);
-    }
-
-    function _excuteOrder() internal override {
-        _fullExcuteOrder();
-    }
-
     function test_afterAdjustPosition_revert_whenUtilizing() public afterDeposited {
         (uint256 pendingUtilization,) = strategy.pendingUtilizations();
         uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();

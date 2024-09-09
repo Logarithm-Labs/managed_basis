@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-import {ForkTest} from "./base/ForkTest.sol";
+import {PositionMngerForkTest} from "test/base/PositionMngerForkTest.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -25,7 +25,7 @@ import {StrategyConfig} from "src/StrategyConfig.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
-abstract contract BasisStrategyBaseTest is ForkTest {
+abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     using Math for uint256;
 
     struct StrategyState {
@@ -70,8 +70,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
     uint256 public TEN_THOUSANDS_USDC = 10_000 * 1e6;
     uint256 public THOUSAND_USDC = 1_000 * 1e6;
 
-    address constant asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // USDC
-    address constant product = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH
+    address constant asset = USDC; // USDC
+    address constant product = WETH; // WETH
     address constant assetPriceFeed = 0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3; // Chainlink USDC-USD price feed
     address constant productPriceFeed = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // Chainlink ETH-USD price feed
     uint256 constant entryCost = 0.01 ether;
@@ -161,7 +161,10 @@ abstract contract BasisStrategyBaseTest is ForkTest {
 
         vault.setStrategy(address(strategy));
 
-        _initTest();
+        address positionManagerAddr = _initPositionManager(owner, address(strategy));
+
+        vm.startPrank(owner);
+        strategy.setPositionManager(positionManagerAddr);
 
         vm.stopPrank();
 
@@ -169,13 +172,8 @@ abstract contract BasisStrategyBaseTest is ForkTest {
         vm.startPrank(USDC_WHALE);
         IERC20(asset).transfer(user1, 10_000_000 * 1e6);
         IERC20(asset).transfer(user2, 10_000_000 * 1e6);
+        vm.stopPrank();
     }
-
-    function _excuteOrder() internal virtual;
-
-    function _initTest() internal virtual;
-
-    function _positionManager() internal view virtual returns (IPositionManager);
 
     function _getStrategyState() internal view returns (StrategyState memory state) {
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");

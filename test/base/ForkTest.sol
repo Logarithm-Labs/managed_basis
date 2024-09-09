@@ -6,12 +6,12 @@ import {Test} from "forge-std/Test.sol";
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
-import {MockPriceFeed} from "../mock/MockPriceFeed.sol";
-import {ArbGasInfoMock} from "../mock/ArbGasInfoMock.sol";
-import {ArbSysMock} from "../mock/ArbSysMock.sol";
-import {UniswapV3MockPool} from "../mock/UniswapV3MockPool.sol";
+import {MockPriceFeed} from "test/mock/MockPriceFeed.sol";
+import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
+import {ArbSysMock} from "test/mock/ArbSysMock.sol";
+import {UniswapV3MockPool} from "test/mock/UniswapV3MockPool.sol";
 
-contract ForkTest is Test {
+abstract contract ForkTest is Test {
     uint256 constant USDC_PRECISION = 1e6;
 
     address constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import {ForkTest} from "./base/ForkTest.sol";
+import {ForkTest} from "test/base/ForkTest.sol";
 import {ManagedVault} from "src/ManagedVault.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
