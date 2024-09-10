@@ -722,6 +722,14 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
                 processingRebalanceDown: _processingRebalanceDown
             })
         );
+
+        (uint256 increaseSizeMin,) = _positionManager.increaseSizeMinMax();
+        (uint256 decreaseSizeMin,) = _positionManager.decreaseSizeMinMax();
+
+        uint256 pendingUtilizationInProduct = $.oracle.convertTokenAmount(_asset, _product, pendingUtilizationInAsset);
+        if (pendingUtilizationInProduct < increaseSizeMin) pendingUtilizationInAsset = 0;
+        if (pendingDeutilizationInProduct < decreaseSizeMin) pendingDeutilizationInProduct = 0;
+
         return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
     }
 
