@@ -100,4 +100,6 @@ library Errors {
 
     // vault
     error MgmtFeeTransfer(address feeRecipient);
+
+    error SwapFailed();
 }

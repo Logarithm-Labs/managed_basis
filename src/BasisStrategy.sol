@@ -105,8 +105,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
 
     event Deutilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
 
-    event SwapFailed();
-
     event UpdateStrategyStatus(StrategyStatus status);
 
     event AfterAdjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease);
@@ -302,9 +300,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             bool success;
             (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, _asset, address($.product), true, swapData);
             if (!success) {
-                emit SwapFailed();
-                $.strategyStatus = StrategyStatus.IDLE;
-                return;
+                revert Errors.SwapFailed();
             }
         } else if (swapType == SwapType.MANUAL) {
             amountOut = ManualSwapLogic.swap(amount, $.assetToProductSwapPath);
@@ -318,17 +314,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         uint256 collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization);
         // (uint256 min,) = $.positionManager.increaseCollateralMinMax();
         if (!_adjustPosition(amountOut, collateralDeltaAmount, true)) {
-            // @fix Numa: we don't need to do swap back, it would be better to simply revert the transaction if
-            // _adjustPosition returns false (both size and collateral are clamped to zero).
-            // if only collateralDeltaAmount is clamped to zero then _adjustPosition will just skip requesting
-            // collateral, which is fine for small amounts, increase in leverage would be insignificant
-
-            // if increasing collateral is smaller than min
-            // or if position adjustment request is failed
-            // then revert utilizing
-            // this is because only increasing size without collateral resulted in
-            // increasing the position's leverage
-
             revert Errors.ZeroAmountUtilization();
         } else {
             $.strategyStatus = StrategyStatus.UTILIZING;
@@ -385,10 +370,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             bool success;
             (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, _asset, _product, false, swapData);
             if (!success) {
-                emit SwapFailed();
-                $.strategyStatus = StrategyStatus.IDLE;
-                emit UpdateStrategyStatus(StrategyStatus.IDLE);
-                return;
+                revert Errors.SwapFailed();
             }
         } else if (swapType == SwapType.MANUAL) {
             amountOut = ManualSwapLogic.swap(amount, $.productToAssetSwapPath);
