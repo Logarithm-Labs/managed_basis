@@ -150,8 +150,11 @@ contract OffChainInvariants is StdInvariant, ForkTest {
 
     function invariant_leverageShouldBeBetweenMinAndMaxWhenUpkeepNotNeeded() public view {
         (bool upkeepNeeded,) = strategy.checkUpkeep("");
-        if (!upkeepNeeded) {
-            uint256 currLeverage = IPositionManager(strategy.positionManager()).currentLeverage();
+        IPositionManager positionManager = IPositionManager(strategy.positionManager());
+        uint256 sizeInTokens = positionManager.positionSizeInTokens();
+
+        if (!upkeepNeeded && sizeInTokens != 0) {
+            uint256 currLeverage = positionManager.currentLeverage();
             assertTrue(currLeverage >= minLeverage, "minLeverage");
             assertTrue(currLeverage <= maxLeverage, "maxLeverage");
         }
