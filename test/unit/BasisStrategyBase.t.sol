@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
 import {PositionMngerForkTest} from "test/base/PositionMngerForkTest.sol";
@@ -23,41 +23,12 @@ import {BasisStrategy} from "src/BasisStrategy.sol";
 import {LogarithmVault} from "src/LogarithmVault.sol";
 import {StrategyConfig} from "src/StrategyConfig.sol";
 
+import {StrategyHelper, StrategyState} from "test/helper/StrategyHelper.sol";
+
 import {console2 as console} from "forge-std/console2.sol";
 
 abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     using Math for uint256;
-
-    struct StrategyState {
-        uint8 strategyStatus;
-        uint256 totalSupply;
-        uint256 totalAssets;
-        uint256 utilizedAssets;
-        uint256 idleAssets;
-        uint256 assetBalance;
-        uint256 productBalance;
-        uint256 productValueInAsset;
-        uint256 assetsToWithdraw;
-        uint256 assetsToClaim;
-        int256 totalPendingWithdraw;
-        uint256 pendingIncreaseCollateral;
-        uint256 pendingDecreaseCollateral;
-        uint256 pendingUtilization;
-        uint256 pendingDeutilization;
-        uint256 accRequestedWithdrawAssets;
-        uint256 proccessedWithdrawAssets;
-        uint256 positionNetBalance;
-        uint256 positionLeverage;
-        uint256 positionSizeInTokens;
-        uint256 positionSizeInAsset;
-        bool processingRebalance;
-        bool upkeepNeeded;
-        bool rebalanceUpNeeded;
-        bool rebalanceDownNeeded;
-        bool deleverageNeeded;
-        bool rehedgeNeeded;
-        bool positionManagerKeepNeeded;
-    }
 
     address owner = makeAddr("owner");
     address user1 = makeAddr("user1");
@@ -86,6 +57,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     LogarithmVault vault;
     BasisStrategy strategy;
     LogarithmOracle oracle;
+    StrategyHelper helper;
 
     function setUp() public {
         _forkArbitrum(238841172);
@@ -173,90 +145,8 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         IERC20(asset).transfer(user1, 10_000_000 * 1e6);
         IERC20(asset).transfer(user2, 10_000_000 * 1e6);
         vm.stopPrank();
-    }
 
-    function _getStrategyState() internal view returns (StrategyState memory state) {
-        (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
-        bool rebalanceUpNeeded;
-        bool rebalanceDownNeeded;
-        bool deleverageNeeded;
-        bool decreaseCollateral;
-        int256 hedgeDeviationInTokens;
-        bool positionManagerNeedKeep;
-        if (performData.length > 0) {
-            (
-                rebalanceDownNeeded,
-                deleverageNeeded,
-                hedgeDeviationInTokens,
-                positionManagerNeedKeep,
-                decreaseCollateral,
-                rebalanceUpNeeded
-            ) = _decodePerformData(performData);
-        }
-
-        state.strategyStatus = uint8(strategy.strategyStatus());
-        state.totalSupply = vault.totalSupply();
-        state.totalAssets = vault.totalAssets();
-        state.utilizedAssets = strategy.utilizedAssets();
-        state.idleAssets = vault.idleAssets();
-        state.assetBalance = IERC20(asset).balanceOf(address(vault)) + IERC20(asset).balanceOf(address(strategy));
-        state.productBalance = IERC20(product).balanceOf(address(strategy));
-        state.productValueInAsset = oracle.convertTokenAmount(product, asset, state.productBalance);
-        state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
-        state.assetsToClaim = vault.assetsToClaim();
-        state.totalPendingWithdraw = vault.totalPendingWithdraw();
-        state.pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
-        state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
-        (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
-        state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
-        state.proccessedWithdrawAssets = vault.proccessedWithdrawAssets();
-        state.positionNetBalance = _positionManager().positionNetBalance();
-        state.positionLeverage = _positionManager().currentLeverage();
-        state.positionSizeInTokens = _positionManager().positionSizeInTokens();
-        state.positionSizeInAsset = oracle.convertTokenAmount(product, asset, state.positionSizeInTokens);
-        state.processingRebalance = strategy.processingRebalance();
-
-        state.upkeepNeeded = upkeepNeeded;
-        state.rebalanceUpNeeded = rebalanceUpNeeded;
-        state.rebalanceDownNeeded = rebalanceDownNeeded;
-        state.deleverageNeeded = deleverageNeeded;
-        state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
-        state.positionManagerKeepNeeded = positionManagerNeedKeep;
-    }
-
-    function _logStrategyState(string memory stateName, StrategyState memory state) internal pure {
-        console.log("===================");
-        console.log(stateName);
-        console.log("===================");
-        console.log("strategyStatus", state.strategyStatus);
-        console.log("totalSupply", state.totalSupply);
-        console.log("totalAssets", state.totalAssets);
-        console.log("utilizedAssets", state.utilizedAssets);
-        console.log("idleAssets", state.idleAssets);
-        console.log("assetBalance", state.assetBalance);
-        console.log("productBalance", state.productBalance);
-        console.log("productValueInAsset", state.productValueInAsset);
-        console.log("assetsToWithdraw", state.assetsToWithdraw);
-        console.log("assetsToClaim", state.assetsToClaim);
-        console.log("totalPendingWithdraw", state.totalPendingWithdraw);
-        console.log("pendingIncreaseCollateral", state.pendingIncreaseCollateral);
-        console.log("pendingDecreaseCollateral", state.pendingDecreaseCollateral);
-        console.log("pendingUtilization", state.pendingUtilization);
-        console.log("pendingDeutilization", state.pendingDeutilization);
-        console.log("accRequestedWithdrawAssets", state.accRequestedWithdrawAssets);
-        console.log("proccessedWithdrawAssets", state.proccessedWithdrawAssets);
-        console.log("positionNetBalance", state.positionNetBalance);
-        console.log("positionLeverage", state.positionLeverage);
-        console.log("positionSizeInTokens", state.positionSizeInTokens);
-        console.log("positionSizeInAsset", state.positionSizeInAsset);
-        console.log("upkeepNeeded", state.upkeepNeeded);
-        console.log("rebalanceUpNeeded", state.rebalanceUpNeeded);
-        console.log("rebalanceDownNeeded", state.rebalanceDownNeeded);
-        console.log("deleverageNeeded", state.deleverageNeeded);
-        console.log("rehedgeNeeded", state.rehedgeNeeded);
-        console.log("positionManagerNeedKeep", state.positionManagerKeepNeeded);
-        console.log("processingRebalance", state.processingRebalance);
-        console.log("");
+        helper = new StrategyHelper(address(strategy));
     }
 
     function _validateFinalState(StrategyState memory state) internal pure {
@@ -367,15 +257,15 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
     modifier validateFinalState() {
         _;
-        _validateFinalState(_getStrategyState());
+        _validateFinalState(helper.getStrategyState());
     }
 
     function _deposit(address from, uint256 assets) internal {
         vm.startPrank(from);
         IERC20(asset).approve(address(vault), assets);
-        StrategyState memory state0 = _getStrategyState();
+        StrategyState memory state0 = helper.getStrategyState();
         vault.deposit(assets, from);
-        StrategyState memory state1 = _getStrategyState();
+        StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1);
     }
 
@@ -383,18 +273,18 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.startPrank(from);
         uint256 assets = vault.previewMint(shares);
         IERC20(asset).approve(address(vault), assets);
-        StrategyState memory state0 = _getStrategyState();
+        StrategyState memory state0 = helper.getStrategyState();
         vault.mint(shares, from);
-        StrategyState memory state1 = _getStrategyState();
+        StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1);
     }
 
     function _utilize(uint256 amount) internal {
         if (amount == 0) return;
         vm.startPrank(operator);
-        StrategyState memory state0 = _getStrategyState();
+        StrategyState memory state0 = helper.getStrategyState();
         strategy.utilize(amount, BasisStrategy.SwapType.MANUAL, "");
-        StrategyState memory state1 = _getStrategyState();
+        StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.UTILIZING));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
@@ -402,17 +292,17 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(pendingDeutilization, 0);
         state0 = state1;
         _excuteOrder();
-        state1 = _getStrategyState();
+        state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
     }
 
     function _deutilize(uint256 amount) internal {
         if (amount == 0) return;
-        StrategyState memory state0 = _getStrategyState();
+        StrategyState memory state0 = helper.getStrategyState();
         vm.startPrank(operator);
         strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
-        StrategyState memory state1 = _getStrategyState();
+        StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.DEUTILIZING));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
@@ -420,7 +310,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(pendingDeutilization, 0);
         state0 = state1;
         _excuteOrder();
-        state1 = _getStrategyState();
+        state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
     }
@@ -449,18 +339,18 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 step;
         while (upkeepNeeded) {
             vm.startPrank(forwarder);
-            StrategyState memory state0 = _getStrategyState();
+            StrategyState memory state0 = helper.getStrategyState();
             uint256 startGas = gasleft();
             strategy.performUpkeep(performData);
             uint256 gasWasted = startGas - gasleft();
             step++;
             console.log(string(abi.encodePacked(operation, ":performUpkeep - ", step, ": ")), gasWasted);
-            StrategyState memory state1 = _getStrategyState();
+            StrategyState memory state1 = helper.getStrategyState();
             _validateStateTransition(state0, state1);
 
             state0 = state1;
             _excuteOrder();
-            state1 = _getStrategyState();
+            state1 = helper.getStrategyState();
             _validateStateTransition(state0, state1);
             (upkeepNeeded, performData) = strategy.checkUpkeep("");
         }
