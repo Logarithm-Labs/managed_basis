@@ -152,8 +152,8 @@ contract GmxInvariants is StdInvariant, ForkTest {
         (bool upkeepNeeded,) = strategy.checkUpkeep("");
         IPositionManager positionManager = IPositionManager(strategy.positionManager());
         uint256 sizeInTokens = positionManager.positionSizeInTokens();
-
-        if (!upkeepNeeded && sizeInTokens != 0) {
+        BasisStrategy.StrategyStatus status = strategy.strategyStatus();
+        if (!upkeepNeeded && sizeInTokens != 0 && status == BasisStrategy.StrategyStatus.IDLE) {
             uint256 currLeverage = positionManager.currentLeverage();
             assertTrue(currLeverage >= minLeverage, "minLeverage");
             assertTrue(currLeverage <= maxLeverage, "maxLeverage");
