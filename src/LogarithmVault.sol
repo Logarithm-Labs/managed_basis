@@ -27,6 +27,7 @@ contract LogarithmVault is Initializable, ManagedVault {
         uint256 requestedAssets;
         uint256 accRequestedWithdrawAssets;
         uint256 requestTimestamp;
+        address owner;
         address receiver;
         bool isClaimed;
     }
@@ -45,9 +46,13 @@ contract LogarithmVault is Initializable, ManagedVault {
         // withdraw state
         uint256 assetsToClaim; // asset balance of vault that is ready to claim
         uint256 accRequestedWithdrawAssets; // total requested withdraw assets
-        uint256 proccessedWithdrawAssets; // total processed assets
+        uint256 processedWithdrawAssets; // total processed assets
         mapping(address => uint256) nonces;
         mapping(bytes32 => WithdrawRequest) withdrawRequests;
+        // prioritized withdraw state
+        mapping(address => bool) prioritizedAccounts;
+        uint256 prioritizedAccRequestedWithdrawAssets;
+        uint256 prioritizedProcessedWithdrawAssets;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.LogarithmVault")) - 1)) & ~bytes32(uint256(0xff))
@@ -124,6 +129,12 @@ contract LogarithmVault is Initializable, ManagedVault {
     function setExitCost(uint256 _exitCost) external onlyOwner {
         require(_exitCost < 1 ether);
         _getLogarithmVaultStorage().exitCost = _exitCost;
+    }
+
+    function setWithdrawPriority(address account, bool prioritized) external onlyOwner {
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        require($.prioritizedAccounts[account] != prioritized);
+        $.prioritizedAccounts[account] = prioritized;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -300,14 +311,22 @@ contract LogarithmVault is Initializable, ManagedVault {
 
             // request withdraw the remaining assets for strategy to deutilize
             uint256 withdrawAssets = assets - _idleAssets;
-            uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + withdrawAssets;
-            $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
+
+            uint256 _accRequestedWithdrawAssets;
+            if ($.prioritizedAccounts[owner]) {
+                _accRequestedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets + withdrawAssets;
+                $.prioritizedAccRequestedWithdrawAssets = _accRequestedWithdrawAssets;
+            } else {
+                _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + withdrawAssets;
+                $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
+            }
 
             bytes32 withdrawKey = getWithdrawKey(owner, _useNonce(owner));
             $.withdrawRequests[withdrawKey] = WithdrawRequest({
                 requestedAssets: assets,
                 accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
                 requestTimestamp: block.timestamp,
+                owner: owner,
                 receiver: receiver,
                 isClaimed: false
             });
@@ -322,30 +341,27 @@ contract LogarithmVault is Initializable, ManagedVault {
     ///
     /// @return processed assets
     function processPendingWithdrawRequests() public returns (uint256) {
-        uint256 assets = idleAssets();
-        if (assets == 0) {
-            return 0;
-        } else {
-            LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-            uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
-            uint256 _proccessedWithdrawAssets = $.proccessedWithdrawAssets;
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
-            // check if there is neccessarity to process withdraw requests
-            if (_proccessedWithdrawAssets < _accRequestedWithdrawAssets) {
-                uint256 assetsToBeProcessed = _accRequestedWithdrawAssets - _proccessedWithdrawAssets;
-                if (assetsToBeProcessed > assets) {
-                    $.proccessedWithdrawAssets += assets;
-                    $.assetsToClaim += assets;
-                    return assets;
-                } else {
-                    $.proccessedWithdrawAssets = _accRequestedWithdrawAssets;
-                    $.assetsToClaim += assetsToBeProcessed;
-                    return assetsToBeProcessed;
-                }
-            } else {
-                return 0;
-            }
+        (uint256 remainingAssets, uint256 processedAssetsForPrioritized) = _calcProcessedAssets(
+            idleAssets(), $.prioritizedProcessedWithdrawAssets, $.prioritizedAccRequestedWithdrawAssets
+        );
+        if (processedAssetsForPrioritized > 0) {
+            $.prioritizedProcessedWithdrawAssets += processedAssetsForPrioritized;
         }
+
+        (, uint256 processedAssets) =
+            _calcProcessedAssets(remainingAssets, $.processedWithdrawAssets, $.accRequestedWithdrawAssets);
+
+        if (processedAssets > 0) $.processedWithdrawAssets += processedAssets;
+
+        uint256 totalProcessedAssets = processedAssetsForPrioritized + processedAssets;
+
+        if (totalProcessedAssets > 0) {
+            $.assetsToClaim += totalProcessedAssets;
+        }
+
+        return totalProcessedAssets;
     }
 
     /// @notice claim the processed withdraw request
@@ -357,7 +373,9 @@ contract LogarithmVault is Initializable, ManagedVault {
             revert Errors.RequestAlreadyClaimed();
         }
 
-        (bool isExecuted, bool isLast) = _isWithdrawRequestExecuted(withdrawRequest.accRequestedWithdrawAssets);
+        bool isPrioritizedAccount = $.prioritizedAccounts[withdrawRequest.owner];
+        (bool isExecuted, bool isLast) =
+            _isWithdrawRequestExecuted(isPrioritizedAccount, withdrawRequest.accRequestedWithdrawAssets);
 
         if (!isExecuted) {
             revert Errors.RequestNotExecuted();
@@ -370,10 +388,11 @@ contract LogarithmVault is Initializable, ManagedVault {
         uint256 executedAssets;
         // separate workflow for last redeem
         if (isLast) {
-            uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
             executedAssets = IERC20(asset()).balanceOf(address(this));
             $.assetsToClaim = 0;
-            $.proccessedWithdrawAssets = _accRequestedWithdrawAssets;
+            isPrioritizedAccount
+                ? $.prioritizedProcessedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets
+                : $.processedWithdrawAssets = $.accRequestedWithdrawAssets;
         } else {
             executedAssets = withdrawRequest.requestedAssets;
             $.assetsToClaim -= executedAssets;
@@ -387,7 +406,9 @@ contract LogarithmVault is Initializable, ManagedVault {
     function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
-        (bool isExecuted,) = _isWithdrawRequestExecuted(withdrawRequest.accRequestedWithdrawAssets);
+        (bool isExecuted,) = _isWithdrawRequestExecuted(
+            $.prioritizedAccounts[withdrawRequest.owner], withdrawRequest.accRequestedWithdrawAssets
+        );
 
         return isExecuted && !withdrawRequest.isClaimed;
     }
@@ -401,7 +422,8 @@ contract LogarithmVault is Initializable, ManagedVault {
     function totalPendingWithdraw() public view returns (int256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         uint256 assetsToWithdraw = IERC20(asset()).balanceOf(address($.strategy));
-        return $.accRequestedWithdrawAssets.toInt256() - ($.proccessedWithdrawAssets + assetsToWithdraw).toInt256();
+        return $.prioritizedAccRequestedWithdrawAssets.toInt256() + $.accRequestedWithdrawAssets.toInt256()
+            - ($.prioritizedProcessedWithdrawAssets + $.processedWithdrawAssets + assetsToWithdraw).toInt256();
     }
 
     function getWithdrawKey(address user, uint256 nonce) public view returns (bytes32) {
@@ -419,18 +441,45 @@ contract LogarithmVault is Initializable, ManagedVault {
                         PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev calculate the processed withdrawal assets
+    ///
+    /// @param _idleAssets idle assets available for proc
+    /// @param _processedWithdrawAssets is the value of processedWithdrawAssets state
+    /// @param _accRequestedWithdrawAssets is the value of accRequestedWithdrawAssets state
+    ///
+    /// @return remainingAssets is the remaining asset amount after processing
+    /// @return processedAssets is the processed amount of asset
+    function _calcProcessedAssets(
+        uint256 _idleAssets,
+        uint256 _processedWithdrawAssets,
+        uint256 _accRequestedWithdrawAssets
+    ) internal pure returns (uint256 remainingAssets, uint256 processedAssets) {
+        // check if there is neccessarity to process withdraw requests
+        if (_processedWithdrawAssets < _accRequestedWithdrawAssets) {
+            uint256 assetsToBeProcessed = _accRequestedWithdrawAssets - _processedWithdrawAssets;
+            if (assetsToBeProcessed > _idleAssets) {
+                processedAssets = _idleAssets;
+            } else {
+                processedAssets = assetsToBeProcessed;
+                remainingAssets = _idleAssets - processedAssets;
+            }
+        }
+        return (remainingAssets, processedAssets);
+    }
+
     /// @dev return executable state of withdraw request
     ///
+    /// @param owner is the owner address of withdraw request
     /// @param accRequestedWithdrawAssetsOfRequest accRequestedWithdrawAssets value of withdraw request
     ///
     /// @return isExecuted tells whether a request is executed or not
     /// @return isLast tells whether a request is last or not
-    function _isWithdrawRequestExecuted(uint256 accRequestedWithdrawAssetsOfRequest)
+    function _isWithdrawRequestExecuted(bool isPrioritizedAccount, uint256 accRequestedWithdrawAssetsOfRequest)
         internal
         view
         returns (bool isExecuted, bool isLast)
     {
-        // @fix Numa: should return false if withdraw request was not issued (accRequestedWithdrawAssetsOfRequest is zero)
+        // return false if withdraw request was not issued (accRequestedWithdrawAssetsOfRequest is zero)
         if (accRequestedWithdrawAssetsOfRequest == 0) {
             return (false, false);
         }
@@ -438,8 +487,17 @@ contract LogarithmVault is Initializable, ManagedVault {
 
         // separate worflow for last withdraw
         // check if current withdrawRequest is last withdraw
-        if (totalSupply() == 0 && accRequestedWithdrawAssetsOfRequest == $.accRequestedWithdrawAssets) {
-            isLast = true;
+        // possible only when totalSupply is 0
+        if (totalSupply() == 0) {
+            uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
+            // check if normal withdraw requested is issued
+            if (_accRequestedWithdrawAssets > 0) {
+                // if so, only normal withdraw request can be last
+                isLast = !isPrioritizedAccount && accRequestedWithdrawAssetsOfRequest == _accRequestedWithdrawAssets;
+            } else {
+                // if no, that means _accRequestedWithdrawAssets = 0, prioritized withdraw request should be last
+                isLast = accRequestedWithdrawAssetsOfRequest == $.prioritizedAccRequestedWithdrawAssets;
+            }
         }
 
         if (isLast) {
@@ -449,7 +507,9 @@ contract LogarithmVault is Initializable, ManagedVault {
             uint256 assetsToWithdraw = IERC20(asset()).balanceOf(address($.strategy));
             isExecuted = utilizedAssets == 0 && assetsToWithdraw == 0;
         } else {
-            isExecuted = accRequestedWithdrawAssetsOfRequest <= $.proccessedWithdrawAssets;
+            isExecuted = isPrioritizedAccount
+                ? accRequestedWithdrawAssetsOfRequest <= $.prioritizedProcessedWithdrawAssets
+                : accRequestedWithdrawAssetsOfRequest <= $.processedWithdrawAssets;
         }
 
         return (isExecuted, isLast);
@@ -490,8 +550,16 @@ contract LogarithmVault is Initializable, ManagedVault {
         return _getLogarithmVaultStorage().accRequestedWithdrawAssets;
     }
 
-    function proccessedWithdrawAssets() external view returns (uint256) {
-        return _getLogarithmVaultStorage().proccessedWithdrawAssets;
+    function processedWithdrawAssets() external view returns (uint256) {
+        return _getLogarithmVaultStorage().processedWithdrawAssets;
+    }
+
+    function prioritizedAccRequestedWithdrawAssets() external view returns (uint256) {
+        return _getLogarithmVaultStorage().prioritizedAccRequestedWithdrawAssets;
+    }
+
+    function prioritizedProcessedWithdrawAssets() external view returns (uint256) {
+        return _getLogarithmVaultStorage().prioritizedProcessedWithdrawAssets;
     }
 
     function withdrawRequests(bytes32 withdrawKey) external view returns (WithdrawRequest memory) {
