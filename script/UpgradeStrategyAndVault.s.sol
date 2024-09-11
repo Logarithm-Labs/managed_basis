@@ -49,7 +49,7 @@ contract UpgradeStrategyAndVaultScript is Script {
         console.log("pendingUtilization: ", state.pendingUtilization);
         console.log("pendingDeutilization: ", state.pendingDeutilization);
         console.log("accRequestedWithdrawAssets: ", state.accRequestedWithdrawAssets);
-        console.log("proccessedWithdrawAssets: ", state.proccessedWithdrawAssets);
+        console.log("processedWithdrawAssets: ", state.processedWithdrawAssets);
         console.log("positionNetBalance: ", state.positionNetBalance);
         console.log("positionLeverage: ", state.positionLeverage);
         console.log("positionSizeInTokens: ", state.positionSizeInTokens);

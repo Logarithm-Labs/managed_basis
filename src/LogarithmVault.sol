@@ -469,7 +469,7 @@ contract LogarithmVault is Initializable, ManagedVault {
 
     /// @dev return executable state of withdraw request
     ///
-    /// @param owner is the owner address of withdraw request
+    /// @param isPrioritizedAccount tells if account is prioritized for withdrawal
     /// @param accRequestedWithdrawAssetsOfRequest accRequestedWithdrawAssets value of withdraw request
     ///
     /// @return isExecuted tells whether a request is executed or not

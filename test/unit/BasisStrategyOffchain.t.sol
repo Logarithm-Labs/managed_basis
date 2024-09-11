@@ -51,13 +51,13 @@ contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
         _excuteOrder();
 
         bytes32 requestKey = vault.getWithdrawKey(user1, 0);
-        assertTrue(vault.proccessedWithdrawAssets() < vault.accRequestedWithdrawAssets());
+        assertTrue(vault.processedWithdrawAssets() < vault.accRequestedWithdrawAssets());
         assertTrue(vault.isClaimable(requestKey));
 
         uint256 requestedAssets = vault.withdrawRequests(requestKey).requestedAssets;
         uint256 balBefore = IERC20(asset).balanceOf(user1);
 
-        assertGt(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+        assertGt(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
 
         vm.startPrank(user1);
         vault.claim(requestKey);
@@ -65,7 +65,7 @@ contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
 
         assertGt(requestedAssets, balDelta);
         assertEq(strategy.pendingDecreaseCollateral(), 0);
-        assertEq(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+        assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
     }
 
     function test_performUpkeep_decreaseCollateral() public afterMultipleWithdrawRequestCreated validateFinalState {

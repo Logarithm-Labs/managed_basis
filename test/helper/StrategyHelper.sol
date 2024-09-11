@@ -28,7 +28,7 @@ struct StrategyState {
     uint256 pendingUtilization;
     uint256 pendingDeutilization;
     uint256 accRequestedWithdrawAssets;
-    uint256 proccessedWithdrawAssets;
+    uint256 processedWithdrawAssets;
     uint256 positionNetBalance;
     uint256 positionLeverage;
     uint256 positionSizeInTokens;
@@ -90,7 +90,7 @@ contract StrategyHelper {
         state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
         state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
-        state.proccessedWithdrawAssets = vault.proccessedWithdrawAssets();
+        state.processedWithdrawAssets = vault.processedWithdrawAssets();
         state.positionNetBalance = positionManager.positionNetBalance();
         state.positionLeverage = positionManager.currentLeverage();
         state.positionSizeInTokens = positionManager.positionSizeInTokens();
@@ -125,7 +125,7 @@ contract StrategyHelper {
         console.log("pendingUtilization", state.pendingUtilization);
         console.log("pendingDeutilization", state.pendingDeutilization);
         console.log("accRequestedWithdrawAssets", state.accRequestedWithdrawAssets);
-        console.log("proccessedWithdrawAssets", state.proccessedWithdrawAssets);
+        console.log("processedWithdrawAssets", state.processedWithdrawAssets);
         console.log("positionNetBalance", state.positionNetBalance);
         console.log("positionLeverage", state.positionLeverage);
         console.log("positionSizeInTokens", state.positionSizeInTokens);

@@ -67,13 +67,13 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
 
         bytes32 requestKey = vault.getWithdrawKey(user1, 0);
-        assertTrue(vault.proccessedWithdrawAssets() < vault.accRequestedWithdrawAssets());
+        assertTrue(vault.processedWithdrawAssets() < vault.accRequestedWithdrawAssets());
         assertTrue(vault.isClaimable(requestKey));
 
         uint256 requestedAssets = vault.withdrawRequests(requestKey).requestedAssets;
         uint256 balBefore = IERC20(asset).balanceOf(user1);
 
-        assertGt(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+        assertGt(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
 
         vm.startPrank(user1);
         vault.claim(requestKey);
@@ -81,6 +81,6 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
 
         assertGt(requestedAssets, balDelta);
         assertEq(strategy.pendingDecreaseCollateral(), 0);
-        assertEq(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+        assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
     }
 }

@@ -26,7 +26,7 @@ contract DataProvider {
         uint256 pendingUtilization;
         uint256 pendingDeutilization;
         uint256 accRequestedWithdrawAssets;
-        uint256 proccessedWithdrawAssets;
+        uint256 processedWithdrawAssets;
         uint256 positionNetBalance;
         uint256 positionLeverage;
         uint256 positionSizeInTokens;
@@ -80,7 +80,7 @@ contract DataProvider {
         state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
         state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
-        state.proccessedWithdrawAssets = vault.proccessedWithdrawAssets();
+        state.processedWithdrawAssets = vault.processedWithdrawAssets();
         state.positionNetBalance = positionManager.positionNetBalance();
         state.positionLeverage = positionManager.currentLeverage();
         state.positionSizeInTokens = positionManager.positionSizeInTokens();

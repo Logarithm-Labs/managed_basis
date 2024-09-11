@@ -568,7 +568,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(withdrawRequest.accRequestedWithdrawAssets, assets - TEN_THOUSANDS_USDC / 2);
         assertEq(vault.idleAssets(), 0);
         assertEq(vault.assetsToClaim(), TEN_THOUSANDS_USDC / 2);
-        assertEq(vault.proccessedWithdrawAssets(), 0);
+        assertEq(vault.processedWithdrawAssets(), 0);
         assertEq(withdrawRequest.accRequestedWithdrawAssets, vault.accRequestedWithdrawAssets());
     }
 
