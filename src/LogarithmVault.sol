@@ -388,15 +388,32 @@ contract LogarithmVault is Initializable, ManagedVault {
         uint256 executedAssets;
         // separate workflow for last redeem
         if (isLast) {
-            executedAssets = IERC20(asset()).balanceOf(address(this));
-            $.assetsToClaim = 0;
-            isPrioritizedAccount
-                ? $.prioritizedProcessedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets
-                : $.processedWithdrawAssets = $.accRequestedWithdrawAssets;
+            uint256 _processedWithdrawAssets;
+            uint256 _accRequestedWithdrawAssets;
+            if (isPrioritizedAccount) {
+                _processedWithdrawAssets = $.prioritizedProcessedWithdrawAssets;
+                _accRequestedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets;
+            } else {
+                _processedWithdrawAssets = $.processedWithdrawAssets;
+                _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
+            }
+            uint256 shortfall = _accRequestedWithdrawAssets - _processedWithdrawAssets;
+
+            if (shortfall > 0) {
+                (, executedAssets) = withdrawRequest.requestedAssets.trySub(shortfall);
+                isPrioritizedAccount
+                    ? $.prioritizedProcessedWithdrawAssets = _accRequestedWithdrawAssets
+                    : $.processedWithdrawAssets = _accRequestedWithdrawAssets;
+            } else {
+                uint256 _idleAssets = idleAssets();
+                executedAssets = withdrawRequest.requestedAssets + _idleAssets;
+                $.assetsToClaim += _idleAssets;
+            }
         } else {
             executedAssets = withdrawRequest.requestedAssets;
-            $.assetsToClaim -= executedAssets;
         }
+
+        $.assetsToClaim -= executedAssets;
 
         IERC20(asset()).safeTransfer(withdrawRequest.receiver, executedAssets);
 
@@ -463,6 +480,8 @@ contract LogarithmVault is Initializable, ManagedVault {
                 processedAssets = assetsToBeProcessed;
                 remainingAssets = _idleAssets - processedAssets;
             }
+        } else {
+            remainingAssets = _idleAssets;
         }
         return (remainingAssets, processedAssets);
     }
@@ -490,7 +509,7 @@ contract LogarithmVault is Initializable, ManagedVault {
         // possible only when totalSupply is 0
         if (totalSupply() == 0) {
             uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
-            // check if normal withdraw requested is issued
+            // check if normal withdraw request is issued
             if (_accRequestedWithdrawAssets > 0) {
                 // if so, only normal withdraw request can be last
                 isLast = !isPrioritizedAccount && accRequestedWithdrawAssetsOfRequest == _accRequestedWithdrawAssets;
