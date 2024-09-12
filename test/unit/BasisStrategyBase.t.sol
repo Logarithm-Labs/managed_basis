@@ -33,6 +33,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     address owner = makeAddr("owner");
     address user1 = makeAddr("user1");
     address user2 = makeAddr("user2");
+    address metaVault = makeAddr("metaVault");
     address operator = makeAddr("operator");
     address forwarder = makeAddr("forwarder");
 
@@ -144,6 +145,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.startPrank(USDC_WHALE);
         IERC20(asset).transfer(user1, 10_000_000 * 1e6);
         IERC20(asset).transfer(user2, 10_000_000 * 1e6);
+        IERC20(asset).transfer(metaVault, 10_000_000 * 1e6);
         vm.stopPrank();
 
         helper = new StrategyHelper(address(strategy));
@@ -252,6 +254,13 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 redeemShares2 = vault.balanceOf(user2) / 4;
         vm.startPrank(user2);
         vault.redeem(redeemShares2, user2, user2);
+        _;
+    }
+
+    modifier prioritize(address account) {
+        vm.startPrank(owner);
+        vault.setWithdrawPriority(account, true);
+        vm.stopPrank();
         _;
     }
 
@@ -575,6 +584,124 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     /*//////////////////////////////////////////////////////////////
                         DEUTILIZE/UPKEEP TEST
     //////////////////////////////////////////////////////////////*/
+
+    function test_prioritizedWithdraw_whenNotLast() public prioritize(metaVault) validateFinalState {
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        _deposit(metaVault, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+        assertEq(vault.idleAssets(), 0, "idle asset should be 0");
+
+        uint256 redeemShares = vault.balanceOf(user1) / 3;
+        vm.startPrank(user1);
+        vault.redeem(redeemShares, user1, user1);
+        vm.startPrank(metaVault);
+        vault.redeem(vault.balanceOf(metaVault) / 3, metaVault, metaVault);
+        vm.stopPrank();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization / 2);
+
+        bytes32 userRequestKey = vault.getWithdrawKey(user1, 0);
+        bytes32 metaVaultRequestKey = vault.getWithdrawKey(metaVault, 0);
+
+        assertFalse(vault.isClaimable(userRequestKey), "user withdraw request not processed");
+        assertTrue(vault.isClaimable(metaVaultRequestKey), "meta vault request processed");
+
+        LogarithmVault.WithdrawRequest memory req = vault.withdrawRequests(metaVaultRequestKey);
+        uint256 balBefore = IERC20(asset).balanceOf(metaVault);
+        vm.startPrank(metaVault);
+        vault.claim(metaVaultRequestKey);
+        uint256 balAfter = IERC20(asset).balanceOf(metaVault);
+
+        assertEq(balAfter - balBefore, req.requestedAssets, "requestedAssets should be claimed");
+    }
+
+    function test_prioritizedWithdraw_lastRedeemWhenOnlyMetaVault() public prioritize(metaVault) validateFinalState {
+        _deposit(metaVault, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+        assertEq(vault.idleAssets(), 0, "idle asset should be 0");
+
+        vm.startPrank(metaVault);
+        vault.redeem(vault.balanceOf(metaVault), metaVault, metaVault);
+        vm.stopPrank();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+
+        bytes32 metaVaultRequestKey = vault.getWithdrawKey(metaVault, 0);
+        LogarithmVault.WithdrawRequest memory req = vault.withdrawRequests(metaVaultRequestKey);
+        uint256 balBefore = IERC20(asset).balanceOf(metaVault);
+        vm.startPrank(metaVault);
+        vault.claim(metaVaultRequestKey);
+        uint256 balAfter = IERC20(asset).balanceOf(metaVault);
+        // console.log("balBefore", balBefore);
+        // console.log("balAfter", balAfter);
+        // console.log("requestedAssets", req.requestedAssets);
+        assertTrue(balAfter - balBefore >= req.requestedAssets, "meta vault claims all as it is last");
+        assertEq(
+            vault.prioritizedAccRequestedWithdrawAssets(),
+            vault.prioritizedProcessedWithdrawAssets(),
+            "processed assets should be full"
+        );
+    }
+
+    function test_prioritizedWithdraw_lastRedeemWhenNotOnlyMetaVault()
+        public
+        prioritize(metaVault)
+        validateFinalState
+    {
+        _deposit(metaVault, TEN_THOUSANDS_USDC);
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+        assertEq(vault.idleAssets(), 0, "idle asset should be 0");
+
+        // user's withdraw first
+        vm.startPrank(user1);
+        vault.redeem(vault.balanceOf(user1), user1, user1);
+        vm.stopPrank();
+
+        // metaVault's withdraw after
+        vm.startPrank(metaVault);
+        vault.redeem(vault.balanceOf(metaVault), metaVault, metaVault);
+        vm.stopPrank();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+
+        bytes32 metaVaultRequestKey = vault.getWithdrawKey(metaVault, 0);
+        bytes32 userRequestKey = vault.getWithdrawKey(user1, 0);
+        LogarithmVault.WithdrawRequest memory metaReq = vault.withdrawRequests(metaVaultRequestKey);
+        LogarithmVault.WithdrawRequest memory userReq = vault.withdrawRequests(userRequestKey);
+
+        uint256 metaBalBefore = IERC20(asset).balanceOf(metaVault);
+        uint256 userBalBefore = IERC20(asset).balanceOf(user1);
+
+        vm.startPrank(user1);
+        vault.claim(userRequestKey);
+        vm.startPrank(metaVault);
+        vault.claim(metaVaultRequestKey);
+        vm.stopPrank();
+
+        uint256 metaBalAfter = IERC20(asset).balanceOf(metaVault);
+        uint256 userBalAfter = IERC20(asset).balanceOf(user1);
+
+        assertTrue(
+            metaBalAfter - metaBalBefore == metaReq.requestedAssets,
+            "meta claimed assets should be ths same as requested"
+        );
+        assertTrue(
+            userBalAfter - userBalBefore > userReq.requestedAssets, "user claims all remaining assets as it is last"
+        );
+        assertEq(
+            vault.prioritizedAccRequestedWithdrawAssets(),
+            vault.prioritizedProcessedWithdrawAssets(),
+            "processed assets should be full"
+        );
+        assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets(), "processed assets should be full");
+    }
 
     function test_deutilize_partial_withSingleRequest() public afterWithdrawRequestCreated validateFinalState {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
