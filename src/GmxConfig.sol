@@ -49,7 +49,10 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
         $.referralCode = bytes32(0);
         $.maxClaimableFundingShare = 1e16; // 1%
         $.limitDecreaseCollateral = 100 * 1e6;
-        $.realizedPnlDiffFactor = 5e15; // 0.5%
+    }
+
+    function reinitialize() external reinitializer(2) {
+        _getGmxConfigStorage().realizedPnlDiffFactor = 5e15; // 0.5%
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
