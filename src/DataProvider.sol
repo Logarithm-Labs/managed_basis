@@ -62,7 +62,7 @@ contract DataProvider {
                 positionManagerNeedKeep,
                 decreaseCollateral,
                 rebalanceUpNeeded
-            ) = abi.decode(performData, (bool, bool, int256, bool, bool, bool));
+            ) = _decodePerformData(performData);
         }
 
         state.strategyStatus = uint8(strategy.strategyStatus());
