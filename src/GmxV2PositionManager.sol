@@ -375,10 +375,10 @@ contract GmxV2PositionManager is
         tokens[0] = _longToken;
         if (_longToken == _collateralToken) {
             uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, address(this));
-            shortTokenAmount = amounts[0];
+            longTokenAmount = amounts[0];
         } else {
             uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, strategy());
-            shortTokenAmount = amounts[0];
+            longTokenAmount = amounts[0];
         }
 
         emit FundingClaimed(_shortToken, shortTokenAmount);
