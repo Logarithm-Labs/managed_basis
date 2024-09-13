@@ -23,6 +23,7 @@ import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
 import {IOracle} from "src/interfaces/IOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
+import {Constants} from "src/libraries/utils/Constants.sol";
 
 library GmxV2Lib {
     using Math for uint256;
@@ -98,7 +99,8 @@ library GmxV2Lib {
         GmxParams calldata params,
         address oracle,
         uint256 sizeDeltaInTokens,
-        uint256 collateralDeltaAmount
+        uint256 collateralDeltaAmount,
+        uint256 realizedPnlDiffFactor
     ) external view returns (DecreasePositionResult memory result) {
         Position.Props memory position = _getPosition(params);
 
@@ -128,14 +130,25 @@ library GmxV2Lib {
 
             if (realizedPnlAmount < 0) {
                 (, initialCollateralAmount) = initialCollateralAmount.trySub(uint256(-realizedPnlAmount));
-            } else if (uint256(realizedPnlAmount) > collateralDeltaAmount) {
-                result.isIncreaseCollateral = true;
-                result.initialCollateralDeltaAmount = uint256(realizedPnlAmount) - collateralDeltaAmount;
-                return result;
-            } else if (uint256(realizedPnlAmount) == collateralDeltaAmount) {
-                return result;
             } else {
-                collateralDeltaAmount -= uint256(realizedPnlAmount);
+                // realized pnl by gmx is sometimes different from the expectation due to having offchain oracle
+                // and when it is positive, all fees are deducted from the realized pnl, instead of collateral
+                // but we need to overshoot the target decreasing delta collateral
+                // so make expectation smaller by the realizedPnlDiffFactor
+                uint256 realizedPnlAmountAbs = uint256(realizedPnlAmount);
+                realizedPnlAmountAbs = realizedPnlAmountAbs.mulDiv(
+                    Constants.FLOAT_PRECISION - realizedPnlDiffFactor, Constants.FLOAT_PRECISION
+                );
+
+                if (realizedPnlAmountAbs > collateralDeltaAmount) {
+                    result.isIncreaseCollateral = true;
+                    result.initialCollateralDeltaAmount = realizedPnlAmountAbs - collateralDeltaAmount;
+                    return result;
+                } else if (realizedPnlAmountAbs == collateralDeltaAmount) {
+                    return result;
+                } else {
+                    collateralDeltaAmount -= realizedPnlAmountAbs;
+                }
             }
         }
 
@@ -178,6 +191,11 @@ library GmxV2Lib {
             }
             uint256 sizeDeltaInTokensToBeRealized =
                 collateralDeltaAmount.mulDiv(position.numbers.sizeInTokens, totalPositionPnlAmount);
+            // make sizeDeltaInTokensToBeRealized bigger by the diff factor,
+            // so that we can guarrantee that the decreased collateral overshoots the request
+            sizeDeltaInTokensToBeRealized = sizeDeltaInTokensToBeRealized.mulDiv(
+                Constants.FLOAT_PRECISION + realizedPnlDiffFactor, Constants.FLOAT_PRECISION
+            );
             result.sizeDeltaUsdToDecrease += _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokensToBeRealized);
             executionPriceResultForDecrease =
                 _getExecutionPrice(params, position, indexTokenPrice, -int256(result.sizeDeltaUsdToDecrease));
@@ -294,7 +312,7 @@ library GmxV2Lib {
 
         if (remainingCollateralUsd == 0) return type(uint256).max;
 
-        return positionSizeInUsd.mulDiv(1 ether, remainingCollateralUsd);
+        return positionSizeInUsd.mulDiv(Constants.FLOAT_PRECISION, remainingCollateralUsd);
     }
 
     /// @dev returns remainingCollateral and claimable funding amount in collateral token

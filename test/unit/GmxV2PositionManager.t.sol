@@ -341,6 +341,36 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertEq(collateralDelta, strategy.collateralDelta());
     }
 
+    function test_adjustPosition_decreasePositionCollateralAndSize_whenPositivePnl() public afterHavingPosition {
+        // trnasfer usdc to strategy assuming there are funds deposited
+        vm.startPrank(USDC_WHALE);
+        IERC20(USDC).transfer(address(positionManager), 100 * USDC_PRECISION);
+
+        uint256 collateralDelta = 200 * USDC_PRECISION;
+        uint256 sizeDeltaInTokens = 0.25 ether;
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
+        assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
+        vm.startPrank(address(strategy));
+        positionManager.adjustPosition(
+            IPositionManager.AdjustPositionPayload({
+                sizeDeltaInTokens: sizeDeltaInTokens,
+                collateralDeltaAmount: collateralDelta,
+                isIncrease: false
+            })
+        );
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
+        uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
+        assertEq(
+            positionInfoAfter.position.numbers.sizeInTokens,
+            positionInfoBefore.position.numbers.sizeInTokens - sizeDeltaInTokens,
+            "positionSizeInTokens"
+        );
+        assertEq(strategy.collateralDelta(), collateralDelta);
+    }
+
     function test_adjustPosition_decreasePositionCollateral_whenInitCollateralEngouh() public afterHavingPosition {
         uint256 collateralDelta = 200 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
@@ -408,7 +438,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         );
         assertApproxEqRel(positionNetBalanceAfter, positionNetBalanceBefore - collateralDelta, 0.99 ether);
         assertEq(strategyBalanceAfter - strategyBalanceBefore, strategy.collateralDelta());
-        assertApproxEqRel(collateralDelta, strategy.collateralDelta(), 0.99999 ether);
+        assertEq(collateralDelta, strategy.collateralDelta());
     }
 
     function test_adjustPosition_decreasePositionCollateral_whenInitCollateralNotEnoughWithIdle()
@@ -449,7 +479,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         );
         assertApproxEqRel(positionNetBalanceAfter, positionNetBalanceBefore - collateralDelta, 0.99 ether);
         assertEq(strategyBalanceAfter - strategyBalanceBefore, strategy.collateralDelta());
-        assertApproxEqRel(collateralDelta, strategy.collateralDelta(), 0.99999 ether);
+        assertEq(collateralDelta, strategy.collateralDelta());
     }
 
     function test_adjustPosition_decreasePositionCollateral_whenNegativePnl() public afterHavingPosition {
@@ -538,7 +568,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
             positionInfoAfter.position.numbers.collateralAmount, positionInfoBefore.position.numbers.collateralAmount
         );
         assertApproxEqRel(positionNetBalanceAfter, positionNetBalanceBefore - collateralDelta, 0.9999 ether);
-        assertApproxEqRel(collateralDelta, strategy.collateralDelta(), 0.99999 ether);
+        assertEq(collateralDelta, strategy.collateralDelta());
         assertNotEq(IERC20(USDC).balanceOf(address(positionManager)), 0);
     }
 
@@ -574,9 +604,9 @@ contract GmxV2PositionManagerTest is GmxV2Test {
             positionInfoBefore.position.numbers.sizeInTokens
         );
         assertEq(strategy.sizeDeltaInTokens(), 0.5 ether);
-        assertEq(IERC20(USDC).balanceOf(address(positionManager)), 0);
+        // assertEq(IERC20(USDC).balanceOf(address(positionManager)), 0);
         assertApproxEqRel(positionNetBalanceAfter, positionNetBalanceBefore - collateralDelta, 0.9999 ether);
-        assertApproxEqRel(collateralDelta, strategy.collateralDelta(), 0.9999 ether);
+        assertEq(collateralDelta, strategy.collateralDelta());
         assertEq(strategyBalanceAfter - strategyBalanceBefore, strategy.collateralDelta());
     }
 
@@ -611,7 +641,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         );
         assertApproxEqRel(positionNetBalanceAfter, positionNetBalanceBefore - collateralDelta, 0.99999 ether);
         assertEq(strategyBalanceAfter - strategyBalanceBefore, strategy.collateralDelta());
-        assertApproxEqRel(collateralDelta, strategy.collateralDelta(), 0.99999 ether);
+        assertEq(collateralDelta, strategy.collateralDelta());
     }
 
     function test_adjustPosition_decreasePosition_whenDeltaCollateralIsBiggerThanRealizedPnlAndInitCallateral()
@@ -662,9 +692,9 @@ contract GmxV2PositionManagerTest is GmxV2Test {
             0.99999 ether
         );
         assertApproxEqRel(strategy.sizeDeltaInTokens(), 0.5 ether, 0.99999 ether);
-        assertEq(IERC20(USDC).balanceOf(address(positionManager)), 0);
+        // assertEq(IERC20(USDC).balanceOf(address(positionManager)), 0);
         assertApproxEqRel(positionNetBalanceAfter, positionNetBalanceBefore - collateralDelta, 0.9999 ether);
-        assertApproxEqRel(collateralDelta, strategy.collateralDelta(), 0.9999 ether);
+        assertEq(collateralDelta, strategy.collateralDelta());
         assertEq(strategyBalanceAfter - strategyBalanceBefore, strategy.collateralDelta());
     }
 

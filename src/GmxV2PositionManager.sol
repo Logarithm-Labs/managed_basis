@@ -260,7 +260,11 @@ contract GmxV2PositionManager is
                     (, collateralDeltaAmount) = params.collateralDeltaAmount.trySub(idleCollateralAmount);
                 }
                 GmxV2Lib.DecreasePositionResult memory decreaseResult = GmxV2Lib.getDecreasePositionResult(
-                    gmxParams, _oracle, params.sizeDeltaInTokens, collateralDeltaAmount
+                    gmxParams,
+                    _oracle,
+                    params.sizeDeltaInTokens,
+                    collateralDeltaAmount,
+                    config().realizedPnlDiffFactor()
                 );
                 if (params.sizeDeltaInTokens > 0) {
                     _getGmxV2PositionManagerStorage().sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);

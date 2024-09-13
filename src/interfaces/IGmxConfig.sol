@@ -21,4 +21,6 @@ interface IGmxConfig {
     function maxClaimableFundingShare() external view returns (uint256);
 
     function limitDecreaseCollateral() external view returns (uint256);
+
+    function realizedPnlDiffFactor() external view returns (uint256);
 }

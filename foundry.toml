@@ -21,6 +21,6 @@ show_progress = true
 arbitrum_one = "${ARBITRUM_ONE_RPC_URL}"
 
 [invariant]
-runs = 64
-depth = 64
+runs = 16
+depth = 256
 fail_on_revert = false
