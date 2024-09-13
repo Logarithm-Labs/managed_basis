@@ -24,6 +24,7 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
         bytes32 referralCode;
         uint256 maxClaimableFundingShare;
         uint256 limitDecreaseCollateral;
+        uint256 realizedPnlDiffFactor;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxConfig")) - 1)) & ~bytes32(uint256(0xff))
@@ -48,6 +49,10 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
         $.referralCode = bytes32(0);
         $.maxClaimableFundingShare = 1e16; // 1%
         $.limitDecreaseCollateral = 100 * 1e6;
+    }
+
+    function reinitialize() external reinitializer(2) {
+        _getGmxConfigStorage().realizedPnlDiffFactor = 5e15; // 0.5%
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
@@ -86,6 +91,11 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
 
     function setLimitDecreaseCollateral(uint256 _limit) external onlyOwner {
         _getGmxConfigStorage().limitDecreaseCollateral = _limit;
+    }
+
+    function setRealizedPnlDiffFactor(uint256 _diffFactor) external onlyOwner {
+        require(_diffFactor < 1 ether);
+        _getGmxConfigStorage().realizedPnlDiffFactor = _diffFactor;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -130,5 +140,9 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
 
     function limitDecreaseCollateral() external view returns (uint256) {
         return _getGmxConfigStorage().limitDecreaseCollateral;
+    }
+
+    function realizedPnlDiffFactor() external view returns (uint256) {
+        return _getGmxConfigStorage().realizedPnlDiffFactor;
     }
 }
