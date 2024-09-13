@@ -24,7 +24,7 @@ import {LogarithmVault} from "src/LogarithmVault.sol";
 import {StrategyConfig} from "src/StrategyConfig.sol";
 
 import {StrategyHelper, StrategyState} from "test/helper/StrategyHelper.sol";
-
+import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 import {console2 as console} from "forge-std/console2.sol";
 
 abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
@@ -59,6 +59,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     BasisStrategy strategy;
     LogarithmOracle oracle;
     StrategyHelper helper;
+    MockPriorityProvider priorityProvider;
 
     function setUp() public {
         _forkArbitrum(238841172);
@@ -93,12 +94,21 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         pathWeth[1] = UNISWAPV3_WETH_USDC;
         pathWeth[2] = WETH;
 
+        priorityProvider = new MockPriorityProvider();
+
         address vaultImpl = address(new LogarithmVault());
         address vaultProxy = address(
             new ERC1967Proxy(
                 vaultImpl,
                 abi.encodeWithSelector(
-                    LogarithmVault.initialize.selector, owner, asset, entryCost, exitCost, "tt", "tt"
+                    LogarithmVault.initialize.selector,
+                    owner,
+                    asset,
+                    address(priorityProvider),
+                    entryCost,
+                    exitCost,
+                    "tt",
+                    "tt"
                 )
             )
         );
@@ -258,9 +268,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     }
 
     modifier prioritize(address account) {
-        vm.startPrank(owner);
-        vault.setWithdrawPriority(account, true);
-        vm.stopPrank();
+        priorityProvider.prioritize(account);
         _;
     }
 

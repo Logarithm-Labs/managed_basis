@@ -11,6 +11,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
+import {IPriorityProvider} from "src/interfaces/IPriorityProvider.sol";
 import {ManagedVault} from "src/ManagedVault.sol";
 
 import {Constants} from "src/libraries/utils/Constants.sol";
@@ -50,7 +51,7 @@ contract LogarithmVault is Initializable, ManagedVault {
         mapping(address => uint256) nonces;
         mapping(bytes32 => WithdrawRequest) withdrawRequests;
         // prioritized withdraw state
-        mapping(address => bool) prioritizedAccounts;
+        address priorityProvider;
         uint256 prioritizedAccRequestedWithdrawAssets;
         uint256 prioritizedProcessedWithdrawAssets;
     }
@@ -82,6 +83,7 @@ contract LogarithmVault is Initializable, ManagedVault {
     function initialize(
         address owner_,
         address asset_,
+        address priorityProvider_,
         uint256 entryCost_,
         uint256 exitCost_,
         string calldata name_,
@@ -96,6 +98,7 @@ contract LogarithmVault is Initializable, ManagedVault {
 
         $.userDepositLimit = type(uint256).max;
         $.vaultDepositLimit = type(uint256).max;
+        $.priorityProvider = priorityProvider_;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -129,12 +132,6 @@ contract LogarithmVault is Initializable, ManagedVault {
     function setExitCost(uint256 _exitCost) external onlyOwner {
         require(_exitCost < 1 ether);
         _getLogarithmVaultStorage().exitCost = _exitCost;
-    }
-
-    function setWithdrawPriority(address account, bool prioritized) external onlyOwner {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        require($.prioritizedAccounts[account] != prioritized);
-        $.prioritizedAccounts[account] = prioritized;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -313,7 +310,7 @@ contract LogarithmVault is Initializable, ManagedVault {
             uint256 withdrawAssets = assets - _idleAssets;
 
             uint256 _accRequestedWithdrawAssets;
-            if ($.prioritizedAccounts[owner]) {
+            if (isPrioritized(owner)) {
                 _accRequestedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets + withdrawAssets;
                 $.prioritizedAccRequestedWithdrawAssets = _accRequestedWithdrawAssets;
             } else {
@@ -373,7 +370,7 @@ contract LogarithmVault is Initializable, ManagedVault {
             revert Errors.RequestAlreadyClaimed();
         }
 
-        bool isPrioritizedAccount = $.prioritizedAccounts[withdrawRequest.owner];
+        bool isPrioritizedAccount = isPrioritized(withdrawRequest.owner);
         (bool isExecuted, bool isLast) =
             _isWithdrawRequestExecuted(isPrioritizedAccount, withdrawRequest.accRequestedWithdrawAssets);
 
@@ -423,11 +420,19 @@ contract LogarithmVault is Initializable, ManagedVault {
     function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
-        (bool isExecuted,) = _isWithdrawRequestExecuted(
-            $.prioritizedAccounts[withdrawRequest.owner], withdrawRequest.accRequestedWithdrawAssets
-        );
+        (bool isExecuted,) =
+            _isWithdrawRequestExecuted(isPrioritized(withdrawRequest.owner), withdrawRequest.accRequestedWithdrawAssets);
 
         return isExecuted && !withdrawRequest.isClaimed;
+    }
+
+    /// @notice determines if the withdrawal request is prioritized
+    function isPrioritized(address owner) public view returns (bool) {
+        address _priorityProvider = _getLogarithmVaultStorage().priorityProvider;
+        if (_priorityProvider == address(0)) {
+            return false;
+        }
+        return IPriorityProvider(_priorityProvider).isPrioritized(owner);
     }
 
     /// @notice returns idle assets that can be claimed or utilized
@@ -551,6 +556,10 @@ contract LogarithmVault is Initializable, ManagedVault {
     function strategy() external view returns (address) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         return address($.strategy);
+    }
+
+    function priorityProvider() external view returns (address) {
+        return _getLogarithmVaultStorage().priorityProvider;
     }
 
     function entryCost() external view returns (uint256) {

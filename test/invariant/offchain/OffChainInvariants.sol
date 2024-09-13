@@ -97,7 +97,7 @@ contract OffChainInvariants is StdInvariant, ForkTest {
             new ERC1967Proxy(
                 vaultImpl,
                 abi.encodeWithSelector(
-                    LogarithmVault.initialize.selector, owner, asset, entryCost, exitCost, "tt", "tt"
+                    LogarithmVault.initialize.selector, owner, asset, address(0), entryCost, exitCost, "tt", "tt"
                 )
             )
         );
