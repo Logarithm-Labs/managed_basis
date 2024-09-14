@@ -524,6 +524,7 @@ contract GmxV2PositionManager is
         return GmxV2Lib.getExecutionFee(_config.dataStore(), _config.callbackGasLimit());
     }
 
+    /// @notice current claimable funding amounts that are not accrued
     function getClaimableFundingAmounts()
         external
         view
@@ -536,8 +537,19 @@ contract GmxV2PositionManager is
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
+    function getAccruedClaimableFundingAmounts()
+        external
+        view
+        returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount)
+    {
+        IGmxConfig _config = config();
+        (claimableLongTokenAmount, claimableShortTokenAmount) =
+            GmxV2Lib.getAccruedClaimableFundingAmounts(_getGmxParams(_config));
+        return (claimableLongTokenAmount, claimableShortTokenAmount);
+    }
+
     /// @dev check if the claimable funding amount is over than max share
-    ///      or if idle collateral is bigger than minimum requriement so that
+    ///      or if idle collateral is bigger than minimum requirement so that
     ///      the position can be settled to add it to position's collateral
     function needKeep() external view returns (bool) {
         IGmxConfig _config = config();
