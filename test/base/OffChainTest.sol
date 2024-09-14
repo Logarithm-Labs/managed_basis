@@ -13,7 +13,7 @@ import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {PositionMngerForkTest} from "./PositionMngerForkTest.sol";
 import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {OffchainConfig} from "src/OffchainConfig.sol";
+import {OffChainConfig} from "src/OffChainConfig.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
@@ -37,7 +37,7 @@ contract OffChainTest is PositionMngerForkTest {
     function _initPositionManager(address owner, address strategy) internal override returns (address) {
         vm.startPrank(owner);
         // deploy config
-        OffchainConfig config = new OffchainConfig();
+        OffChainConfig config = new OffChainConfig();
         config.initialize(owner);
         vm.label(address(config), "config");
 

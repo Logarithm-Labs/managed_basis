@@ -6,7 +6,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {IOffchainConfig} from "src/interfaces/IOffchainConfig.sol";
+import {IOffChainConfig} from "src/interfaces/IOffChainConfig.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -382,9 +382,9 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
                         EXERNAL STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function config() public view returns (IOffchainConfig) {
+    function config() public view returns (IOffChainConfig) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        return IOffchainConfig($.config);
+        return IOffChainConfig($.config);
     }
 
     function agent() external view returns (address) {

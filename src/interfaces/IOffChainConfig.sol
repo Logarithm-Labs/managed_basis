@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-interface IOffchainConfig {
+interface IOffChainConfig {
     function increaseCollateralMinMax() external view returns (uint256 min, uint256 max);
 
     function increaseSizeMinMax() external view returns (uint256 min, uint256 max);
