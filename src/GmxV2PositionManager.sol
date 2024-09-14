@@ -219,9 +219,6 @@ contract GmxV2PositionManager is
             if (params.collateralDeltaAmount > idleCollateralAmount) {
                 revert Errors.NotEnoughCollateral();
             }
-            if (idleCollateralAmount > 0) {
-                IERC20(_collateralToken).safeTransfer(_config.orderVault(), idleCollateralAmount);
-            }
             uint256 sizeDeltaUsd;
             if (params.sizeDeltaInTokens > 0) {
                 // record sizeInTokens
@@ -315,7 +312,6 @@ contract GmxV2PositionManager is
         IGmxConfig _config = config();
         uint256 idleCollateralAmount = IERC20(_collateralToken).balanceOf(address(this));
         if (idleCollateralAmount > 0) {
-            IERC20(_collateralToken).safeTransfer(_config.orderVault(), idleCollateralAmount);
             _createOrder(
                 InternalCreateOrderParams({
                     isLong: isLong(),
@@ -569,6 +565,7 @@ contract GmxV2PositionManager is
     function _createOrder(InternalCreateOrderParams memory params) private returns (bytes32) {
         if (params.isIncrease && params.collateralDeltaAmount > 0) {
             _getGmxV2PositionManagerStorage().pendingCollateralAmount = params.collateralDeltaAmount;
+            IERC20(params.collateralToken).safeTransfer(params.orderVault, params.collateralDeltaAmount);
         }
         (uint256 increaseExecutionFee, uint256 decreaseExecutionFee) = getExecutionFee();
         uint256 executionFee = params.isIncrease ? increaseExecutionFee : decreaseExecutionFee;
