@@ -15,6 +15,10 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 
+import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
+import {Precision} from "src/externals/gmx-v2/libraries/Precision.sol";
+import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
+
 import {MockStrategy} from "test/mock/MockStrategy.sol";
 
 import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
@@ -818,10 +822,75 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertTrue(claimableShortAmount == 0);
     }
 
+    function test_positionFee_decreasePosition() public afterHavingPosition {
+        uint256 sizeDeltaInTokens = 0.25 ether;
+        // int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        // _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
+        // assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
+        uint256 accumulatedPositionFeeBefore = positionManager.accumulatedPositionFeeUsd();
+        vm.startPrank(address(strategy));
+        positionManager.adjustPosition(
+            IPositionManager.AdjustPositionPayload({
+                sizeDeltaInTokens: sizeDeltaInTokens,
+                collateralDeltaAmount: 0,
+                isIncrease: false
+            })
+        );
+        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
+
+        uint256 accumulatedPositionFeeAfter = positionManager.accumulatedPositionFeeUsd();
+        uint256 sizeDeltaUsd =
+            positionInfoBefore.position.numbers.sizeInUsd - positionInfoAfter.position.numbers.sizeInUsd;
+
+        uint256 deltaFee = accumulatedPositionFeeAfter - accumulatedPositionFeeBefore;
+        (uint256 positiveFactor,) = _getPositionFeeFactors();
+        // uint256 expectedFeeForNeg = Precision.applyFactor(sizeDeltaUsd, negativeFactor);
+        uint256 expectedFeeForPos = Precision.applyFactor(sizeDeltaUsd, positiveFactor);
+
+        assertEq(deltaFee, expectedFeeForPos);
+    }
+
+    function test_positionFee_IncreasePosition() public afterHavingPosition {
+        uint256 sizeDeltaInTokens = 0.1 ether;
+        // int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        // _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
+        ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
+        // assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
+        uint256 accumulatedPositionFeeBefore = positionManager.accumulatedPositionFeeUsd();
+        vm.startPrank(address(strategy));
+        positionManager.adjustPosition(
+            IPositionManager.AdjustPositionPayload({
+                sizeDeltaInTokens: sizeDeltaInTokens,
+                collateralDeltaAmount: 0,
+                isIncrease: true
+            })
+        );
+        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
+
+        uint256 accumulatedPositionFeeAfter = positionManager.accumulatedPositionFeeUsd();
+        uint256 sizeDeltaUsd =
+            positionInfoAfter.position.numbers.sizeInUsd - positionInfoBefore.position.numbers.sizeInUsd;
+
+        uint256 deltaFee = accumulatedPositionFeeAfter - accumulatedPositionFeeBefore;
+        (, uint256 negativeFactor) = _getPositionFeeFactors();
+        uint256 expectedFeeForNeg = Precision.applyFactor(sizeDeltaUsd, negativeFactor);
+        // uint256 expectedFeeForPos = Precision.applyFactor(sizeDeltaUsd, positiveFactor);
+
+        assertEq(deltaFee, expectedFeeForNeg);
+    }
+
     function _moveTimestampWithPriceFeed(uint256 deltaTime) internal {
         address[] memory priceFeeds = new address[](2);
         priceFeeds[0] = assetPriceFeed;
         priceFeeds[1] = productPriceFeed;
         _moveTimestamp(deltaTime, priceFeeds);
+    }
+
+    function _getPositionFeeFactors() internal view returns (uint256 positiveFactor, uint256 negativeFactor) {
+        positiveFactor = IDataStore(GMX_DATA_STORE).getUint(Keys.positionFeeFactorKey(GMX_ETH_USDC_MARKET, true));
+        negativeFactor = IDataStore(GMX_DATA_STORE).getUint(Keys.positionFeeFactorKey(GMX_ETH_USDC_MARKET, false));
     }
 }

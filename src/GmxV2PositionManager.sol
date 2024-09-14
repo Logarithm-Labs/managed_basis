@@ -91,6 +91,10 @@ contract GmxV2PositionManager is
         // this value is set only when changing position sizes
         uint256 sizeInTokensBefore;
         uint256 decreasingCollateralDeltaAmount;
+        // fee metrics
+        uint256 pendingPositionFeeUsdForIncrease;
+        uint256 pendingPositionFeeUsdForDecrease;
+        uint256 accumulatedPositionFeeUsd;
     }
     // min max
     // uint256[2] increaseSizeMinMax;
@@ -207,24 +211,28 @@ contract GmxV2PositionManager is
     // }
 
     function adjustPosition(AdjustPositionPayload calldata params) external onlyStrategy whenNotPending {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount == 0) {
             revert Errors.InvalidAdjustmentParams();
         }
         IGmxConfig _config = config();
         GmxV2Lib.GmxParams memory gmxParams = _getGmxParams(_config);
-        address _oracle = _getGmxV2PositionManagerStorage().oracle;
+        address _oracle = $.oracle;
         address _collateralToken = collateralToken();
         uint256 idleCollateralAmount = IERC20(_collateralToken).balanceOf(address(this));
         if (params.isIncrease) {
             if (params.collateralDeltaAmount > idleCollateralAmount) {
                 revert Errors.NotEnoughCollateral();
             }
-            uint256 sizeDeltaUsd;
+
+            GmxV2Lib.IncreasePositionResult memory increaseResult;
             if (params.sizeDeltaInTokens > 0) {
+                increaseResult = GmxV2Lib.getIncreasePositionResult(gmxParams, _oracle, params.sizeDeltaInTokens);
                 // record sizeInTokens
-                _getGmxV2PositionManagerStorage().sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
-                sizeDeltaUsd = GmxV2Lib.getSizeDeltaUsdForIncrease(gmxParams, _oracle, params.sizeDeltaInTokens);
+                $.sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
             }
+
+            if (increaseResult.positionFeeUsd > 0) $.pendingPositionFeeUsdForIncrease = increaseResult.positionFeeUsd;
             _createOrder(
                 InternalCreateOrderParams({
                     isLong: isLong(),
@@ -233,12 +241,12 @@ contract GmxV2PositionManager is
                     orderVault: _config.orderVault(),
                     collateralToken: _collateralToken,
                     collateralDeltaAmount: idleCollateralAmount,
-                    sizeDeltaUsd: sizeDeltaUsd,
+                    sizeDeltaUsd: increaseResult.sizeDeltaUsd,
                     callbackGasLimit: _config.callbackGasLimit(),
                     referralCode: _config.referralCode()
                 })
             );
-            _getGmxV2PositionManagerStorage().status = Status.INCREASE;
+            $.status = Status.INCREASE;
         } else {
             if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount <= idleCollateralAmount) {
                 IBasisStrategy(strategy()).afterAdjustPosition(
@@ -251,7 +259,7 @@ contract GmxV2PositionManager is
             } else {
                 uint256 collateralDeltaAmount = params.collateralDeltaAmount;
                 if (collateralDeltaAmount > 0) {
-                    _getGmxV2PositionManagerStorage().decreasingCollateralDeltaAmount = collateralDeltaAmount;
+                    $.decreasingCollateralDeltaAmount = collateralDeltaAmount;
                 }
                 if (idleCollateralAmount > 0) {
                     (, collateralDeltaAmount) = params.collateralDeltaAmount.trySub(idleCollateralAmount);
@@ -264,7 +272,13 @@ contract GmxV2PositionManager is
                     config().realizedPnlDiffFactor()
                 );
                 if (params.sizeDeltaInTokens > 0) {
-                    _getGmxV2PositionManagerStorage().sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
+                    $.sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
+                }
+                if (decreaseResult.positionFeeUsdForDecrease > 0) {
+                    $.pendingPositionFeeUsdForDecrease = decreaseResult.positionFeeUsdForDecrease;
+                }
+                if (decreaseResult.positionFeeUsdForIncrease > 0) {
+                    $.pendingPositionFeeUsdForIncrease = decreaseResult.positionFeeUsdForIncrease;
                 }
                 _createOrder(
                     InternalCreateOrderParams({
@@ -282,7 +296,7 @@ contract GmxV2PositionManager is
                     })
                 );
                 if (decreaseResult.sizeDeltaUsdToIncrease > 0) {
-                    _getGmxV2PositionManagerStorage().status = Status.DECREASE_TWO_STEP;
+                    $.status = Status.DECREASE_TWO_STEP;
                     _createOrder(
                         InternalCreateOrderParams({
                             isLong: isLong(),
@@ -297,7 +311,7 @@ contract GmxV2PositionManager is
                         })
                     );
                 } else {
-                    _getGmxV2PositionManagerStorage().status = Status.DECREASE_ONE_STEP;
+                    $.status = Status.DECREASE_ONE_STEP;
                 }
             }
         }
@@ -407,14 +421,16 @@ contract GmxV2PositionManager is
         bool isIncrease = order.numbers.orderType == Order.OrderType.MarketIncrease;
         _validateOrderHandler(key, isIncrease);
         _setPendingOrderKey(bytes32(0), isIncrease);
+        _processPendingPositionFee(isIncrease, true);
 
-        Status _status = _getGmxV2PositionManagerStorage().status;
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        Status _status = $.status;
 
         if (_status == Status.SETTLE) {
             if (order.numbers.initialCollateralDeltaAmount > 0) {
-                _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
+                $.pendingCollateralAmount = 0;
             }
-            _getGmxV2PositionManagerStorage().status = Status.IDLE;
+            $.status = Status.IDLE;
             // notify strategy that keeping has been done
             IBasisStrategy(strategy()).afterAdjustPosition(
                 AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: isIncrease})
@@ -422,12 +438,12 @@ contract GmxV2PositionManager is
             claimFunding();
         } else if (_status == Status.INCREASE) {
             _processIncreasePosition(order.numbers.initialCollateralDeltaAmount, order.numbers.sizeDeltaUsd);
-            _getGmxV2PositionManagerStorage().status = Status.IDLE;
+            $.status = Status.IDLE;
         } else if (_status == Status.DECREASE_ONE_STEP) {
             _processDecreasePosition();
-            _getGmxV2PositionManagerStorage().status = Status.IDLE;
+            $.status = Status.IDLE;
         } else if (_status == Status.DECREASE_TWO_STEP) {
-            _getGmxV2PositionManagerStorage().status = Status.DECREASE_ONE_STEP;
+            $.status = Status.DECREASE_ONE_STEP;
         }
     }
 
@@ -440,8 +456,10 @@ contract GmxV2PositionManager is
         bool isIncrease = order.numbers.orderType == Order.OrderType.MarketIncrease;
         _validateOrderHandler(key, isIncrease);
         _setPendingOrderKey(bytes32(0), isIncrease);
+        _processPendingPositionFee(isIncrease, false);
 
-        Status _status = _getGmxV2PositionManagerStorage().status;
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        Status _status = $.status;
         if (_status == Status.IDLE) return;
         if (_status == Status.INCREASE) {
             // in the case when increase order was failed
@@ -451,12 +469,12 @@ contract GmxV2PositionManager is
         } else if (_status == Status.DECREASE_ONE_STEP || _status == Status.DECREASE_TWO_STEP) {
             // in case when the first order was executed successfully or one step decrease order was failed
             // or in case when the order executed in wrong order by gmx was failed
-            _getGmxV2PositionManagerStorage().sizeInTokensBefore = 0;
+            $.sizeInTokensBefore = 0;
             IBasisStrategy(strategy()).afterAdjustPosition(
                 AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: false})
             );
         }
-        _getGmxV2PositionManagerStorage().status = Status.IDLE;
+        $.status = Status.IDLE;
     }
 
     /// @inheritdoc IOrderCallbackReceiver
@@ -494,20 +512,19 @@ contract GmxV2PositionManager is
     ///       and include the pending asset token amount and idle assets
     function positionNetBalance() public view returns (uint256) {
         IGmxConfig _config = config();
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         (uint256 remainingCollateral,) = GmxV2Lib.getRemainingCollateralAndClaimableFundingAmount(
-            _getGmxParams(_config), _getGmxV2PositionManagerStorage().oracle, _config.referralStorage()
+            _getGmxParams(_config), $.oracle, _config.referralStorage()
         );
 
-        return remainingCollateral + IERC20(collateralToken()).balanceOf(address(this))
-            + _getGmxV2PositionManagerStorage().pendingCollateralAmount;
+        return remainingCollateral + IERC20(collateralToken()).balanceOf(address(this)) + $.pendingCollateralAmount;
     }
 
     /// @notice current leverage of position that is based on gmx's calculation
     function currentLeverage() external view returns (uint256) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         IGmxConfig _config = config();
-        return GmxV2Lib.getCurrentLeverage(
-            _getGmxParams(_config), _getGmxV2PositionManagerStorage().oracle, _config.referralStorage()
-        );
+        return GmxV2Lib.getCurrentLeverage(_getGmxParams(_config), $.oracle, _config.referralStorage());
     }
 
     /// @notice position size in index token
@@ -530,10 +547,10 @@ contract GmxV2PositionManager is
         view
         returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount)
     {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         IGmxConfig _config = config();
-        (claimableLongTokenAmount, claimableShortTokenAmount) = GmxV2Lib.getClaimableFundingAmounts(
-            _getGmxParams(_config), _getGmxV2PositionManagerStorage().oracle, _config.referralStorage()
-        );
+        (claimableLongTokenAmount, claimableShortTokenAmount) =
+            GmxV2Lib.getClaimableFundingAmounts(_getGmxParams(_config), $.oracle, _config.referralStorage());
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
@@ -616,16 +633,17 @@ contract GmxV2PositionManager is
     }
 
     function _processIncreasePosition(uint256 initialCollateralDeltaAmount, uint256 sizeDeltaUsd) private {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         AdjustPositionPayload memory callbackParams;
         if (initialCollateralDeltaAmount > 0) {
             // increase collateral
-            _getGmxV2PositionManagerStorage().pendingCollateralAmount = 0;
+            $.pendingCollateralAmount = 0;
             callbackParams.collateralDeltaAmount = initialCollateralDeltaAmount;
         }
         if (sizeDeltaUsd > 0) {
             uint256 sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));
-            uint256 sizeInTokensBefore = _getGmxV2PositionManagerStorage().sizeInTokensBefore;
-            _getGmxV2PositionManagerStorage().sizeInTokensBefore = 0;
+            uint256 sizeInTokensBefore = $.sizeInTokensBefore;
+            $.sizeInTokensBefore = 0;
             (, callbackParams.sizeDeltaInTokens) = sizeInTokensAfter.trySub(sizeInTokensBefore);
         }
         callbackParams.isIncrease = true;
@@ -633,14 +651,15 @@ contract GmxV2PositionManager is
     }
 
     function _processDecreasePosition() private {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         AdjustPositionPayload memory callbackParams;
         uint256 sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));
-        uint256 sizeInTokensBefore = _getGmxV2PositionManagerStorage().sizeInTokensBefore;
+        uint256 sizeInTokensBefore = $.sizeInTokensBefore;
         if (sizeInTokensBefore > 0) {
             (, callbackParams.sizeDeltaInTokens) = sizeInTokensBefore.trySub(sizeInTokensAfter);
-            _getGmxV2PositionManagerStorage().sizeInTokensBefore = 0;
+            $.sizeInTokensBefore = 0;
         }
-        uint256 decreasingCollateralDeltaAmount = _getGmxV2PositionManagerStorage().decreasingCollateralDeltaAmount;
+        uint256 decreasingCollateralDeltaAmount = $.decreasingCollateralDeltaAmount;
 
         if (sizeInTokensAfter == 0) {
             uint256 idleCollateralAmount = IERC20(collateralToken()).balanceOf(address(this));
@@ -650,9 +669,26 @@ contract GmxV2PositionManager is
             callbackParams.collateralDeltaAmount = (idleCollateralAmount < decreasingCollateralDeltaAmount)
                 ? idleCollateralAmount
                 : decreasingCollateralDeltaAmount;
-            _getGmxV2PositionManagerStorage().decreasingCollateralDeltaAmount = 0;
+            $.decreasingCollateralDeltaAmount = 0;
         }
         IBasisStrategy(strategy()).afterAdjustPosition(callbackParams);
+    }
+
+    function _processPendingPositionFee(bool isIncrease, bool isExecuted) private {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        if (isIncrease) {
+            uint256 _pendingPositionFeeUsdForIncrease = $.pendingPositionFeeUsdForIncrease;
+            if (_pendingPositionFeeUsdForIncrease > 0) {
+                $.pendingPositionFeeUsdForIncrease = 0;
+                if (isExecuted) $.accumulatedPositionFeeUsd += _pendingPositionFeeUsdForIncrease;
+            }
+        } else {
+            uint256 _pendingPositionFeeUsdForDecrease = $.pendingPositionFeeUsdForDecrease;
+            if (_pendingPositionFeeUsdForDecrease > 0) {
+                $.pendingPositionFeeUsdForDecrease = 0;
+                if (isExecuted) $.accumulatedPositionFeeUsd += _pendingPositionFeeUsdForDecrease;
+            }
+        }
     }
 
     function _getGmxParams(IGmxConfig _config) private view returns (GmxV2Lib.GmxParams memory) {
@@ -691,19 +727,16 @@ contract GmxV2PositionManager is
     }
 
     function _isPending() private view returns (bool) {
-        return _getGmxV2PositionManagerStorage().pendingIncreaseOrderKey != bytes32(0)
-            || _getGmxV2PositionManagerStorage().pendingDecreaseOrderKey != bytes32(0);
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.pendingIncreaseOrderKey != bytes32(0) || $.pendingDecreaseOrderKey != bytes32(0);
     }
 
     /// @dev validate if the caller is OrderHandler of gmx
     function _validateOrderHandler(bytes32 orderKey, bool isIncrease) private view {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         if (
             msg.sender != config().orderHandler()
-                || (
-                    isIncrease
-                        ? orderKey != _getGmxV2PositionManagerStorage().pendingIncreaseOrderKey
-                        : orderKey != _getGmxV2PositionManagerStorage().pendingDecreaseOrderKey
-                )
+                || (isIncrease ? orderKey != $.pendingIncreaseOrderKey : orderKey != $.pendingDecreaseOrderKey)
         ) {
             revert Errors.CallbackNotAllowed();
         }
@@ -776,11 +809,13 @@ contract GmxV2PositionManager is
     }
 
     function pendingIncreaseOrderKey() public view returns (bytes32) {
-        return _getGmxV2PositionManagerStorage().pendingIncreaseOrderKey;
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.pendingIncreaseOrderKey;
     }
 
     function pendingDecreaseOrderKey() public view returns (bytes32) {
-        return _getGmxV2PositionManagerStorage().pendingDecreaseOrderKey;
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.pendingDecreaseOrderKey;
     }
 
     // note: accomodate for IPositionManager interface wo impact to contract size
@@ -797,13 +832,18 @@ contract GmxV2PositionManager is
     function decreaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
-    // note: accomodate for IPositionManager interface wo impact to contract size
 
+    // note: accomodate for IPositionManager interface wo impact to contract size
     function decreaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
     function limitDecreaseCollateral() external view returns (uint256) {
         return config().limitDecreaseCollateral();
+    }
+
+    function accumulatedPositionFeeUsd() external view returns (uint256) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        return $.accumulatedPositionFeeUsd;
     }
 }
