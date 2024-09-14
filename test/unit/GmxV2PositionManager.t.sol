@@ -362,7 +362,6 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         );
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
-        uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertEq(
             positionInfoAfter.position.numbers.sizeInTokens,
             positionInfoBefore.position.numbers.sizeInTokens - sizeDeltaInTokens,

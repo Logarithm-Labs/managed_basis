@@ -115,7 +115,7 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
 
         // decimal of adjustedPrice should be 30 - token decimal
         // and adjustedPrice = price * precision
-        // hence, precition = 10^(30 - token decimal - feed decimal)
+        // hence, precision = 10^(30 - token decimal - feed decimal)
         // btw, token decimal + feed decimal could be more than 30
         // so we use adjustedPrice = price * precision / 10^30
         // then precision = 10^(60 - token decimal - feed decimal)
