@@ -2,12 +2,10 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
@@ -33,7 +31,6 @@ import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 /// @author Logarithm Labs
 contract GmxV2PositionManagerForTest is
     Initializable,
-    OwnableUpgradeable,
     IPositionManager,
     IOrderCallbackReceiver,
     IGasFeeCallbackReceiver
@@ -44,7 +41,6 @@ contract GmxV2PositionManagerForTest is
 
     uint256 constant PRECISION = 1e18;
     uint256 constant MIN_IDLE_COLLATERAL_USD = 1e31; // $10
-    string constant API_VERSION = "0.0.1";
 
     enum Status {
         IDLE,
@@ -145,11 +141,10 @@ contract GmxV2PositionManagerForTest is
                             INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address owner_, address strategy_, address config_, address gmxGasStation_, address marketKey_)
+    function initialize(address strategy_, address config_, address gmxGasStation_, address marketKey_)
         external
         initializer
     {
-        __Ownable_init(owner_);
         address asset = address(IBasisStrategy(strategy_).asset());
         address product = address(IBasisStrategy(strategy_).product());
 
@@ -189,34 +184,6 @@ contract GmxV2PositionManagerForTest is
     /*//////////////////////////////////////////////////////////////
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    function renounceOwnership() public pure override {
-        revert();
-    }
-
-    // function setSizeMinMax(
-    //     uint256 increaseSizeMin,
-    //     uint256 increaseSizeMax,
-    //     uint256 decreaseSizeMin,
-    //     uint256 decreaseSizeMax
-    // ) external onlyOwner {
-    //     require(increaseSizeMin < increaseSizeMax && decreaseSizeMin < decreaseSizeMax);
-    //     GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-    //     $.increaseSizeMinMax = [increaseSizeMin, increaseSizeMax];
-    //     $.decreaseSizeMinMax = [decreaseSizeMin, decreaseSizeMax];
-    // }
-
-    // function setCollateralMinMax(
-    //     uint256 increaseCollateralMin,
-    //     uint256 increaseCollateralMax,
-    //     uint256 decreaseCollateralMin,
-    //     uint256 decreaseCollateralMax
-    // ) external onlyOwner {
-    //     require(increaseCollateralMin < increaseCollateralMax && decreaseCollateralMin < decreaseCollateralMax);
-    //     GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-    //     $.increaseCollateralMinMax = [increaseCollateralMin, increaseCollateralMax];
-    //     $.decreaseCollateralMinMax = [decreaseCollateralMin, decreaseCollateralMax];
-    // }
 
     function adjustPosition(AdjustPositionPayload calldata params) external onlyStrategy whenNotPending {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
@@ -415,22 +382,22 @@ contract GmxV2PositionManagerForTest is
         emit FundingClaimed(_longToken, longTokenAmount);
     }
 
-    /// @dev claims all the claimable callateral amount
-    /// Note: this amount stored by account, token, timeKey
-    /// and there is only event to figure out it
-    /// @param token token address derived from the gmx event: ClaimableCollateralUpdated
-    /// @param timeKey timeKey value derived from the gmx event: ClaimableCollateralUpdated
-    function claimCollateral(address token, uint256 timeKey) external {
-        IExchangeRouter exchangeRouter = IExchangeRouter(config().exchangeRouter());
-        address[] memory markets = new address[](1);
-        markets[0] = marketToken();
-        address[] memory tokens = new address[](1);
-        tokens[0] = token;
-        uint256[] memory timeKeys = new uint256[](1);
-        timeKeys[0] = timeKey;
-        uint256[] memory amounts = exchangeRouter.claimCollateral(markets, tokens, timeKeys, strategy());
-        emit CollateralClaimed(token, amounts[0]);
-    }
+    // /// @dev claims all the claimable collateral amount
+    // /// Note: this amount stored by account, token, timeKey
+    // /// and there is only event to figure it out
+    // /// @param token token address derived from the gmx event: ClaimableCollateralUpdated
+    // /// @param timeKey timeKey value derived from the gmx event: ClaimableCollateralUpdated
+    // function claimCollateral(address token, uint256 timeKey) external {
+    //     IExchangeRouter exchangeRouter = IExchangeRouter(config().exchangeRouter());
+    //     address[] memory markets = new address[](1);
+    //     markets[0] = marketToken();
+    //     address[] memory tokens = new address[](1);
+    //     tokens[0] = token;
+    //     uint256[] memory timeKeys = new uint256[](1);
+    //     timeKeys[0] = timeKey;
+    //     uint256[] memory amounts = exchangeRouter.claimCollateral(markets, tokens, timeKeys, strategy());
+    //     emit CollateralClaimed(token, amounts[0]);
+    // }
 
     /// @inheritdoc IOrderCallbackReceiver
     function afterOrderExecution(
@@ -542,17 +509,6 @@ contract GmxV2PositionManagerForTest is
                         EXTERNAL/PUBLIC VIEWERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Used to track the deployed version of this contract. In practice you
-    /// can use this version number to compare with Logarithm's GitHub and
-    /// determine which version of the source matches this deployed contract
-    ///
-    /// @dev
-    /// All contracts must have an `apiVersion()` that matches the Vault's
-    /// `API_VERSION`.
-    function apiVersion() public pure returns (string memory) {
-        return API_VERSION;
-    }
-
     /// @notice total asset token amount that position holds
     /// Note: should exclude the claimable funding amounts until claiming them
     ///       and include the pending asset token amount and idle assets
@@ -601,6 +557,7 @@ contract GmxV2PositionManagerForTest is
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
+    /// @notice accrued claimable token amounts
     function getAccruedClaimableFundingAmounts()
         external
         view

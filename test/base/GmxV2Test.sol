@@ -59,7 +59,6 @@ contract GmxV2Test is PositionMngerForkTest {
                 positionManagerBeacon,
                 abi.encodeWithSelector(
                     GmxV2PositionManager.initialize.selector,
-                    owner,
                     strategy,
                     address(config),
                     address(gmxGasStation),
