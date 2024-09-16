@@ -724,6 +724,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         uint256 collateralBalanceBefore = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
         uint256 productBalacneBefore = IERC20(positionManager.longToken()).balanceOf(address(strategy));
         (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        (uint256 accruedClaimableLongAmountBefore, uint256 accruedClaimableShortAmountBefore) =
+            positionManager.getAccruedClaimableFundingAmounts();
         assertTrue(claimableLongAmount > 0);
         assertTrue(claimableShortAmount > 0);
         address anyone = makeAddr("anyone");
@@ -732,16 +734,26 @@ contract GmxV2PositionManagerTest is GmxV2Test {
             IPositionManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
         );
         _executeOrder(positionManager.pendingDecreaseOrderKey());
-        vm.startPrank(anyone);
-        positionManager.claimFunding();
+        (uint256 accruedClaimableLongAmount, uint256 accruedClaimableShortAmount) =
+            positionManager.getAccruedClaimableFundingAmounts();
         (uint256 claimableLongAmountAfter, uint256 claimableShortAmountAfter) =
             positionManager.getClaimableFundingAmounts();
+        vm.startPrank(anyone);
+        positionManager.claimFunding();
+        (uint256 accruedClaimableLongAmountAfter, uint256 accruedClaimableShortAmountAfter) =
+            positionManager.getAccruedClaimableFundingAmounts();
         assertTrue(claimableLongAmountAfter == 0);
         assertTrue(claimableShortAmountAfter == 0);
+        assertTrue(accruedClaimableLongAmountBefore == 0);
+        assertTrue(accruedClaimableShortAmountBefore == 0);
+        assertTrue(accruedClaimableLongAmountAfter == 0);
+        assertTrue(accruedClaimableShortAmountAfter == 0);
         uint256 collateralBalanceAfter = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
         uint256 productBalacneAfter = IERC20(positionManager.longToken()).balanceOf(address(strategy));
         assertApproxEqRel(collateralBalanceAfter - collateralBalanceBefore, claimableShortAmount, 0.99999 ether);
         assertEq(productBalacneAfter - productBalacneBefore, claimableLongAmount);
+        assertEq(collateralBalanceAfter - collateralBalanceBefore, accruedClaimableShortAmount);
+        assertEq(productBalacneAfter - productBalacneBefore, accruedClaimableLongAmount);
     }
 
     function test_needKeep_idle() public afterHavingPosition {
@@ -828,7 +840,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         // _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         // assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
-        uint256 accumulatedPositionFeeBefore = positionManager.accumulatedPositionFeeUsd();
+        uint256 accumulatedPositionFeeBefore = positionManager.cumulativePositionFeeUsd();
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
             IPositionManager.AdjustPositionPayload({
@@ -840,7 +852,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
 
-        uint256 accumulatedPositionFeeAfter = positionManager.accumulatedPositionFeeUsd();
+        uint256 accumulatedPositionFeeAfter = positionManager.cumulativePositionFeeUsd();
         uint256 sizeDeltaUsd =
             positionInfoBefore.position.numbers.sizeInUsd - positionInfoAfter.position.numbers.sizeInUsd;
 
@@ -858,7 +870,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         // _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         // assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
-        uint256 accumulatedPositionFeeBefore = positionManager.accumulatedPositionFeeUsd();
+        uint256 accumulatedPositionFeeBefore = positionManager.cumulativePositionFeeUsd();
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
             IPositionManager.AdjustPositionPayload({
@@ -870,7 +882,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         _executeOrder(positionManager.pendingIncreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
 
-        uint256 accumulatedPositionFeeAfter = positionManager.accumulatedPositionFeeUsd();
+        uint256 accumulatedPositionFeeAfter = positionManager.cumulativePositionFeeUsd();
         uint256 sizeDeltaUsd =
             positionInfoAfter.position.numbers.sizeInUsd - positionInfoBefore.position.numbers.sizeInUsd;
 
@@ -880,6 +892,87 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         // uint256 expectedFeeForPos = Precision.applyFactor(sizeDeltaUsd, positiveFactor);
 
         assertEq(deltaFee, expectedFeeForNeg);
+    }
+
+    function test_fundingAndBorrowingFees() public {
+        vm.startPrank(USDC_WHALE);
+        IERC20(USDC).transfer(address(positionManager), 30_000_000 * USDC_PRECISION);
+        vm.startPrank(address(strategy));
+        positionManager.adjustPosition(
+            IPositionManager.AdjustPositionPayload({
+                sizeDeltaInTokens: 10_000 ether,
+                collateralDeltaAmount: 30_000_000 * USDC_PRECISION,
+                isIncrease: true
+            })
+        );
+        bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
+        _executeOrder(increaseOrderKey);
+        (uint256 fundingFeeUsd, uint256 borrowingFeeUsd) = positionManager.cumulativeFundingAndBorrowingFeesUsd();
+        assertEq(fundingFeeUsd, 0, "funding fee 0");
+        assertEq(borrowingFeeUsd, 0, "borrowing fee 0");
+
+        _moveTimestampWithPriceFeed(24 * 3600);
+        (fundingFeeUsd, borrowingFeeUsd) = positionManager.cumulativeFundingAndBorrowingFeesUsd();
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(address(oracle));
+        uint256 collateralTokenPrice = oracle.getAssetPrice(positionManager.collateralToken());
+
+        assertEq(
+            fundingFeeUsd, positionInfo.fees.funding.fundingFeeAmount * collateralTokenPrice, "funding fee is next one"
+        );
+        assertEq(borrowingFeeUsd, positionInfo.fees.borrowing.borrowingFeeUsd, "borrowing fee is next one");
+
+        vm.startPrank(address(strategy));
+        positionManager.adjustPosition(
+            IPositionManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
+        );
+        bytes32 decreaseOrderKey = positionManager.pendingDecreaseOrderKey();
+        _executeOrder(decreaseOrderKey);
+
+        (uint256 fundingFeeUsdAfter, uint256 borrowingFeeUsdAfter) =
+            positionManager.cumulativeFundingAndBorrowingFeesUsd();
+
+        assertApproxEqRel(fundingFeeUsd, fundingFeeUsdAfter, 0.99999 ether, "funding fee not changed");
+        assertEq(borrowingFeeUsd, borrowingFeeUsdAfter, "borrowing fee not changed");
+        positionInfo = _getPositionInfo(address(oracle));
+        assertEq(positionInfo.fees.funding.fundingFeeAmount, 0, "next funding fee 0");
+        assertEq(positionInfo.fees.borrowing.borrowingFeeUsd, 0, "next borrowing fee 0");
+
+        _moveTimestampWithPriceFeed(24 * 3600);
+        (uint256 nextFundingFeeUsd, uint256 nextBorrowingFeeUsd) =
+            positionManager.cumulativeFundingAndBorrowingFeesUsd();
+
+        positionInfo = _getPositionInfo(address(oracle));
+        assertEq(
+            nextFundingFeeUsd,
+            fundingFeeUsdAfter + positionInfo.fees.funding.fundingFeeAmount * collateralTokenPrice,
+            "funding fee is next one"
+        );
+        assertEq(
+            nextBorrowingFeeUsd,
+            borrowingFeeUsdAfter + positionInfo.fees.borrowing.borrowingFeeUsd,
+            "borrowing fee is next one"
+        );
+
+        vm.startPrank(address(strategy));
+        positionManager.adjustPosition(
+            IPositionManager.AdjustPositionPayload({
+                sizeDeltaInTokens: type(uint256).max,
+                collateralDeltaAmount: 0,
+                isIncrease: false
+            })
+        );
+        decreaseOrderKey = positionManager.pendingDecreaseOrderKey();
+        _executeOrder(decreaseOrderKey);
+
+        positionInfo = _getPositionInfo(address(oracle));
+        assertEq(positionInfo.fees.funding.fundingFeeAmount, 0, "next funding fee 0");
+        assertEq(positionInfo.fees.borrowing.borrowingFeeUsd, 0, "next borrowing fee 0");
+
+        (uint256 nextFundingFeeUsdAfter, uint256 nextBorrowingFeeUsdAfter) =
+            positionManager.cumulativeFundingAndBorrowingFeesUsd();
+
+        assertApproxEqRel(nextFundingFeeUsd, nextFundingFeeUsdAfter, 0.99999 ether, "funding fee not changed");
+        assertEq(nextBorrowingFeeUsd, nextBorrowingFeeUsdAfter, "borrowing fee not changed");
     }
 
     function _moveTimestampWithPriceFeed(uint256 deltaTime) internal {

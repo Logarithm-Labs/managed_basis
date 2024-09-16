@@ -18,6 +18,7 @@ import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
 import {EventUtils} from "src/externals/gmx-v2/libraries/EventUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Order} from "src/externals/gmx-v2/libraries/Order.sol";
+import {Position} from "src/externals/gmx-v2/libraries/Position.sol";
 
 import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
 import {IGmxConfig} from "src/interfaces/IGmxConfig.sol";
@@ -91,10 +92,17 @@ contract GmxV2PositionManager is
         // this value is set only when changing position sizes
         uint256 sizeInTokensBefore;
         uint256 decreasingCollateralDeltaAmount;
-        // fee metrics
+        // position fee metrics
         uint256 pendingPositionFeeUsdForIncrease;
         uint256 pendingPositionFeeUsdForDecrease;
-        uint256 accumulatedPositionFeeUsd;
+        uint256 cumulativePositionFeeUsd;
+        // funding fee metrics
+        uint256 positionFundingFeeAmountPerSize;
+        uint256 cumulativeClaimedFundingUsd;
+        uint256 cumulativeFundingFeeUsd;
+        // borrowing fee metrics
+        uint256 positionBorrowingFactor;
+        uint256 cumulativeBorrowingFeeUsd;
     }
     // min max
     // uint256[2] increaseSizeMinMax;
@@ -228,11 +236,9 @@ contract GmxV2PositionManager is
             GmxV2Lib.IncreasePositionResult memory increaseResult;
             if (params.sizeDeltaInTokens > 0) {
                 increaseResult = GmxV2Lib.getIncreasePositionResult(gmxParams, _oracle, params.sizeDeltaInTokens);
-                // record sizeInTokens
-                $.sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
             }
-
             if (increaseResult.positionFeeUsd > 0) $.pendingPositionFeeUsdForIncrease = increaseResult.positionFeeUsd;
+
             _createOrder(
                 InternalCreateOrderParams({
                     isLong: isLong(),
@@ -271,9 +277,7 @@ contract GmxV2PositionManager is
                     collateralDeltaAmount,
                     config().realizedPnlDiffFactor()
                 );
-                if (params.sizeDeltaInTokens > 0) {
-                    $.sizeInTokensBefore = GmxV2Lib.getPositionSizeInTokens(gmxParams);
-                }
+
                 if (decreaseResult.positionFeeUsdForDecrease > 0) {
                     $.pendingPositionFeeUsdForDecrease = decreaseResult.positionFeeUsdForDecrease;
                 }
@@ -361,10 +365,14 @@ contract GmxV2PositionManager is
     /// Note: collateral funding amount is transfered to this position manager
     ///       otherwise, transfered to strategy
     function claimFunding() public {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+
         IExchangeRouter exchangeRouter = IExchangeRouter(config().exchangeRouter());
         address _shortToken = shortToken();
         address _longToken = longToken();
         address _collateralToken = collateralToken();
+        IOracle oracle = IOracle($.oracle);
+        uint256 claimedFundingUsd;
 
         address[] memory markets = new address[](1);
         markets[0] = marketToken();
@@ -382,6 +390,11 @@ contract GmxV2PositionManager is
             shortTokenAmount = amounts[0];
         }
 
+        if (shortTokenAmount > 0) {
+            uint256 shortTokePrice = oracle.getAssetPrice(_shortToken);
+            claimedFundingUsd += shortTokenAmount * shortTokePrice;
+        }
+
         tokens[0] = _longToken;
         if (_longToken == _collateralToken) {
             uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, address(this));
@@ -390,6 +403,13 @@ contract GmxV2PositionManager is
             uint256[] memory amounts = exchangeRouter.claimFundingFees(markets, tokens, strategy());
             longTokenAmount = amounts[0];
         }
+
+        if (longTokenAmount > 0) {
+            uint256 longTokenPrice = oracle.getAssetPrice(_longToken);
+            claimedFundingUsd += longTokenAmount * longTokenPrice;
+        }
+
+        $.cumulativeClaimedFundingUsd += claimedFundingUsd;
 
         emit FundingClaimed(_shortToken, shortTokenAmount);
         emit FundingClaimed(_longToken, longTokenAmount);
@@ -425,8 +445,35 @@ contract GmxV2PositionManager is
 
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         Status _status = $.status;
+        Position.Props memory position = GmxV2Lib.getPosition(_getGmxParams(config()));
+        uint256 prevPositionSizeInUsd = isIncrease
+            ? position.numbers.sizeInUsd - order.numbers.sizeDeltaUsd
+            : position.numbers.sizeInUsd + order.numbers.sizeDeltaUsd;
+        address _collateralToken = $.collateralToken;
+        uint256 collateralTokenPrice = IOracle($.oracle).getAssetPrice(_collateralToken);
+
+        // use factors from gmx data store instead of position infos
+        // because when closing a position, the factors become 0 that resulted in wrong calc
+        // calls the infos right after updating them, so becomes latest
+        (uint256 fundingFeeAmountPerSize, uint256 cumulativeBorrowingFactor) =
+            GmxV2Lib.getSavedFundingAndBorrowingFactors(config().dataStore(), $.marketToken, _collateralToken, $.isLong);
+
+        // cumulate funding fee
+        uint256 positionFundingFeeAmountPerSize = $.positionFundingFeeAmountPerSize;
+        uint256 fundingFeeAmount =
+            GmxV2Lib.getFundingAmount(fundingFeeAmountPerSize, positionFundingFeeAmountPerSize, prevPositionSizeInUsd);
+        $.positionFundingFeeAmountPerSize = fundingFeeAmountPerSize;
+        $.cumulativeFundingFeeUsd += fundingFeeAmount * collateralTokenPrice;
+
+        // cumulate borrowing fee
+        uint256 positionBorrowingFactor = $.positionBorrowingFactor;
+        uint256 borrowingFeeUsd =
+            GmxV2Lib.getBorrowingFees(cumulativeBorrowingFactor, positionBorrowingFactor, prevPositionSizeInUsd);
+        $.positionBorrowingFactor = cumulativeBorrowingFactor;
+        $.cumulativeBorrowingFeeUsd += borrowingFeeUsd;
 
         if (_status == Status.SETTLE) {
+            // doesn't change position size
             if (order.numbers.initialCollateralDeltaAmount > 0) {
                 $.pendingCollateralAmount = 0;
             }
@@ -437,10 +484,10 @@ contract GmxV2PositionManager is
             );
             claimFunding();
         } else if (_status == Status.INCREASE) {
-            _processIncreasePosition(order.numbers.initialCollateralDeltaAmount, order.numbers.sizeDeltaUsd);
+            _processIncreasePosition(order.numbers.initialCollateralDeltaAmount, position.numbers.sizeInTokens);
             $.status = Status.IDLE;
         } else if (_status == Status.DECREASE_ONE_STEP) {
-            _processDecreasePosition();
+            _processDecreasePosition(position.numbers.sizeInTokens);
             $.status = Status.IDLE;
         } else if (_status == Status.DECREASE_TWO_STEP) {
             $.status = Status.DECREASE_ONE_STEP;
@@ -469,7 +516,6 @@ contract GmxV2PositionManager is
         } else if (_status == Status.DECREASE_ONE_STEP || _status == Status.DECREASE_TWO_STEP) {
             // in case when the first order was executed successfully or one step decrease order was failed
             // or in case when the order executed in wrong order by gmx was failed
-            $.sizeInTokensBefore = 0;
             IBasisStrategy(strategy()).afterAdjustPosition(
                 AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: false})
             );
@@ -528,8 +574,9 @@ contract GmxV2PositionManager is
     }
 
     /// @notice position size in index token
-    function positionSizeInTokens() external view returns (uint256) {
-        return GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));
+    function positionSizeInTokens() public view returns (uint256) {
+        Position.Props memory position = GmxV2Lib.getPosition(_getGmxParams(config()));
+        return position.numbers.sizeInTokens;
     }
 
     /// @notice calculate the execution fee that is need from gmx when increase and decrease
@@ -632,7 +679,7 @@ contract GmxV2PositionManager is
         return orderKey;
     }
 
-    function _processIncreasePosition(uint256 initialCollateralDeltaAmount, uint256 sizeDeltaUsd) private {
+    function _processIncreasePosition(uint256 initialCollateralDeltaAmount, uint256 sizeInTokens) private {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         AdjustPositionPayload memory callbackParams;
         if (initialCollateralDeltaAmount > 0) {
@@ -640,28 +687,16 @@ contract GmxV2PositionManager is
             $.pendingCollateralAmount = 0;
             callbackParams.collateralDeltaAmount = initialCollateralDeltaAmount;
         }
-        if (sizeDeltaUsd > 0) {
-            uint256 sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));
-            uint256 sizeInTokensBefore = $.sizeInTokensBefore;
-            $.sizeInTokensBefore = 0;
-            (, callbackParams.sizeDeltaInTokens) = sizeInTokensAfter.trySub(sizeInTokensBefore);
-        }
+        callbackParams.sizeDeltaInTokens = _recordPositionSize(sizeInTokens);
         callbackParams.isIncrease = true;
         IBasisStrategy(strategy()).afterAdjustPosition(callbackParams);
     }
 
-    function _processDecreasePosition() private {
+    function _processDecreasePosition(uint256 sizeInTokens) private {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         AdjustPositionPayload memory callbackParams;
-        uint256 sizeInTokensAfter = GmxV2Lib.getPositionSizeInTokens(_getGmxParams(config()));
-        uint256 sizeInTokensBefore = $.sizeInTokensBefore;
-        if (sizeInTokensBefore > 0) {
-            (, callbackParams.sizeDeltaInTokens) = sizeInTokensBefore.trySub(sizeInTokensAfter);
-            $.sizeInTokensBefore = 0;
-        }
         uint256 decreasingCollateralDeltaAmount = $.decreasingCollateralDeltaAmount;
-
-        if (sizeInTokensAfter == 0) {
+        if (sizeInTokens == 0) {
             uint256 idleCollateralAmount = IERC20(collateralToken()).balanceOf(address(this));
             callbackParams.collateralDeltaAmount = idleCollateralAmount;
         } else if (decreasingCollateralDeltaAmount > 0) {
@@ -671,7 +706,18 @@ contract GmxV2PositionManager is
                 : decreasingCollateralDeltaAmount;
             $.decreasingCollateralDeltaAmount = 0;
         }
+        callbackParams.sizeDeltaInTokens = _recordPositionSize(sizeInTokens);
         IBasisStrategy(strategy()).afterAdjustPosition(callbackParams);
+    }
+
+    /// @dev store new size and return delta size in tokens
+    function _recordPositionSize(uint256 sizeInTokens) private returns (uint256) {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        uint256 sizeInTokensBefore = $.sizeInTokensBefore;
+        $.sizeInTokensBefore = sizeInTokens;
+        uint256 sizeDeltaInTokens =
+            sizeInTokens > sizeInTokensBefore ? sizeInTokens - sizeInTokensBefore : sizeInTokensBefore - sizeInTokens;
+        return sizeDeltaInTokens;
     }
 
     function _processPendingPositionFee(bool isIncrease, bool isExecuted) private {
@@ -680,13 +726,13 @@ contract GmxV2PositionManager is
             uint256 _pendingPositionFeeUsdForIncrease = $.pendingPositionFeeUsdForIncrease;
             if (_pendingPositionFeeUsdForIncrease > 0) {
                 $.pendingPositionFeeUsdForIncrease = 0;
-                if (isExecuted) $.accumulatedPositionFeeUsd += _pendingPositionFeeUsdForIncrease;
+                if (isExecuted) $.cumulativePositionFeeUsd += _pendingPositionFeeUsdForIncrease;
             }
         } else {
             uint256 _pendingPositionFeeUsdForDecrease = $.pendingPositionFeeUsdForDecrease;
             if (_pendingPositionFeeUsdForDecrease > 0) {
                 $.pendingPositionFeeUsdForDecrease = 0;
-                if (isExecuted) $.accumulatedPositionFeeUsd += _pendingPositionFeeUsdForDecrease;
+                if (isExecuted) $.cumulativePositionFeeUsd += _pendingPositionFeeUsdForDecrease;
             }
         }
     }
@@ -842,8 +888,24 @@ contract GmxV2PositionManager is
         return config().limitDecreaseCollateral();
     }
 
-    function accumulatedPositionFeeUsd() external view returns (uint256) {
+    /// @notice total cumulated position fee in usd
+    function cumulativePositionFeeUsd() external view returns (uint256) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.accumulatedPositionFeeUsd;
+        return $.cumulativePositionFeeUsd;
+    }
+
+    /// @notice total cumulated funding fee in usd including next funding fee
+    function cumulativeFundingAndBorrowingFeesUsd()
+        external
+        view
+        returns (uint256 fundingFeeUsd, uint256 borrowingFeeUsd)
+    {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        IGmxConfig _config = config();
+        (uint256 nextFundingFeeUsd, uint256 nextBorrowingFeeUsd) =
+            GmxV2Lib.getNextFundingAndBorrowingFeesUsd(_getGmxParams(_config), $.oracle, _config.referralStorage());
+        fundingFeeUsd = $.cumulativeFundingFeeUsd + nextFundingFeeUsd;
+        borrowingFeeUsd = $.cumulativeBorrowingFeeUsd + nextBorrowingFeeUsd;
+        return (fundingFeeUsd, borrowingFeeUsd);
     }
 }
