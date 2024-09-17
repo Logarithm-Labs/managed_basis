@@ -564,6 +564,21 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
+    /// @notice total cumulated funding fee and borrowing fee in usd including next fees
+    function cumulativeFundingAndBorrowingFeesUsd()
+        external
+        view
+        returns (uint256 fundingFeeUsd, uint256 borrowingFeeUsd)
+    {
+        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
+        IGmxConfig _config = config();
+        (uint256 nextFundingFeeUsd, uint256 nextBorrowingFeeUsd) =
+            GmxV2Lib.getNextFundingAndBorrowingFeesUsd(_getGmxParams(_config), $.oracle, _config.referralStorage());
+        fundingFeeUsd = $.cumulativeFundingFeeUsd + nextFundingFeeUsd;
+        borrowingFeeUsd = $.cumulativeBorrowingFeeUsd + nextBorrowingFeeUsd;
+        return (fundingFeeUsd, borrowingFeeUsd);
+    }
+
     /// @dev check if the claimable funding amount is over than max share
     ///      or if idle collateral is bigger than minimum requirement so that
     ///      the position can be settled to add it to position's collateral
@@ -754,7 +769,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
     }
 
     /*//////////////////////////////////////////////////////////////
-                        STORAGE GETTERS
+                            STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
 
     function config() public view returns (IGmxConfig) {
@@ -846,18 +861,9 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return $.cumulativePositionFeeUsd;
     }
 
-    /// @notice total cumulated funding fee in usd including next funding fee
-    function cumulativeFundingAndBorrowingFeesUsd()
-        external
-        view
-        returns (uint256 fundingFeeUsd, uint256 borrowingFeeUsd)
-    {
+    /// @notice total claimed funding usd
+    function cumulativeClaimedFundingUsd() external view returns (uint256) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        IGmxConfig _config = config();
-        (uint256 nextFundingFeeUsd, uint256 nextBorrowingFeeUsd) =
-            GmxV2Lib.getNextFundingAndBorrowingFeesUsd(_getGmxParams(_config), $.oracle, _config.referralStorage());
-        fundingFeeUsd = $.cumulativeFundingFeeUsd + nextFundingFeeUsd;
-        borrowingFeeUsd = $.cumulativeBorrowingFeeUsd + nextBorrowingFeeUsd;
-        return (fundingFeeUsd, borrowingFeeUsd);
+        return $.cumulativeClaimedFundingUsd;
     }
 }
