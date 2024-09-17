@@ -1,14 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.25;
 
-import {BasisStrategy} from "src/BasisStrategy.sol";
-// import {ILogarithmVault} from "src/interfaces/ILogarithmVault.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+
+import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
+import {IReader} from "src/externals/gmx-v2/interfaces/IReader.sol";
+import {Position} from "src/externals/gmx-v2/libraries/Position.sol";
+import {Precision} from "src/externals/gmx-v2/libraries/Precision.sol";
+import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
+import {MarketUtils} from "src/externals/gmx-v2/libraries/MarketUtils.sol";
+import {Price} from "src/externals/gmx-v2/libraries/Price.sol";
+import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
+
+import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
+import {LogarithmVault} from "src/LogarithmVault.sol";
+import {BasisStrategy} from "src/BasisStrategy.sol";
+import {IPositionManager} from "src/interfaces/IPositionManager.sol";
 import {IOracle} from "src/interfaces/IOracle.sol";
 
 contract DataProvider {
+    using SafeCast for uint256;
+
+    address constant GMX_DATA_STORE = 0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8;
+    address constant GMX_READER = 0x5Ca84c34a381434786738735265b9f3FD814b824;
+
     struct StrategyState {
         uint8 strategyStatus;
         uint256 totalSupply;
@@ -38,6 +54,15 @@ contract DataProvider {
         bool rehedgeNeeded;
         bool positionManagerKeepNeeded;
         bool processingRebalanceDown;
+    }
+
+    struct GmxPositionInfo {
+        uint256 positionSizeUsd; // 30 decimals
+        uint256 indexPrice; // mark_price 30 - indexToken decimals
+        int256 liquidationPrice; // 30 - indexToken decimals
+        int256 unrealizedPnlUsd; // 30 decimals
+        int256 accumulatedFundingFeesUsd; // 30 decimals
+        uint256 accumulatedPositionFeesUsd; // 30 decimals
     }
 
     function getStrategyState(address _strategy) external view returns (StrategyState memory state) {
@@ -92,6 +117,104 @@ contract DataProvider {
         state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
         state.positionManagerKeepNeeded = positionManagerNeedKeep;
         state.processingRebalanceDown = strategy.processingRebalance();
+    }
+
+    function getGmxPositionInfo(address positionManagerAddr)
+        external
+        view
+        returns (GmxPositionInfo memory positionInfo)
+    {
+        GmxV2PositionManager positionManager = GmxV2PositionManager(positionManagerAddr);
+        BasisStrategy strategy = BasisStrategy(positionManager.strategy());
+        Market.Props memory market = Market.Props({
+            marketToken: positionManager.marketToken(),
+            indexToken: positionManager.indexToken(),
+            longToken: positionManager.longToken(),
+            shortToken: positionManager.shortToken()
+        });
+        IOracle oracle = IOracle(strategy.oracle());
+        bytes32 positionKey = _getPositionKey(
+            positionManagerAddr, market.marketToken, positionManager.collateralToken(), positionManager.isLong()
+        );
+        Position.Props memory position = IReader(GMX_READER).getPosition(IDataStore(GMX_DATA_STORE), positionKey);
+
+        // position size in usd
+        positionInfo.positionSizeUsd = position.numbers.sizeInUsd;
+
+        // index price
+        positionInfo.indexPrice = oracle.getAssetPrice(market.indexToken);
+
+        // unrealizedPnl
+        (positionInfo.unrealizedPnlUsd,,) = IReader(GMX_READER).getPositionPnlUsd(
+            IDataStore(GMX_DATA_STORE),
+            market,
+            _getPrices(address(oracle), market),
+            positionKey,
+            position.numbers.sizeInUsd
+        );
+
+        // liquidation price, assuming current position is not liquidatable
+        uint256 minCollateralFactor =
+            IDataStore(GMX_DATA_STORE).getUint(Keys.minCollateralFactorKey(market.marketToken));
+        int256 minCollateralUsdForLeverage =
+            Precision.applyFactor(position.numbers.sizeInUsd, minCollateralFactor).toInt256();
+
+        // liquidation condition: remainingCollateralUsd < minCollateralUsdForLeverage
+        // remainingCollateralUsd = collateralUsd + pnlUsd - fees
+        // pnlUsd = sizeInUsd - sizeInTokens * executionPrice (short)
+        // remainingCollateralUsd = collateralUsd + sizeInUsd - sizeInTokens * executionPrice - fees < minCollateralUsdForLeverage
+        // executionPrice > (collateralUsd + sizeInUsd - fees - minCollateralUsdForLeverage) / sizeInTokens
+        // hence, liquidationPrice = (collateralUsd + sizeInUsd - fees - minCollateralUsdForLeverage) / sizeInTokens
+
+        // positionNetBalance * collateralPrice == remainingCollateralUsd
+        uint256 positionNetBalance = positionManager.positionNetBalance();
+        uint256 collateralTokenPrice = oracle.getAssetPrice(positionManager.collateralToken());
+        uint256 positionNetBalanceUsd = positionNetBalance * collateralTokenPrice;
+        positionInfo.liquidationPrice = (
+            positionNetBalanceUsd.toInt256() - positionInfo.unrealizedPnlUsd + position.numbers.sizeInUsd.toInt256()
+                - minCollateralUsdForLeverage
+        ) / position.numbers.sizeInTokens.toInt256();
+
+        // accumulated funding fee
+        uint256 cumulativeClaimedFundingUsd = positionManager.cumulativeClaimedFundingUsd();
+        (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount) =
+            positionManager.getAccruedClaimableFundingAmounts();
+        (uint256 nextClaimableLongTokenAmount, uint256 nextClaimableShortTokenAmount) =
+            positionManager.getClaimableFundingAmounts();
+        uint256 longTokenPrice = oracle.getAssetPrice(market.longToken);
+        uint256 shortTokenPrice = oracle.getAssetPrice(market.shortToken);
+        uint256 claimableFundingUsd = (claimableLongTokenAmount + nextClaimableLongTokenAmount) * longTokenPrice
+            + (claimableShortTokenAmount + nextClaimableShortTokenAmount) * shortTokenPrice;
+        (uint256 fundingFeeUsd, uint256 borrowingFeeUsd) = positionManager.cumulativeFundingAndBorrowingFeesUsd();
+        positionInfo.accumulatedFundingFeesUsd = (cumulativeClaimedFundingUsd + claimableFundingUsd).toInt256()
+            - (fundingFeeUsd + borrowingFeeUsd).toInt256();
+
+        // accumulated position fee
+        positionInfo.accumulatedPositionFeesUsd = positionManager.cumulativePositionFeeUsd();
+    }
+
+    function _getPositionKey(address account, address marketToken, address collateralToken, bool isLong)
+        private
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(account, marketToken, collateralToken, isLong));
+    }
+
+    /// @dev get all prices of maket tokens including long, short, and index tokens
+    /// the return type is like the type that is required by gmx
+    function _getPrices(address oracle, Market.Props memory market)
+        private
+        view
+        returns (MarketUtils.MarketPrices memory prices)
+    {
+        uint256 longTokenPrice = IOracle(oracle).getAssetPrice(market.longToken);
+        uint256 shortTokenPrice = IOracle(oracle).getAssetPrice(market.shortToken);
+        uint256 indexTokenPrice = IOracle(oracle).getAssetPrice(market.indexToken);
+        indexTokenPrice = indexTokenPrice == 0 ? longTokenPrice : indexTokenPrice;
+        prices.indexTokenPrice = Price.Props(indexTokenPrice, indexTokenPrice);
+        prices.longTokenPrice = Price.Props(longTokenPrice, longTokenPrice);
+        prices.shortTokenPrice = Price.Props(shortTokenPrice, shortTokenPrice);
     }
 
     function _decodePerformData(bytes memory performData)
