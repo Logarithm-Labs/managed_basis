@@ -937,13 +937,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             uint256 _targetLeverage = $.targetLeverage;
             if (currentLeverage > _targetLeverage) {
                 // calculate deutilization product
-                // when totalPendingWithdraw is enough big to prevent increasing collalteral
+                // when totalPendingWithdraw is enough big to prevent increasing collateral
                 uint256 deltaLeverage = currentLeverage - _targetLeverage;
                 deutilization = positionSizeInTokens.mulDiv(deltaLeverage, currentLeverage);
                 uint256 deutilizationInAsset = $.oracle.convertTokenAmount(params.product, params.asset, deutilization);
                 uint256 totalPendingWithdrawAbs = totalPendingWithdraw < 0 ? 0 : uint256(totalPendingWithdraw);
 
-                // when totalPendingWithdraw is not enough big to prevent increasing collalteral
+                // when totalPendingWithdraw is not enough big to prevent increasing collateral
                 if (totalPendingWithdrawAbs < deutilizationInAsset) {
                     uint256 num = deltaLeverage + _targetLeverage.mulDiv(totalPendingWithdrawAbs, positionNetBalance);
                     uint256 den = currentLeverage + _targetLeverage.mulDiv(positionSizeInAssets, positionNetBalance);

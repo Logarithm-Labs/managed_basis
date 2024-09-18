@@ -200,4 +200,31 @@ library MarketUtils {
     {
         return dataStore.getUint(Keys.minCollateralFactorForOpenInterestMultiplierKey(market, isLong));
     }
+
+    // @dev get the funding fee amount per size for a market
+    // @param dataStore DataStore
+    // @param market the market to check
+    // @param collateralToken the collateralToken to check
+    // @param isLong whether to check the long or short size
+    // @return the funding fee amount per size for a market based on collateralToken
+    function getFundingFeeAmountPerSize(IDataStore dataStore, address market, address collateralToken, bool isLong)
+        internal
+        view
+        returns (uint256)
+    {
+        return dataStore.getUint(Keys.fundingFeeAmountPerSizeKey(market, collateralToken, isLong));
+    }
+
+    // @dev get the cumulative borrowing factor for a market
+    // @param dataStore DataStore
+    // @param market the market to check
+    // @param isLong whether to check the long or short side
+    // @return the cumulative borrowing factor for a market
+    function getCumulativeBorrowingFactor(IDataStore dataStore, address market, bool isLong)
+        internal
+        view
+        returns (uint256)
+    {
+        return dataStore.getUint(Keys.cumulativeBorrowingFactorKey(market, isLong));
+    }
 }

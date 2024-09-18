@@ -84,7 +84,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
 
             if ((from == address(0) && to != _feeRecipient) || (from != _feeRecipient && to == address(0))) {
                 // called when minting to none of recipient
-                // or when buring from none of recipient
+                // or when burning from none of recipient
                 _accrueMgmtFeeShares(_feeRecipient);
             }
         }
@@ -101,7 +101,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         }
     }
 
-    /// @dev returns claimalbe shares for the mgmt fee
+    /// @dev returns claimable shares for the mgmt fee
     function _accruedMgmtFeeShares(address _feeRecipient) internal view returns (uint256) {
         if (_feeRecipient == address(0)) return 0;
 

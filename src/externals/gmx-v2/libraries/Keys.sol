@@ -41,6 +41,11 @@ library Keys {
     // @dev key for oracle provider for token
     bytes32 public constant ORACLE_PROVIDER_FOR_TOKEN = keccak256(abi.encode("ORACLE_PROVIDER_FOR_TOKEN"));
 
+    // @dev key for funding fee amount per size
+    bytes32 public constant FUNDING_FEE_AMOUNT_PER_SIZE = keccak256(abi.encode("FUNDING_FEE_AMOUNT_PER_SIZE"));
+    // @dev key for cumulative borrowing factor
+    bytes32 public constant CUMULATIVE_BORROWING_FACTOR = keccak256(abi.encode("CUMULATIVE_BORROWING_FACTOR"));
+
     // @dev key for the max position impact factor for liquidations
     // @param market the market address to check
     // @return key for the max position impact factor
@@ -99,5 +104,26 @@ library Keys {
     // @return key for oracle provider for token
     function oracleProviderForTokenKey(address token) internal pure returns (bytes32) {
         return keccak256(abi.encode(ORACLE_PROVIDER_FOR_TOKEN, token));
+    }
+
+    // @dev key for funding fee amount per size
+    // @param market the market to check
+    // @param collateralToken the collateralToken to get the key for
+    // @param isLong whether to get the key for the long or short side
+    // @return key for funding fee amount per size
+    function fundingFeeAmountPerSizeKey(address market, address collateralToken, bool isLong)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(FUNDING_FEE_AMOUNT_PER_SIZE, market, collateralToken, isLong));
+    }
+
+    // @dev key for cumulative borrowing factor
+    // @param market the market to check
+    // @param isLong whether to get the key for the long or short side
+    // @return key for cumulative borrowing factor
+    function cumulativeBorrowingFactorKey(address market, bool isLong) internal pure returns (bytes32) {
+        return keccak256(abi.encode(CUMULATIVE_BORROWING_FACTOR, market, isLong));
     }
 }

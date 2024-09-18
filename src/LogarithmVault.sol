@@ -436,7 +436,7 @@ contract LogarithmVault is Initializable, ManagedVault {
         }
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
-        // separate worflow for last withdraw
+        // separate workflow for last withdraw
         // check if current withdrawRequest is last withdraw
         if (totalSupply() == 0 && accRequestedWithdrawAssetsOfRequest == $.accRequestedWithdrawAssets) {
             isLast = true;
@@ -444,7 +444,7 @@ contract LogarithmVault is Initializable, ManagedVault {
 
         if (isLast) {
             // last withdraw is claimable when utilized assets is 0
-            // and asssetsToWithdraw is 0
+            // and assetsToWithdraw is 0
             uint256 utilizedAssets = $.strategy.utilizedAssets();
             uint256 assetsToWithdraw = IERC20(asset()).balanceOf(address($.strategy));
             isExecuted = utilizedAssets == 0 && assetsToWithdraw == 0;

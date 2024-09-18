@@ -61,14 +61,21 @@ library GmxV2Lib {
         /// @dev the delta usd to increase
         uint256 sizeDeltaUsdToIncrease;
         /// @dev the position fee
-        uint256 positionFeeUsd;
+        uint256 positionFeeUsdForDecrease;
+        uint256 positionFeeUsdForIncrease;
         /// @dev the execution price
         uint256 executionPrice;
     }
 
-    function getPositionSizeInTokens(GmxParams calldata params) external view returns (uint256) {
-        Position.Props memory position = _getPosition(params);
-        return position.numbers.sizeInTokens;
+    struct IncreasePositionResult {
+        uint256 sizeDeltaUsd;
+        uint256 positionFeeUsd;
+        uint256 executionPrice;
+    }
+
+    function getPosition(GmxParams calldata params) external view returns (Position.Props memory position) {
+        position = _getPosition(params);
+        return position;
     }
 
     /// @dev reduce collateral and position size in tokens
@@ -120,7 +127,7 @@ library GmxV2Lib {
             result.sizeDeltaUsdToDecrease = _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokens);
             executionPriceResultForDecrease =
                 _getExecutionPrice(params, position, indexTokenPrice, -int256(result.sizeDeltaUsdToDecrease));
-            result.positionFeeUsd = _getPositionFeeUsd(
+            result.positionFeeUsdForDecrease = _getPositionFeeUsd(
                 params, result.sizeDeltaUsdToDecrease, executionPriceResultForDecrease.priceImpactUsd
             );
             result.executionPrice = executionPriceResultForDecrease.executionPrice;
@@ -199,7 +206,7 @@ library GmxV2Lib {
             result.sizeDeltaUsdToDecrease += _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokensToBeRealized);
             executionPriceResultForDecrease =
                 _getExecutionPrice(params, position, indexTokenPrice, -int256(result.sizeDeltaUsdToDecrease));
-            result.positionFeeUsd = _getPositionFeeUsd(
+            result.positionFeeUsdForDecrease = _getPositionFeeUsd(
                 params, result.sizeDeltaUsdToDecrease, executionPriceResultForDecrease.priceImpactUsd
             );
             result.sizeDeltaUsdToIncrease = _getSizeDeltaUsdForIncrease(
@@ -211,7 +218,7 @@ library GmxV2Lib {
             );
             ReaderPricingUtils.ExecutionPriceResult memory executionPriceResultForIncrease =
                 _getExecutionPrice(params, position, indexTokenPrice, int256(result.sizeDeltaUsdToIncrease));
-            result.positionFeeUsd += _getPositionFeeUsd(
+            result.positionFeeUsdForIncrease = _getPositionFeeUsd(
                 params, result.sizeDeltaUsdToIncrease, executionPriceResultForIncrease.priceImpactUsd
             );
             if (sizeDeltaInTokens > 0) {
@@ -230,6 +237,25 @@ library GmxV2Lib {
         return result;
     }
 
+    /// @dev calc size delta in usd and position fee given size delta in tokens
+    function getIncreasePositionResult(GmxParams calldata params, address oracle, uint256 sizeDeltaInTokens)
+        external
+        view
+        returns (IncreasePositionResult memory result)
+    {
+        Price.Props memory indexTokenPrice = _getPrice(oracle, params.market.indexToken);
+        Position.Props memory position = _getPosition(params);
+        result.sizeDeltaUsd = _getSizeDeltaUsdForIncrease(
+            params, indexTokenPrice, position.numbers.sizeInUsd, position.numbers.sizeInTokens, sizeDeltaInTokens
+        );
+        ReaderPricingUtils.ExecutionPriceResult memory executionPriceResultForIncrease =
+            _getExecutionPrice(params, position, indexTokenPrice, int256(result.sizeDeltaUsd));
+        result.executionPrice = executionPriceResultForIncrease.executionPrice;
+        result.positionFeeUsd =
+            _getPositionFeeUsd(params, result.sizeDeltaUsd, executionPriceResultForIncrease.priceImpactUsd);
+        return result;
+    }
+
     /// @dev position info when closing fully
     function getPositionInfo(GmxParams calldata params, address oracle, address referralStorage)
         external
@@ -240,27 +266,18 @@ library GmxV2Lib {
         return _getPositionInfo(params, prices, referralStorage);
     }
 
-    function getSizeDeltaUsdForDecrease(GmxParams calldata params, uint256 sizeDeltaInTokens)
+    /// @dev next funding and borrowing fee amount in usd
+    function getNextFundingAndBorrowingFeesUsd(GmxParams calldata params, address oracle, address referralStorage)
         external
         view
-        returns (uint256)
+        returns (uint256 nextFundingFeeUsd, uint256 nextBorrowingFeeUsd)
     {
-        Position.Props memory position = _getPosition(params);
-        uint256 sizeDeltaUsd = _getSizeDeltaUsdForDecrease(position, sizeDeltaInTokens);
-        return sizeDeltaUsd;
-    }
-
-    function getSizeDeltaUsdForIncrease(GmxParams calldata params, address oracle, uint256 sizeDeltaInTokens)
-        external
-        view
-        returns (uint256)
-    {
-        Price.Props memory indexTokenPrice = _getPrice(oracle, params.market.indexToken);
-        Position.Props memory position = _getPosition(params);
-        uint256 sizeDeltaUsd = _getSizeDeltaUsdForIncrease(
-            params, indexTokenPrice, position.numbers.sizeInUsd, position.numbers.sizeInTokens, sizeDeltaInTokens
-        );
-        return sizeDeltaUsd;
+        uint256 collateralTokenPrice = IOracle(oracle).getAssetPrice(params.collateralToken);
+        MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
+        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
+        nextFundingFeeUsd = positionInfo.fees.funding.fundingFeeAmount * collateralTokenPrice;
+        nextBorrowingFeeUsd = positionInfo.fees.borrowing.borrowingFeeUsd;
+        return (nextFundingFeeUsd, nextBorrowingFeeUsd);
     }
 
     /// @dev returns transaction fees needed for gmx keeper
@@ -282,15 +299,15 @@ library GmxV2Lib {
     }
 
     /// @dev return the funding amounts received
-    function getAccruedFundingAmounts(GmxParams calldata params)
+    function getAccruedClaimableFundingAmounts(GmxParams calldata params)
         public
         view
         returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount)
     {
-        claimableLongTokenAmount = _getAccruedFundingAmount(
+        claimableLongTokenAmount = _getAccruedClaimableFundingAmount(
             params.dataStore, params.market.marketToken, params.market.longToken, params.account
         );
-        claimableShortTokenAmount = _getAccruedFundingAmount(
+        claimableShortTokenAmount = _getAccruedClaimableFundingAmount(
             params.dataStore, params.market.marketToken, params.market.shortToken, params.account
         );
         return (claimableLongTokenAmount, claimableShortTokenAmount);
@@ -329,9 +346,14 @@ library GmxV2Lib {
             return (0, 0);
         }
 
+        (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount) =
+            getAccruedClaimableFundingAmounts(params);
+        claimableLongTokenAmount += positionInfo.fees.funding.claimableLongTokenAmount;
+        claimableShortTokenAmount += positionInfo.fees.funding.claimableShortTokenAmount;
+
         uint256 collateralTokenPrice = IOracle(oracle).getAssetPrice(positionInfo.position.addresses.collateralToken);
-        uint256 claimableUsd = positionInfo.fees.funding.claimableLongTokenAmount * prices.longTokenPrice.min
-            + positionInfo.fees.funding.claimableShortTokenAmount * prices.shortTokenPrice.min;
+        uint256 claimableUsd = claimableLongTokenAmount * prices.longTokenPrice.min
+            + claimableShortTokenAmount * prices.shortTokenPrice.min;
         uint256 claimableTokenAmount = claimableUsd / collateralTokenPrice;
 
         int256 priceImpactUsd = positionInfo.executionPriceResult.priceImpactUsd;
@@ -365,6 +387,7 @@ library GmxV2Lib {
         return (remainingCollateral > 0 ? remainingCollateral.toUint256() : 0, claimableTokenAmount);
     }
 
+    /// @dev calc not accrued claimable funding amounts
     function getClaimableFundingAmounts(GmxParams calldata params, address oracle, address referralStorage)
         external
         view
@@ -375,6 +398,61 @@ library GmxV2Lib {
         claimableLongTokenAmount = positionInfo.fees.funding.claimableLongTokenAmount;
         claimableShortTokenAmount = positionInfo.fees.funding.claimableShortTokenAmount;
         return (claimableLongTokenAmount, claimableShortTokenAmount);
+    }
+
+    /// @dev read the saved funding and borrowing factors from gmx data store
+    function getSavedFundingAndBorrowingFactors(address dataStore, address market, address collateralToken, bool isLong)
+        external
+        view
+        returns (uint256 fundingFeeAmountPerSize, uint256 cumulativeBorrowingFactor)
+    {
+        fundingFeeAmountPerSize =
+            MarketUtils.getFundingFeeAmountPerSize(IDataStore(dataStore), market, collateralToken, isLong);
+        cumulativeBorrowingFactor = MarketUtils.getCumulativeBorrowingFactor(IDataStore(dataStore), market, isLong);
+        return (fundingFeeAmountPerSize, cumulativeBorrowingFactor);
+    }
+
+    /// @dev get the funding amount to be deducted or distributed
+    ///
+    /// @param fundingAmountPerSize the latest funding amount per size
+    /// @param positionFundingAmountPerSize the funding amount per size for the position
+    /// @param positionSizeInUsd the position size in USD
+    ///
+    /// @return fundingAmount in collateral token
+    function getFundingAmount(
+        uint256 fundingAmountPerSize,
+        uint256 positionFundingAmountPerSize,
+        uint256 positionSizeInUsd
+    ) internal pure returns (uint256) {
+        uint256 fundingDiffFactor = (fundingAmountPerSize - positionFundingAmountPerSize);
+
+        // a user could avoid paying funding fees by continually updating the position
+        // before the funding fee becomes large enough to be chargeable
+        // to avoid this, funding fee amounts should be rounded up
+        //
+        // this could lead to large additional charges if the token has a low number of decimals
+        // or if the token's value is very high, so care should be taken to inform users of this
+        //
+        // if the calculation is for the claimable amount, the amount should be rounded down instead
+
+        // divide the result by Precision.FLOAT_PRECISION * Precision.FLOAT_PRECISION_SQRT as the fundingAmountPerSize values
+        // are stored based on FLOAT_PRECISION_SQRT values
+        return Precision.mulDiv(
+            positionSizeInUsd, fundingDiffFactor, Precision.FLOAT_PRECISION * Precision.FLOAT_PRECISION_SQRT, true
+        );
+    }
+
+    /// @dev same logic with gmx MarketUtils lib
+    /// @param cumulativeBorrowingFactor cumulativeBorrowingFactor of DataStore
+    /// @param positionBorrowingFactor position's latest borrowing factor
+    /// @return the borrowing fees for a position in usd
+    function getBorrowingFees(
+        uint256 cumulativeBorrowingFactor,
+        uint256 positionBorrowingFactor,
+        uint256 positionSizeInUsd
+    ) internal pure returns (uint256) {
+        uint256 diffFactor = cumulativeBorrowingFactor - positionBorrowingFactor;
+        return Precision.applyFactor(positionSizeInUsd, diffFactor);
     }
 
     /// @dev in gmx v2, sizeDeltaInTokens = sizeInTokens * sizeDeltaUsd / sizeInUsd
@@ -423,7 +501,7 @@ library GmxV2Lib {
         return sizeDeltaUsd;
     }
 
-    // @dev calculate the position fee in usd when changing position size
+    /// @dev calculate the position fee in usd when changing position size
     function _getPositionFeeUsd(GmxParams calldata params, uint256 sizeDeltaUsd, int256 priceImpactUsd)
         private
         view
@@ -481,7 +559,7 @@ library GmxV2Lib {
     }
 
     /// @dev return received founding amount given a token
-    function _getAccruedFundingAmount(address dataStore, address market, address token, address account)
+    function _getAccruedClaimableFundingAmount(address dataStore, address market, address token, address account)
         private
         view
         returns (uint256)
