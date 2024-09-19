@@ -144,36 +144,38 @@ contract DataProvider {
         // index price
         positionInfo.indexPrice = oracle.getAssetPrice(market.indexToken);
 
-        // unrealizedPnl
-        (positionInfo.unrealizedPnlUsd,,) = IReader(GMX_READER).getPositionPnlUsd(
-            IDataStore(GMX_DATA_STORE),
-            market,
-            _getPrices(address(oracle), market),
-            positionKey,
-            position.numbers.sizeInUsd
-        );
+        if (position.numbers.sizeInTokens > 0) {
+            // unrealizedPnl
+            (positionInfo.unrealizedPnlUsd,,) = IReader(GMX_READER).getPositionPnlUsd(
+                IDataStore(GMX_DATA_STORE),
+                market,
+                _getPrices(address(oracle), market),
+                positionKey,
+                position.numbers.sizeInUsd
+            );
 
-        // liquidation price, assuming current position is not liquidatable
-        uint256 minCollateralFactor =
-            IDataStore(GMX_DATA_STORE).getUint(Keys.minCollateralFactorKey(market.marketToken));
-        int256 minCollateralUsdForLeverage =
-            Precision.applyFactor(position.numbers.sizeInUsd, minCollateralFactor).toInt256();
+            // liquidation price, assuming current position is not liquidatable
+            uint256 minCollateralFactor =
+                IDataStore(GMX_DATA_STORE).getUint(Keys.minCollateralFactorKey(market.marketToken));
+            int256 minCollateralUsdForLeverage =
+                Precision.applyFactor(position.numbers.sizeInUsd, minCollateralFactor).toInt256();
 
-        // liquidation condition: remainingCollateralUsd < minCollateralUsdForLeverage
-        // remainingCollateralUsd = collateralUsd + pnlUsd - fees
-        // pnlUsd = sizeInUsd - sizeInTokens * executionPrice (short)
-        // remainingCollateralUsd = collateralUsd + sizeInUsd - sizeInTokens * executionPrice - fees < minCollateralUsdForLeverage
-        // executionPrice > (collateralUsd + sizeInUsd - fees - minCollateralUsdForLeverage) / sizeInTokens
-        // hence, liquidationPrice = (collateralUsd + sizeInUsd - fees - minCollateralUsdForLeverage) / sizeInTokens
+            // liquidation condition: remainingCollateralUsd < minCollateralUsdForLeverage
+            // remainingCollateralUsd = collateralUsd + pnlUsd - fees
+            // pnlUsd = sizeInUsd - sizeInTokens * executionPrice (short)
+            // remainingCollateralUsd = collateralUsd + sizeInUsd - sizeInTokens * executionPrice - fees < minCollateralUsdForLeverage
+            // executionPrice > (collateralUsd + sizeInUsd - fees - minCollateralUsdForLeverage) / sizeInTokens
+            // hence, liquidationPrice = (collateralUsd + sizeInUsd - fees - minCollateralUsdForLeverage) / sizeInTokens
 
-        // positionNetBalance * collateralPrice == remainingCollateralUsd
-        uint256 positionNetBalance = positionManager.positionNetBalance();
-        uint256 collateralTokenPrice = oracle.getAssetPrice(positionManager.collateralToken());
-        uint256 positionNetBalanceUsd = positionNetBalance * collateralTokenPrice;
-        positionInfo.liquidationPrice = (
-            positionNetBalanceUsd.toInt256() - positionInfo.unrealizedPnlUsd + position.numbers.sizeInUsd.toInt256()
-                - minCollateralUsdForLeverage
-        ) / position.numbers.sizeInTokens.toInt256();
+            // positionNetBalance * collateralPrice == remainingCollateralUsd
+            uint256 positionNetBalance = positionManager.positionNetBalance();
+            uint256 collateralTokenPrice = oracle.getAssetPrice(positionManager.collateralToken());
+            uint256 positionNetBalanceUsd = positionNetBalance * collateralTokenPrice;
+            positionInfo.liquidationPrice = (
+                positionNetBalanceUsd.toInt256() - positionInfo.unrealizedPnlUsd + position.numbers.sizeInUsd.toInt256()
+                    - minCollateralUsdForLeverage
+            ) / position.numbers.sizeInTokens.toInt256();
+        }
 
         // accumulated funding fee
         uint256 cumulativeClaimedFundingUsd = positionManager.cumulativeClaimedFundingUsd();
