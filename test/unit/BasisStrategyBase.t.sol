@@ -60,7 +60,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     StrategyHelper helper;
 
     function setUp() public {
-        _forkArbitrum(238841172);
+        _forkArbitrum(237215502);
         vm.startPrank(owner);
         // deploy oracle
         address oracleImpl = address(new LogarithmOracle());

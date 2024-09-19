@@ -681,6 +681,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             _afterDecreasePosition(params);
         }
 
+        delete $.requestParams;
+
         $.strategyStatus = StrategyStatus.IDLE;
 
         emit UpdateStrategyStatus(StrategyStatus.IDLE);
@@ -855,7 +857,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
                         assetsToBeReverted =
                             _pendingDeutilizedAssets.mulDiv(sizeDeviationAbs, requestParams.sizeDeltaInTokens);
                     }
-                    ManualSwapLogic.swap(assetsToBeReverted, $.assetToProductSwapPath);
+                    if (assetsToBeReverted > 0) {
+                        ManualSwapLogic.swap(assetsToBeReverted, $.assetToProductSwapPath);
+                    }
                 }
             }
 
