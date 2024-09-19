@@ -166,6 +166,22 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
     }
 
+    function reinitialize() external reinitializer(2) {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+
+        // clear pending storage
+        $.strategyStatus = StrategyStatus.IDLE;
+        delete $.requestParams;
+        delete $.pendingDeutilizedAssets;
+        delete $.processingRebalanceDown;
+        delete $.pendingDecreaseCollateral;
+
+        // swap all product to asset due to have position liquidated
+        uint256 productBalance = IERC20($.product).balanceOf(address(this));
+        ManualSwapLogic.swap(productBalance, $.productToAssetSwapPath);
+        processAssetsToWithdraw();
+    }
+
     function _setManualSwapPath(address[] calldata _assetToProductSwapPath, address _asset, address _product) private {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         uint256 length = _assetToProductSwapPath.length;

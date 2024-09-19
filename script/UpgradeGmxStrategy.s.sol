@@ -7,24 +7,17 @@ import {DataProvider} from "src/DataProvider.sol";
 import {BasisStrategy} from "src/BasisStrategy.sol";
 
 contract UpgradeStrategyScript is Script {
-    DataProvider constant dataProvider = DataProvider(0xaB4e7519E6f7FC80A5AB255f15990444209cE159);
+    // DataProvider constant dataProvider = DataProvider(0xaB4e7519E6f7FC80A5AB255f15990444209cE159);
     UpgradeableBeacon constant beacon = UpgradeableBeacon(0x8BDB3Ece7e238E96Cbe3645dfAd01DD5f160F587);
     BasisStrategy constant strategy = BasisStrategy(0x1231fA1067806797cF3C551745Efb30cE53aE735);
 
     address public operator = 0xe7263f18e278ea0550FaD97DDF898d134483EfC6;
 
     function run() public {
-        // DataProvider.StrategyState memory state0 = dataProvider.getStrategyState(address(strategy));
-        // _logState(state0);
-
         vm.startBroadcast();
         address strategyImpl = address(new BasisStrategy());
         beacon.upgradeTo(strategyImpl);
-        strategy.setOperator(operator);
-        require(strategy.operator() == operator, "operator not set");
-
-        // DataProvider.StrategyState memory state1 = dataProvider.getStrategyState(address(strategy));
-        // _logState(state1);
+        strategy.reinitialize();
     }
 
     function _logState(DataProvider.StrategyState memory state) internal view {
