@@ -711,6 +711,64 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets(), "processed assets should be full");
     }
 
+    function test_prioritizedWithdraw_lastRedeemAfterAllNormalClaimed()
+        public
+        prioritize(metaVault)
+        validateFinalState
+    {
+        _deposit(metaVault, TEN_THOUSANDS_USDC);
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+        assertEq(vault.idleAssets(), 0, "idle asset should be 0");
+
+        // user's withdraw first
+        vm.startPrank(user1);
+        vault.redeem(vault.balanceOf(user1), user1, user1);
+        vm.stopPrank();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingDeutilization, 0, "no deutilization");
+
+        uint256 userBalBefore = IERC20(asset).balanceOf(user1);
+        bytes32 userRequestKey = vault.getWithdrawKey(user1, 0);
+        LogarithmVault.WithdrawRequest memory userReq = vault.withdrawRequests(userRequestKey);
+        vm.startPrank(user1);
+        vault.claim(userRequestKey);
+        vm.stopPrank();
+        uint256 userBalAfter = IERC20(asset).balanceOf(user1);
+        assertEq(userBalAfter - userBalBefore, userReq.requestedAssets, "user's request shouldn't be last");
+
+        // metaVault's withdraw after
+        vm.startPrank(metaVault);
+        vault.redeem(vault.balanceOf(metaVault), metaVault, metaVault);
+        vm.stopPrank();
+
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingDeutilization, 0, "no deutilization");
+
+        uint256 metaBalBefore = IERC20(asset).balanceOf(metaVault);
+        bytes32 metaVaultRequestKey = vault.getWithdrawKey(metaVault, 0);
+        LogarithmVault.WithdrawRequest memory metaReq = vault.withdrawRequests(metaVaultRequestKey);
+        vm.startPrank(metaVault);
+        vault.claim(metaVaultRequestKey);
+        vm.stopPrank();
+        uint256 metaBalAfter = IERC20(asset).balanceOf(metaVault);
+
+        assertTrue(metaBalAfter - metaBalBefore > metaReq.requestedAssets, "meta's request should be last");
+
+        assertEq(
+            vault.prioritizedAccRequestedWithdrawAssets(),
+            vault.prioritizedProcessedWithdrawAssets(),
+            "processed assets should be full"
+        );
+        assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets(), "processed assets should be full");
+    }
+
     function test_deutilize_partial_withSingleRequest() public afterWithdrawRequestCreated validateFinalState {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization / 2);

@@ -513,15 +513,9 @@ contract LogarithmVault is Initializable, ManagedVault {
         // check if current withdrawRequest is last withdraw
         // possible only when totalSupply is 0
         if (totalSupply() == 0) {
-            uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
-            // check if normal withdraw request is issued
-            if (_accRequestedWithdrawAssets > 0) {
-                // if so, only normal withdraw request can be last
-                isLast = !isPrioritizedAccount && accRequestedWithdrawAssetsOfRequest == _accRequestedWithdrawAssets;
-            } else {
-                // if no, that means _accRequestedWithdrawAssets = 0, prioritized withdraw request should be last
-                isLast = accRequestedWithdrawAssetsOfRequest == $.prioritizedAccRequestedWithdrawAssets;
-            }
+            isLast = isPrioritizedAccount
+                ? accRequestedWithdrawAssetsOfRequest == $.prioritizedAccRequestedWithdrawAssets
+                : accRequestedWithdrawAssetsOfRequest == $.accRequestedWithdrawAssets;
         }
 
         if (isLast) {
