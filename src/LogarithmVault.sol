@@ -370,14 +370,23 @@ contract LogarithmVault is Initializable, ManagedVault {
         uint256 executedAssets;
         // separate workflow for last redeem
         if (isLast) {
+            uint256 _processedWithdrawAssets = $.proccessedWithdrawAssets;
             uint256 _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets;
-            executedAssets = IERC20(asset()).balanceOf(address(this));
-            $.assetsToClaim = 0;
-            $.proccessedWithdrawAssets = _accRequestedWithdrawAssets;
+            uint256 shortfall = _accRequestedWithdrawAssets - _processedWithdrawAssets;
+
+            if (shortfall > 0) {
+                (, executedAssets) = withdrawRequest.requestedAssets.trySub(shortfall);
+                $.proccessedWithdrawAssets = _accRequestedWithdrawAssets;
+            } else {
+                uint256 _idleAssets = idleAssets();
+                executedAssets = withdrawRequest.requestedAssets + _idleAssets;
+                $.assetsToClaim += _idleAssets;
+            }
         } else {
             executedAssets = withdrawRequest.requestedAssets;
-            $.assetsToClaim -= executedAssets;
         }
+
+        $.assetsToClaim -= executedAssets;
 
         IERC20(asset()).safeTransfer(withdrawRequest.receiver, executedAssets);
 
