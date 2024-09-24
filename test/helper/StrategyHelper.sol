@@ -67,7 +67,7 @@ contract StrategyHelper {
                 positionManagerNeedKeep,
                 decreaseCollateral,
                 rebalanceUpNeeded
-            ) = _decodePerformData(performData);
+            ) = decodePerformData(performData);
         }
 
         address asset = strategy.asset();
@@ -140,8 +140,8 @@ contract StrategyHelper {
         console.log("");
     }
 
-    function _decodePerformData(bytes memory performData)
-        internal
+    function decodePerformData(bytes memory performData)
+        public
         pure
         returns (
             bool rebalanceDownNeeded,
@@ -154,16 +154,18 @@ contract StrategyHelper {
     {
         uint256 emergencyDeutilizationAmount;
         uint256 deltaCollateralToIncrease;
+        bool clearProcessingRebalanceDown;
         uint256 deltaCollateralToDecrease;
 
         (
             emergencyDeutilizationAmount,
             deltaCollateralToIncrease,
+            clearProcessingRebalanceDown,
             hedgeDeviationInTokens,
             positionManagerNeedKeep,
             decreaseCollateral,
             deltaCollateralToDecrease
-        ) = abi.decode(performData, (uint256, uint256, int256, bool, bool, uint256));
+        ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, bool, uint256));
 
         rebalanceDownNeeded = emergencyDeutilizationAmount > 0 || deltaCollateralToIncrease > 0;
         deleverageNeeded = emergencyDeutilizationAmount > 0;

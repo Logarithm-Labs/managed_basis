@@ -102,11 +102,50 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
             bool positionManagerNeedKeep,
             ,
             bool rebalanceUpNeeded
-        ) = _decodePerformData(performData);
+        ) = helper.decodePerformData(performData);
 
         assertTrue(upkeepNeeded, "upkeepNeeded");
         assertTrue(positionManagerNeedKeep, "positionManagerNeedKeep");
 
         _performKeep("positionManagerKeep");
+    }
+
+    function test_performUpkeep_rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting()
+        public
+        afterFullUtilized
+        validateFinalState
+    {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+
+        (bool upkeepNeeded, bytes memory performData) =
+            _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            helper.decodePerformData(performData);
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        // assertFalse(deleverageNeeded);
+        assertFalse(positionManagerNeedKeep);
+        uint256 leverageBefore = _positionManager().currentLeverage();
+        _performKeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
+        uint256 leverageAfter = _positionManager().currentLeverage();
+        assertEq(leverageBefore, leverageAfter, "leverage not changed");
+        assertEq(strategy.processingRebalance(), true);
+
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 99 / 100);
+
+        (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingUtilization, 0, "pendingUtilization");
+        assertEq(pendingDeutilization, 0, "pendingDeutilization");
+        (upkeepNeeded, performData) = _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
+        assertTrue(upkeepNeeded, "upkeepNeeded");
+        _performKeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
+        assertEq(strategy.processingRebalance(), false);
+        (upkeepNeeded, performData) = _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
+        assertFalse(upkeepNeeded, "upkeepNeeded");
+        (pendingUtilization, pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingUtilization, 0, "pendingUtilization");
+        assertEq(pendingDeutilization, 0, "pendingDeutilization");
     }
 }

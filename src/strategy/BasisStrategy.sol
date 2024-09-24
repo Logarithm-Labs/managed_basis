@@ -475,6 +475,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
 
         uint256 emergencyDeutilizationAmount;
         uint256 deltaCollateralToIncrease;
+        bool clearProcessingRebalanceDown;
         int256 hedgeDeviationInTokens;
         bool positionManagerNeedKeep;
         bool processPendingDecreaseCollateral;
@@ -528,32 +529,37 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
                 emergencyDeutilizationAmount = _clamp(min, emergencyDeutilizationAmount, max);
             }
         } else {
-            hedgeDeviationInTokens =
-                _checkHedgeDeviation(_positionManager, address($.product), config().hedgeDeviationThreshold());
-            if (hedgeDeviationInTokens != 0) {
+            if (_processingRebalanceDown) {
                 upkeepNeeded = true;
+                clearProcessingRebalanceDown = true;
             } else {
-                positionManagerNeedKeep = _positionManager.needKeep();
-                if (positionManagerNeedKeep) {
+                hedgeDeviationInTokens =
+                    _checkHedgeDeviation(_positionManager, address($.product), config().hedgeDeviationThreshold());
+                if (hedgeDeviationInTokens != 0) {
                     upkeepNeeded = true;
                 } else {
-                    (uint256 minDecreaseCollateral,) = _positionManager.decreaseCollateralMinMax();
-                    if (minDecreaseCollateral != 0 && $.pendingDecreaseCollateral >= minDecreaseCollateral) {
-                        uint256 pendingDeutilization_ = _pendingDeutilization(
-                            InternalPendingDeutilization({
-                                positionManager: _positionManager,
-                                asset: address($.asset),
-                                product: address($.product),
-                                totalSupply: _vault.totalSupply(),
-                                processingRebalanceDown: false
-                            })
-                        );
-                        if (pendingDeutilization_ == 0) {
-                            processPendingDecreaseCollateral = true;
+                    positionManagerNeedKeep = _positionManager.needKeep();
+                    if (positionManagerNeedKeep) {
+                        upkeepNeeded = true;
+                    } else {
+                        (uint256 minDecreaseCollateral,) = _positionManager.decreaseCollateralMinMax();
+                        if (minDecreaseCollateral != 0 && $.pendingDecreaseCollateral >= minDecreaseCollateral) {
+                            uint256 pendingDeutilization_ = _pendingDeutilization(
+                                InternalPendingDeutilization({
+                                    positionManager: _positionManager,
+                                    asset: address($.asset),
+                                    product: address($.product),
+                                    totalSupply: _vault.totalSupply(),
+                                    processingRebalanceDown: false
+                                })
+                            );
+                            if (pendingDeutilization_ == 0) {
+                                processPendingDecreaseCollateral = true;
+                                upkeepNeeded = true;
+                            }
+                        } else if (rebalanceUpNeeded) {
                             upkeepNeeded = true;
                         }
-                    } else if (rebalanceUpNeeded) {
-                        upkeepNeeded = true;
                     }
                 }
             }
@@ -562,6 +568,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         performData = abi.encode(
             emergencyDeutilizationAmount,
             deltaCollateralToIncrease,
+            clearProcessingRebalanceDown,
             hedgeDeviationInTokens,
             positionManagerNeedKeep,
             processPendingDecreaseCollateral,
@@ -586,22 +593,24 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         (
             uint256 emergencyDeutilizationAmount,
             uint256 deltaCollateralToIncrease,
+            bool clearProcessingRebalanceDown,
             int256 hedgeDeviationInTokens,
             bool positionManagerNeedKeep,
             bool processPendingDecreaseCollateral,
             uint256 deltaCollateralToDecrease
-        ) = abi.decode(performData, (uint256, uint256, int256, bool, bool, uint256));
+        ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, bool, uint256));
 
         $.strategyStatus = StrategyStatus.KEEPING;
 
         if (emergencyDeutilizationAmount > 0) {
             $.pendingDecreaseCollateral = 0;
-            $.processingRebalanceDown = true;
-
-            uint256 amountOut = ManualSwapLogic.swap(emergencyDeutilizationAmount, $.productToAssetSwapPath);
-            $.pendingDeutilizedAssets = amountOut;
-            // produced asset shouldn't go to idle until position size is decreased
-            if (!_adjustPosition(emergencyDeutilizationAmount, 0, false)) $.strategyStatus = StrategyStatus.IDLE;
+            if (_adjustPosition(emergencyDeutilizationAmount, 0, false)) {
+                $.processingRebalanceDown = true;
+                uint256 amountOut = ManualSwapLogic.swap(emergencyDeutilizationAmount, $.productToAssetSwapPath);
+                $.pendingDeutilizedAssets = amountOut;
+            } else {
+                $.strategyStatus = StrategyStatus.IDLE;
+            }
         } else if (deltaCollateralToIncrease > 0) {
             $.pendingDecreaseCollateral = 0;
             $.processingRebalanceDown = true;
@@ -611,6 +620,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
                     0, idleAssets < deltaCollateralToIncrease ? idleAssets : deltaCollateralToIncrease, true
                 )
             ) $.strategyStatus = StrategyStatus.IDLE;
+        } else if (clearProcessingRebalanceDown) {
+            $.processingRebalanceDown = false;
+            $.strategyStatus = StrategyStatus.IDLE;
         } else if (hedgeDeviationInTokens != 0) {
             if (hedgeDeviationInTokens > 0) {
                 if (!_adjustPosition(uint256(hedgeDeviationInTokens), 0, false)) $.strategyStatus = StrategyStatus.IDLE;

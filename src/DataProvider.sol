@@ -233,16 +233,18 @@ contract DataProvider {
     {
         uint256 emergencyDeutilizationAmount;
         uint256 deltaCollateralToIncrease;
+        bool clearProcessingRebalanceDown;
         uint256 deltaCollateralToDecrease;
 
         (
             emergencyDeutilizationAmount,
             deltaCollateralToIncrease,
+            clearProcessingRebalanceDown,
             hedgeDeviationInTokens,
             positionManagerNeedKeep,
             decreaseCollateral,
             deltaCollateralToDecrease
-        ) = abi.decode(performData, (uint256, uint256, int256, bool, bool, uint256));
+        ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, bool, uint256));
 
         rebalanceDownNeeded = emergencyDeutilizationAmount > 0 || deltaCollateralToIncrease > 0;
         deleverageNeeded = emergencyDeutilizationAmount > 0;
