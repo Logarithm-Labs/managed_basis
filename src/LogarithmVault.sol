@@ -194,8 +194,7 @@ contract LogarithmVault is Initializable, ManagedVault {
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            uint256 feeAmount = assetsToUtilize.mulDiv($.entryCost, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
-            assets -= feeAmount;
+            assets -= _costOnTotal(assetsToUtilize, $.entryCost);
         }
 
         return _convertToShares(assets, Math.Rounding.Floor);
@@ -220,12 +219,7 @@ contract LogarithmVault is Initializable, ManagedVault {
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            // feeAmount / (assetsToUtilize + feeAmount) = entryCost
-            // feeAmount = (assetsToUtilize * entryCost) / (1 - entryCost)
-            uint256 entryCost_ = $.entryCost;
-            uint256 feeAmount =
-                assetsToUtilize.mulDiv(entryCost_, Constants.FLOAT_PRECISION - entryCost_, Math.Rounding.Ceil);
-            assets += feeAmount;
+            assets += _costOnRaw(assetsToUtilize, $.entryCost);
         }
         return assets;
     }
@@ -238,9 +232,7 @@ contract LogarithmVault is Initializable, ManagedVault {
 
         // apply exit fee to assets that should be deutilized and add exit fee amount the asset amount
         if (assetsToDeutilize > 0) {
-            // feeAmount / assetsToDeutilize = exitCost
-            uint256 feeAmount = assetsToDeutilize.mulDiv($.exitCost, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
-            assets += feeAmount;
+            assets += _costOnRaw(assetsToDeutilize, $.exitCost);
         }
 
         return _convertToShares(assets, Math.Rounding.Ceil);
@@ -256,12 +248,7 @@ contract LogarithmVault is Initializable, ManagedVault {
 
         // apply exit fee to the portion of assets that will be deutilized
         if (assetsToDeutilize > 0) {
-            // feeAmount / (assetsToDeutilize - feeAmount) = exitCost
-            // feeAmount = (assetsToDeutilize * exitCost) / (1 + exitCost)
-            uint256 exitCost_ = $.exitCost;
-            uint256 feeAmount =
-                assetsToDeutilize.mulDiv(exitCost_, Constants.FLOAT_PRECISION + exitCost_, Math.Rounding.Ceil);
-            assets -= feeAmount;
+            assets -= _costOnTotal(assetsToDeutilize, $.exitCost);
         }
 
         return assets;
@@ -533,6 +520,7 @@ contract LogarithmVault is Initializable, ManagedVault {
         return (isExecuted, isLast);
     }
 
+    /// @dev use nonce for each user and increase it
     function _useNonce(address user) internal returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         // For each vault, the nonce has an initial value of 0, can only be incremented by one, and cannot be
@@ -541,6 +529,18 @@ contract LogarithmVault is Initializable, ManagedVault {
             // It is important to do x++ and not ++x here.
             return $.nonces[user]++;
         }
+    }
+
+    /// @dev calculates the cost that should be added to an amount `assets` that does not include cost.
+    /// used in {IERC4626-mint} and {IERC4626-withdraw} operations.
+    function _costOnRaw(uint256 assets, uint256 costRate) private pure returns (uint256) {
+        return assets.mulDiv(costRate, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
+    }
+
+    /// @dev calculates the cost part of an amount `assets` that already includes cost.
+    /// used in {IERC4626-deposit} and {IERC4626-redeem} operations.
+    function _costOnTotal(uint256 assets, uint256 costRate) private pure returns (uint256) {
+        return assets.mulDiv(costRate, costRate + Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
     }
 
     /*//////////////////////////////////////////////////////////////
