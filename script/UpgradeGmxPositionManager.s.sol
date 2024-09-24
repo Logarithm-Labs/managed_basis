@@ -15,6 +15,6 @@ contract UpgradeGmxPositionManagerScript is Script {
         vm.startBroadcast();
         address positionManagerImpl = address(new GmxV2PositionManagerForTest());
         positionManagerBeacon.upgradeTo(positionManagerImpl);
-        positionManager.reinitialize();
+        // positionManager.reinitialize();
     }
 }
