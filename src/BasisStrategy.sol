@@ -166,6 +166,22 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
     }
 
+    function reinitialize() external reinitializer(2) {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+
+        // clear pending storage
+        $.strategyStatus = StrategyStatus.IDLE;
+        delete $.requestParams;
+        delete $.pendingDeutilizedAssets;
+        delete $.processingRebalanceDown;
+        delete $.pendingDecreaseCollateral;
+
+        // swap all product to asset due to have position liquidated
+        uint256 productBalance = IERC20($.product).balanceOf(address(this));
+        ManualSwapLogic.swap(productBalance, $.productToAssetSwapPath);
+        processAssetsToWithdraw();
+    }
+
     function _setManualSwapPath(address[] calldata _assetToProductSwapPath, address _asset, address _product) private {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         uint256 length = _assetToProductSwapPath.length;
@@ -681,6 +697,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             _afterDecreasePosition(params);
         }
 
+        delete $.requestParams;
+
         $.strategyStatus = StrategyStatus.IDLE;
 
         emit UpdateStrategyStatus(StrategyStatus.IDLE);
@@ -855,7 +873,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
                         assetsToBeReverted =
                             _pendingDeutilizedAssets.mulDiv(sizeDeviationAbs, requestParams.sizeDeltaInTokens);
                     }
-                    ManualSwapLogic.swap(assetsToBeReverted, $.assetToProductSwapPath);
+                    if (assetsToBeReverted > 0) {
+                        ManualSwapLogic.swap(assetsToBeReverted, $.assetToProductSwapPath);
+                    }
                 }
             }
 
@@ -937,13 +957,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             uint256 _targetLeverage = $.targetLeverage;
             if (currentLeverage > _targetLeverage) {
                 // calculate deutilization product
-                // when totalPendingWithdraw is enough big to prevent increasing collalteral
+                // when totalPendingWithdraw is enough big to prevent increasing collateral
                 uint256 deltaLeverage = currentLeverage - _targetLeverage;
                 deutilization = positionSizeInTokens.mulDiv(deltaLeverage, currentLeverage);
                 uint256 deutilizationInAsset = $.oracle.convertTokenAmount(params.product, params.asset, deutilization);
                 uint256 totalPendingWithdrawAbs = totalPendingWithdraw < 0 ? 0 : uint256(totalPendingWithdraw);
 
-                // when totalPendingWithdraw is not enough big to prevent increasing collalteral
+                // when totalPendingWithdraw is not enough big to prevent increasing collateral
                 if (totalPendingWithdrawAbs < deutilizationInAsset) {
                     uint256 num = deltaLeverage + _targetLeverage.mulDiv(totalPendingWithdrawAbs, positionNetBalance);
                     uint256 den = currentLeverage + _targetLeverage.mulDiv(positionSizeInAssets, positionNetBalance);

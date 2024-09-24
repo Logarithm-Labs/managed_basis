@@ -8,8 +8,6 @@ interface IPositionManager {
         bool isIncrease;
     }
 
-    function apiVersion() external view returns (string memory);
-
     function positionNetBalance() external view returns (uint256);
 
     function currentLeverage() external view returns (uint256);

@@ -62,7 +62,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     MockPriorityProvider priorityProvider;
 
     function setUp() public {
-        _forkArbitrum(238841172);
+        _forkArbitrum(237215502);
         vm.startPrank(owner);
         // deploy oracle
         address oracleImpl = address(new LogarithmOracle());

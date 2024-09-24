@@ -138,7 +138,7 @@ contract DeployGmxScript is Script {
                 positionManagerBeacon,
                 abi.encodeWithSelector(
                     GmxV2PositionManager.initialize.selector,
-                    owner,
+                    // owner,
                     address(strategyProxy),
                     address(gmxConfigProxy),
                     address(gasStationProxy),
@@ -146,10 +146,10 @@ contract DeployGmxScript is Script {
                 )
             )
         );
-        require(
-            GmxV2PositionManager(payable(positionManagerProxy)).owner() == owner,
-            "GmxPositionManager owner is not the expected owner"
-        );
+        // require(
+        //     GmxV2PositionManager(payable(positionManagerProxy)).owner() == owner,
+        //     "GmxPositionManager owner is not the expected owner"
+        // );
         console.log("GmxPositionManager deployed at", positionManagerProxy);
 
         // config

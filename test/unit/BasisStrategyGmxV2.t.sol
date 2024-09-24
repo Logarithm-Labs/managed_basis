@@ -83,4 +83,30 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         assertEq(strategy.pendingDecreaseCollateral(), 0);
         assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
     }
+
+    function test_performUpkeep_positionManagerKeep() public afterFullUtilized validateFinalState {
+        address[] memory priceFeeds = new address[](2);
+        priceFeeds[0] = assetPriceFeed;
+        priceFeeds[1] = productPriceFeed;
+        _moveTimestamp(1 days, priceFeeds);
+
+        vm.startPrank(address(owner));
+        GmxConfig(address(positionManager.config())).setMaxClaimableFundingShare(0.00001 ether);
+
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("positionManagerKeep");
+        // assertTrue(upkeepNeeded, "upkeepNeeded");
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            ,
+            bool rebalanceUpNeeded
+        ) = _decodePerformData(performData);
+
+        assertTrue(upkeepNeeded, "upkeepNeeded");
+        assertTrue(positionManagerNeedKeep, "positionManagerNeedKeep");
+
+        _performKeep("positionManagerKeep");
+    }
 }

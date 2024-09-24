@@ -41,10 +41,10 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
                         INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address owner_, address exchageRouter_, address reader_) external initializer {
+    function initialize(address owner_, address exchangeRouter_, address reader_) external initializer {
         __Ownable_init(owner_);
         GmxConfigStorage storage $ = _getGmxConfigStorage();
-        _updateAddresses(exchageRouter_, reader_);
+        _updateAddresses(exchangeRouter_, reader_);
         $.callbackGasLimit = 2_000_000;
         $.referralCode = bytes32(0);
         $.maxClaimableFundingShare = 1e16; // 1%
@@ -52,13 +52,17 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
         $.realizedPnlDiffFactor = 5e15; // 0.5%
     }
 
+    function reinitialize() external reinitializer(2) {
+        _getGmxConfigStorage().realizedPnlDiffFactor = 5e15; // 0.5%
+    }
+
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
 
-    function _updateAddresses(address exchageRouter_, address reader_) internal {
+    function _updateAddresses(address exchangeRouter_, address reader_) internal {
         GmxConfigStorage storage $ = _getGmxConfigStorage();
-        $.exchangeRouter = exchageRouter_;
-        $.dataStore = IExchangeRouter(exchageRouter_).dataStore();
-        address orderHandler_ = IExchangeRouter(exchageRouter_).orderHandler();
+        $.exchangeRouter = exchangeRouter_;
+        $.dataStore = IExchangeRouter(exchangeRouter_).dataStore();
+        address orderHandler_ = IExchangeRouter(exchangeRouter_).orderHandler();
         $.orderHandler = orderHandler_;
         $.orderVault = IOrderHandler(orderHandler_).orderVault();
         $.referralStorage = IOrderHandler(orderHandler_).referralStorage();
@@ -69,8 +73,8 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function updateAddresses(address exchageRouter_, address reader_) external onlyOwner {
-        _updateAddresses(exchageRouter_, reader_);
+    function updateAddresses(address exchangeRouter_, address reader_) external onlyOwner {
+        _updateAddresses(exchangeRouter_, reader_);
     }
 
     function setCallbackGasLimit(uint256 callbackGasLimit_) external onlyOwner {
