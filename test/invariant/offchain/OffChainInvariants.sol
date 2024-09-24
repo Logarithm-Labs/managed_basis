@@ -14,11 +14,11 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {ForkTest} from "test/base/ForkTest.sol";
 import {MockPriceFeed} from "test/mock/MockPriceFeed.sol";
 
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {StrategyConfig} from "src/StrategyConfig.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 
 import {OffChainHandler} from "./OffChainHandler.sol";
 

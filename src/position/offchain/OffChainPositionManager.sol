@@ -3,10 +3,10 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import {IOracle} from "src/interfaces/IOracle.sol";
-import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {IOffChainConfig} from "src/interfaces/IOffChainConfig.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
+import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
+import {IOffChainConfig} from "src/position/offchain/IOffChainConfig.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";

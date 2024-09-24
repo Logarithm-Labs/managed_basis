@@ -10,11 +10,11 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AutomationCompatibleInterface} from "src/externals/chainlink/interfaces/AutomationCompatibleInterface.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {ILogarithmVault} from "src/interfaces/ILogarithmVault.sol";
-import {IOracle} from "src/interfaces/IOracle.sol";
-import {IStrategyConfig} from "src/interfaces/IStrategyConfig.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
+import {ILogarithmVault} from "src/vault/ILogarithmVault.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
+import {IStrategyConfig} from "src/strategy/IStrategyConfig.sol";
 
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";

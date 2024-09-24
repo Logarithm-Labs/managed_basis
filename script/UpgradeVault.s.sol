@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 
 contract UpgradeVaultScript is Script {
     UpgradeableBeacon public vaultBeacon = UpgradeableBeacon(0x6e77994e0bADCF3421d1Fb0Fb8b523FCe0c989Ee);

@@ -13,15 +13,15 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
 
-import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {GmxGasStation} from "src/GmxGasStation.sol";
+import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
+import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {StrategyConfig} from "src/StrategyConfig.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 
 import {StrategyHelper, StrategyState} from "test/helper/StrategyHelper.sol";
 import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";

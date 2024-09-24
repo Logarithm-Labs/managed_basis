@@ -13,11 +13,11 @@ import {MarketUtils} from "src/externals/gmx-v2/libraries/MarketUtils.sol";
 import {Price} from "src/externals/gmx-v2/libraries/Price.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
-import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import {IOracle} from "src/interfaces/IOracle.sol";
+import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
 
 contract DataProvider {
     using SafeCast for uint256;

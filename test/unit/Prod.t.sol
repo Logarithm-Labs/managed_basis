@@ -2,10 +2,10 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {DataProvider} from "src/DataProvider.sol";
-import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
+import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";

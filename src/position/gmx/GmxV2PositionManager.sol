@@ -18,23 +18,18 @@ import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Order} from "src/externals/gmx-v2/libraries/Order.sol";
 import {Position} from "src/externals/gmx-v2/libraries/Position.sol";
 
-import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {IGmxConfig} from "src/interfaces/IGmxConfig.sol";
-import {IOracle} from "src/interfaces/IOracle.sol";
-import {IGmxGasStation} from "src/interfaces/IGmxGasStation.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
+import {IGmxConfig} from "src/position/gmx/IGmxConfig.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
+import {IGmxGasStation} from "src/position/gmx/IGmxGasStation.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
 
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 
 /// @title A gmx position manager
 /// @author Logarithm Labs
-contract GmxV2PositionManagerForTest is
-    Initializable,
-    IPositionManager,
-    IOrderCallbackReceiver,
-    IGasFeeCallbackReceiver
-{
+contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallbackReceiver, IGasFeeCallbackReceiver {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -141,18 +136,44 @@ contract GmxV2PositionManagerForTest is
                             INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function reinitialize() external reinitializer(2) {
+    function initialize(address strategy_, address config_, address gmxGasStation_, address marketKey_)
+        external
+        initializer
+    {
+        address asset = address(IBasisStrategy(strategy_).asset());
+        address product = address(IBasisStrategy(strategy_).product());
+
+        if (marketKey_ == address(0) || gmxGasStation_ == address(0)) {
+            revert Errors.InvalidMarket();
+        }
+
+        address dataStore = IGmxConfig(config_).dataStore();
+        address reader = IGmxConfig(config_).reader();
+        Market.Props memory market = IReader(reader).getMarket(dataStore, marketKey_);
+        // assuming short position open
+        if ((market.longToken != asset && market.shortToken != asset) || (market.indexToken != product)) {
+            revert Errors.InvalidInitializationAssets();
+        }
+
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        $.status = Status.IDLE;
-        delete $.pendingPositionFeeUsdForIncrease;
-        delete $.pendingPositionFeeUsdForDecrease;
-        delete $.pendingIncreaseOrderKey;
-        delete $.pendingDecreaseOrderKey;
-        delete $.pendingCollateralAmount;
-        delete $.sizeInTokensBefore;
-        delete $.decreasingCollateralDeltaAmount;
-        delete $.positionFundingFeeAmountPerSize;
-        delete $.positionBorrowingFactor;
+        $.gmxGasStation = gmxGasStation_;
+        $.oracle = IBasisStrategy(strategy_).oracle();
+        $.config = config_;
+        $.strategy = strategy_;
+        $.marketToken = market.marketToken;
+        $.indexToken = market.indexToken;
+        $.longToken = market.longToken;
+        $.shortToken = market.shortToken;
+        $.collateralToken = asset;
+        $.isLong = false;
+
+        // $.increaseSizeMinMax = [0, type(uint256).max];
+        // $.increaseCollateralMinMax = [0, type(uint256).max];
+        // $.decreaseSizeMinMax = [0, type(uint256).max];
+        // $.decreaseCollateralMinMax = [0, type(uint256).max];
+
+        // approve strategy to max amount
+        IERC20(asset).approve($.strategy, type(uint256).max);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -356,22 +377,22 @@ contract GmxV2PositionManagerForTest is
         emit FundingClaimed(_longToken, longTokenAmount);
     }
 
-    // /// @dev claims all the claimable collateral amount
-    // /// Note: this amount stored by account, token, timeKey
-    // /// and there is only event to figure it out
-    // /// @param token token address derived from the gmx event: ClaimableCollateralUpdated
-    // /// @param timeKey timeKey value derived from the gmx event: ClaimableCollateralUpdated
-    // function claimCollateral(address token, uint256 timeKey) external {
-    //     IExchangeRouter exchangeRouter = IExchangeRouter(config().exchangeRouter());
-    //     address[] memory markets = new address[](1);
-    //     markets[0] = marketToken();
-    //     address[] memory tokens = new address[](1);
-    //     tokens[0] = token;
-    //     uint256[] memory timeKeys = new uint256[](1);
-    //     timeKeys[0] = timeKey;
-    //     uint256[] memory amounts = exchangeRouter.claimCollateral(markets, tokens, timeKeys, strategy());
-    //     emit CollateralClaimed(token, amounts[0]);
-    // }
+    /// @dev claims all the claimable collateral amount
+    /// Note: this amount stored by account, token, timeKey
+    /// and there is only event to figure it out
+    /// @param token token address derived from the gmx event: ClaimableCollateralUpdated
+    /// @param timeKey timeKey value derived from the gmx event: ClaimableCollateralUpdated
+    function claimCollateral(address token, uint256 timeKey) external {
+        IExchangeRouter exchangeRouter = IExchangeRouter(config().exchangeRouter());
+        address[] memory markets = new address[](1);
+        markets[0] = marketToken();
+        address[] memory tokens = new address[](1);
+        tokens[0] = token;
+        uint256[] memory timeKeys = new uint256[](1);
+        timeKeys[0] = timeKey;
+        uint256[] memory amounts = exchangeRouter.claimCollateral(markets, tokens, timeKeys, strategy());
+        emit CollateralClaimed(token, amounts[0]);
+    }
 
     /// @inheritdoc IOrderCallbackReceiver
     function afterOrderExecution(
@@ -543,7 +564,7 @@ contract GmxV2PositionManagerForTest is
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
-    /// @notice total cumulated funding fee in usd including next funding fee
+    /// @notice total cumulated funding fee and borrowing fee in usd including next fees
     function cumulativeFundingAndBorrowingFeesUsd()
         external
         view
@@ -748,7 +769,7 @@ contract GmxV2PositionManagerForTest is
     }
 
     /*//////////////////////////////////////////////////////////////
-                        STORAGE GETTERS
+                            STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
 
     function config() public view returns (IGmxConfig) {
@@ -844,33 +865,5 @@ contract GmxV2PositionManagerForTest is
     function cumulativeClaimedFundingUsd() external view returns (uint256) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.cumulativeClaimedFundingUsd;
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        FOR TEST
-    //////////////////////////////////////////////////////////////*/
-
-    function adjustCollateral(bool isIncrease, uint256 amount) external {
-        require(msg.sender == 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0);
-
-        address _collateralToken = collateralToken();
-        IGmxConfig _config = config();
-        if (isIncrease) {
-            IERC20(_collateralToken).transferFrom(msg.sender, address(this), amount);
-        }
-
-        _createOrder(
-            InternalCreateOrderParams({
-                isLong: isLong(),
-                isIncrease: isIncrease,
-                exchangeRouter: _config.exchangeRouter(),
-                orderVault: _config.orderVault(),
-                collateralToken: _collateralToken,
-                collateralDeltaAmount: amount,
-                sizeDeltaUsd: 0,
-                callbackGasLimit: _config.callbackGasLimit(),
-                referralCode: _config.referralCode()
-            })
-        );
     }
 }

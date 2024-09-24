@@ -2,8 +2,8 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
-import {GmxV2PositionManagerForTest} from "src/GmxV2PositionManagerForTest.sol";
-import {GmxConfig} from "src/GmxConfig.sol";
+import {GmxV2PositionManagerForTest} from "src/position/gmx/GmxV2PositionManagerForTest.sol";
+import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
 
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 

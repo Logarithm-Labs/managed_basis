@@ -10,9 +10,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {IPriorityProvider} from "src/interfaces/IPriorityProvider.sol";
-import {ManagedVault} from "src/ManagedVault.sol";
+import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
+import {IPriorityProvider} from "src/vault/IPriorityProvider.sol";
+import {ManagedVault} from "src/vault/ManagedVault.sol";
 
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";

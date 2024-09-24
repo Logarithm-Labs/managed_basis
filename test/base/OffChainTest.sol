@@ -7,13 +7,13 @@ import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol"
 
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {IOracle} from "src/interfaces/IOracle.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
 import {PositionMngerForkTest} from "./PositionMngerForkTest.sol";
-import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
+import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {OffChainConfig} from "src/OffChainConfig.sol";
+import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 

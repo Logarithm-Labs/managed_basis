@@ -21,7 +21,7 @@ import {ReaderPricingUtils} from "src/externals/gmx-v2/libraries/ReaderPricingUt
 import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
-import {IOracle} from "src/interfaces/IOracle.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 
