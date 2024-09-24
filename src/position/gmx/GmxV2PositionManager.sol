@@ -167,11 +167,6 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         $.collateralToken = asset;
         $.isLong = false;
 
-        // $.increaseSizeMinMax = [0, type(uint256).max];
-        // $.increaseCollateralMinMax = [0, type(uint256).max];
-        // $.decreaseSizeMinMax = [0, type(uint256).max];
-        // $.decreaseCollateralMinMax = [0, type(uint256).max];
-
         // approve strategy to max amount
         IERC20(asset).approve($.strategy, type(uint256).max);
     }

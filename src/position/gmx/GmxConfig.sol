@@ -52,10 +52,6 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
         $.realizedPnlDiffFactor = 5e15; // 0.5%
     }
 
-    function reinitialize() external reinitializer(2) {
-        _getGmxConfigStorage().realizedPnlDiffFactor = 5e15; // 0.5%
-    }
-
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
 
     function _updateAddresses(address exchangeRouter_, address reader_) internal {
