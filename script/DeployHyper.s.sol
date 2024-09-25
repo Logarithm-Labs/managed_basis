@@ -2,12 +2,12 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
-import {OffchainConfig} from "src/OffchainConfig.sol";
-import {StrategyConfig} from "src/StrategyConfig.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
+import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -104,12 +104,12 @@ contract DeployHyperScript is Script {
         console.log("BasisStrategyHyper deployed at", strategyProxy);
 
         // deploy off chain config
-        address offchainConfigImpl = address(new OffchainConfig());
-        address offchainConfigProxy = address(
-            new ERC1967Proxy(offchainConfigImpl, abi.encodeWithSelector(OffchainConfig.initialize.selector, owner))
+        address offChainConfigImpl = address(new OffChainConfig());
+        address offChainConfigProxy = address(
+            new ERC1967Proxy(offChainConfigImpl, abi.encodeWithSelector(OffChainConfig.initialize.selector, owner))
         );
-        require(OffchainConfig(offchainConfigProxy).owner() == owner, "OffchainConfig owner is not the expected owner");
-        console.log("OffchainConfig deployed at", offchainConfigProxy);
+        require(OffChainConfig(offChainConfigProxy).owner() == owner, "OffChainConfig owner is not the expected owner");
+        console.log("OffChainConfig deployed at", offChainConfigProxy);
 
         // deploy position manager
         address positionManagerImpl = address(new OffChainPositionManager());
@@ -125,7 +125,7 @@ contract DeployHyperScript is Script {
                 positionManagerBeacon,
                 abi.encodeWithSelector(
                     OffChainPositionManager.initialize.selector,
-                    offchainConfigProxy,
+                    offChainConfigProxy,
                     address(strategyProxy),
                     agent,
                     address(oracle),
@@ -144,13 +144,13 @@ contract DeployHyperScript is Script {
         // config
         LogarithmVault(vaultProxy).setStrategy(strategyProxy);
         BasisStrategy(strategyProxy).setPositionManager(positionManagerProxy);
-        BasisStrategy(strategyProxy).setForwarder(forwarder);
-        OffchainConfig(offchainConfigProxy).setSizeMinMax(
+        // BasisStrategy(strategyProxy).setForwarder(forwarder);
+        OffChainConfig(offChainConfigProxy).setSizeMinMax(
             increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax
         );
-        OffchainConfig(offchainConfigProxy).setCollateralMinMax(
+        OffChainConfig(offChainConfigProxy).setCollateralMinMax(
             increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
         );
-        OffchainConfig(offchainConfigProxy).setLimitDecreaseCollateral(limitDecreaseCollateral);
+        OffChainConfig(offChainConfigProxy).setLimitDecreaseCollateral(limitDecreaseCollateral);
     }
 }

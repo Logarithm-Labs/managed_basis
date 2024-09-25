@@ -2,10 +2,10 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -149,7 +149,7 @@ contract DeployScript is Script {
         // configure
         vault.setStrategy(address(strategy));
         strategy.setPositionManager(address(positionManager));
-        strategy.setForwarder(forwarder);
+        // strategy.setForwarder(forwarder);
         // positionManager.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
         // positionManager.setCollateralMinMax(
         //     increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
@@ -160,7 +160,7 @@ contract DeployScript is Script {
             strategy.positionManager() == address(positionManager),
             "Strategy positionManager is not the expected positionManager"
         );
-        require(strategy.forwarder() == forwarder, "Strategy forwarder is not the expected forwarder");
+        // require(strategy.forwarder() == forwarder, "Strategy forwarder is not the expected forwarder");
 
         // deploy DataProvider
         DataProvider dataProvider = new DataProvider();

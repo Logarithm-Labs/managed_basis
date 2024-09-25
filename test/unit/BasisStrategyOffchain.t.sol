@@ -14,17 +14,17 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 
-import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
+import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {OffchainConfig} from "src/OffchainConfig.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
 
 import {console} from "forge-std/console.sol";
 
-contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
+contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
     function _mockChainlinkPriceFeedAnswer(address priceFeed, int256 answer) internal override {
         super._mockChainlinkPriceFeedAnswer(priceFeed, answer);
         _updatePositionNetBalance(positionManager.positionNetBalance());
@@ -51,13 +51,13 @@ contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
         _excuteOrder();
 
         bytes32 requestKey = vault.getWithdrawKey(user1, 0);
-        assertTrue(vault.proccessedWithdrawAssets() < vault.accRequestedWithdrawAssets());
+        assertTrue(vault.processedWithdrawAssets() < vault.accRequestedWithdrawAssets());
         assertTrue(vault.isClaimable(requestKey));
 
         uint256 requestedAssets = vault.withdrawRequests(requestKey).requestedAssets;
         uint256 balBefore = IERC20(asset).balanceOf(user1);
 
-        assertGt(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+        assertGt(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
 
         vm.startPrank(user1);
         vault.claim(requestKey);
@@ -65,7 +65,7 @@ contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
 
         assertGt(requestedAssets, balDelta);
         assertEq(strategy.pendingDecreaseCollateral(), 0);
-        assertEq(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+        assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
     }
 
     function test_performUpkeep_decreaseCollateral() public afterMultipleWithdrawRequestCreated validateFinalState {
@@ -76,10 +76,10 @@ contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
         uint256 limitDecreaseCollateral = 50 * 1e6;
         vm.startPrank(owner);
         address _config = address(positionManager.config());
-        OffchainConfig(_config).setCollateralMinMax(
+        OffChainConfig(_config).setCollateralMinMax(
             increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
         );
-        OffchainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
+        OffChainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         uint256 amount = pendingDeutilization * 9 / 10;
         _deutilize(amount);
@@ -92,7 +92,7 @@ contract BasisStrategyOffchainTest is BasisStrategyBaseTest, OffChainTest {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("decreaseCollateral");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (,,,, bool decreaseCollateral,) = _decodePerformData(performData);
+        (,,,, bool decreaseCollateral,) = helper.decodePerformData(performData);
         assertTrue(decreaseCollateral, "decreaseCollateral");
         assertTrue(strategy.pendingDecreaseCollateral() > 0, "0 pendingDecreaseCollateral");
         _performKeep("decreaseCollateral");

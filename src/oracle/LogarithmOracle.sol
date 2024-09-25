@@ -10,7 +10,7 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 
-import {IOracle} from "src/interfaces/IOracle.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
 contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {

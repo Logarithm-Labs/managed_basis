@@ -3,11 +3,11 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
@@ -28,7 +28,7 @@ struct StrategyState {
     uint256 pendingUtilization;
     uint256 pendingDeutilization;
     uint256 accRequestedWithdrawAssets;
-    uint256 proccessedWithdrawAssets;
+    uint256 processedWithdrawAssets;
     uint256 positionNetBalance;
     uint256 positionLeverage;
     uint256 positionSizeInTokens;
@@ -67,7 +67,7 @@ contract StrategyHelper {
                 positionManagerNeedKeep,
                 decreaseCollateral,
                 rebalanceUpNeeded
-            ) = _decodePerformData(performData);
+            ) = decodePerformData(performData);
         }
 
         address asset = strategy.asset();
@@ -90,7 +90,7 @@ contract StrategyHelper {
         state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
         state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
-        state.proccessedWithdrawAssets = vault.proccessedWithdrawAssets();
+        state.processedWithdrawAssets = vault.processedWithdrawAssets();
         state.positionNetBalance = positionManager.positionNetBalance();
         state.positionLeverage = positionManager.currentLeverage();
         state.positionSizeInTokens = positionManager.positionSizeInTokens();
@@ -125,7 +125,7 @@ contract StrategyHelper {
         console.log("pendingUtilization", state.pendingUtilization);
         console.log("pendingDeutilization", state.pendingDeutilization);
         console.log("accRequestedWithdrawAssets", state.accRequestedWithdrawAssets);
-        console.log("proccessedWithdrawAssets", state.proccessedWithdrawAssets);
+        console.log("processedWithdrawAssets", state.processedWithdrawAssets);
         console.log("positionNetBalance", state.positionNetBalance);
         console.log("positionLeverage", state.positionLeverage);
         console.log("positionSizeInTokens", state.positionSizeInTokens);
@@ -140,8 +140,8 @@ contract StrategyHelper {
         console.log("");
     }
 
-    function _decodePerformData(bytes memory performData)
-        internal
+    function decodePerformData(bytes memory performData)
+        public
         pure
         returns (
             bool rebalanceDownNeeded,
@@ -154,16 +154,18 @@ contract StrategyHelper {
     {
         uint256 emergencyDeutilizationAmount;
         uint256 deltaCollateralToIncrease;
+        bool clearProcessingRebalanceDown;
         uint256 deltaCollateralToDecrease;
 
         (
             emergencyDeutilizationAmount,
             deltaCollateralToIncrease,
+            clearProcessingRebalanceDown,
             hedgeDeviationInTokens,
             positionManagerNeedKeep,
             decreaseCollateral,
             deltaCollateralToDecrease
-        ) = abi.decode(performData, (uint256, uint256, int256, bool, bool, uint256));
+        ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, bool, uint256));
 
         rebalanceDownNeeded = emergencyDeutilizationAmount > 0 || deltaCollateralToIncrease > 0;
         deleverageNeeded = emergencyDeutilizationAmount > 0;

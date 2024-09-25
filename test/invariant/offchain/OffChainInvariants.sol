@@ -14,11 +14,11 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {ForkTest} from "test/base/ForkTest.sol";
 import {MockPriceFeed} from "test/mock/MockPriceFeed.sol";
 
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {StrategyConfig} from "src/StrategyConfig.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 
 import {OffChainHandler} from "./OffChainHandler.sol";
 
@@ -97,7 +97,7 @@ contract OffChainInvariants is StdInvariant, ForkTest {
             new ERC1967Proxy(
                 vaultImpl,
                 abi.encodeWithSelector(
-                    LogarithmVault.initialize.selector, owner, asset, entryCost, exitCost, "tt", "tt"
+                    LogarithmVault.initialize.selector, owner, asset, address(0), entryCost, exitCost, "tt", "tt"
                 )
             )
         );
@@ -128,7 +128,7 @@ contract OffChainInvariants is StdInvariant, ForkTest {
             )
         );
         strategy = BasisStrategy(strategyProxy);
-        strategy.setForwarder(forwarder);
+        // strategy.setForwarder(forwarder);
         vm.label(address(strategy), "strategy");
 
         vault.setStrategy(address(strategy));
@@ -152,8 +152,8 @@ contract OffChainInvariants is StdInvariant, ForkTest {
         (bool upkeepNeeded,) = strategy.checkUpkeep("");
         IPositionManager positionManager = IPositionManager(strategy.positionManager());
         uint256 sizeInTokens = positionManager.positionSizeInTokens();
-
-        if (!upkeepNeeded && sizeInTokens != 0) {
+        BasisStrategy.StrategyStatus status = strategy.strategyStatus();
+        if (!upkeepNeeded && sizeInTokens != 0 && status == BasisStrategy.StrategyStatus.IDLE) {
             uint256 currLeverage = positionManager.currentLeverage();
             assertTrue(currLeverage >= minLeverage, "minLeverage");
             assertTrue(currLeverage <= maxLeverage, "maxLeverage");

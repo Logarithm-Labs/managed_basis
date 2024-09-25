@@ -13,10 +13,10 @@ import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
-import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
-import {GmxGasStation} from "src/GmxGasStation.sol";
-import {GmxConfig} from "src/GmxConfig.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
+import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
 
 contract GmxV2Test is PositionMngerForkTest {
     address constant GMX_DATA_STORE = 0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8;

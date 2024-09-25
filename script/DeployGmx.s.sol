@@ -2,13 +2,13 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
-import {GmxConfig} from "src/GmxConfig.sol";
-import {StrategyConfig} from "src/StrategyConfig.sol";
-import {GmxGasStation} from "src/GmxGasStation.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
+import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
+import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -156,7 +156,7 @@ contract DeployGmxScript is Script {
         LogarithmVault(vaultProxy).setStrategy(strategyProxy);
         BasisStrategy(strategyProxy).setPositionManager(positionManagerProxy);
         GmxGasStation(payable(gasStationProxy)).registerPositionManager(positionManagerProxy, true);
-        BasisStrategy(strategyProxy).setForwarder(forwarder);
+        // BasisStrategy(strategyProxy).setForwarder(forwarder);
 
         (bool success,) = gasStationProxy.call{value: 0.0004 ether}("");
         require(success, "Failed to send ether to gas station");

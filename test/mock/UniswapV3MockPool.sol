@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
-import {IOracle} from "src/interfaces/IOracle.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
 
 import {IUniswapV3SwapCallback} from "src/externals/uniswap/interfaces/IUniswapV3SwapCallback.sol";
 

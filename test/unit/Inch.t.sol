@@ -3,8 +3,8 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 

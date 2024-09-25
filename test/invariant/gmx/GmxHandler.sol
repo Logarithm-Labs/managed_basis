@@ -9,12 +9,12 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {GmxConfig} from "src/GmxConfig.sol";
-import {GmxGasStation} from "src/GmxGasStation.sol";
-import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
+import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
+import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
+import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
 
 import {GmxV2Test} from "test/base/GmxV2Test.sol";
 import {ForkTest} from "test/base/ForkTest.sol";

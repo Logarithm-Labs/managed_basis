@@ -2,10 +2,10 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
-import {OffChainPositionManager} from "src/OffChainPositionManager.sol";
+import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {DataProvider} from "src/DataProvider.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 
 contract UpgradeOffChainPositionManagerScript is Script {
     DataProvider constant dataProvider = DataProvider(0xaB4e7519E6f7FC80A5AB255f15990444209cE159);
@@ -49,7 +49,7 @@ contract UpgradeOffChainPositionManagerScript is Script {
         console.log("pendingUtilization: ", state.pendingUtilization);
         console.log("pendingDeutilization: ", state.pendingDeutilization);
         console.log("accRequestedWithdrawAssets: ", state.accRequestedWithdrawAssets);
-        console.log("proccessedWithdrawAssets: ", state.proccessedWithdrawAssets);
+        console.log("processedWithdrawAssets: ", state.processedWithdrawAssets);
         console.log("positionNetBalance: ", state.positionNetBalance);
         console.log("positionLeverage: ", state.positionLeverage);
         console.log("positionSizeInTokens: ", state.positionSizeInTokens);

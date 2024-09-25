@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
-import "src/LogarithmOracle.sol";
+import "src/oracle/LogarithmOracle.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ArbSysMock} from "test/mock/ArbSysMock.sol";
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";

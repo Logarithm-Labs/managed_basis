@@ -5,8 +5,8 @@ import "forge-std/Script.sol";
 
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {DataProvider} from "src/DataProvider.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 
 contract UpgradeStrategyAndVaultScript is Script {
     DataProvider constant dataProvider = DataProvider(0xaB4e7519E6f7FC80A5AB255f15990444209cE159);
@@ -49,7 +49,7 @@ contract UpgradeStrategyAndVaultScript is Script {
         console.log("pendingUtilization: ", state.pendingUtilization);
         console.log("pendingDeutilization: ", state.pendingDeutilization);
         console.log("accRequestedWithdrawAssets: ", state.accRequestedWithdrawAssets);
-        console.log("proccessedWithdrawAssets: ", state.proccessedWithdrawAssets);
+        console.log("processedWithdrawAssets: ", state.processedWithdrawAssets);
         console.log("positionNetBalance: ", state.positionNetBalance);
         console.log("positionLeverage: ", state.positionLeverage);
         console.log("positionSizeInTokens: ", state.positionSizeInTokens);

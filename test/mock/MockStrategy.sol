@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
 
 contract MockStrategy {
     uint256 public sizeDeltaInTokens;

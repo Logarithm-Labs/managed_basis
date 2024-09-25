@@ -17,13 +17,13 @@ import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
-import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
-import {GmxConfig} from "src/GmxConfig.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
+import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 
 import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
 
@@ -67,13 +67,13 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
 
         bytes32 requestKey = vault.getWithdrawKey(user1, 0);
-        assertTrue(vault.proccessedWithdrawAssets() < vault.accRequestedWithdrawAssets());
+        assertTrue(vault.processedWithdrawAssets() < vault.accRequestedWithdrawAssets());
         assertTrue(vault.isClaimable(requestKey));
 
         uint256 requestedAssets = vault.withdrawRequests(requestKey).requestedAssets;
         uint256 balBefore = IERC20(asset).balanceOf(user1);
 
-        assertGt(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+        assertGt(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
 
         vm.startPrank(user1);
         vault.claim(requestKey);
@@ -81,6 +81,71 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
 
         assertGt(requestedAssets, balDelta);
         assertEq(strategy.pendingDecreaseCollateral(), 0);
-        assertEq(vault.accRequestedWithdrawAssets(), vault.proccessedWithdrawAssets());
+        assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
+    }
+
+    function test_performUpkeep_positionManagerKeep() public afterFullUtilized validateFinalState {
+        address[] memory priceFeeds = new address[](2);
+        priceFeeds[0] = assetPriceFeed;
+        priceFeeds[1] = productPriceFeed;
+        _moveTimestamp(1 days, priceFeeds);
+
+        vm.startPrank(address(owner));
+        GmxConfig(address(positionManager.config())).setMaxClaimableFundingShare(0.00001 ether);
+
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("positionManagerKeep");
+        // assertTrue(upkeepNeeded, "upkeepNeeded");
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            ,
+            bool rebalanceUpNeeded
+        ) = helper.decodePerformData(performData);
+
+        assertTrue(upkeepNeeded, "upkeepNeeded");
+        assertTrue(positionManagerNeedKeep, "positionManagerNeedKeep");
+
+        _performKeep("positionManagerKeep");
+    }
+
+    function test_performUpkeep_rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting()
+        public
+        afterFullUtilized
+        validateFinalState
+    {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+
+        (bool upkeepNeeded, bytes memory performData) =
+            _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
+        assertTrue(upkeepNeeded);
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+            helper.decodePerformData(performData);
+        assertFalse(rebalanceUpNeeded);
+        assertTrue(rebalanceDownNeeded);
+        // assertFalse(deleverageNeeded);
+        assertFalse(positionManagerNeedKeep);
+        uint256 leverageBefore = _positionManager().currentLeverage();
+        _performKeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
+        uint256 leverageAfter = _positionManager().currentLeverage();
+        assertEq(leverageBefore, leverageAfter, "leverage not changed");
+        assertEq(strategy.processingRebalance(), true);
+
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 99 / 100);
+
+        (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingUtilization, 0, "pendingUtilization");
+        assertEq(pendingDeutilization, 0, "pendingDeutilization");
+        (upkeepNeeded, performData) = _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
+        assertTrue(upkeepNeeded, "upkeepNeeded");
+        _performKeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
+        assertEq(strategy.processingRebalance(), false);
+        (upkeepNeeded, performData) = _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
+        assertFalse(upkeepNeeded, "upkeepNeeded");
+        (pendingUtilization, pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingUtilization, 0, "pendingUtilization");
+        assertEq(pendingDeutilization, 0, "pendingDeutilization");
     }
 }

@@ -13,11 +13,11 @@ import {MarketUtils} from "src/externals/gmx-v2/libraries/MarketUtils.sol";
 import {Price} from "src/externals/gmx-v2/libraries/Price.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
-import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import {IOracle} from "src/interfaces/IOracle.sol";
+import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
 
 contract DataProvider {
     using SafeCast for uint256;
@@ -42,7 +42,7 @@ contract DataProvider {
         uint256 pendingUtilization;
         uint256 pendingDeutilization;
         uint256 accRequestedWithdrawAssets;
-        uint256 proccessedWithdrawAssets;
+        uint256 processedWithdrawAssets;
         uint256 positionNetBalance;
         uint256 positionLeverage;
         uint256 positionSizeInTokens;
@@ -105,7 +105,7 @@ contract DataProvider {
         state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
         state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
-        state.proccessedWithdrawAssets = vault.proccessedWithdrawAssets();
+        state.processedWithdrawAssets = vault.processedWithdrawAssets();
         state.positionNetBalance = positionManager.positionNetBalance();
         state.positionLeverage = positionManager.currentLeverage();
         state.positionSizeInTokens = positionManager.positionSizeInTokens();
@@ -144,36 +144,38 @@ contract DataProvider {
         // index price
         positionInfo.indexPrice = oracle.getAssetPrice(market.indexToken);
 
-        // unrealizedPnl
-        (positionInfo.unrealizedPnlUsd,,) = IReader(GMX_READER).getPositionPnlUsd(
-            IDataStore(GMX_DATA_STORE),
-            market,
-            _getPrices(address(oracle), market),
-            positionKey,
-            position.numbers.sizeInUsd
-        );
+        if (position.numbers.sizeInTokens > 0) {
+            // unrealizedPnl
+            (positionInfo.unrealizedPnlUsd,,) = IReader(GMX_READER).getPositionPnlUsd(
+                IDataStore(GMX_DATA_STORE),
+                market,
+                _getPrices(address(oracle), market),
+                positionKey,
+                position.numbers.sizeInUsd
+            );
 
-        // liquidation price, assuming current position is not liquidatable
-        uint256 minCollateralFactor =
-            IDataStore(GMX_DATA_STORE).getUint(Keys.minCollateralFactorKey(market.marketToken));
-        int256 minCollateralUsdForLeverage =
-            Precision.applyFactor(position.numbers.sizeInUsd, minCollateralFactor).toInt256();
+            // liquidation price, assuming current position is not liquidatable
+            uint256 minCollateralFactor =
+                IDataStore(GMX_DATA_STORE).getUint(Keys.minCollateralFactorKey(market.marketToken));
+            int256 minCollateralUsdForLeverage =
+                Precision.applyFactor(position.numbers.sizeInUsd, minCollateralFactor).toInt256();
 
-        // liquidation condition: remainingCollateralUsd < minCollateralUsdForLeverage
-        // remainingCollateralUsd = collateralUsd + pnlUsd - fees
-        // pnlUsd = sizeInUsd - sizeInTokens * executionPrice (short)
-        // remainingCollateralUsd = collateralUsd + sizeInUsd - sizeInTokens * executionPrice - fees < minCollateralUsdForLeverage
-        // executionPrice > (collateralUsd + sizeInUsd - fees - minCollateralUsdForLeverage) / sizeInTokens
-        // hence, liquidationPrice = (collateralUsd + sizeInUsd - fees - minCollateralUsdForLeverage) / sizeInTokens
+            // liquidation condition: remainingCollateralUsd < minCollateralUsdForLeverage
+            // remainingCollateralUsd = collateralUsd + pnlUsd - fees
+            // pnlUsd = sizeInUsd - sizeInTokens * executionPrice (short)
+            // remainingCollateralUsd = collateralUsd + sizeInUsd - sizeInTokens * executionPrice - fees < minCollateralUsdForLeverage
+            // executionPrice > (collateralUsd + sizeInUsd - fees - minCollateralUsdForLeverage) / sizeInTokens
+            // hence, liquidationPrice = (collateralUsd + sizeInUsd - fees - minCollateralUsdForLeverage) / sizeInTokens
 
-        // positionNetBalance * collateralPrice == remainingCollateralUsd
-        uint256 positionNetBalance = positionManager.positionNetBalance();
-        uint256 collateralTokenPrice = oracle.getAssetPrice(positionManager.collateralToken());
-        uint256 positionNetBalanceUsd = positionNetBalance * collateralTokenPrice;
-        positionInfo.liquidationPrice = (
-            positionNetBalanceUsd.toInt256() - positionInfo.unrealizedPnlUsd + position.numbers.sizeInUsd.toInt256()
-                - minCollateralUsdForLeverage
-        ) / position.numbers.sizeInTokens.toInt256();
+            // positionNetBalance * collateralPrice == remainingCollateralUsd
+            uint256 positionNetBalance = positionManager.positionNetBalance();
+            uint256 collateralTokenPrice = oracle.getAssetPrice(positionManager.collateralToken());
+            uint256 positionNetBalanceUsd = positionNetBalance * collateralTokenPrice;
+            positionInfo.liquidationPrice = (
+                positionNetBalanceUsd.toInt256() - positionInfo.unrealizedPnlUsd + position.numbers.sizeInUsd.toInt256()
+                    - minCollateralUsdForLeverage
+            ) / position.numbers.sizeInTokens.toInt256();
+        }
 
         // accumulated funding fee
         uint256 cumulativeClaimedFundingUsd = positionManager.cumulativeClaimedFundingUsd();
@@ -231,16 +233,18 @@ contract DataProvider {
     {
         uint256 emergencyDeutilizationAmount;
         uint256 deltaCollateralToIncrease;
+        bool clearProcessingRebalanceDown;
         uint256 deltaCollateralToDecrease;
 
         (
             emergencyDeutilizationAmount,
             deltaCollateralToIncrease,
+            clearProcessingRebalanceDown,
             hedgeDeviationInTokens,
             positionManagerNeedKeep,
             decreaseCollateral,
             deltaCollateralToDecrease
-        ) = abi.decode(performData, (uint256, uint256, int256, bool, bool, uint256));
+        ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, bool, uint256));
 
         rebalanceDownNeeded = emergencyDeutilizationAmount > 0 || deltaCollateralToIncrease > 0;
         deleverageNeeded = emergencyDeutilizationAmount > 0;

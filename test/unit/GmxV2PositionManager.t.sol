@@ -21,12 +21,12 @@ import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
 import {MockStrategy} from "test/mock/MockStrategy.sol";
 
-import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
-import {GmxConfig} from "src/GmxConfig.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {GmxGasStation} from "src/GmxGasStation.sol";
+import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
+import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
 
 contract GmxV2PositionManagerTest is GmxV2Test {
     address owner = makeAddr("owner");

@@ -13,18 +13,18 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
 
-import {GmxV2PositionManager} from "src/GmxV2PositionManager.sol";
-import {LogarithmOracle} from "src/LogarithmOracle.sol";
-import {GmxGasStation} from "src/GmxGasStation.sol";
+import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
+import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
-import {BasisStrategy} from "src/BasisStrategy.sol";
-import {LogarithmVault} from "src/LogarithmVault.sol";
-import {StrategyConfig} from "src/StrategyConfig.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 
 import {StrategyHelper, StrategyState} from "test/helper/StrategyHelper.sol";
-
+import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 import {console2 as console} from "forge-std/console2.sol";
 
 abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
@@ -33,6 +33,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     address owner = makeAddr("owner");
     address user1 = makeAddr("user1");
     address user2 = makeAddr("user2");
+    address metaVault = makeAddr("metaVault");
     address operator = makeAddr("operator");
     address forwarder = makeAddr("forwarder");
 
@@ -58,9 +59,10 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     BasisStrategy strategy;
     LogarithmOracle oracle;
     StrategyHelper helper;
+    MockPriorityProvider priorityProvider;
 
     function setUp() public {
-        _forkArbitrum(238841172);
+        _forkArbitrum(237215502);
         vm.startPrank(owner);
         // deploy oracle
         address oracleImpl = address(new LogarithmOracle());
@@ -92,12 +94,21 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         pathWeth[1] = UNISWAPV3_WETH_USDC;
         pathWeth[2] = WETH;
 
+        priorityProvider = new MockPriorityProvider();
+
         address vaultImpl = address(new LogarithmVault());
         address vaultProxy = address(
             new ERC1967Proxy(
                 vaultImpl,
                 abi.encodeWithSelector(
-                    LogarithmVault.initialize.selector, owner, asset, entryCost, exitCost, "tt", "tt"
+                    LogarithmVault.initialize.selector,
+                    owner,
+                    asset,
+                    address(priorityProvider),
+                    entryCost,
+                    exitCost,
+                    "tt",
+                    "tt"
                 )
             )
         );
@@ -128,7 +139,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
             )
         );
         strategy = BasisStrategy(strategyProxy);
-        strategy.setForwarder(forwarder);
+        // strategy.setForwarder(forwarder);
         vm.label(address(strategy), "strategy");
 
         vault.setStrategy(address(strategy));
@@ -144,6 +155,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.startPrank(USDC_WHALE);
         IERC20(asset).transfer(user1, 10_000_000 * 1e6);
         IERC20(asset).transfer(user2, 10_000_000 * 1e6);
+        IERC20(asset).transfer(metaVault, 10_000_000 * 1e6);
         vm.stopPrank();
 
         helper = new StrategyHelper(address(strategy));
@@ -176,36 +188,6 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         // if (state0.positionLeverage != 0 && state1.positionLeverage != 0) {
         //     assertApproxEqRel(state0.positionLeverage, state1.positionLeverage, 0.01 ether, "position leverage");
         // }
-    }
-
-    function _decodePerformData(bytes memory performData)
-        internal
-        pure
-        returns (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep,
-            bool decreaseCollateral,
-            bool rebalanceUpNeeded
-        )
-    {
-        uint256 emergencyDeutilizationAmount;
-        uint256 deltaCollateralToIncrease;
-        uint256 deltaCollateralToDecrease;
-
-        (
-            emergencyDeutilizationAmount,
-            deltaCollateralToIncrease,
-            hedgeDeviationInTokens,
-            positionManagerNeedKeep,
-            decreaseCollateral,
-            deltaCollateralToDecrease
-        ) = abi.decode(performData, (uint256, uint256, int256, bool, bool, uint256));
-
-        rebalanceDownNeeded = emergencyDeutilizationAmount > 0 || deltaCollateralToIncrease > 0;
-        deleverageNeeded = emergencyDeutilizationAmount > 0;
-        rebalanceUpNeeded = deltaCollateralToDecrease > 0;
     }
 
     modifier afterDeposited() {
@@ -252,6 +234,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 redeemShares2 = vault.balanceOf(user2) / 4;
         vm.startPrank(user2);
         vault.redeem(redeemShares2, user2, user2);
+        _;
+    }
+
+    modifier prioritize(address account) {
+        priorityProvider.prioritize(account);
         _;
     }
 
@@ -568,13 +555,189 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(withdrawRequest.accRequestedWithdrawAssets, assets - TEN_THOUSANDS_USDC / 2);
         assertEq(vault.idleAssets(), 0);
         assertEq(vault.assetsToClaim(), TEN_THOUSANDS_USDC / 2);
-        assertEq(vault.proccessedWithdrawAssets(), 0);
+        assertEq(vault.processedWithdrawAssets(), 0);
         assertEq(withdrawRequest.accRequestedWithdrawAssets, vault.accRequestedWithdrawAssets());
     }
 
     /*//////////////////////////////////////////////////////////////
                         DEUTILIZE/UPKEEP TEST
     //////////////////////////////////////////////////////////////*/
+
+    function test_prioritizedWithdraw_whenNotLast() public prioritize(metaVault) validateFinalState {
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        _deposit(metaVault, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+        assertEq(vault.idleAssets(), 0, "idle asset should be 0");
+
+        uint256 redeemShares = vault.balanceOf(user1) / 3;
+        vm.startPrank(user1);
+        vault.redeem(redeemShares, user1, user1);
+        vm.startPrank(metaVault);
+        vault.redeem(vault.balanceOf(metaVault) / 3, metaVault, metaVault);
+        vm.stopPrank();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization / 2);
+
+        bytes32 userRequestKey = vault.getWithdrawKey(user1, 0);
+        bytes32 metaVaultRequestKey = vault.getWithdrawKey(metaVault, 0);
+
+        assertFalse(vault.isClaimable(userRequestKey), "user withdraw request not processed");
+        assertTrue(vault.isClaimable(metaVaultRequestKey), "meta vault request processed");
+
+        LogarithmVault.WithdrawRequest memory req = vault.withdrawRequests(metaVaultRequestKey);
+        uint256 balBefore = IERC20(asset).balanceOf(metaVault);
+        vm.startPrank(metaVault);
+        vault.claim(metaVaultRequestKey);
+        uint256 balAfter = IERC20(asset).balanceOf(metaVault);
+
+        assertEq(balAfter - balBefore, req.requestedAssets, "requestedAssets should be claimed");
+    }
+
+    function test_prioritizedWithdraw_lastRedeemWhenOnlyMetaVault() public prioritize(metaVault) validateFinalState {
+        _deposit(metaVault, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+        assertEq(vault.idleAssets(), 0, "idle asset should be 0");
+
+        vm.startPrank(metaVault);
+        vault.redeem(vault.balanceOf(metaVault), metaVault, metaVault);
+        vm.stopPrank();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+
+        bytes32 metaVaultRequestKey = vault.getWithdrawKey(metaVault, 0);
+        LogarithmVault.WithdrawRequest memory req = vault.withdrawRequests(metaVaultRequestKey);
+        uint256 balBefore = IERC20(asset).balanceOf(metaVault);
+        vm.startPrank(metaVault);
+        vault.claim(metaVaultRequestKey);
+        uint256 balAfter = IERC20(asset).balanceOf(metaVault);
+        // console.log("balBefore", balBefore);
+        // console.log("balAfter", balAfter);
+        // console.log("requestedAssets", req.requestedAssets);
+        assertTrue(balAfter - balBefore >= req.requestedAssets, "meta vault claims all as it is last");
+        assertEq(
+            vault.prioritizedAccRequestedWithdrawAssets(),
+            vault.prioritizedProcessedWithdrawAssets(),
+            "processed assets should be full"
+        );
+    }
+
+    function test_prioritizedWithdraw_lastRedeemWhenNotOnlyMetaVault()
+        public
+        prioritize(metaVault)
+        validateFinalState
+    {
+        _deposit(metaVault, TEN_THOUSANDS_USDC);
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+        assertEq(vault.idleAssets(), 0, "idle asset should be 0");
+
+        // user's withdraw first
+        vm.startPrank(user1);
+        vault.redeem(vault.balanceOf(user1), user1, user1);
+        vm.stopPrank();
+
+        // metaVault's withdraw after
+        vm.startPrank(metaVault);
+        vault.redeem(vault.balanceOf(metaVault), metaVault, metaVault);
+        vm.stopPrank();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+
+        bytes32 metaVaultRequestKey = vault.getWithdrawKey(metaVault, 0);
+        bytes32 userRequestKey = vault.getWithdrawKey(user1, 0);
+        LogarithmVault.WithdrawRequest memory metaReq = vault.withdrawRequests(metaVaultRequestKey);
+        LogarithmVault.WithdrawRequest memory userReq = vault.withdrawRequests(userRequestKey);
+
+        uint256 metaBalBefore = IERC20(asset).balanceOf(metaVault);
+        uint256 userBalBefore = IERC20(asset).balanceOf(user1);
+
+        vm.startPrank(user1);
+        vault.claim(userRequestKey);
+        vm.startPrank(metaVault);
+        vault.claim(metaVaultRequestKey);
+        vm.stopPrank();
+
+        uint256 metaBalAfter = IERC20(asset).balanceOf(metaVault);
+        uint256 userBalAfter = IERC20(asset).balanceOf(user1);
+
+        assertTrue(
+            metaBalAfter - metaBalBefore == metaReq.requestedAssets,
+            "meta claimed assets should be ths same as requested"
+        );
+        assertTrue(
+            userBalAfter - userBalBefore > userReq.requestedAssets, "user claims all remaining assets as it is last"
+        );
+        assertEq(
+            vault.prioritizedAccRequestedWithdrawAssets(),
+            vault.prioritizedProcessedWithdrawAssets(),
+            "processed assets should be full"
+        );
+        assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets(), "processed assets should be full");
+    }
+
+    function test_prioritizedWithdraw_lastRedeemAfterAllNormalClaimed()
+        public
+        prioritize(metaVault)
+        validateFinalState
+    {
+        _deposit(metaVault, TEN_THOUSANDS_USDC);
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+        assertEq(vault.idleAssets(), 0, "idle asset should be 0");
+
+        // user's withdraw first
+        vm.startPrank(user1);
+        vault.redeem(vault.balanceOf(user1), user1, user1);
+        vm.stopPrank();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingDeutilization, 0, "no deutilization");
+
+        uint256 userBalBefore = IERC20(asset).balanceOf(user1);
+        bytes32 userRequestKey = vault.getWithdrawKey(user1, 0);
+        LogarithmVault.WithdrawRequest memory userReq = vault.withdrawRequests(userRequestKey);
+        vm.startPrank(user1);
+        vault.claim(userRequestKey);
+        vm.stopPrank();
+        uint256 userBalAfter = IERC20(asset).balanceOf(user1);
+        assertEq(userBalAfter - userBalBefore, userReq.requestedAssets, "user's request shouldn't be last");
+
+        // metaVault's withdraw after
+        vm.startPrank(metaVault);
+        vault.redeem(vault.balanceOf(metaVault), metaVault, metaVault);
+        vm.stopPrank();
+
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingDeutilization, 0, "no deutilization");
+
+        uint256 metaBalBefore = IERC20(asset).balanceOf(metaVault);
+        bytes32 metaVaultRequestKey = vault.getWithdrawKey(metaVault, 0);
+        LogarithmVault.WithdrawRequest memory metaReq = vault.withdrawRequests(metaVaultRequestKey);
+        vm.startPrank(metaVault);
+        vault.claim(metaVaultRequestKey);
+        vm.stopPrank();
+        uint256 metaBalAfter = IERC20(asset).balanceOf(metaVault);
+
+        assertTrue(metaBalAfter - metaBalBefore > metaReq.requestedAssets, "meta's request should be last");
+
+        assertEq(
+            vault.prioritizedAccRequestedWithdrawAssets(),
+            vault.prioritizedProcessedWithdrawAssets(),
+            "processed assets should be full"
+        );
+        assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets(), "processed assets should be full");
+    }
 
     function test_deutilize_partial_withSingleRequest() public afterWithdrawRequestCreated validateFinalState {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
@@ -653,7 +816,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceUp");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            _decodePerformData(performData);
+            helper.decodePerformData(performData);
         assertTrue(rebalanceUpNeeded);
         assertFalse(rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
@@ -675,7 +838,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            _decodePerformData(performData);
+            helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
@@ -695,7 +858,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            _decodePerformData(performData);
+            helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
@@ -718,7 +881,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            _decodePerformData(performData);
+            helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
@@ -746,7 +909,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
             _checkUpkeep("rebalanceDown_deutilize_withLessPendingWithdrawals");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            _decodePerformData(performData);
+            helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
@@ -788,7 +951,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
             _checkUpkeep("rebalanceDown_deutilize_withGreaterPendingWithdrawal");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            _decodePerformData(performData);
+            helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
@@ -815,7 +978,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenNotIdle");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            _decodePerformData(performData);
+            helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
         // assertTrue(deleverageNeeded, "deleverageNeeded");
@@ -837,7 +1000,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            _decodePerformData(performData);
+            helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         // assertTrue(deleverageNeeded);
@@ -860,7 +1023,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
-            _decodePerformData(performData);
+            helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
         // assertTrue(deleverageNeeded, "deleverageNeeded");
@@ -885,7 +1048,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
             bool positionManagerNeedKeep,
             ,
             bool rebalanceUpNeeded
-        ) = _decodePerformData(performData);
+        ) = helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertFalse(deleverageNeeded, "deleverageNeeded");
@@ -909,7 +1072,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
             bool positionManagerNeedKeep,
             ,
             bool rebalanceUpNeeded
-        ) = _decodePerformData(performData);
+        ) = helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
         assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
         assertFalse(deleverageNeeded, "deleverageNeeded");

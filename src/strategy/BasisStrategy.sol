@@ -10,11 +10,11 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AutomationCompatibleInterface} from "src/externals/chainlink/interfaces/AutomationCompatibleInterface.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
-import {IPositionManager} from "src/interfaces/IPositionManager.sol";
-import {IBasisStrategy} from "src/interfaces/IBasisStrategy.sol";
-import {ILogarithmVault} from "src/interfaces/ILogarithmVault.sol";
-import {IOracle} from "src/interfaces/IOracle.sol";
-import {IStrategyConfig} from "src/interfaces/IStrategyConfig.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
+import {ILogarithmVault} from "src/vault/ILogarithmVault.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
+import {IStrategyConfig} from "src/strategy/IStrategyConfig.sol";
 
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
@@ -53,6 +53,23 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         bool processingRebalanceDown;
     }
 
+    struct InternalCheckUpkeepResult {
+        // emergency rebalance down when idle assets not enough
+        uint256 emergencyDeutilizationAmount;
+        // rebalance down by using idle assets
+        uint256 deltaCollateralToIncrease;
+        // clear processingRebalanceDown storage in case oracle fluctuated
+        bool clearProcessingRebalanceDown;
+        // none-zero means re-hedge
+        int256 hedgeDeviationInTokens;
+        // position manager is in need of keeping
+        bool positionManagerNeedKeep;
+        // process pendingDecreaseCollateral
+        bool processPendingDecreaseCollateral;
+        // rebalance up by decreasing collateral
+        uint256 deltaCollateralToDecrease;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -66,7 +83,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         IPositionManager positionManager;
         IOracle oracle;
         address operator;
-        address forwarder;
         address config;
         // leverage state
         uint256 targetLeverage;
@@ -224,13 +240,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             revert Errors.ZeroAddress();
         }
         _getBasisStrategyStorage().positionManager = IPositionManager(_positionManager);
-    }
-
-    function setForwarder(address _forwarder) external onlyOwner {
-        if (_forwarder == address(0)) {
-            revert Errors.ZeroAddress();
-        }
-        _getBasisStrategyStorage().forwarder = _forwarder;
     }
 
     function setOperator(address _operator) external onlyOwner {
@@ -399,7 +408,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
                 // With small vault totalAssets 500 USDC can create signifficant leverage impact.
                 // We would process such small withdraws manually be making deposits once per day to match withdraw requests.
                 // We can skip clamping here as it will be done in the _adjustPosition function.
-
                 if (totalSupply == 0) {
                     // in case of redeeming all by users, close hedge position
                     amount = type(uint256).max;
@@ -413,9 +421,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
                     collateralDeltaAmount = _clamp(min, pendingWithdraw, max);
                     $.pendingDecreaseCollateral = pendingWithdraw - collateralDeltaAmount;
                 }
-
-                // pendingDecreaseCollateral is used when partial deutilizing
-                // when full deutilization, we don't need
             } else {
                 // when partial deutilizing
                 uint256 positionNetBalance = _positionManager.positionNetBalance();
@@ -459,183 +464,77 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
     }
 
     /// @inheritdoc AutomationCompatibleInterface
-    function checkUpkeep(bytes memory) public view virtual returns (bool upkeepNeeded, bytes memory performData) {
-        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+    function checkUpkeep(bytes memory) public view returns (bool upkeepNeeded, bytes memory performData) {
+        InternalCheckUpkeepResult memory result = _checkUpkeep();
 
-        if ($.strategyStatus != StrategyStatus.IDLE) {
-            return (upkeepNeeded, performData);
-        }
-
-        ILogarithmVault _vault = $.vault;
-        IPositionManager _positionManager = $.positionManager;
-
-        uint256 currentLeverage = _positionManager.currentLeverage();
-        bool _processingRebalanceDown = $.processingRebalanceDown;
-        uint256 _maxLeverage = $.maxLeverage;
-
-        uint256 emergencyDeutilizationAmount;
-        uint256 deltaCollateralToIncrease;
-        int256 hedgeDeviationInTokens;
-        bool positionManagerNeedKeep;
-        bool processPendingDecreaseCollateral;
-        uint256 deltaCollateralToDecrease;
-
-        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) =
-            _checkRebalance(currentLeverage, $.minLeverage, _maxLeverage, $.safeMarginLeverage);
-
-        // check if strategy is in rebalancing down and currentLeverage is not near to target
-        if (!rebalanceDownNeeded && _processingRebalanceDown) {
-            (, rebalanceDownNeeded) =
-                _checkNeedRebalance(currentLeverage, $.targetLeverage, config().rebalanceDeviationThreshold());
-        }
-
-        // perform upkeep only when deltaCollateralToDecrease is more than and equal to limit amount
-        if (rebalanceUpNeeded) {
-            deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
-                _positionManager.positionNetBalance(), currentLeverage, $.targetLeverage
-            );
-            uint256 limitDecreaseCollateral = _positionManager.limitDecreaseCollateral();
-            rebalanceUpNeeded = deltaCollateralToDecrease >= limitDecreaseCollateral;
-        }
-
-        if (rebalanceDownNeeded) {
-            upkeepNeeded = true;
-
-            uint256 idleAssets = _vault.idleAssets();
-            (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
-
-            // deutilize when idle assets are not enough to increase collateral
-            // and when processingRebalanceDown is true
-            // and when deleverageNeeded is false
-            if (_processingRebalanceDown && !deleverageNeeded) {
-                upkeepNeeded = idleAssets != 0 && idleAssets >= minIncreaseCollateral;
-            }
-
-            deltaCollateralToIncrease = _calculateDeltaCollateralForRebalance(
-                _positionManager.positionNetBalance(), currentLeverage, $.targetLeverage
-            );
-
-            if (deltaCollateralToIncrease < minIncreaseCollateral) {
-                deltaCollateralToIncrease = minIncreaseCollateral;
-            }
-
-            if (deleverageNeeded && (deltaCollateralToIncrease > idleAssets)) {
-                (, uint256 deltaLeverage) = currentLeverage.trySub(_maxLeverage);
-                emergencyDeutilizationAmount =
-                    _positionManager.positionSizeInTokens().mulDiv(deltaLeverage, currentLeverage);
-                (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
-                // @issue amount can be 0 because of clamping that breaks emergency rebalance down
-                emergencyDeutilizationAmount = _clamp(min, emergencyDeutilizationAmount, max);
-            }
-        } else {
-            hedgeDeviationInTokens =
-                _checkHedgeDeviation(_positionManager, address($.product), config().hedgeDeviationThreshold());
-            if (hedgeDeviationInTokens != 0) {
-                upkeepNeeded = true;
-            } else {
-                positionManagerNeedKeep = _positionManager.needKeep();
-                if (positionManagerNeedKeep) {
-                    upkeepNeeded = true;
-                } else {
-                    (uint256 minDecreaseCollateral,) = _positionManager.decreaseCollateralMinMax();
-                    if (minDecreaseCollateral != 0 && $.pendingDecreaseCollateral >= minDecreaseCollateral) {
-                        uint256 pendingDeutilization_ = _pendingDeutilization(
-                            InternalPendingDeutilization({
-                                positionManager: _positionManager,
-                                asset: address($.asset),
-                                product: address($.product),
-                                totalSupply: _vault.totalSupply(),
-                                processingRebalanceDown: false
-                            })
-                        );
-                        if (pendingDeutilization_ == 0) {
-                            processPendingDecreaseCollateral = true;
-                            upkeepNeeded = true;
-                        }
-                    } else if (rebalanceUpNeeded) {
-                        upkeepNeeded = true;
-                    }
-                }
-            }
-        }
+        upkeepNeeded = result.emergencyDeutilizationAmount > 0 || result.deltaCollateralToIncrease > 0
+            || result.clearProcessingRebalanceDown || result.hedgeDeviationInTokens != 0 || result.positionManagerNeedKeep
+            || result.processPendingDecreaseCollateral || result.deltaCollateralToDecrease > 0;
 
         performData = abi.encode(
-            emergencyDeutilizationAmount,
-            deltaCollateralToIncrease,
-            hedgeDeviationInTokens,
-            positionManagerNeedKeep,
-            processPendingDecreaseCollateral,
-            deltaCollateralToDecrease
+            result.emergencyDeutilizationAmount,
+            result.deltaCollateralToIncrease,
+            result.clearProcessingRebalanceDown,
+            result.hedgeDeviationInTokens,
+            result.positionManagerNeedKeep,
+            result.processPendingDecreaseCollateral,
+            result.deltaCollateralToDecrease
         );
 
         return (upkeepNeeded, performData);
     }
 
     /// @inheritdoc AutomationCompatibleInterface
-    function performUpkeep(bytes memory performData) public {
+    function performUpkeep(bytes calldata /*performData*/ ) external {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
-        if (msg.sender != $.forwarder) {
-            revert Errors.UnauthorizedForwarder(msg.sender);
-        }
-
-        if ($.strategyStatus != StrategyStatus.IDLE) {
-            return;
-        }
-
-        (
-            uint256 emergencyDeutilizationAmount,
-            uint256 deltaCollateralToIncrease,
-            int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep,
-            bool processPendingDecreaseCollateral,
-            uint256 deltaCollateralToDecrease
-        ) = abi.decode(performData, (uint256, uint256, int256, bool, bool, uint256));
+        InternalCheckUpkeepResult memory result = _checkUpkeep();
 
         $.strategyStatus = StrategyStatus.KEEPING;
 
-        if (emergencyDeutilizationAmount > 0) {
+        if (result.emergencyDeutilizationAmount > 0) {
             $.pendingDecreaseCollateral = 0;
-            $.processingRebalanceDown = true;
-
-            uint256 amountOut = ManualSwapLogic.swap(emergencyDeutilizationAmount, $.productToAssetSwapPath);
-            $.pendingDeutilizedAssets = amountOut;
-            // produced asset shouldn't go to idle until position size is decreased
-            if (!_adjustPosition(emergencyDeutilizationAmount, 0, false)) $.strategyStatus = StrategyStatus.IDLE;
-        } else if (deltaCollateralToIncrease > 0) {
+            if (_adjustPosition(result.emergencyDeutilizationAmount, 0, false)) {
+                $.processingRebalanceDown = true;
+                uint256 amountOut = ManualSwapLogic.swap(result.emergencyDeutilizationAmount, $.productToAssetSwapPath);
+                $.pendingDeutilizedAssets = amountOut;
+            } else {
+                $.strategyStatus = StrategyStatus.IDLE;
+            }
+        } else if (result.deltaCollateralToIncrease > 0) {
             $.pendingDecreaseCollateral = 0;
             $.processingRebalanceDown = true;
             uint256 idleAssets = $.vault.idleAssets();
             if (
                 !_adjustPosition(
-                    0, idleAssets < deltaCollateralToIncrease ? idleAssets : deltaCollateralToIncrease, true
+                    0,
+                    idleAssets < result.deltaCollateralToIncrease ? idleAssets : result.deltaCollateralToIncrease,
+                    true
                 )
             ) $.strategyStatus = StrategyStatus.IDLE;
-        } else if (hedgeDeviationInTokens != 0) {
-            if (hedgeDeviationInTokens > 0) {
-                if (!_adjustPosition(uint256(hedgeDeviationInTokens), 0, false)) $.strategyStatus = StrategyStatus.IDLE;
+        } else if (result.clearProcessingRebalanceDown) {
+            $.processingRebalanceDown = false;
+            $.strategyStatus = StrategyStatus.IDLE;
+        } else if (result.hedgeDeviationInTokens != 0) {
+            if (result.hedgeDeviationInTokens > 0) {
+                if (!_adjustPosition(uint256(result.hedgeDeviationInTokens), 0, false)) {
+                    $.strategyStatus = StrategyStatus.IDLE;
+                }
             } else {
-                if (!_adjustPosition(uint256(-hedgeDeviationInTokens), 0, true)) {
+                if (!_adjustPosition(uint256(-result.hedgeDeviationInTokens), 0, true)) {
                     $.strategyStatus = StrategyStatus.IDLE;
                 }
             }
-        } else if (positionManagerNeedKeep) {
+        } else if (result.positionManagerNeedKeep) {
             $.positionManager.keep();
-        } else if (processPendingDecreaseCollateral) {
+        } else if (result.processPendingDecreaseCollateral) {
             if (!_adjustPosition(0, $.pendingDecreaseCollateral, false)) {
                 $.strategyStatus = StrategyStatus.IDLE;
             }
-        } else if (deltaCollateralToDecrease > 0) {
-            if (!_adjustPosition(0, deltaCollateralToDecrease, false)) {
+        } else if (result.deltaCollateralToDecrease > 0) {
+            if (!_adjustPosition(0, result.deltaCollateralToDecrease, false)) {
                 $.strategyStatus = StrategyStatus.IDLE;
             }
-        }
-    }
-
-    function manualPerformUpkeep() external {
-        (bool upkeepNeeded, bytes memory performData) = checkUpkeep("");
-        if (upkeepNeeded) {
-            performUpkeep(performData);
         }
     }
 
@@ -680,6 +579,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         } else {
             _afterDecreasePosition(params);
         }
+
+        delete $.requestParams;
 
         $.strategyStatus = StrategyStatus.IDLE;
 
@@ -742,6 +643,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         return productValueInAssets + $.positionManager.positionNetBalance();
     }
 
+    /*//////////////////////////////////////////////////////////////
+                           PRIVATE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     function _adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease)
         internal
         virtual
@@ -782,6 +687,113 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         } else {
             return false;
         }
+    }
+
+    function _checkUpkeep() private view returns (InternalCheckUpkeepResult memory result) {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+
+        if ($.strategyStatus != StrategyStatus.IDLE) {
+            return result;
+        }
+
+        ILogarithmVault _vault = $.vault;
+        IPositionManager _positionManager = $.positionManager;
+
+        uint256 currentLeverage = _positionManager.currentLeverage();
+        bool _processingRebalanceDown = $.processingRebalanceDown;
+        uint256 _maxLeverage = $.maxLeverage;
+        uint256 _targetLeverage = $.targetLeverage;
+
+        (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) =
+            _checkRebalance(currentLeverage, $.minLeverage, _maxLeverage, $.safeMarginLeverage);
+
+        // rebalanceDownNeeded becomes true if currentLeverage is not near to target
+        // when processingRebalanceDown is true
+        // even though current leverage is smaller than max
+        if (!rebalanceDownNeeded && _processingRebalanceDown) {
+            (, rebalanceDownNeeded) =
+                _checkNeedRebalance(currentLeverage, _targetLeverage, config().rebalanceDeviationThreshold());
+        }
+
+        if (rebalanceDownNeeded) {
+            uint256 idleAssets = _vault.idleAssets();
+            (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
+            result.deltaCollateralToIncrease = _calculateDeltaCollateralForRebalance(
+                _positionManager.positionNetBalance(), currentLeverage, _targetLeverage
+            );
+            if (result.deltaCollateralToIncrease < minIncreaseCollateral) {
+                result.deltaCollateralToIncrease = minIncreaseCollateral;
+            }
+
+            // deutilize when idle assets are not enough to increase collateral
+            // and when processingRebalanceDown is true
+            // and when deleverageNeeded is false
+            if (
+                !deleverageNeeded && _processingRebalanceDown && (idleAssets == 0 || idleAssets < minIncreaseCollateral)
+            ) {
+                result.deltaCollateralToIncrease = 0;
+                return result;
+            }
+
+            // emergency deutilize when idleAssets are not enough to increase collateral
+            // in case currentLeverage is bigger than safeMarginLeverage
+            if (deleverageNeeded && (result.deltaCollateralToIncrease > idleAssets)) {
+                (, uint256 deltaLeverage) = currentLeverage.trySub(_maxLeverage);
+                result.emergencyDeutilizationAmount =
+                    _positionManager.positionSizeInTokens().mulDiv(deltaLeverage, currentLeverage);
+                (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
+                // @issue amount can be 0 because of clamping that breaks emergency rebalance down
+                result.emergencyDeutilizationAmount = _clamp(min, result.emergencyDeutilizationAmount, max);
+            }
+            return result;
+        }
+
+        if (!rebalanceDownNeeded && _processingRebalanceDown) {
+            result.clearProcessingRebalanceDown = true;
+            return result;
+        }
+
+        result.hedgeDeviationInTokens =
+            _checkHedgeDeviation(_positionManager, address($.product), config().hedgeDeviationThreshold());
+        if (result.hedgeDeviationInTokens != 0) {
+            return result;
+        }
+
+        result.positionManagerNeedKeep = _positionManager.needKeep();
+        if (result.positionManagerNeedKeep) {
+            return result;
+        }
+
+        (uint256 minDecreaseCollateral,) = _positionManager.decreaseCollateralMinMax();
+        if (minDecreaseCollateral != 0 && $.pendingDecreaseCollateral >= minDecreaseCollateral) {
+            uint256 pendingDeutilization_ = _pendingDeutilization(
+                InternalPendingDeutilization({
+                    positionManager: _positionManager,
+                    asset: address($.asset),
+                    product: address($.product),
+                    totalSupply: _vault.totalSupply(),
+                    processingRebalanceDown: false
+                })
+            );
+            (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
+            pendingDeutilization_ = _clamp(min, pendingDeutilization_, max);
+            if (pendingDeutilization_ == 0) {
+                result.processPendingDecreaseCollateral = true;
+                return result;
+            }
+        }
+
+        if (rebalanceUpNeeded) {
+            result.deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
+                _positionManager.positionNetBalance(), currentLeverage, _targetLeverage
+            );
+            uint256 limitDecreaseCollateral = _positionManager.limitDecreaseCollateral();
+            if (result.deltaCollateralToDecrease < limitDecreaseCollateral) {
+                result.deltaCollateralToDecrease = 0;
+            }
+        }
+
+        return result;
     }
 
     function _afterIncreasePosition(IPositionManager.AdjustPositionPayload calldata responseParams) private {
@@ -855,7 +867,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
                         assetsToBeReverted =
                             _pendingDeutilizedAssets.mulDiv(sizeDeviationAbs, requestParams.sizeDeltaInTokens);
                     }
-                    ManualSwapLogic.swap(assetsToBeReverted, $.assetToProductSwapPath);
+                    if (assetsToBeReverted > 0) {
+                        ManualSwapLogic.swap(assetsToBeReverted, $.assetToProductSwapPath);
+                    }
                 }
             }
 
@@ -878,7 +892,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         }
 
         if (responseParams.collateralDeltaAmount > 0) {
-            // the case when deutilizing for withdrawls and rebalancing Up
+            // the case when deutilizing for withdrawals and rebalancing Up
             (, $.pendingDecreaseCollateral) = $.pendingDecreaseCollateral.trySub(responseParams.collateralDeltaAmount);
             _asset.safeTransferFrom(address($.positionManager), address(this), responseParams.collateralDeltaAmount);
         }
@@ -1103,10 +1117,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
 
     function operator() external view returns (address) {
         return _getBasisStrategyStorage().operator;
-    }
-
-    function forwarder() external view returns (address) {
-        return _getBasisStrategyStorage().forwarder;
     }
 
     function asset() external view returns (address) {
