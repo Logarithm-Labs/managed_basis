@@ -775,6 +775,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
                     processingRebalanceDown: false
                 })
             );
+            (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
+            pendingDeutilization_ = _clamp(min, pendingDeutilization_, max);
             if (pendingDeutilization_ == 0) {
                 result.processPendingDecreaseCollateral = true;
                 return result;

@@ -34,11 +34,27 @@ contract OffChainTest is PositionMngerForkTest {
     address public asset_;
     address public product_;
 
+    uint256 constant increaseSizeMin = 15 * 1e6;
+    uint256 constant increaseSizeMax = type(uint256).max;
+    uint256 constant decreaseSizeMin = 15 * 1e6;
+    uint256 constant decreaseSizeMax = type(uint256).max;
+
+    uint256 constant increaseCollateralMin = 5 * 1e6;
+    uint256 constant increaseCollateralMax = type(uint256).max;
+    uint256 constant decreaseCollateralMin = 10 * 1e6;
+    uint256 constant decreaseCollateralMax = type(uint256).max;
+    uint256 constant limitDecreaseCollateral = 50 * 1e6;
+
     function _initPositionManager(address owner, address strategy) internal override returns (address) {
         vm.startPrank(owner);
         // deploy config
         OffChainConfig config = new OffChainConfig();
         config.initialize(owner);
+        config.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
+        config.setCollateralMinMax(
+            increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
+        );
+        config.setLimitDecreaseCollateral(limitDecreaseCollateral);
         vm.label(address(config), "config");
 
         address oracle = IBasisStrategy(strategy).oracle();
