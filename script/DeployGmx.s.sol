@@ -156,7 +156,7 @@ contract DeployGmxScript is Script {
         LogarithmVault(vaultProxy).setStrategy(strategyProxy);
         BasisStrategy(strategyProxy).setPositionManager(positionManagerProxy);
         GmxGasStation(payable(gasStationProxy)).registerPositionManager(positionManagerProxy, true);
-        BasisStrategy(strategyProxy).setForwarder(forwarder);
+        // BasisStrategy(strategyProxy).setForwarder(forwarder);
 
         (bool success,) = gasStationProxy.call{value: 0.0004 ether}("");
         require(success, "Failed to send ether to gas station");

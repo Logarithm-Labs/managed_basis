@@ -128,7 +128,7 @@ contract GmxInvariants is StdInvariant, ForkTest {
             )
         );
         strategy = BasisStrategy(strategyProxy);
-        strategy.setForwarder(forwarder);
+        // strategy.setForwarder(forwarder);
         vm.label(address(strategy), "strategy");
 
         vault.setStrategy(address(strategy));

@@ -149,7 +149,7 @@ contract DeployScript is Script {
         // configure
         vault.setStrategy(address(strategy));
         strategy.setPositionManager(address(positionManager));
-        strategy.setForwarder(forwarder);
+        // strategy.setForwarder(forwarder);
         // positionManager.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
         // positionManager.setCollateralMinMax(
         //     increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
@@ -160,7 +160,7 @@ contract DeployScript is Script {
             strategy.positionManager() == address(positionManager),
             "Strategy positionManager is not the expected positionManager"
         );
-        require(strategy.forwarder() == forwarder, "Strategy forwarder is not the expected forwarder");
+        // require(strategy.forwarder() == forwarder, "Strategy forwarder is not the expected forwarder");
 
         // deploy DataProvider
         DataProvider dataProvider = new DataProvider();

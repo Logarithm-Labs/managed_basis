@@ -144,7 +144,7 @@ contract DeployHyperScript is Script {
         // config
         LogarithmVault(vaultProxy).setStrategy(strategyProxy);
         BasisStrategy(strategyProxy).setPositionManager(positionManagerProxy);
-        BasisStrategy(strategyProxy).setForwarder(forwarder);
+        // BasisStrategy(strategyProxy).setForwarder(forwarder);
         OffChainConfig(offChainConfigProxy).setSizeMinMax(
             increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax
         );
