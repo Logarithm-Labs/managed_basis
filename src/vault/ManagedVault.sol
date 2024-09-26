@@ -147,11 +147,15 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         return _accruedMgmtFeeShares(_getManagedVaultStorage().feeRecipient);
     }
 
-    function feeRecipient() external view returns (address) {
+    /*//////////////////////////////////////////////////////////////
+                            STORAGE GETTERS
+    //////////////////////////////////////////////////////////////*/
+
+    function feeRecipient() public view returns (address) {
         return _getManagedVaultStorage().feeRecipient;
     }
 
-    function mgmtFee() external view returns (uint256) {
+    function mgmtFee() public view returns (uint256) {
         return _getManagedVaultStorage().mgmtFee;
     }
 }
