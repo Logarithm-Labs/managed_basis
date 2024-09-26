@@ -63,9 +63,12 @@ contract OffChainTest is PositionMngerForkTest {
 
         // deploy position manager
         address positionManagerImpl = address(new OffChainPositionManager());
+        // deploy positionManager beacon
+        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
+        // deploy positionMnager beacon proxy
         address positionManagerProxy = address(
-            new ERC1967Proxy(
-                positionManagerImpl,
+            new BeaconProxy(
+                positionManagerBeacon,
                 abi.encodeWithSelector(
                     OffChainPositionManager.initialize.selector,
                     address(config),
