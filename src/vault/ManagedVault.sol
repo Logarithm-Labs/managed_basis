@@ -13,6 +13,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
+/// @title A managed vault
+/// @author Logarithm Labs
+/// @notice Have functions to collect AUM fees
 abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable {
     using Math for uint256;
     /*//////////////////////////////////////////////////////////////
@@ -94,15 +97,15 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
 
     /// @dev should not be called when minting to fee recipient
     function _accrueMgmtFeeShares(address _feeRecipient) internal {
-        uint256 accuredShares = _accruedMgmtFeeShares(_feeRecipient);
+        uint256 feeShares = _nextMgmtFeeShares(_feeRecipient);
         _getManagedVaultStorage().lastAccruedTimestamp = block.timestamp;
-        if (accuredShares > 0) {
-            _mint(_feeRecipient, accuredShares);
+        if (feeShares > 0) {
+            _mint(_feeRecipient, feeShares);
         }
     }
 
     /// @dev returns claimable shares for the mgmt fee
-    function _accruedMgmtFeeShares(address _feeRecipient) internal view returns (uint256) {
+    function _nextMgmtFeeShares(address _feeRecipient) internal view returns (uint256) {
         if (_feeRecipient == address(0)) return 0;
 
         ManagedVaultStorage storage $ = _getManagedVaultStorage();
@@ -121,20 +124,20 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
 
     /// @inheritdoc ERC4626Upgradeable
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view override returns (uint256) {
-        return assets.mulDiv(totalSupplyWithFeeShares() + 10 ** _decimalsOffset(), totalAssets() + 1, rounding);
+        return assets.mulDiv(totalSupplyWithNextFeeShares() + 10 ** _decimalsOffset(), totalAssets() + 1, rounding);
     }
 
     /// @inheritdoc ERC4626Upgradeable
     function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view override returns (uint256) {
-        return shares.mulDiv(totalAssets() + 1, totalSupplyWithFeeShares() + 10 ** _decimalsOffset(), rounding);
+        return shares.mulDiv(totalAssets() + 1, totalSupplyWithNextFeeShares() + 10 ** _decimalsOffset(), rounding);
     }
 
     /*//////////////////////////////////////////////////////////////
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function totalSupplyWithFeeShares() public view returns (uint256) {
-        return totalSupply() + accruedMgmtFeeShares();
+    function totalSupplyWithNextFeeShares() public view returns (uint256) {
+        return totalSupply() + nextMgmtFeeShares();
     }
 
     /// @notice mint mgmt fee shares by anyone
@@ -143,8 +146,8 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     }
 
     /// @notice returns claimable shares of the mgmt fee recipient
-    function accruedMgmtFeeShares() public view returns (uint256) {
-        return _accruedMgmtFeeShares(_getManagedVaultStorage().feeRecipient);
+    function nextMgmtFeeShares() public view returns (uint256) {
+        return _nextMgmtFeeShares(_getManagedVaultStorage().feeRecipient);
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -59,14 +59,14 @@ contract ManagedVaultSpecTest is ForkTest {
 
     function test_accrueMgmtFee_withNoDeposit() public {
         _moveTimestamp(36.5 days);
-        uint256 shares = vault.accruedMgmtFeeShares();
+        uint256 shares = vault.nextMgmtFeeShares();
         assertEq(shares, 0, "shares 0");
     }
 
     function test_accrueMgmtFee_withFirstDeposit() public {
         _mint(user, TEN_THOUSAND);
         _moveTimestamp(36.5 days);
-        uint256 shares = vault.accruedMgmtFeeShares();
+        uint256 shares = vault.nextMgmtFeeShares();
         assertEq(shares, TEN_THOUSAND / 100, "1/100 of shares");
     }
 
@@ -76,7 +76,7 @@ contract ManagedVaultSpecTest is ForkTest {
         _mint(user, TEN_THOUSAND);
         assertEq(vault.balanceOf(recipient), TEN_THOUSAND / 100, "1/100 of shares");
         _moveTimestamp(36.5 days);
-        uint256 shares = vault.accruedMgmtFeeShares();
+        uint256 shares = vault.nextMgmtFeeShares();
         assertEq(shares, TEN_THOUSAND * 2 / 100, "2/100 of assets");
         vault.accrueMgmtFeeShares();
         assertEq(vault.balanceOf(recipient), TEN_THOUSAND * 3 / 100, "3/100 of shares assets");
@@ -111,14 +111,14 @@ contract ManagedVaultSpecTest is ForkTest {
         _moveTimestamp(36.5 days);
         assertEq(vault.balanceOf(recipient), TEN_THOUSAND / 100);
 
-        assertEq(vault.accruedMgmtFeeShares(), TEN_THOUSAND * 2 / 100);
+        assertEq(vault.nextMgmtFeeShares(), TEN_THOUSAND * 2 / 100);
 
         // redeem half share of recipient
         vm.startPrank(recipient);
         vault.redeem(TEN_THOUSAND / 200, recipient, recipient);
         assertEq(vault.balanceOf(recipient), TEN_THOUSAND / 200);
 
-        assertEq(vault.accruedMgmtFeeShares(), TEN_THOUSAND * 2 / 100);
+        assertEq(vault.nextMgmtFeeShares(), TEN_THOUSAND * 2 / 100);
         vault.accrueMgmtFeeShares();
         assertEq(vault.balanceOf(recipient), TEN_THOUSAND * 2 / 100 + TEN_THOUSAND / 200);
     }
