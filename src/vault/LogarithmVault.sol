@@ -134,6 +134,10 @@ contract LogarithmVault is Initializable, ManagedVault {
         _getLogarithmVaultStorage().exitCost = _exitCost;
     }
 
+    function setPriorityProvider(address _priorityProvider) external onlyOwner {
+        _getLogarithmVaultStorage().priorityProvider = _priorityProvider;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         PUBLIC FUNCTIONS   
     //////////////////////////////////////////////////////////////*/
