@@ -120,9 +120,12 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         // deploy strategy
         address strategyImpl = address(new BasisStrategy());
+        // deploy strategy beacon
+        address strategyBeacon = address(new UpgradeableBeacon(strategyImpl, owner));
+        // deploy positionMnager beacon proxy
         address strategyProxy = address(
-            new ERC1967Proxy(
-                strategyImpl,
+            new BeaconProxy(
+                strategyBeacon,
                 abi.encodeWithSelector(
                     BasisStrategy.initialize.selector,
                     address(config),
