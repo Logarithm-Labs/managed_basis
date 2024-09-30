@@ -370,11 +370,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC);
     }
 
-    function test_mgmtFee() public validateFinalState {
+    function test_managementFee() public validateFinalState {
         address recipient = makeAddr("recipient");
         vm.startPrank(owner);
         vault.setFeeRecipient(recipient);
-        vault.setMgmtFee(0.1 ether); // 10%
+        vault.setManagementFee(0.1 ether); // 10%
 
         uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC);
         _mint(user1, shares);
