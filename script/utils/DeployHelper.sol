@@ -177,7 +177,7 @@ library DeployHelper {
         address hlConfigProxy =
             address(new ERC1967Proxy(hlConfigImpl, abi.encodeWithSelector(OffChainConfig.initialize.selector, owner)));
         OffChainConfig hlConfig = OffChainConfig(hlConfigProxy);
-        require(hlConfig.owner() == owner, "Hypeliquid Config owner is not the expected owner");
+        require(hlConfig.owner() == owner, "HL Config owner is not the expected owner");
         return hlConfig;
     }
 

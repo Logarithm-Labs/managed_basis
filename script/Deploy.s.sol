@@ -19,7 +19,7 @@ import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 
 contract DeployScript is Script {
     // access control addresses
-    address constant owner = 0xd1DD21D53eC43C8FE378E51029Aa3F380b229c98;
+    address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
     address constant operator = 0x78057a43dDc57792340BC19E50e1011F8DAdEd01;
     address constant forwarder = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
     address constant agent = 0xA2a7e3a770c38aAe24F175a38281f74731Fe477E;
@@ -55,7 +55,7 @@ contract DeployScript is Script {
 
     // predeployed contracts
     LogarithmOracle public oracle = LogarithmOracle(0x26aD95BDdc540ac3Af223F3eB6aA07C13d7e08c9);
-    GmxGasStation public gmxGasStation = GmxGasStation(payable(0xB758989eeBB4D5EF2da4FbD6E37f898dd1d49b2a));
+    // GmxGasStation public gmxGasStation = GmxGasStation(payable(0xB758989eeBB4D5EF2da4FbD6E37f898dd1d49b2a));
 
     function run() public {
         vm.startBroadcast();
@@ -119,11 +119,15 @@ contract DeployScript is Script {
         // deploy BasisStrategy Hl
         strategyDeployParams.vault = address(vaultHl);
         BasisStrategy strategyHl = DeployHelper.deployBasisStrategy(strategyDeployParams);
-        console.log("Strategy GMX deployed at", address(strategyHl));
+        console.log("Strategy HL deployed at", address(strategyHl));
 
         // deploy GmxConfig
         GmxConfig gmxConfig = DeployHelper.deployGmxConfig(owner);
         console.log("GmxConfig deployed at", address(gmxConfig));
+
+        // deploy GmxGasStation
+        GmxGasStation gmxGasStation = DeployHelper.deployGmxGasStation(owner);
+        console.log("GmxGasStation deployed at", address(gmxGasStation));
 
         // deploy GmxPositionManagerBeacon
         address gmxPositionManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
@@ -141,7 +145,7 @@ contract DeployScript is Script {
         );
         console.log("PositionManager GMX deployed at", address(gmxPositionManager));
 
-        // deploy Hypeliquid Config
+        // deploy HL Config
         OffChainConfig hlConfig = DeployHelper.deployOffChainConfig(owner);
         hlConfig.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
         hlConfig.setCollateralMinMax(
@@ -151,7 +155,7 @@ contract DeployScript is Script {
 
         // deploy OffChainPositionManagerBeacon
         address offchainPositionManagerBeacon = DeployHelper.deployBeacon(address(new OffChainPositionManager()), owner);
-        console.log("PositionManager Beacon deployed at", offchainPositionManagerBeacon);
+        console.log("OffChainPositionManager Beacon deployed at", offchainPositionManagerBeacon);
 
         OffChainPositionManager hlPositionManager = DeployHelper.deployOffChainPositionManager(
             DeployHelper.OffChainPositionManagerDeployParams(
@@ -166,7 +170,7 @@ contract DeployScript is Script {
                 false
             )
         );
-        console.log("PositionManager Hypeliquid deployed at", address(hlPositionManager));
+        console.log("PositionManager HL deployed at", address(hlPositionManager));
 
         // deploy DataProvider
         DataProvider dataProvider = new DataProvider();
