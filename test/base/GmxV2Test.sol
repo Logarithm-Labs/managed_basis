@@ -18,14 +18,17 @@ import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
 import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
 import {IPositionManager} from "src/position/IPositionManager.sol";
 
+import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {DeployHelper} from "script/utils/DeployHelper.sol";
+
 contract GmxV2Test is PositionMngerForkTest {
-    address constant GMX_DATA_STORE = 0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8;
-    address constant GMX_EXCHANGE_ROUTER = 0x69C527fC77291722b52649E45c838e41be8Bf5d5;
-    address constant GMX_ORDER_HANDLER = 0xB0Fc2a48b873da40e7bc25658e5E6137616AC2Ee;
-    address constant GMX_ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
-    address constant GMX_READER = 0x5Ca84c34a381434786738735265b9f3FD814b824;
-    address constant GMX_ETH_USDC_MARKET = 0x70d95587d40A2caf56bd97485aB3Eec10Bee6336;
-    address constant GMX_KEEPER = 0xE47b36382DC50b90bCF6176Ddb159C4b9333A7AB;
+    address constant GMX_DATA_STORE = ArbiAddresses.GMX_DATA_STORE;
+    address constant GMX_EXCHANGE_ROUTER = ArbiAddresses.GMX_EXCHANGE_ROUTER;
+    address constant GMX_ORDER_HANDLER = ArbiAddresses.GMX_ORDER_HANDLER;
+    address constant GMX_ORDER_VAULT = ArbiAddresses.GMX_ORDER_VAULT;
+    address constant GMX_READER = ArbiAddresses.GMX_READER;
+    address constant GMX_ETH_USDC_MARKET = ArbiAddresses.GMX_ETH_USDC_MARKET;
+    address constant GMX_KEEPER = ArbiAddresses.GMX_KEEPER;
 
     address constant CHAINLINK_PRICE_FEED_PROVIDER = 0x527FB0bCfF63C47761039bB386cFE181A92a4701;
 
@@ -34,43 +37,25 @@ contract GmxV2Test is PositionMngerForkTest {
     function _initPositionManager(address owner, address strategy) internal override returns (address) {
         vm.startPrank(owner);
         // deploy config
-        GmxConfig config = new GmxConfig();
-        config.initialize(owner, GMX_EXCHANGE_ROUTER, GMX_READER);
+        GmxConfig config = DeployHelper.deployGmxConfig(owner);
         vm.label(address(config), "config");
 
         // deploy gmxGasStation
-        address gmxGasStationImpl = address(new GmxGasStation());
-        address gmxGasStationProxy = address(
-            new ERC1967Proxy(gmxGasStationImpl, abi.encodeWithSelector(GmxGasStation.initialize.selector, owner))
-        );
-        GmxGasStation gmxGasStation = GmxGasStation(payable(gmxGasStationProxy));
+        GmxGasStation gmxGasStation = DeployHelper.deployGmxGasStation(owner);
         vm.label(address(gmxGasStation), "gmxGasStation");
 
         // topup gmxGasStation with some native token, in practice, its don't through gmxGasStation
         vm.deal(address(gmxGasStation), 10000 ether);
 
-        // deploy positionManager impl
-        address positionManagerImpl = address(new GmxV2PositionManager());
         // deploy positionManager beacon
-        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
+        address positionManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
         // deploy positionMnager beacon proxy
-        address positionManagerProxy = address(
-            new BeaconProxy(
-                positionManagerBeacon,
-                abi.encodeWithSelector(
-                    GmxV2PositionManager.initialize.selector,
-                    strategy,
-                    address(config),
-                    address(gmxGasStation),
-                    GMX_ETH_USDC_MARKET
-                )
+        positionManager = DeployHelper.deployGmxPositionManager(
+            DeployHelper.GmxPositionManagerDeployParams(
+                positionManagerBeacon, address(config), strategy, address(gmxGasStation), GMX_ETH_USDC_MARKET
             )
         );
-        positionManager = GmxV2PositionManager(payable(positionManagerProxy));
-
         vm.label(address(positionManager), "positionManager");
-
-        gmxGasStation.registerPositionManager(positionManagerProxy, true);
         vm.stopPrank();
 
         return address(positionManager);

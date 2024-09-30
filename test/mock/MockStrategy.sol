@@ -26,10 +26,6 @@ contract MockStrategy {
         return 3 ether;
     }
 
-    function setPositionManager(address _positionManager) public {
-        IERC20(asset()).approve(_positionManager, type(uint256).max);
-    }
-
     function afterAdjustPosition(IPositionManager.AdjustPositionPayload calldata params) external {
         sizeDeltaInTokens = params.sizeDeltaInTokens;
         collateralDelta = params.collateralDeltaAmount;

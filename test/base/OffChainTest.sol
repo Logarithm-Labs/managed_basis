@@ -14,7 +14,7 @@ import {PositionMngerForkTest} from "./PositionMngerForkTest.sol";
 import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
-
+import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {console2 as console} from "forge-std/console2.sol";
 
 contract OffChainTest is PositionMngerForkTest {
@@ -48,8 +48,7 @@ contract OffChainTest is PositionMngerForkTest {
     function _initPositionManager(address owner, address strategy) internal override returns (address) {
         vm.startPrank(owner);
         // deploy config
-        OffChainConfig config = new OffChainConfig();
-        config.initialize(owner);
+        OffChainConfig config = DeployHelper.deployOffChainConfig(owner);
         config.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
         config.setCollateralMinMax(
             increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
@@ -61,10 +60,8 @@ contract OffChainTest is PositionMngerForkTest {
         address product = IBasisStrategy(strategy).product();
         address asset = IBasisStrategy(strategy).asset();
 
-        // deploy position manager
-        address positionManagerImpl = address(new OffChainPositionManager());
         // deploy positionManager beacon
-        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
+        address positionManagerBeacon = DeployHelper.deployBeacon(address(new OffChainPositionManager()), owner);
         // deploy positionMnager beacon proxy
         address positionManagerProxy = address(
             new BeaconProxy(
@@ -81,7 +78,11 @@ contract OffChainTest is PositionMngerForkTest {
                 )
             )
         );
-        positionManager = OffChainPositionManager(positionManagerProxy);
+        positionManager = DeployHelper.deployOffChainPositionManager(
+            DeployHelper.OffChainPositionManagerDeployParams(
+                owner, address(config), positionManagerBeacon, strategy, agent, oracle, product, asset, false
+            )
+        );
         vm.label(address(positionManager), "positionManager");
 
         asset_ = asset;
@@ -91,10 +92,10 @@ contract OffChainTest is PositionMngerForkTest {
         vm.startPrank(address(this));
         IERC20(asset).approve(agent, type(uint256).max);
         vm.startPrank(agent);
-        IERC20(asset).approve(positionManagerProxy, type(uint256).max);
+        IERC20(asset).approve(address(positionManager), type(uint256).max);
         vm.stopPrank();
 
-        return positionManagerProxy;
+        return address(positionManager);
     }
 
     function _initOffChainTest(address _asset, address _product, address _oracle) internal {}
