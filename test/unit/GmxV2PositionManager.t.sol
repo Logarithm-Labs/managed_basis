@@ -975,6 +975,11 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertEq(nextBorrowingFeeUsd, nextBorrowingFeeUsdAfter, "borrowing fee not changed");
     }
 
+    function test_maxGasCallback() public view {
+        uint256 maxGas = IDataStore(GMX_DATA_STORE).getUint(Keys.MAX_CALLBACK_GAS_LIMIT);
+        assertEq(maxGas, positionManager.config().callbackGasLimit());
+    }
+
     function _moveTimestampWithPriceFeed(uint256 deltaTime) internal {
         address[] memory priceFeeds = new address[](2);
         priceFeeds[0] = assetPriceFeed;
