@@ -373,8 +373,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     function test_managementFee() public validateFinalState {
         address recipient = makeAddr("recipient");
         vm.startPrank(owner);
-        vault.setFeeRecipient(recipient);
-        vault.setManagementFee(0.1 ether); // 10%
+        vault.setFeeInfos(recipient, 0.05 ether, 0, 0);
 
         uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC);
         _mint(user1, shares);
@@ -384,7 +383,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _moveTimestamp(36.5 days, priceFeeds);
         vm.startPrank(user1);
         vault.redeem(shares / 2, user1, user1);
-        assertEq(vault.balanceOf(recipient), shares / 100);
+        assertEq(vault.balanceOf(recipient), shares / 200);
     }
 
     function test_previewDepositMint_whenNotUtilized() public afterDeposited {

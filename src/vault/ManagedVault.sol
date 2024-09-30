@@ -75,8 +75,8 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         onlyOwner
     {
         require(_feeRecipient != address(0));
-        require(_managementFee < MAX_MANAGEMENT_FEE);
-        require(_performanceFee < MAX_PERFORMANCE_FEE);
+        require(_managementFee <= MAX_MANAGEMENT_FEE);
+        require(_performanceFee <= MAX_PERFORMANCE_FEE);
 
         ManagedVaultStorage storage $ = _getManagedVaultStorage();
         $.feeRecipient = _feeRecipient;
