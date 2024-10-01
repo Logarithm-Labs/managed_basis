@@ -12,38 +12,23 @@ import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
 import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
+import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {DeployHelper} from "script/utils/DeployHelper.sol";
+import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 
 contract DeployScript is Script {
     // access control addresses
-    address constant owner = 0xd1DD21D53eC43C8FE378E51029Aa3F380b229c98;
+    address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
     address constant operator = 0x78057a43dDc57792340BC19E50e1011F8DAdEd01;
     address constant forwarder = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
     address constant agent = 0xA2a7e3a770c38aAe24F175a38281f74731Fe477E;
 
-    // swap addresses
-    address constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
-    address constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
-    address constant UNISWAPV3_WETH_USDC = 0xC6962004f452bE9203591991D15f6b388e09E8D0;
-
-    // GMX Addresses
-    address constant GMX_DATA_STORE = 0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8;
-    address constant GMX_EXCHANGE_ROUTER = 0x69C527fC77291722b52649E45c838e41be8Bf5d5;
-    address constant GMX_ORDER_HANDLER = 0xB0Fc2a48b873da40e7bc25658e5E6137616AC2Ee;
-    address constant GMX_ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
-    address constant GMX_READER = 0x5Ca84c34a381434786738735265b9f3FD814b824;
-    address constant GMX_ETH_USDC_MARKET = 0x70d95587d40A2caf56bd97485aB3Eec10Bee6336;
-    address constant GMX_KEEPER = 0xE47b36382DC50b90bCF6176Ddb159C4b9333A7AB;
-    address constant CHAINLINK_PRICE_FEED_PROVIDER = 0x527FB0bCfF63C47761039bB386cFE181A92a4701;
-
     // Strategy Addresses
-    address constant asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // USDC
-    address constant product = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH
-    address constant assetPriceFeed = 0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3; // Chainlink USDC-USD price feed
-    address constant productPriceFeed = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // Chainlink ETH-USD price feed
+    address constant asset = ArbiAddresses.USDC; // USDC
+    address constant product = ArbiAddresses.WETH; // WETH
+    address constant assetPriceFeed = ArbiAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
+    address constant productPriceFeed = ArbiAddresses.CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
     bool constant isLong = false;
 
     // vault params
@@ -70,200 +55,98 @@ contract DeployScript is Script {
 
     // predeployed contracts
     LogarithmOracle public oracle = LogarithmOracle(0x26aD95BDdc540ac3Af223F3eB6aA07C13d7e08c9);
-    GmxGasStation public gmxGasStation = GmxGasStation(payable(0xB758989eeBB4D5EF2da4FbD6E37f898dd1d49b2a));
+    // GmxGasStation public gmxGasStation = GmxGasStation(payable(0xB758989eeBB4D5EF2da4FbD6E37f898dd1d49b2a));
 
     function run() public {
         vm.startBroadcast();
-        // // deploy LogarithmOracle
-        // address oracleImpl = address(new LogarithmOracle());
-        // address oracleProxy =
-        //     address(new ERC1967Proxy(oracleImpl, abi.encodeWithSelector(LogarithmOracle.initialize.selector, owner)));
-        // LogarithmOracle oracle = LogarithmOracle(oracleProxy);
-        // address oracleOwner = oracle.owner();
-        // require(oracleOwner == owner, "Oracle owner is not the expected owner");
 
-        // // set oracle price feed
-        // address[] memory assets = new address[](2);
-        // address[] memory feeds = new address[](2);
-        // uint256[] memory heartbeats = new uint256[](2);
-        // assets[0] = asset;
-        // assets[1] = product;
-        // feeds[0] = assetPriceFeed;
-        // feeds[1] = productPriceFeed;
-        // heartbeats[0] = 24 * 3600;
-        // heartbeats[1] = 24 * 3600;
-        // oracle.setPriceFeeds(assets, feeds);
-        // oracle.setHeartbeats(feeds, heartbeats);
-
-        // console.log("Oracle deployed at", address(oracle));
+        // deploy mock priority provider
+        MockPriorityProvider provider = new MockPriorityProvider();
+        console.log("Mock PriorityProvider deployed at", address(provider));
 
         // deploy LogarithmVaultBeacon
-        address vaultImpl = address(new LogarithmVault());
-        address vaultBeacon = address(new UpgradeableBeacon(vaultImpl, owner));
-        require(
-            UpgradeableBeacon(vaultBeacon).implementation() == vaultImpl,
-            "VaultBeacon implementation is not the expected implementation"
-        );
-        require(UpgradeableBeacon(vaultBeacon).owner() == owner, "VaultBeacon owner is not the expected owner");
+        address vaultBeacon = DeployHelper.deployBeacon(address(new LogarithmVault()), owner);
         console.log("Vault Beacon deployed at", vaultBeacon);
 
         // deploy LogarithmVaultGmx
-        address vaultProxy = address(
-            new BeaconProxy(
-                vaultBeacon,
-                abi.encodeWithSelector(
-                    LogarithmVault.initialize.selector,
-                    owner,
-                    asset,
-                    entryCost,
-                    exitCost,
-                    "Logarithm Basis USDC-WETH GMX (Alpha)",
-                    "log-b-usdc-weth-gmx-a"
-                )
-            )
+        DeployHelper.LogarithmVaultDeployParams memory vaultDeployParams = DeployHelper.LogarithmVaultDeployParams(
+            vaultBeacon,
+            owner,
+            asset,
+            address(provider),
+            entryCost,
+            exitCost,
+            "Logarithm Basis USDC-WETH GMX (Alpha)",
+            "log-b-usdc-weth-gmx-a"
         );
-        LogarithmVault vaultGmx = LogarithmVault(vaultProxy);
-        require(vaultGmx.owner() == owner, "Vault owner is not the expected owner");
+        LogarithmVault vaultGmx = DeployHelper.deployLogarithmVault(vaultDeployParams);
         console.log("Vault GMX deployed at", address(vaultGmx));
-
         // deploy LogarithmVaultHl
-        vaultProxy = address(
-            new BeaconProxy(
-                vaultBeacon,
-                abi.encodeWithSelector(
-                    LogarithmVault.initialize.selector,
-                    owner,
-                    asset,
-                    entryCost,
-                    exitCost,
-                    "Logarithm Basis USDC-WETH Hyperliquid (Alpha)",
-                    "log-b-usdc-weth-hl-a"
-                )
-            )
-        );
-        LogarithmVault vaultHl = LogarithmVault(vaultProxy);
-        require(vaultHl.owner() == owner, "Vault owner is not the expected owner");
+        vaultDeployParams.name = "Logarithm Basis USDC-WETH Hyperliquid (Alpha)";
+        vaultDeployParams.symbol = "log-b-usdc-weth-hl-a";
+        LogarithmVault vaultHl = DeployHelper.deployLogarithmVault(vaultDeployParams);
         console.log("Vault HL deployed at", address(vaultHl));
 
-        address[] memory pathWeth = new address[](3);
-        pathWeth[0] = USDC;
-        pathWeth[1] = UNISWAPV3_WETH_USDC;
-        pathWeth[2] = WETH;
-
         // deploy BasisStrategyConfig
-        address strategyConfigImpl = address(new StrategyConfig());
-        address strategyConfigProxy = address(
-            new ERC1967Proxy(strategyConfigImpl, abi.encodeWithSelector(StrategyConfig.initialize.selector, owner))
-        );
-        StrategyConfig strategyConfig = StrategyConfig(strategyConfigProxy);
-        require(strategyConfig.owner() == owner, "Config owner is not the expected owner");
+        StrategyConfig strategyConfig = DeployHelper.deployStrategyConfig(owner);
         console.log("Strategy Config deployed at", address(strategyConfig));
 
         // deploy BasisStrategyBeacon
-        address strategyImpl = address(new BasisStrategy());
-        address strategyBeacon = address(new UpgradeableBeacon(strategyImpl, owner));
-        require(
-            UpgradeableBeacon(strategyBeacon).implementation() == strategyImpl,
-            "StrategyBeacon implementation is not the expected implementation"
-        );
-        require(UpgradeableBeacon(strategyBeacon).owner() == owner, "StrategyBeacon owner is not the expected owner");
+        address strategyBeacon = DeployHelper.deployBeacon(address(new BasisStrategy()), owner);
         console.log("Strategy Beacon deployed at", strategyBeacon);
 
         // deploy BasisStrategy Gmx
-        address strategyProxy = address(
-            new BeaconProxy(
-                strategyBeacon,
-                abi.encodeWithSelector(
-                    BasisStrategy.initialize.selector,
-                    address(strategyConfig),
-                    product,
-                    address(vaultGmx),
-                    oracle,
-                    operator,
-                    targetLeverage,
-                    minLeverage,
-                    maxLeverage,
-                    safeMarginLeverage,
-                    pathWeth
-                )
-            )
+        address[] memory assetToProductSwapPath = new address[](3);
+        assetToProductSwapPath[0] = ArbiAddresses.USDC;
+        assetToProductSwapPath[1] = ArbiAddresses.UNISWAPV3_WETH_USDC;
+        assetToProductSwapPath[2] = ArbiAddresses.WETH;
+        DeployHelper.BasisStrategyDeployParams memory strategyDeployParams = DeployHelper.BasisStrategyDeployParams(
+            owner,
+            strategyBeacon,
+            address(strategyConfig),
+            product,
+            address(vaultGmx),
+            address(oracle),
+            operator,
+            targetLeverage,
+            minLeverage,
+            maxLeverage,
+            safeMarginLeverage,
+            assetToProductSwapPath
         );
-
-        BasisStrategy strategyGmx = BasisStrategy(strategyProxy);
-        require(strategyGmx.owner() == owner, "Strategy owner is not the expected owner");
+        BasisStrategy strategyGmx = DeployHelper.deployBasisStrategy(strategyDeployParams);
         console.log("Strategy GMX deployed at", address(strategyGmx));
-
         // deploy BasisStrategy Hl
-        strategyProxy = address(
-            new BeaconProxy(
-                strategyBeacon,
-                abi.encodeWithSelector(
-                    BasisStrategy.initialize.selector,
-                    address(strategyConfig),
-                    product,
-                    address(vaultHl),
-                    oracle,
-                    operator,
-                    targetLeverage,
-                    minLeverage,
-                    maxLeverage,
-                    safeMarginLeverage,
-                    pathWeth
-                )
-            )
-        );
-
-        BasisStrategy strategyHl = BasisStrategy(strategyProxy);
-        require(strategyHl.owner() == owner, "Strategy owner is not the expected owner");
-        console.log("Strategy GMX deployed at", address(strategyHl));
+        strategyDeployParams.vault = address(vaultHl);
+        BasisStrategy strategyHl = DeployHelper.deployBasisStrategy(strategyDeployParams);
+        console.log("Strategy HL deployed at", address(strategyHl));
 
         // deploy GmxConfig
-        address gmxConfigImpl = address(new GmxConfig());
-        address gmxConfigProxy = address(
-            new ERC1967Proxy(
-                gmxConfigImpl,
-                abi.encodeWithSelector(GmxConfig.initialize.selector, owner, GMX_EXCHANGE_ROUTER, GMX_READER)
-            )
-        );
-        GmxConfig gmxConfig = GmxConfig(gmxConfigProxy);
-        require(gmxConfig.owner() == owner, "GmxConfig owner is not the expected owner");
+        GmxConfig gmxConfig = DeployHelper.deployGmxConfig(owner);
         console.log("GmxConfig deployed at", address(gmxConfig));
 
+        // deploy GmxGasStation
+        GmxGasStation gmxGasStation = DeployHelper.deployGmxGasStation(owner);
+        console.log("GmxGasStation deployed at", address(gmxGasStation));
+
         // deploy GmxPositionManagerBeacon
-        address gmxPositionManagerImpl = address(new GmxV2PositionManager());
-        address gmxPositionManagerBeacon = address(new UpgradeableBeacon(gmxPositionManagerImpl, owner));
-        require(
-            UpgradeableBeacon(gmxPositionManagerBeacon).implementation() == gmxPositionManagerImpl,
-            "GmxPositionManagerBeacon implementation is not the expected implementation"
-        );
-        require(
-            UpgradeableBeacon(gmxPositionManagerBeacon).owner() == owner,
-            "GmxPositionManagerBeacon owner is not the expected owner"
-        );
+        address gmxPositionManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
         console.log("GmxPositionManager Beacon deployed at", gmxPositionManagerBeacon);
 
         // deploy GmxPositionManager
-        address gmxPositionManagerProxy = address(
-            new BeaconProxy(
+        GmxV2PositionManager gmxPositionManager = DeployHelper.deployGmxPositionManager(
+            DeployHelper.GmxPositionManagerDeployParams(
                 gmxPositionManagerBeacon,
-                abi.encodeWithSelector(
-                    GmxV2PositionManager.initialize.selector,
-                    strategyGmx,
-                    address(gmxConfig),
-                    address(gmxGasStation),
-                    GMX_ETH_USDC_MARKET
-                )
+                address(gmxConfig),
+                address(strategyGmx),
+                address(gmxGasStation),
+                ArbiAddresses.GMX_ETH_USDC_MARKET
             )
         );
-        GmxV2PositionManager gmxPositionManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
         console.log("PositionManager GMX deployed at", address(gmxPositionManager));
 
-        // deploy Hypeliquid Config
-        address hlConfigImpl = address(new OffChainConfig());
-        address hlConfigProxy =
-            address(new ERC1967Proxy(hlConfigImpl, abi.encodeWithSelector(OffChainConfig.initialize.selector, owner)));
-        OffChainConfig hlConfig = OffChainConfig(hlConfigProxy);
-        require(hlConfig.owner() == owner, "Hypeliquid Config owner is not the expected owner");
+        // deploy HL Config
+        OffChainConfig hlConfig = DeployHelper.deployOffChainConfig(owner);
         hlConfig.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
         hlConfig.setCollateralMinMax(
             increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
@@ -271,54 +154,23 @@ contract DeployScript is Script {
         hlConfig.setLimitDecreaseCollateral(limitDecreaseCollateral);
 
         // deploy OffChainPositionManagerBeacon
-        address offchainPositionManagerImpl = address(new OffChainPositionManager());
-        address offchainPositionManagerBeacon = address(new UpgradeableBeacon(offchainPositionManagerImpl, owner));
-        require(
-            UpgradeableBeacon(offchainPositionManagerBeacon).implementation() == offchainPositionManagerImpl,
-            "PositionManagerBeacon implementation is not the expected implementation"
-        );
-        require(
-            UpgradeableBeacon(offchainPositionManagerBeacon).owner() == owner,
-            "PositionManagerBeacon owner is not the expected owner"
-        );
-        console.log("PositionManager Beacon deployed at", offchainPositionManagerBeacon);
+        address offchainPositionManagerBeacon = DeployHelper.deployBeacon(address(new OffChainPositionManager()), owner);
+        console.log("OffChainPositionManager Beacon deployed at", offchainPositionManagerBeacon);
 
-        address hlPositionManagerProxy = address(
-            new BeaconProxy(
+        OffChainPositionManager hlPositionManager = DeployHelper.deployOffChainPositionManager(
+            DeployHelper.OffChainPositionManagerDeployParams(
+                owner,
+                address(hlConfig),
                 offchainPositionManagerBeacon,
-                abi.encodeWithSelector(
-                    OffChainPositionManager.initialize.selector,
-                    address(strategyHl),
-                    agent,
-                    address(oracle),
-                    product,
-                    asset,
-                    false
-                )
+                address(strategyHl),
+                agent,
+                address(oracle),
+                product,
+                asset,
+                false
             )
         );
-        OffChainPositionManager hlPositionManager = OffChainPositionManager(hlPositionManagerProxy);
-        require(hlPositionManager.owner() == owner, "PositionManager owner is not the expected owner");
-        require(hlPositionManager.agent() == agent, "PositionManager agent is not the expected agent");
-        require(hlPositionManager.oracle() == address(oracle), "PositionManager oracle is not the expected oracle");
-        console.log("PositionManager Hypeliquid deployed at", address(hlPositionManager));
-
-        // configure
-        vaultGmx.setStrategy(address(strategyGmx));
-        strategyGmx.setPositionManager(address(gmxPositionManager));
-        require(vaultGmx.strategy() == address(strategyGmx), "Vault strategy is not the expected strategy");
-        require(
-            strategyGmx.positionManager() == address(gmxPositionManager),
-            "Strategy positionManager is not the expected positionManager"
-        );
-
-        vaultHl.setStrategy(address(strategyHl));
-        strategyHl.setPositionManager(address(hlPositionManager));
-        require(vaultHl.strategy() == address(strategyHl), "Vault strategy is not the expected strategy");
-        require(
-            strategyHl.positionManager() == address(hlPositionManager),
-            "Strategy positionManager is not the expected positionManager"
-        );
+        console.log("PositionManager HL deployed at", address(hlPositionManager));
 
         // deploy DataProvider
         DataProvider dataProvider = new DataProvider();

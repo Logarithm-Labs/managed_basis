@@ -8,6 +8,8 @@ import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
+import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+
 contract InchTest is Test {
     using stdStorage for StdStorage;
 
@@ -15,13 +17,13 @@ contract InchTest is Test {
     BasisStrategy public strategy;
     LogarithmOracle public oracle;
 
-    address public USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
+    address public USDC = ArbiAddresses.USDC;
     address public usdcWhale = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
 
-    address public asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // USDC
-    address public product = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH
-    address public assetPriceFeed = 0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3; // Chainlink USDC-USD price feed
-    address public productPriceFeed = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // Chainlink ETH-USD price feed
+    address public asset = ArbiAddresses.USDC; // USDC
+    address public product = ArbiAddresses.WETH; // WETH
+    address public assetPriceFeed = ArbiAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
+    address public productPriceFeed = ArbiAddresses.CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
     uint256 public entryCost = 0.01 ether;
     uint256 public exitCost = 0.02 ether;
     bool public isLong = false;

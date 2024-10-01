@@ -27,6 +27,8 @@ import {StrategyHelper, StrategyState} from "test/helper/StrategyHelper.sol";
 import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 import {console2 as console} from "forge-std/console2.sol";
 
+import {DeployHelper} from "script/utils/DeployHelper.sol";
+
 abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     using Math for uint256;
 
@@ -44,8 +46,8 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
     address constant asset = USDC; // USDC
     address constant product = WETH; // WETH
-    address constant assetPriceFeed = 0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3; // Chainlink USDC-USD price feed
-    address constant productPriceFeed = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // Chainlink ETH-USD price feed
+    address constant assetPriceFeed = CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
+    address constant productPriceFeed = CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
     uint256 constant entryCost = 0.01 ether;
     uint256 constant exitCost = 0.02 ether;
     bool constant isLong = false;
@@ -65,14 +67,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _forkArbitrum(237215502);
         vm.startPrank(owner);
         // deploy oracle
-        address oracleImpl = address(new LogarithmOracle());
-        address oracleProxy =
-            address(new ERC1967Proxy(oracleImpl, abi.encodeWithSelector(LogarithmOracle.initialize.selector, owner)));
-        oracle = LogarithmOracle(oracleProxy);
+        oracle = DeployHelper.deployLogarithmOracle(owner);
         vm.label(address(oracle), "oracle");
 
         // mock uniswap
-        _mockUniswapPool(UNISWAPV3_WETH_USDC, oracleProxy);
+        _mockUniswapPool(UNISWAPV3_WETH_USDC, address(oracle));
 
         // set oracle price feed
         address[] memory assets = new address[](2);
@@ -95,34 +94,29 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         pathWeth[2] = WETH;
 
         priorityProvider = new MockPriorityProvider();
-
-        address vaultImpl = address(new LogarithmVault());
-        address vaultProxy = address(
-            new ERC1967Proxy(
-                vaultImpl,
-                abi.encodeWithSelector(
-                    LogarithmVault.initialize.selector,
-                    owner,
-                    asset,
-                    address(priorityProvider),
-                    entryCost,
-                    exitCost,
-                    "tt",
-                    "tt"
-                )
+        address vaultBeacon = DeployHelper.deployBeacon(address(new LogarithmVault()), owner);
+        vault = DeployHelper.deployLogarithmVault(
+            DeployHelper.LogarithmVaultDeployParams(
+                vaultBeacon,
+                owner,
+                asset,
+                address(priorityProvider),
+                entryCost,
+                exitCost,
+                "Logarithm Basis USDC-WETH GMX (Alpha)",
+                "log-b-usdc-weth-gmx-a"
             )
         );
-        vault = LogarithmVault(vaultProxy);
         vm.label(address(vault), "vault");
 
-        StrategyConfig config = new StrategyConfig();
-        config.initialize(owner);
+        StrategyConfig config = DeployHelper.deployStrategyConfig(owner);
 
         // deploy strategy
         address strategyImpl = address(new BasisStrategy());
         // deploy strategy beacon
-        address strategyBeacon = address(new UpgradeableBeacon(strategyImpl, owner));
-        // deploy positionMnager beacon proxy
+        address strategyBeacon = DeployHelper.deployBeacon(strategyImpl, owner);
+        // deploy strategy beacon proxy
+
         address strategyProxy = address(
             new BeaconProxy(
                 strategyBeacon,
@@ -141,18 +135,26 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
                 )
             )
         );
-        strategy = BasisStrategy(strategyProxy);
+        strategy = DeployHelper.deployBasisStrategy(
+            DeployHelper.BasisStrategyDeployParams(
+                owner,
+                strategyBeacon,
+                address(config),
+                product,
+                address(vault),
+                address(oracle),
+                operator,
+                targetLeverage,
+                minLeverage,
+                maxLeverage,
+                safeMarginLeverage,
+                pathWeth
+            )
+        );
         // strategy.setForwarder(forwarder);
         vm.label(address(strategy), "strategy");
 
-        vault.setStrategy(address(strategy));
-
-        address positionManagerAddr = _initPositionManager(owner, address(strategy));
-
-        vm.startPrank(owner);
-        strategy.setPositionManager(positionManagerAddr);
-
-        vm.stopPrank();
+        _initPositionManager(owner, address(strategy));
 
         // top up user1
         vm.startPrank(USDC_WHALE);
@@ -370,11 +372,10 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC);
     }
 
-    function test_mgmtFee() public validateFinalState {
+    function test_managementFee() public validateFinalState {
         address recipient = makeAddr("recipient");
         vm.startPrank(owner);
-        vault.setFeeRecipient(recipient);
-        vault.setMgmtFee(0.1 ether); // 10%
+        vault.setFeeInfos(recipient, 0.05 ether, 0, 0);
 
         uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC);
         _mint(user1, shares);
@@ -384,7 +385,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _moveTimestamp(36.5 days, priceFeeds);
         vm.startPrank(user1);
         vault.redeem(shares / 2, user1, user1);
-        assertEq(vault.balanceOf(recipient), shares / 100);
+        assertEq(vault.balanceOf(recipient), shares / 200);
     }
 
     function test_previewDepositMint_whenNotUtilized() public afterDeposited {

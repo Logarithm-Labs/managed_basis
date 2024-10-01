@@ -12,6 +12,7 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 
 import {IOracle} from "src/oracle/IOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
+import {Constants} from "src/libraries/utils/Constants.sol";
 
 contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
     uint256 public constant FLOAT_PRECISION = 1e30;
@@ -125,7 +126,7 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
             revert Errors.EmptyPriceFeedMultiplier(asset);
         }
 
-        uint256 adjustedPrice = Math.mulDiv(price, precision, FLOAT_PRECISION);
+        uint256 adjustedPrice = Math.mulDiv(price, precision, Constants.USD_PRECISION);
 
         return adjustedPrice;
     }

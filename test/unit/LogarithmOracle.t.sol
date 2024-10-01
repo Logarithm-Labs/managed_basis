@@ -8,15 +8,17 @@ import {ArbSysMock} from "test/mock/ArbSysMock.sol";
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
 import {MockPriceFeed} from "test/mock/MockPriceFeed.sol";
 
+import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+
 contract LogarithmOracleTest is Test {
     LogarithmOracle public oracle;
 
     address owner = makeAddr("owner");
 
-    address constant asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // USDC
-    address constant product = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH
-    address constant assetPriceFeed = 0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3; // Chainlink USDC-USD price feed
-    address constant productPriceFeed = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // Chainlink ETH-USD price feed
+    address constant asset = ArbiAddresses.USDC; // USDC
+    address constant product = ArbiAddresses.WETH; // WETH
+    address constant assetPriceFeed = ArbiAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
+    address constant productPriceFeed = ArbiAddresses.CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
 
     function setUp() public {
         _forkArbitrum();

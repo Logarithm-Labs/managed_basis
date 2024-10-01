@@ -45,10 +45,9 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
         __Ownable_init(owner_);
         GmxConfigStorage storage $ = _getGmxConfigStorage();
         _updateAddresses(exchangeRouter_, reader_);
-        $.callbackGasLimit = 2_000_000;
+        $.callbackGasLimit = 3_000_000;
         $.referralCode = bytes32(0);
         $.maxClaimableFundingShare = 1e16; // 1%
-        $.limitDecreaseCollateral = 100 * 1e6;
         $.realizedPnlDiffFactor = 5e15; // 0.5%
     }
 

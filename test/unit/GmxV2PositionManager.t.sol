@@ -28,16 +28,18 @@ import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {IPositionManager} from "src/position/IPositionManager.sol";
 
+import {DeployHelper} from "script/utils/DeployHelper.sol";
+
 contract GmxV2PositionManagerTest is GmxV2Test {
     address owner = makeAddr("owner");
     address user = makeAddr("user");
 
     uint256 constant USD_PRECISION = 1e30;
 
-    address constant asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // USDC
-    address constant product = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1; // WETH
-    address constant assetPriceFeed = 0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3; // Chainlink USDC-USD price feed
-    address constant productPriceFeed = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612; // Chainlink ETH-USD price feed
+    address constant asset = USDC; // USDC
+    address constant product = WETH; // WETH
+    address constant assetPriceFeed = CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
+    address constant productPriceFeed = CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
     uint256 constant entryCost = 0.01 ether;
     uint256 constant exitCost = 0.02 ether;
     bool constant isLong = false;
@@ -47,17 +49,12 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     MockStrategy strategy;
     LogarithmOracle oracle;
     GmxGasStation gmxGasStation;
-    uint256 increaseFee;
-    uint256 decreaseFee;
 
     function setUp() public {
         _forkArbitrum(237215502);
         vm.startPrank(owner);
         // deploy oracle
-        address oracleImpl = address(new LogarithmOracle());
-        address oracleProxy =
-            address(new ERC1967Proxy(oracleImpl, abi.encodeWithSelector(LogarithmOracle.initialize.selector, owner)));
-        oracle = LogarithmOracle(oracleProxy);
+        oracle = DeployHelper.deployLogarithmOracle(owner);
 
         // set oracle price feed
         address[] memory assets = new address[](2);
@@ -76,15 +73,36 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
         strategy = new MockStrategy(address(oracle));
 
-        address positionManagerAddr = _initPositionManager(owner, address(strategy));
+        // deploy config
+        GmxConfig config = DeployHelper.deployGmxConfig(owner);
+        vm.label(address(config), "config");
 
-        strategy.setPositionManager(positionManagerAddr);
+        // deploy gmxGasStation
+        GmxGasStation gmxGasStation = DeployHelper.deployGmxGasStation(owner);
+        vm.label(address(gmxGasStation), "gmxGasStation");
 
+        // topup gmxGasStation with some native token, in practice, its don't through gmxGasStation
+        vm.deal(address(gmxGasStation), 10000 ether);
+
+        // deploy positionManager beacon
+        address positionManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
+        // deploy positionMnager beacon proxy
+        address gmxPositionManagerProxy = address(
+            new BeaconProxy(
+                positionManagerBeacon,
+                abi.encodeWithSelector(
+                    GmxV2PositionManager.initialize.selector,
+                    address(strategy),
+                    address(config),
+                    address(gmxGasStation),
+                    GMX_ETH_USDC_MARKET
+                )
+            )
+        );
+        positionManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
+        vm.label(address(positionManager), "positionManager");
+        gmxGasStation.registerPositionManager(address(positionManager), true);
         vm.stopPrank();
-
-        (increaseFee, decreaseFee) = positionManager.getExecutionFee();
-        assert(increaseFee > 0);
-        assert(decreaseFee > 0);
     }
 
     modifier afterHavingPosition() {
@@ -973,6 +991,11 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
         assertApproxEqRel(nextFundingFeeUsd, nextFundingFeeUsdAfter, 0.99999 ether, "funding fee not changed");
         assertEq(nextBorrowingFeeUsd, nextBorrowingFeeUsdAfter, "borrowing fee not changed");
+    }
+
+    function test_maxGasCallback() public view {
+        uint256 maxGas = IDataStore(GMX_DATA_STORE).getUint(Keys.MAX_CALLBACK_GAS_LIMIT);
+        assertEq(maxGas, positionManager.config().callbackGasLimit());
     }
 
     function _moveTimestampWithPriceFeed(uint256 deltaTime) internal {
