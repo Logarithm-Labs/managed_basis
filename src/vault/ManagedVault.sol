@@ -37,9 +37,8 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         uint256 hurdleRate;
         // last timestamp for management fee
         uint256 lastAccruedTimestamp;
-        // high water mark of share price
-        // denominated in asset decimals
-        uint256 sharePriceHwm;
+        // high water mark of totalAssets
+        uint256 hwm;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedVault")) - 1)) & ~bytes32(uint256(0xff))
@@ -109,7 +108,6 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     }
 
     /// @dev should not be called when minting to fee recipient
-    /// should be called only when feeRecipient is none-zero
     function _accrueManagementFeeShares(address _feeRecipient) internal {
         uint256 _managementFee = managementFee();
         uint256 _lastAccruedTimestamp = lastAccruedTimestamp();
@@ -126,21 +124,37 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         }
     }
 
-    /// @dev should not be called when minting to fee recipient
-    /// should be called only when feeRecipient is none-zero
-    function _harvestPerformanceFeeShares(address _feeRecipient) internal {
+    /// @dev should be called before all deposits and withdrawals
+    function _harvestPerformanceFeeShares(uint256 assets, uint256 shares, bool isDeposit) internal {
+        address _feeRecipient = feeRecipient();
         uint256 _performanceFee = performanceFee();
-        uint256 _sharePriceHwm = sharePriceHwm();
-        uint256 _sharePrice = sharePrice();
-        uint256 feeShares = _nextPerformanceFeeShares(_feeRecipient, _performanceFee, _sharePriceHwm, _sharePrice);
-        if ((_performanceFee == 0 || _sharePriceHwm == 0) && _sharePrice != 0) {
-            // update high water mark when performanceFee is 0 to account fees right after setting fee vale as none- zero
-            // initialize high water mark when it is 0 and performanceFee is set
-            _getManagedVaultStorage().sharePriceHwm = _sharePrice;
-        } else if (feeShares > 0) {
+        uint256 _hwm = highWaterMark();
+        uint256 _totalAssets = totalAssets();
+        uint256 _totalSupply = totalSupply();
+        uint256 feeShares = _nextPerformanceFeeShares(_feeRecipient, _performanceFee, _hwm, _totalAssets);
+        if (feeShares > 0) {
             _mint(_feeRecipient, feeShares);
-            _getManagedVaultStorage().sharePriceHwm = _sharePrice;
+            _updateHighWaterMark(_totalAssets, _totalSupply, assets, shares, isDeposit);
+        } else {
+            _updateHighWaterMark(_hwm, _totalSupply, assets, shares, isDeposit);
         }
+    }
+
+    /// @notice update high water mark
+    function _updateHighWaterMark(
+        uint256 oldHwm,
+        uint256 oldTotalSupply,
+        uint256 assets,
+        uint256 shares,
+        bool isDeposit
+    ) internal {
+        uint256 newHwm;
+        if (isDeposit) {
+            newHwm = oldHwm + assets;
+        } else {
+            newHwm = oldHwm.mulDiv(oldTotalSupply - shares, oldTotalSupply);
+        }
+        _getManagedVaultStorage().hwm = newHwm;
     }
 
     /// @notice calculate claimable shares for the management fee
@@ -163,24 +177,18 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     function _nextPerformanceFeeShares(
         address _feeRecipient,
         uint256 _performanceFee,
-        uint256 _sharePriceHwm,
-        uint256 _sharePrice
+        uint256 _hwm,
+        uint256 _totalAssets
     ) internal view returns (uint256) {
-        if (_feeRecipient == address(0) || _performanceFee == 0 || _sharePriceHwm == 0 || _sharePrice <= _sharePriceHwm)
-        {
+        if (_feeRecipient == address(0) || _performanceFee == 0 || _hwm == 0 || _totalAssets <= _hwm) {
             return 0;
         }
-
-        uint256 profitRate = (_sharePrice - _sharePriceHwm).mulDiv(Constants.FLOAT_PRECISION, _sharePriceHwm);
-        if (profitRate >= hurdleRate()) {
-            // profit = totalAssets - hwm
-            // profitRate = (totalAssets - hwm) / hwm
-            // hwm = totalAssets / (profitRate + 1)
-            // profit = hwm * profitRate = (totalAssets * profitRate) / (profitRate + 1)
-            uint256 profit = totalAssets().mulDiv(profitRate, profitRate + Constants.FLOAT_PRECISION);
-            uint256 performanceFeeAssets = profit.mulDiv(_performanceFee, Constants.FLOAT_PRECISION);
-            uint256 performanceFeeShares = _convertToShares(performanceFeeAssets, Math.Rounding.Floor);
-            return performanceFeeShares;
+        uint256 profit = _totalAssets - _hwm;
+        uint256 profitRate = profit.mulDiv(Constants.FLOAT_PRECISION, _hwm);
+        if (profitRate > hurdleRate()) {
+            uint256 feeAssets = profit.mulDiv(_performanceFee, Constants.FLOAT_PRECISION);
+            uint256 feeShares = feeAssets.mulDiv(totalSupply() + 10 ** _decimalsOffset(), _totalAssets + 1 - feeAssets);
+            return feeShares;
         } else {
             return 0;
         }
@@ -209,17 +217,13 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         return totalSupply() + nextManagementFeeShares();
     }
 
-    function sharePrice() public view returns (uint256) {
-        return _convertToAssets(10 ** decimals(), Math.Rounding.Floor);
-    }
-
     /// @notice returns claimable shares of the management fee recipient
     function nextManagementFeeShares() public view returns (uint256) {
         return _nextManagementFeeShares(feeRecipient(), managementFee(), lastAccruedTimestamp());
     }
 
     function nextPerformanceFeeShares() public view returns (uint256) {
-        return _nextPerformanceFeeShares(feeRecipient(), performanceFee(), sharePriceHwm(), sharePrice());
+        return _nextPerformanceFeeShares(feeRecipient(), performanceFee(), highWaterMark(), totalAssets());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -246,7 +250,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         return _getManagedVaultStorage().lastAccruedTimestamp;
     }
 
-    function sharePriceHwm() public view returns (uint256) {
-        return _getManagedVaultStorage().sharePriceHwm;
+    function highWaterMark() public view returns (uint256) {
+        return _getManagedVaultStorage().hwm;
     }
 }
