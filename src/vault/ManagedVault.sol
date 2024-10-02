@@ -52,6 +52,13 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     }
 
     /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event ManagementFeeCollected(address indexed feeRecipient, uint256 indexed feeShares);
+    event PerformanceFeeCollected(address indexed feeRecipient, uint256 indexed feeShares);
+
+    /*//////////////////////////////////////////////////////////////
                         INITIALIZING
     //////////////////////////////////////////////////////////////*/
 
@@ -121,6 +128,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
             // update lastAccruedTimestamp to mitigate DOS of management fee accruing
             _mint(_feeRecipient, feeShares);
             _getManagedVaultStorage().lastAccruedTimestamp = block.timestamp;
+            emit ManagementFeeCollected(_feeRecipient, feeShares);
         }
     }
 
@@ -135,6 +143,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         if (feeShares > 0) {
             _mint(_feeRecipient, feeShares);
             _updateHighWaterMark(_totalAssets, _totalSupply, assets, shares, isDeposit);
+            emit PerformanceFeeCollected(_feeRecipient, feeShares);
         } else {
             _updateHighWaterMark(_hwm, _totalSupply, assets, shares, isDeposit);
         }
