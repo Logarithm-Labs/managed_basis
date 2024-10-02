@@ -130,8 +130,8 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         uint256 _performanceFee = performanceFee();
         uint256 _hwm = highWaterMark();
         uint256 _totalAssets = totalAssets();
-        uint256 _totalSupply = totalSupply();
-        uint256 feeShares = _nextPerformanceFeeShares(_feeRecipient, _performanceFee, _hwm, _totalAssets);
+        uint256 _totalSupply = totalSupply() + nextManagementFeeShares();
+        uint256 feeShares = _nextPerformanceFeeShares(_feeRecipient, _performanceFee, _hwm, _totalAssets, _totalSupply);
         if (feeShares > 0) {
             _mint(_feeRecipient, feeShares);
             _updateHighWaterMark(_totalAssets, _totalSupply, assets, shares, isDeposit);
@@ -178,7 +178,8 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         address _feeRecipient,
         uint256 _performanceFee,
         uint256 _hwm,
-        uint256 _totalAssets
+        uint256 _totalAssets,
+        uint256 _totalSupply
     ) internal view returns (uint256) {
         if (_feeRecipient == address(0) || _performanceFee == 0 || _hwm == 0 || _totalAssets <= _hwm) {
             return 0;
@@ -187,7 +188,9 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         uint256 profitRate = profit.mulDiv(Constants.FLOAT_PRECISION, _hwm);
         if (profitRate > hurdleRate()) {
             uint256 feeAssets = profit.mulDiv(_performanceFee, Constants.FLOAT_PRECISION);
-            uint256 feeShares = feeAssets.mulDiv(totalSupply() + 10 ** _decimalsOffset(), _totalAssets + 1 - feeAssets);
+            uint256 feeShares = feeAssets.mulDiv(
+                _totalSupply + 10 ** _decimalsOffset(), _totalAssets + 1 - feeAssets, Math.Rounding.Ceil
+            );
             return feeShares;
         } else {
             return 0;
@@ -214,7 +217,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     }
 
     function totalSupplyWithNextFeeShares() public view returns (uint256) {
-        return totalSupply() + nextManagementFeeShares();
+        return totalSupply() + nextManagementFeeShares() + nextPerformanceFeeShares();
     }
 
     /// @notice returns claimable shares of the management fee recipient
@@ -223,7 +226,9 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     }
 
     function nextPerformanceFeeShares() public view returns (uint256) {
-        return _nextPerformanceFeeShares(feeRecipient(), performanceFee(), highWaterMark(), totalAssets());
+        return _nextPerformanceFeeShares(
+            feeRecipient(), performanceFee(), highWaterMark(), totalAssets(), totalSupply() + nextManagementFeeShares()
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
