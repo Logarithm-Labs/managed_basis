@@ -353,7 +353,7 @@ contract LogarithmVault is Initializable, ManagedVault {
     }
 
     /// @notice claim the processed withdraw request
-    function claim(bytes32 withdrawRequestKey) external virtual {
+    function claim(bytes32 withdrawRequestKey) external virtual returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
 
@@ -406,6 +406,7 @@ contract LogarithmVault is Initializable, ManagedVault {
         IERC20(asset()).safeTransfer(withdrawRequest.receiver, executedAssets);
 
         emit Claimed(withdrawRequest.receiver, withdrawRequestKey, executedAssets);
+        return executedAssets;
     }
 
     function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
