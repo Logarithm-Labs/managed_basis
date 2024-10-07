@@ -16,18 +16,18 @@ contract ManagedVaultSpec is ManagedVault {
         __ManagedVault_init(owner_, asset_, name_, symbol_);
     }
 
-    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override {
-        _harvestPerformanceFeeShares(assets, shares, true);
-        super._deposit(caller, receiver, assets, shares);
-    }
+    // function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override {
+    //     _harvestPerformanceFeeShares(assets, shares, true);
+    //     super._deposit(caller, receiver, assets, shares);
+    // }
 
-    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
-        internal
-        override
-    {
-        _harvestPerformanceFeeShares(assets, shares, false);
-        super._withdraw(caller, receiver, owner, assets, shares);
-    }
+    // function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
+    //     internal
+    //     override
+    // {
+    //     _harvestPerformanceFeeShares(assets, shares, false);
+    //     super._withdraw(caller, receiver, owner, assets, shares);
+    // }
 }
 
 contract ManagedVaultSpecTest is ForkTest {

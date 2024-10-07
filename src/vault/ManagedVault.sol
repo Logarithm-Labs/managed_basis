@@ -107,8 +107,24 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view override returns (uint256) {
         uint256 _totalAssets = totalAssets();
         return shares.mulDiv(
-            totalAssets() + 1, _totalSupplyWithNextFeeShares(_totalAssets) + 10 ** _decimalsOffset(), rounding
+            _totalAssets + 1, _totalSupplyWithNextFeeShares(_totalAssets) + 10 ** _decimalsOffset(), rounding
         );
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        _harvestPerformanceFeeShares(assets, shares, true);
+        super._deposit(caller, receiver, assets, shares);
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
+    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
+        internal
+        virtual
+        override
+    {
+        _harvestPerformanceFeeShares(assets, shares, false);
+        super._withdraw(caller, receiver, owner, assets, shares);
     }
 
     /// @inheritdoc ERC20Upgradeable
@@ -136,7 +152,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         uint256 _performanceFee = performanceFee();
         uint256 _hwm = highWaterMark();
         uint256 _totalAssets = totalAssets();
-        uint256 totalSupplyWithManagementFeeShares = _totalSupplyWithManagementFeeShares(totalSupply(), _feeRecipient);
+        uint256 totalSupplyWithManagementFeeShares = _totalSupplyWithManagementFeeShares(_feeRecipient);
         uint256 feeShares = _nextPerformanceFeeShares(
             _feeRecipient, _performanceFee, _hwm, _totalAssets, totalSupplyWithManagementFeeShares
         );
@@ -227,18 +243,14 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         }
     }
 
-    function _totalSupplyWithManagementFeeShares(uint256 _totalSupply, address _feeRecipient)
-        private
-        view
-        returns (uint256)
-    {
-        return _totalSupply + _nextManagementFeeShares(_feeRecipient, managementFee(), lastAccruedTimestamp());
+    function _totalSupplyWithManagementFeeShares(address _feeRecipient) private view returns (uint256) {
+        return totalSupply() + _nextManagementFeeShares(_feeRecipient, managementFee(), lastAccruedTimestamp());
     }
 
     /// @notice totalSupply with management and performance fee shares
     function _totalSupplyWithNextFeeShares(uint256 _totalAssets) private view returns (uint256) {
         address _feeRecipient = feeRecipient();
-        uint256 totalSupplyWithManagementFeeShares = _totalSupplyWithManagementFeeShares(totalSupply(), _feeRecipient);
+        uint256 totalSupplyWithManagementFeeShares = _totalSupplyWithManagementFeeShares(_feeRecipient);
         return totalSupplyWithManagementFeeShares
             + _nextPerformanceFeeShares(
                 _feeRecipient, performanceFee(), highWaterMark(), _totalAssets, totalSupplyWithManagementFeeShares
