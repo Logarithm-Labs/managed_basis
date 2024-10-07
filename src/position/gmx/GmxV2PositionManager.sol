@@ -505,11 +505,11 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
     function positionNetBalance() public view returns (uint256) {
         IGmxConfig _config = config();
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        (uint256 remainingCollateral,) = GmxV2Lib.getRemainingCollateralAndClaimableFundingAmount(
-            _getGmxParams(_config), $.oracle, _config.referralStorage()
-        );
+        (uint256 remainingCollateral, uint256 claimableTokenAmount) = GmxV2Lib
+            .getRemainingCollateralAndClaimableFundingAmount(_getGmxParams(_config), $.oracle, _config.referralStorage());
 
-        return remainingCollateral + IERC20(collateralToken()).balanceOf(address(this)) + $.pendingCollateralAmount;
+        return remainingCollateral + claimableTokenAmount + IERC20(collateralToken()).balanceOf(address(this))
+            + $.pendingCollateralAmount;
     }
 
     /// @notice current leverage of position that is based on gmx's calculation
