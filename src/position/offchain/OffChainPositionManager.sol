@@ -260,16 +260,18 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
             isIncrease: params.isIncrease
         });
 
-        RequestInfo storage requestInfo = $.requests[requestRound];
-        requestInfo.response = response;
-        requestInfo.responseRound = round;
-        requestInfo.responseTimestamp = block.timestamp;
-        requestInfo.isReported = true;
-
         $.positionStates[round] = state;
         $.currentRound = round;
 
-        IBasisStrategy($.strategy).afterAdjustPosition(params);
+        RequestInfo storage requestInfo = $.requests[requestRound];
+        if (!requestInfo.isReported) {
+            requestInfo.response = response;
+            requestInfo.responseRound = round;
+            requestInfo.responseTimestamp = block.timestamp;
+            requestInfo.isReported = true;
+
+            IBasisStrategy($.strategy).afterAdjustPosition(params);
+        }
 
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
 
