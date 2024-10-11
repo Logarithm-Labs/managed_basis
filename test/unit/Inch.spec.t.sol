@@ -18,14 +18,16 @@ contract InchSpecTest is InchTest {
     address public product = ArbiAddresses.WETH; // WETH
 
     function setUp() public {
-        _forkArbitrum(262638255);
+        _forkArbitrum(0);
     }
 
     function test_inchSwap() public {
         uint256 amount = 1000 * 1e6;
         _writeTokenBalance(address(this), asset, amount);
         bytes memory data = _generateInchCallData(asset, product, amount, address(this));
-        InchAggregatorV6Logic.executeSwap(amount, asset, product, true, data);
-        console.log("amountOut: ", IERC20(product).balanceOf(address(this)));
+        (uint256 amountOut, bool success) = InchAggregatorV6Logic.executeSwap(amount, asset, product, true, data);
+        assertTrue(success);
+        uint256 productBalance = IERC20(product).balanceOf(address(this));
+        assertEq(amountOut, productBalance);
     }
 }
