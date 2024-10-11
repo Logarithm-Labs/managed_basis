@@ -78,7 +78,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         vm.label(address(config), "config");
 
         // deploy gmxGasStation
-        GmxGasStation gmxGasStation = DeployHelper.deployGmxGasStation(owner);
+        gmxGasStation = DeployHelper.deployGmxGasStation(owner);
         vm.label(address(gmxGasStation), "gmxGasStation");
 
         // topup gmxGasStation with some native token, in practice, its don't through gmxGasStation

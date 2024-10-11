@@ -799,10 +799,11 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
     function _afterIncreasePosition(IPositionManager.AdjustPositionPayload calldata responseParams) private {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
+        uint256 _responseDeviationThreshold = config().responseDeviationThreshold();
 
         if (requestParams.sizeDeltaInTokens > 0) {
-            (bool exceedsThreshold, int256 sizeDeviation) = _checkResponseDeviation(
-                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, config().responseDeviationThreshold()
+            (bool exceedsThreshold, int256 sizeDeviation) = _checkDeviation(
+                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
                 $.strategyStatus = StrategyStatus.PAUSE;
@@ -815,10 +816,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         }
 
         if (requestParams.collateralDeltaAmount > 0) {
-            (bool exceedsThreshold, int256 collateralDeviation) = _checkResponseDeviation(
-                responseParams.collateralDeltaAmount,
-                requestParams.collateralDeltaAmount,
-                config().responseDeviationThreshold()
+            (bool exceedsThreshold, int256 collateralDeviation) = _checkDeviation(
+                responseParams.collateralDeltaAmount, requestParams.collateralDeltaAmount, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
                 $.strategyStatus = StrategyStatus.PAUSE;
@@ -850,11 +849,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             requestParams.collateralDeltaAmount = responseParams.collateralDeltaAmount;
         }
 
+        uint256 _responseDeviationThreshold = config().responseDeviationThreshold();
+
         if (requestParams.sizeDeltaInTokens > 0) {
             uint256 _pendingDeutilizedAssets = $.pendingDeutilizedAssets;
             delete $.pendingDeutilizedAssets;
-            (bool exceedsThreshold, int256 sizeDeviation) = _checkResponseDeviation(
-                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, config().responseDeviationThreshold()
+            (bool exceedsThreshold, int256 sizeDeviation) = _checkDeviation(
+                responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
                 $.strategyStatus = StrategyStatus.PAUSE;
@@ -881,10 +882,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         }
 
         if (requestParams.collateralDeltaAmount > 0) {
-            (bool exceedsThreshold,) = _checkResponseDeviation(
-                responseParams.collateralDeltaAmount,
-                requestParams.collateralDeltaAmount,
-                config().responseDeviationThreshold()
+            (bool exceedsThreshold,) = _checkDeviation(
+                responseParams.collateralDeltaAmount, requestParams.collateralDeltaAmount, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
                 $.strategyStatus = StrategyStatus.PAUSE;
@@ -991,17 +990,17 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         result = value < min ? 0 : (value > max ? max : value);
     }
 
-    /// @dev should be called under the condition that valueReq != 0
+    /// @dev should be called under the condition that denominator != 0
     /// Note: check if response of position adjustment is in allowed deviation
-    function _checkResponseDeviation(uint256 valueResp, uint256 valueReq, uint256 _responseDeviationThreshold)
+    function _checkDeviation(uint256 numerator, uint256 denominator, uint256 deviationThreshold)
         internal
         pure
         returns (bool exceedsThreshold, int256 deviation)
     {
-        deviation = valueResp.toInt256() - valueReq.toInt256();
+        deviation = numerator.toInt256() - denominator.toInt256();
         exceedsThreshold = (deviation < 0 ? uint256(-deviation) : uint256(deviation)).mulDiv(
-            Constants.FLOAT_PRECISION, valueReq
-        ) > _responseDeviationThreshold;
+            Constants.FLOAT_PRECISION, denominator
+        ) > deviationThreshold;
         return (exceedsThreshold, deviation);
     }
 
@@ -1011,12 +1010,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         uint256 _targetLeverage,
         uint256 _rebalanceDeviationThreshold
     ) internal pure returns (bool rebalanceUpNeeded, bool rebalanceDownNeeded) {
-        int256 leverageDeviation = _currentLeverage.toInt256() - _targetLeverage.toInt256();
-        if (
-            (leverageDeviation < 0 ? uint256(-leverageDeviation) : uint256(leverageDeviation)).mulDiv(
-                Constants.FLOAT_PRECISION, _targetLeverage
-            ) > _rebalanceDeviationThreshold
-        ) {
+        (bool exceedsThreshold, int256 leverageDeviation) =
+            _checkDeviation(_currentLeverage, _targetLeverage, _rebalanceDeviationThreshold);
+        if (exceedsThreshold) {
             rebalanceUpNeeded = leverageDeviation < 0;
             rebalanceDownNeeded = !rebalanceUpNeeded;
         }
@@ -1061,12 +1057,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
                 return hedgeExposure.toInt256();
             }
         }
-        uint256 hedgeDeviation = hedgeExposure.mulDiv(Constants.FLOAT_PRECISION, spotExposure);
-        if (
-            hedgeDeviation > Constants.FLOAT_PRECISION + _hedgeDeviationThreshold
-                || hedgeDeviation < Constants.FLOAT_PRECISION - _hedgeDeviationThreshold
-        ) {
-            int256 hedgeDeviationInTokens = hedgeExposure.toInt256() - spotExposure.toInt256();
+        (bool exceedsThreshold, int256 hedgeDeviationInTokens) =
+            _checkDeviation(hedgeExposure, spotExposure, _hedgeDeviationThreshold);
+        if (exceedsThreshold) {
             if (hedgeDeviationInTokens > 0) {
                 (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
                 return int256(_clamp(min, uint256(hedgeDeviationInTokens), max));
