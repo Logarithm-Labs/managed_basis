@@ -353,7 +353,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         address _product = address($.product);
         uint256 totalSupply = _vault.totalSupply();
 
-        // actual deutilize amount is min of amount, product balance and pending deutilization
         uint256 pendingDeutilization_ = _pendingDeutilization(
             InternalPendingDeutilization({
                 positionManager: _positionManager,
@@ -364,7 +363,15 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             })
         );
 
-        amount = amount > pendingDeutilization_ ? pendingDeutilization_ : amount;
+        // pendingDeutilization keeps changing according to the oracle price
+        // so need to check the deviation
+        (bool exceedsThreshold, int256 deutilizationDeviation) =
+            _checkDeviation(pendingDeutilization_, amount, config().deutilizationThreshold());
+        bool isFullDeutilizing = !exceedsThreshold || deutilizationDeviation < 0;
+        if (exceedsThreshold && deutilizationDeviation < 0) {
+            // cap amount only when it is bigger than pendingDeutilization as beyond of threshold
+            amount = pendingDeutilization_;
+        }
 
         (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
         amount = _clamp(min, amount, max);
@@ -392,22 +399,8 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
 
         uint256 collateralDeltaAmount;
         if (!_processingRebalanceDown) {
-            // @note Numa: relativeThreshold and absoluteThreshold are used introduced to prevent leaving dust deutilization
-            // in the strategy. If deutilization amount is over relativeThreshold or absoluteThreshold, then the strategy
-            // should behave like it is a full deutilize.
-            uint256 relativeThreshold = pendingDeutilization_.mulDiv(
-                Constants.FLOAT_PRECISION - config().deutilizationThreshold(), Constants.FLOAT_PRECISION
-            );
             (, uint256 absoluteThreshold) = pendingDeutilization_.trySub(min);
-            if (amount > relativeThreshold || amount > absoluteThreshold) {
-                // when full deutilizing
-                // @fix Numa: we should not guarantee that all withdraw requests are processed after full deutilization.
-                // In case of full deutilization, we only send collateral decrease request if it greater then Min.
-                // In prod we will have minCollateralDecrease around 500 USDC, so that execution cost would be below 0.2%.
-                // If there is a very small withdraw request, it should not be processed with full deutilization.
-                // With small vault totalAssets 500 USDC can create signifficant leverage impact.
-                // We would process such small withdraws manually be making deposits once per day to match withdraw requests.
-                // We can skip clamping here as it will be done in the _adjustPosition function.
+            if (isFullDeutilizing || amount > absoluteThreshold) {
                 if (totalSupply == 0) {
                     // in case of redeeming all by users, close hedge position
                     amount = type(uint256).max;
