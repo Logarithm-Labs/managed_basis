@@ -157,12 +157,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         uint256 totalSupplyWithManagementFeeShares = _totalSupplyWithManagementFeeShares(_feeRecipient);
         uint256 _lastHarvestedTimestamp = lastHarvestedTimestamp();
         uint256 feeShares = _nextPerformanceFeeShares(
-            _feeRecipient,
-            _performanceFee,
-            _hwm,
-            _totalAssets,
-            totalSupplyWithManagementFeeShares,
-            _lastHarvestedTimestamp
+            _performanceFee, _hwm, _totalAssets, totalSupplyWithManagementFeeShares, _lastHarvestedTimestamp
         );
         if (_performanceFee == 0 || _lastHarvestedTimestamp == 0) {
             // update lastHarvestedTimestamp to account for hurdleRate
@@ -185,7 +180,8 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     function _accrueManagementFeeShares(address _feeRecipient) private {
         uint256 _managementFee = managementFee();
         uint256 _lastAccruedTimestamp = lastAccruedTimestamp();
-        uint256 feeShares = _nextManagementFeeShares(_feeRecipient, _managementFee, _lastAccruedTimestamp);
+        uint256 feeShares =
+            _nextManagementFeeShares(_feeRecipient, _managementFee, totalSupply(), _lastAccruedTimestamp);
         if (_managementFee == 0 || _lastAccruedTimestamp == 0) {
             // update lastAccruedTimestamp to accrue management fee only after fee is set
             // when it is set, initialize it when lastAccruedTimestamp is 0
@@ -217,15 +213,16 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     }
 
     /// @notice calculate claimable shares for the management fee
-    function _nextManagementFeeShares(address _feeRecipient, uint256 _managementFee, uint256 _lastAccruedTimestamp)
-        private
-        view
-        returns (uint256)
-    {
-        if (_feeRecipient == address(0) || _managementFee == 0 || _lastAccruedTimestamp == 0) return 0;
+    function _nextManagementFeeShares(
+        address _feeRecipient,
+        uint256 _managementFee,
+        uint256 _totalSupply,
+        uint256 _lastAccruedTimestamp
+    ) private view returns (uint256) {
+        if (_managementFee == 0 || _lastAccruedTimestamp == 0) return 0;
         uint256 accruedFee = _calcFeeFraction(_managementFee, block.timestamp - _lastAccruedTimestamp);
         // should accrue fees regarding to other's shares except for feeRecipient
-        uint256 shares = totalSupply() - balanceOf(_feeRecipient);
+        uint256 shares = _totalSupply - balanceOf(_feeRecipient);
         // should be rounded to bottom to stop generating 1 shares by calling accrueManagementFeeShares function
         uint256 managementFeeShares = shares.mulDiv(accruedFee, Constants.FLOAT_PRECISION);
         return managementFeeShares;
@@ -233,17 +230,13 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
 
     /// @notice calculate the claimable performance fee shares
     function _nextPerformanceFeeShares(
-        address _feeRecipient,
         uint256 _performanceFee,
         uint256 _hwm,
         uint256 _totalAssets,
         uint256 _totalSupply,
         uint256 _lastHarvestedTimestamp
     ) private view returns (uint256) {
-        if (
-            _feeRecipient == address(0) || _performanceFee == 0 || _hwm == 0 || _lastHarvestedTimestamp == 0
-                || _totalAssets <= _hwm
-        ) {
+        if (_performanceFee == 0 || _hwm == 0 || _lastHarvestedTimestamp == 0 || _totalAssets <= _hwm) {
             return 0;
         }
         uint256 profit = _totalAssets - _hwm;
@@ -261,7 +254,9 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     }
 
     function _totalSupplyWithManagementFeeShares(address _feeRecipient) private view returns (uint256) {
-        return totalSupply() + _nextManagementFeeShares(_feeRecipient, managementFee(), lastAccruedTimestamp());
+        uint256 _totalSupply = totalSupply();
+        return _totalSupply
+            + _nextManagementFeeShares(_feeRecipient, managementFee(), _totalSupply, lastAccruedTimestamp());
     }
 
     /// @notice totalSupply with management and performance fee shares
@@ -270,7 +265,6 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         uint256 totalSupplyWithManagementFeeShares = _totalSupplyWithManagementFeeShares(_feeRecipient);
         return totalSupplyWithManagementFeeShares
             + _nextPerformanceFeeShares(
-                _feeRecipient,
                 performanceFee(),
                 highWaterMark(),
                 _totalAssets,
@@ -294,17 +288,16 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
 
     /// @notice returns claimable shares of the management fee recipient
     function nextManagementFeeShares() public view returns (uint256) {
-        return _nextManagementFeeShares(feeRecipient(), managementFee(), lastAccruedTimestamp());
+        return _nextManagementFeeShares(feeRecipient(), managementFee(), totalSupply(), lastAccruedTimestamp());
     }
 
     /// @notice returns claimable shares of the performance fee recipient
     function nextPerformanceFeeShares() public view returns (uint256) {
         return _nextPerformanceFeeShares(
-            feeRecipient(),
             performanceFee(),
             highWaterMark(),
             totalAssets(),
-            totalSupply() + nextManagementFeeShares(),
+            _totalSupplyWithManagementFeeShares(feeRecipient()),
             lastHarvestedTimestamp()
         );
     }
