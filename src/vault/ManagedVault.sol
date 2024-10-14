@@ -10,6 +10,8 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
+import {IWhitelistProvider} from "src/whitelist/IWhitelistProvider.sol";
+
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
@@ -41,6 +43,8 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         uint256 hwm;
         // last timestamp for performance fee
         uint256 lastHarvestedTimestamp;
+        // address of the whitelist provider
+        address whitelistProvider;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedVault")) - 1)) & ~bytes32(uint256(0xff))
@@ -93,6 +97,13 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         $.hurdleRate = _hurdleRate;
     }
 
+    /// @notice set whitelist provider
+    ///
+    /// @param provider Address of the whitelist provider, 0 means not applying whitelist
+    function setWhitelistProvider(address provider) external onlyOwner {
+        _getManagedVaultStorage().whitelistProvider = provider;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         INTERNAL LOGIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -132,6 +143,14 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     /// @inheritdoc ERC20Upgradeable
     function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
         address _feeRecipient = feeRecipient();
+        address _whitelistProvider = whitelistProvider();
+
+        if (
+            to != address(0) && to != _feeRecipient && _whitelistProvider != address(0)
+                && !IWhitelistProvider(_whitelistProvider).isWhitelisted(to)
+        ) {
+            revert Errors.NotWhitelisted(to);
+        }
 
         if (_feeRecipient != address(0)) {
             if ((from == _feeRecipient && to != address(0)) || (from != address(0) && to == _feeRecipient)) {
@@ -332,5 +351,9 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
 
     function lastHarvestedTimestamp() public view returns (uint256) {
         return _getManagedVaultStorage().lastHarvestedTimestamp;
+    }
+
+    function whitelistProvider() public view returns (address) {
+        return _getManagedVaultStorage().whitelistProvider;
     }
 }

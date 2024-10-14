@@ -102,4 +102,6 @@ library Errors {
     error ManagementFeeTransfer(address feeRecipient);
 
     error SwapFailed();
+
+    error NotWhitelisted(address user);
 }
