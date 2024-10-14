@@ -125,22 +125,19 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
 
     /// @inheritdoc ERC4626Upgradeable
     function maxDeposit(address receiver) public view virtual override returns (uint256) {
-        ManagedVaultStorage storage $ = _getManagedVaultStorage();
-        uint256 userDepositLimit = $.userDepositLimit;
-        uint256 vaultDepositLimit = $.vaultDepositLimit;
+        uint256 _userDepositLimit = userDepositLimit();
+        uint256 _vaultDepositLimit = vaultDepositLimit();
 
-        if (userDepositLimit == type(uint256).max && vaultDepositLimit == type(uint256).max) {
+        if (_userDepositLimit == type(uint256).max && _vaultDepositLimit == type(uint256).max) {
             return type(uint256).max;
         } else {
-            uint256 sharesBalance = balanceOf(receiver);
-            uint256 sharesValue = convertToAssets(sharesBalance);
-            uint256 availableDepositorLimit =
-                userDepositLimit == type(uint256).max ? type(uint256).max : userDepositLimit - sharesValue;
-            uint256 availableStrategyLimit =
-                vaultDepositLimit == type(uint256).max ? type(uint256).max : vaultDepositLimit - totalAssets();
+            uint256 userShares = balanceOf(receiver);
+            uint256 userAssets = convertToAssets(userShares);
+            uint256 availableDepositorLimit = _userDepositLimit - userAssets;
+            uint256 availableVaultLimit = _vaultDepositLimit - totalAssets();
             uint256 userBalance = IERC20(asset()).balanceOf(address(receiver));
             uint256 allowed =
-                availableDepositorLimit < availableStrategyLimit ? availableDepositorLimit : availableStrategyLimit;
+                availableDepositorLimit < availableVaultLimit ? availableDepositorLimit : availableVaultLimit;
             allowed = userBalance < allowed ? userBalance : allowed;
             return allowed;
         }
