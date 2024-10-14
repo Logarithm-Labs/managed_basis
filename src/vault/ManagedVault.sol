@@ -265,7 +265,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         if (isDeposit) {
             newHwm = oldHwm + assets;
         } else {
-            newHwm = oldHwm.mulDiv(oldTotalSupply - shares, oldTotalSupply);
+            newHwm = oldHwm.mulDiv(oldTotalSupply - shares, oldTotalSupply, Math.Rounding.Ceil);
         }
         _getManagedVaultStorage().hwm = newHwm;
     }
