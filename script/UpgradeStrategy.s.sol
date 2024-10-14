@@ -7,11 +7,7 @@ import {DataProvider} from "src/DataProvider.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 
 contract UpgradeStrategyScript is Script {
-    // DataProvider constant dataProvider = DataProvider(0xaB4e7519E6f7FC80A5AB255f15990444209cE159);
-    UpgradeableBeacon constant beacon = UpgradeableBeacon(0x8BDB3Ece7e238E96Cbe3645dfAd01DD5f160F587);
-    BasisStrategy constant strategy = BasisStrategy(0x1231fA1067806797cF3C551745Efb30cE53aE735);
-
-    address public operator = 0xe7263f18e278ea0550FaD97DDF898d134483EfC6;
+    UpgradeableBeacon constant beacon = UpgradeableBeacon(0xA610080Bf93CC031492a29D09DBC8b234F291ea7);
 
     function run() public {
         vm.startBroadcast();

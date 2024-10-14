@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, stdStorage, StdStorage} from "forge-std/Test.sol";
+import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
@@ -13,6 +14,8 @@ import {UniswapV3MockPool} from "test/mock/UniswapV3MockPool.sol";
 import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
 
 abstract contract ForkTest is Test {
+    using stdStorage for StdStorage;
+
     uint256 constant USDC_PRECISION = 1e6;
 
     address constant USDC = ArbiAddresses.USDC;
@@ -24,6 +27,17 @@ abstract contract ForkTest is Test {
     address constant UNISWAPV3_WETH_USDC = ArbiAddresses.UNISWAPV3_WETH_USDC;
     address constant CHL_USDC_USD_PRICE_FEED = ArbiAddresses.CHL_USDC_USD_PRICE_FEED;
     address constant CHL_ETH_USD_PRICE_FEED = ArbiAddresses.CHL_ETH_USD_PRICE_FEED;
+
+    function _writeTokenBalance(address who, address token, uint256 amt) internal {
+        if (token == USDC) {
+            vm.startPrank(USDC_WHALE);
+            IERC20(token).transfer(who, amt);
+            vm.stopPrank();
+        } else {
+            stdstore.target(token).sig(IERC20(token).balanceOf.selector).with_key(who).checked_write(amt);
+        }
+        assertEq(IERC20(token).balanceOf(who), amt);
+    }
 
     function _forkArbitrum(uint256 blockNumber) internal {
         uint256 arbitrumFork = vm.createFork(vm.rpcUrl("arbitrum_one"));
