@@ -231,7 +231,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
             _hwm = _totalAssets;
             emit PerformanceFeeCollected(_feeRecipient, feeShares);
         }
-        _updateHighWaterMark(_hwm, totalSupplyWithManagementFeeShares, assets, shares, isDeposit);
+        _updateHighWaterMark(_hwm, totalSupplyWithManagementFeeShares + feeShares, assets, shares, isDeposit);
     }
 
     /// @dev should not be called when minting to fee recipient
