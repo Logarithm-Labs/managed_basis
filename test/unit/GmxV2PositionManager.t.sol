@@ -734,7 +734,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertTrue(claimableLongAmount == 0);
         assertTrue(claimableShortAmount == 0);
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
-        assertTrue(positionNetBalanceAfter + 1 == positionNetBalanceBefore);
+        assertTrue(positionNetBalanceAfter + 1 < positionNetBalanceBefore);
     }
 
     function test_claimFunding() public afterHavingPosition {
@@ -815,7 +815,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         idleCollateralAmount = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
-        assertTrue(positionNetBalanceAfter > positionNetBalanceBefore);
+        assertTrue(positionNetBalanceAfter < positionNetBalanceBefore);
         assertApproxEqRel(idleCollateralAmount, claimableShortAmount, 0.99999 ether);
         (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
         assertTrue(claimableLongAmount == 0);
@@ -843,7 +843,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
         _executeOrder(positionManager.pendingIncreaseOrderKey());
         uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
-        assertTrue(positionNetBalanceAfter > positionNetBalanceBefore);
+        assertTrue(positionNetBalanceAfter < positionNetBalanceBefore);
         assertTrue(positionNetBalanceBefore == positionNetBalancePending);
         idleCollateralAmount = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
         assertApproxEqRel(idleCollateralAmount, claimableShortAmount, 0.99999 ether);

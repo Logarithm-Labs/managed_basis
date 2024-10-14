@@ -510,11 +510,11 @@ contract GmxV2PositionManagerForTest is
     function positionNetBalance() public view returns (uint256) {
         IGmxConfig _config = config();
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        (uint256 remainingCollateral,) = GmxV2Lib.getRemainingCollateralAndClaimableFundingAmount(
-            _getGmxParams(_config), $.oracle, _config.referralStorage()
-        );
+        (uint256 remainingCollateral, uint256 claimableTokenAmount) = GmxV2Lib
+            .getRemainingCollateralAndClaimableFundingAmount(_getGmxParams(_config), $.oracle, _config.referralStorage());
 
-        return remainingCollateral + IERC20(collateralToken()).balanceOf(address(this)) + $.pendingCollateralAmount;
+        return remainingCollateral + claimableTokenAmount + IERC20(collateralToken()).balanceOf(address(this))
+            + $.pendingCollateralAmount;
     }
 
     /// @notice current leverage of position that is based on gmx's calculation
@@ -564,7 +564,7 @@ contract GmxV2PositionManagerForTest is
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
-    /// @notice total cumulated funding fee in usd including next funding fee
+    /// @notice total cumulated funding fee and borrowing fee in usd including next fees
     function cumulativeFundingAndBorrowingFeesUsd()
         external
         view
@@ -769,7 +769,7 @@ contract GmxV2PositionManagerForTest is
     }
 
     /*//////////////////////////////////////////////////////////////
-                        STORAGE GETTERS
+                            STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
 
     function config() public view returns (IGmxConfig) {
