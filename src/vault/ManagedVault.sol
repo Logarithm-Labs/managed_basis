@@ -135,10 +135,8 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
             uint256 userAssets = convertToAssets(userShares);
             uint256 availableDepositorLimit = _userDepositLimit - userAssets;
             uint256 availableVaultLimit = _vaultDepositLimit - totalAssets();
-            uint256 userBalance = IERC20(asset()).balanceOf(address(receiver));
             uint256 allowed =
                 availableDepositorLimit < availableVaultLimit ? availableDepositorLimit : availableVaultLimit;
-            allowed = userBalance < allowed ? userBalance : allowed;
             return allowed;
         }
     }
