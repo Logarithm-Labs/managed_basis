@@ -144,7 +144,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     /// @inheritdoc ERC4626Upgradeable
     function maxMint(address receiver) public view virtual override returns (uint256) {
         uint256 maxAssets = maxDeposit(receiver);
-        return previewDeposit(maxAssets);
+        return maxAssets == type(uint256).max ? type(uint256).max : previewDeposit(maxAssets);
     }
 
     /// @inheritdoc ERC4626Upgradeable
