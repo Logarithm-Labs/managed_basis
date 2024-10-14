@@ -45,6 +45,10 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         uint256 lastHarvestedTimestamp;
         // address of the whitelist provider
         address whitelistProvider;
+        // deposit limit in assets for each user
+        uint256 userDepositLimit;
+        // deposit limit in assets for this vault
+        uint256 vaultDepositLimit;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.ManagedVault")) - 1)) & ~bytes32(uint256(0xff))
@@ -75,6 +79,10 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         __Ownable_init(owner_);
         __ERC20_init_unchained(name_, symbol_);
         __ERC4626_init_unchained(IERC20(asset_));
+
+        ManagedVaultStorage storage $ = _getManagedVaultStorage();
+        $.userDepositLimit = type(uint256).max;
+        $.vaultDepositLimit = type(uint256).max;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -104,9 +112,45 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         _getManagedVaultStorage().whitelistProvider = provider;
     }
 
+    /// @notice set deposit limits
+    function setDepositLimits(uint256 userLimit, uint256 vaultLimit) external onlyOwner {
+        ManagedVaultStorage storage $ = _getManagedVaultStorage();
+        $.userDepositLimit = userLimit;
+        $.vaultDepositLimit = vaultLimit;
+    }
+
     /*//////////////////////////////////////////////////////////////
-                        INTERNAL LOGIC FUNCTIONS
+                        ERC4626 LOGIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc ERC4626Upgradeable
+    function maxDeposit(address receiver) public view virtual override returns (uint256) {
+        ManagedVaultStorage storage $ = _getManagedVaultStorage();
+        uint256 userDepositLimit = $.userDepositLimit;
+        uint256 vaultDepositLimit = $.vaultDepositLimit;
+
+        if (userDepositLimit == type(uint256).max && vaultDepositLimit == type(uint256).max) {
+            return type(uint256).max;
+        } else {
+            uint256 sharesBalance = balanceOf(receiver);
+            uint256 sharesValue = convertToAssets(sharesBalance);
+            uint256 availableDepositorLimit =
+                userDepositLimit == type(uint256).max ? type(uint256).max : userDepositLimit - sharesValue;
+            uint256 availableStrategyLimit =
+                vaultDepositLimit == type(uint256).max ? type(uint256).max : vaultDepositLimit - totalAssets();
+            uint256 userBalance = IERC20(asset()).balanceOf(address(receiver));
+            uint256 allowed =
+                availableDepositorLimit < availableStrategyLimit ? availableDepositorLimit : availableStrategyLimit;
+            allowed = userBalance < allowed ? userBalance : allowed;
+            return allowed;
+        }
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
+    function maxMint(address receiver) public view virtual override returns (uint256) {
+        uint256 maxAssets = maxDeposit(receiver);
+        return previewDeposit(maxAssets);
+    }
 
     /// @inheritdoc ERC4626Upgradeable
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view override returns (uint256) {
@@ -167,6 +211,10 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         super._update(from, to, value);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                           FEE LOGIC FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @dev should be called before all deposits and withdrawals
     function _harvestPerformanceFeeShares(uint256 assets, uint256 shares, bool isDeposit) internal {
         address _feeRecipient = feeRecipient();
@@ -190,10 +238,6 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         }
         _updateHighWaterMark(_hwm, totalSupplyWithManagementFeeShares, assets, shares, isDeposit);
     }
-
-    /*//////////////////////////////////////////////////////////////
-                           PRIVATE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
 
     /// @dev should not be called when minting to fee recipient
     function _accrueManagementFeeShares(address _feeRecipient) private {
@@ -297,13 +341,17 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     }
 
     /*//////////////////////////////////////////////////////////////
-                        EXTERNAL FUNCTIONS
+                            PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice mint management fee shares by anyone
     function accrueManagementFeeShares() public {
         _accrueManagementFeeShares(feeRecipient());
     }
+
+    /*//////////////////////////////////////////////////////////////
+                         PUBLIC VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice returns claimable shares of the management fee recipient
     function nextManagementFeeShares() public view returns (uint256) {
@@ -355,5 +403,13 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
 
     function whitelistProvider() public view returns (address) {
         return _getManagedVaultStorage().whitelistProvider;
+    }
+
+    function userDepositLimit() public view returns (uint256) {
+        return _getManagedVaultStorage().userDepositLimit;
+    }
+
+    function vaultDepositLimit() public view returns (uint256) {
+        return _getManagedVaultStorage().vaultDepositLimit;
     }
 }
