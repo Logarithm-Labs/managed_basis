@@ -431,7 +431,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
 
         if (_status == Status.SETTLE) {
             // doesn't change position size
-            if (order.numbers.initialCollateralDeltaAmount > 0) {
+            if (isIncrease && order.numbers.initialCollateralDeltaAmount > 0) {
                 $.pendingCollateralAmount = 0;
             }
             $.status = Status.IDLE;
