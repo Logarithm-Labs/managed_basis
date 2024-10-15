@@ -283,7 +283,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
         state0 = state1;
-        _excuteOrder();
+        _executeOrder();
         state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
@@ -301,7 +301,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
         state0 = state1;
-        _excuteOrder();
+        _executeOrder();
         state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
@@ -341,7 +341,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
             _validateStateTransition(state0, state1);
 
             state0 = state1;
-            _excuteOrder();
+            _executeOrder();
             state1 = helper.getStrategyState();
             _validateStateTransition(state0, state1);
             (upkeepNeeded, performData) = strategy.checkUpkeep("");
@@ -931,7 +931,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         if (upkeepNeeded) {
             vm.startPrank(forwarder);
             strategy.performUpkeep(performData);
-            _excuteOrder();
+            _executeOrder();
         }
     }
 
@@ -1034,7 +1034,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertFalse(positionManagerNeedKeep, "rebalanceUpNeeded");
         vm.startPrank(forwarder);
         strategy.performUpkeep(performData);
-        _excuteOrder();
+        _executeOrder();
         uint256 vaultBalanceAfter = IERC20(asset).balanceOf(address(strategy));
         assertTrue(vaultBalanceAfter < vaultBalanceBefore);
     }
