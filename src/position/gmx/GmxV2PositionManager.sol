@@ -429,11 +429,12 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         $.positionBorrowingFactor = cumulativeBorrowingFactor;
         $.cumulativeBorrowingFeeUsd += borrowingFeeUsd;
 
+        if (isIncrease && order.numbers.initialCollateralDeltaAmount > 0) {
+            $.pendingCollateralAmount = 0;
+        }
+
         if (_status == Status.SETTLE) {
             // doesn't change position size
-            if (isIncrease && order.numbers.initialCollateralDeltaAmount > 0) {
-                $.pendingCollateralAmount = 0;
-            }
             $.status = Status.IDLE;
             // notify strategy that keeping has been done
             IBasisStrategy(strategy()).afterAdjustPosition(
@@ -464,9 +465,13 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
 
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         Status _status = $.status;
+
+        if (isIncrease && order.numbers.initialCollateralDeltaAmount > 0) {
+            $.pendingCollateralAmount = 0;
+        }
+
         if (_status == Status.IDLE) return;
         if (_status == Status.INCREASE) {
-            $.pendingCollateralAmount = 0;
             // in the case when increase order was failed
             IBasisStrategy(strategy()).afterAdjustPosition(
                 AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
@@ -647,7 +652,6 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         AdjustPositionPayload memory callbackParams;
         if (initialCollateralDeltaAmount > 0) {
             // increase collateral
-            $.pendingCollateralAmount = 0;
             callbackParams.collateralDeltaAmount = initialCollateralDeltaAmount;
         }
         callbackParams.sizeDeltaInTokens = _recordPositionSize(sizeInTokens);
