@@ -63,7 +63,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 105 / 100);
 
-        _excuteOrder();
+        _executeOrder();
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
 
         bytes32 requestKey = vault.getWithdrawKey(user1, 0);

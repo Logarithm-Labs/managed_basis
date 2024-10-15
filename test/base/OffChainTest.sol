@@ -89,7 +89,7 @@ contract OffChainTest is PositionMngerForkTest {
         return IPositionManager(positionManager);
     }
 
-    function _excuteOrder() internal override {
+    function _executeOrder() internal override {
         OffChainPositionManager.RequestInfo memory requestInfo = positionManager.getLastRequest();
         if (!requestInfo.isReported) {
             vm.startPrank(agent);

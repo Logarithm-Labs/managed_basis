@@ -61,7 +61,7 @@ contract GmxV2Test is PositionMngerForkTest {
         return address(positionManager);
     }
 
-    function _excuteOrder() internal override {
+    function _executeOrder() internal override {
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         _executeOrder(positionManager.pendingIncreaseOrderKey());
     }

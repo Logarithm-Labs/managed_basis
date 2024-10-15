@@ -120,7 +120,7 @@ contract GmxHandler is GmxV2Test {
         strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
     }
 
-    function perforUpkeep() public {
+    function performUpkeep() public {
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         if (upkeepNeeded) {
             strategy.performUpkeep(performData);
@@ -128,11 +128,11 @@ contract GmxHandler is GmxV2Test {
     }
 
     function executeOrder() public {
-        _excuteOrder();
+        _executeOrder();
     }
 
     function fullExecution() public {
-        perforUpkeep();
+        performUpkeep();
         (uint256 utilization, uint256 deutilization) = strategy.pendingUtilizations();
         if (utilization > 0) {
             utilize(utilization);
@@ -142,7 +142,7 @@ contract GmxHandler is GmxV2Test {
             deutilize(deutilization);
             executeOrder();
         }
-        perforUpkeep();
+        performUpkeep();
     }
 
     /*//////////////////////////////////////////////////////////////
