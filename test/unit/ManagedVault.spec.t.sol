@@ -300,4 +300,32 @@ contract ManagedVaultSpecTest is ForkTest {
         uint256 feeAssets = vault.previewRedeem(feeShares);
         assertEq(nextFeeAssets, feeAssets);
     }
+
+    function test_maxDeposit_limit() public {
+        vm.startPrank(owner);
+        vault.setDepositLimits(THOUSAND_USDC, THOUSAND_USDC);
+        _deposit(user, THOUSAND_USDC / 2);
+        uint256 available = vault.maxDeposit(user);
+        assertEq(available, THOUSAND_USDC / 2);
+    }
+
+    function test_maxMint_limit() public {
+        vm.startPrank(owner);
+        vault.setDepositLimits(THOUSAND_USDC, THOUSAND_USDC);
+        _mint(user, THOUSAND_USDC / 2);
+        uint256 available = vault.maxMint(user);
+        assertEq(available, THOUSAND_USDC / 2);
+    }
+
+    function test_maxDeposit_unlimit() public {
+        _deposit(user, THOUSAND_USDC / 2);
+        uint256 available = vault.maxDeposit(user);
+        assertEq(available, type(uint256).max);
+    }
+
+    function test_maxMint_unlimit() public {
+        _mint(user, THOUSAND_USDC / 2);
+        uint256 available = vault.maxMint(user);
+        assertEq(available, type(uint256).max);
+    }
 }
