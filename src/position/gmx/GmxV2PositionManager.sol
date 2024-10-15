@@ -466,6 +466,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         Status _status = $.status;
         if (_status == Status.IDLE) return;
         if (_status == Status.INCREASE) {
+            $.pendingCollateralAmount = 0;
             // in the case when increase order was failed
             IBasisStrategy(strategy()).afterAdjustPosition(
                 AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
