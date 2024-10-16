@@ -119,7 +119,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
 
     event Utilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
 
-    event Deutilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
+    event Deutilize(address indexed caller, uint256 productDelta, uint256 assetDelta);
 
     event UpdateStrategyStatus(StrategyStatus status);
 
