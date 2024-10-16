@@ -133,8 +133,8 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         } else {
             uint256 userShares = balanceOf(receiver);
             uint256 userAssets = convertToAssets(userShares);
-            uint256 availableDepositorLimit = _userDepositLimit - userAssets;
-            uint256 availableVaultLimit = _vaultDepositLimit - totalAssets();
+            (, uint256 availableDepositorLimit) = _userDepositLimit.trySub(userAssets);
+            (, uint256 availableVaultLimit) = _vaultDepositLimit.trySub(totalAssets());
             uint256 allowed =
                 availableDepositorLimit < availableVaultLimit ? availableDepositorLimit : availableVaultLimit;
             return allowed;
