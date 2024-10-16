@@ -471,12 +471,13 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         }
 
         if (_status == Status.IDLE) return;
-        if (_status == Status.INCREASE) {
-            // in the case when increase order was failed
+        if (_status == Status.INCREASE || _status == Status.SETTLE) {
             IBasisStrategy(strategy()).afterAdjustPosition(
-                AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
+                AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: isIncrease})
             );
-        } else if (_status == Status.DECREASE_ONE_STEP || _status == Status.DECREASE_TWO_STEP) {
+        } else if (_status == Status.DECREASE_TWO_STEP) {
+            $.status = Status.DECREASE_ONE_STEP;
+        } else if (_status == Status.DECREASE_ONE_STEP) {
             // in case when the first order was executed successfully or one step decrease order was failed
             // or in case when the order executed in wrong order by gmx was failed
             IBasisStrategy(strategy()).afterAdjustPosition(
