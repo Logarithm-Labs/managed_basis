@@ -998,6 +998,24 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertEq(maxGas, positionManager.config().callbackGasLimit());
     }
 
+    function test_minSize() public {
+        uint256 collateralDelta = USDC_PRECISION / 10;
+        uint256 sizeDelta = oracle.convertTokenAmount(asset, product, collateralDelta);
+        vm.startPrank(USDC_WHALE);
+        IERC20(USDC).transfer(address(positionManager), USDC_PRECISION / 10);
+        vm.startPrank(address(strategy));
+        positionManager.adjustPosition(
+            IPositionManager.AdjustPositionPayload({
+                sizeDeltaInTokens: sizeDelta,
+                collateralDeltaAmount: collateralDelta,
+                isIncrease: true
+            })
+        );
+        bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
+        _executeOrder(increaseOrderKey);
+        assertEq(positionManager.positionNetBalance(), collateralDelta);
+    }
+
     function _moveTimestampWithPriceFeed(uint256 deltaTime) internal {
         address[] memory priceFeeds = new address[](2);
         priceFeeds[0] = assetPriceFeed;
