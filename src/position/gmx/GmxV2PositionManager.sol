@@ -429,11 +429,12 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         $.positionBorrowingFactor = cumulativeBorrowingFactor;
         $.cumulativeBorrowingFeeUsd += borrowingFeeUsd;
 
+        if (isIncrease && order.numbers.initialCollateralDeltaAmount > 0) {
+            $.pendingCollateralAmount = 0;
+        }
+
         if (_status == Status.SETTLE) {
             // doesn't change position size
-            if (order.numbers.initialCollateralDeltaAmount > 0) {
-                $.pendingCollateralAmount = 0;
-            }
             $.status = Status.IDLE;
             // notify strategy that keeping has been done
             IBasisStrategy(strategy()).afterAdjustPosition(
@@ -464,13 +465,19 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
 
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         Status _status = $.status;
+
+        if (isIncrease && order.numbers.initialCollateralDeltaAmount > 0) {
+            $.pendingCollateralAmount = 0;
+        }
+
         if (_status == Status.IDLE) return;
-        if (_status == Status.INCREASE) {
-            // in the case when increase order was failed
+        if (_status == Status.INCREASE || _status == Status.SETTLE) {
             IBasisStrategy(strategy()).afterAdjustPosition(
-                AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
+                AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: isIncrease})
             );
-        } else if (_status == Status.DECREASE_ONE_STEP || _status == Status.DECREASE_TWO_STEP) {
+        } else if (_status == Status.DECREASE_TWO_STEP) {
+            $.status = Status.DECREASE_ONE_STEP;
+        } else if (_status == Status.DECREASE_ONE_STEP) {
             // in case when the first order was executed successfully or one step decrease order was failed
             // or in case when the order executed in wrong order by gmx was failed
             IBasisStrategy(strategy()).afterAdjustPosition(
@@ -642,11 +649,9 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
     }
 
     function _processIncreasePosition(uint256 initialCollateralDeltaAmount, uint256 sizeInTokens) private {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         AdjustPositionPayload memory callbackParams;
         if (initialCollateralDeltaAmount > 0) {
             // increase collateral
-            $.pendingCollateralAmount = 0;
             callbackParams.collateralDeltaAmount = initialCollateralDeltaAmount;
         }
         callbackParams.sizeDeltaInTokens = _recordPositionSize(sizeInTokens);

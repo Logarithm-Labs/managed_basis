@@ -1132,5 +1132,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 productAfter = IERC20(product).balanceOf(address(strategy));
 
         assertApproxEqRel(productAfter, productBefore, 0.9999 ether);
+
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.PAUSE));
     }
 }
