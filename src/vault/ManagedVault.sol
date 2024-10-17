@@ -236,8 +236,12 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
 
     /// @dev should not be called when minting to fee recipient
     function _accrueManagementFeeShares(address _feeRecipient) private {
-        uint256 _managementFee = managementFee();
         uint256 _lastAccruedTimestamp = lastAccruedTimestamp();
+        if (_lastAccruedTimestamp == block.timestamp) {
+            // management fee must be 0, don't need to go through logic
+            return;
+        }
+        uint256 _managementFee = managementFee();
         uint256 feeShares =
             _nextManagementFeeShares(_feeRecipient, _managementFee, totalSupply(), _lastAccruedTimestamp);
         if (_managementFee == 0 || _lastAccruedTimestamp == 0) {
@@ -278,7 +282,9 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         uint256 _lastAccruedTimestamp
     ) private view returns (uint256) {
         if (_managementFee == 0 || _lastAccruedTimestamp == 0) return 0;
-        uint256 accruedFee = _calcFeeFraction(_managementFee, block.timestamp - _lastAccruedTimestamp);
+        uint256 duration = block.timestamp - _lastAccruedTimestamp;
+        if (duration == 0) return 0;
+        uint256 accruedFee = _calcFeeFraction(_managementFee, duration);
         // should accrue fees regarding to other's shares except for feeRecipient
         uint256 shares = _totalSupply - balanceOf(_feeRecipient);
         // should be rounded to bottom to stop generating 1 shares by calling accrueManagementFeeShares function
