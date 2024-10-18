@@ -121,8 +121,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
 
     event Deutilize(address indexed caller, uint256 productDelta, uint256 assetDelta);
 
-    event UpdateStrategyStatus(StrategyStatus status);
-
     event AfterAdjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease);
 
     /*//////////////////////////////////////////////////////////////
@@ -326,7 +324,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
             revert Errors.ZeroAmountUtilization();
         } else {
             $.strategyStatus = StrategyStatus.UTILIZING;
-            emit UpdateStrategyStatus(StrategyStatus.UTILIZING);
             emit Utilize(msg.sender, amount, amountOut);
         }
     }
@@ -398,12 +395,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         $.pendingDeutilizedAssets = amountOut;
 
         uint256 collateralDeltaAmount;
+        uint256 sizeDeltaInTokens = amount;
         if (!_processingRebalanceDown) {
             (, uint256 absoluteThreshold) = pendingDeutilization_.trySub(min);
             if (isFullDeutilizing || amount > absoluteThreshold) {
                 if (totalSupply == 0) {
                     // in case of redeeming all by users, close hedge position
-                    amount = type(uint256).max;
+                    sizeDeltaInTokens = type(uint256).max;
                     collateralDeltaAmount = type(uint256).max;
                     $.pendingDecreaseCollateral = 0;
                 } else {
@@ -433,10 +431,9 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         }
 
         // the return value of this operation should be true, due to above checks
-        _adjustPosition(amount, collateralDeltaAmount, false);
+        _adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false);
 
         $.strategyStatus = StrategyStatus.DEUTILIZING;
-        emit UpdateStrategyStatus(StrategyStatus.DEUTILIZING);
 
         emit Deutilize(msg.sender, amount, amountOut);
     }
@@ -576,8 +573,6 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         delete $.requestParams;
 
         $.strategyStatus = shouldPause ? StrategyStatus.PAUSE : StrategyStatus.IDLE;
-
-        emit UpdateStrategyStatus(StrategyStatus.IDLE);
 
         emit AfterAdjustPosition(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }

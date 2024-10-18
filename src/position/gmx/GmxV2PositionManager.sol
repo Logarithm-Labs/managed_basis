@@ -649,7 +649,6 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
     }
 
     function _processIncreasePosition(uint256 initialCollateralDeltaAmount, uint256 sizeInTokens) private {
-        GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         AdjustPositionPayload memory callbackParams;
         if (initialCollateralDeltaAmount > 0) {
             // increase collateral
