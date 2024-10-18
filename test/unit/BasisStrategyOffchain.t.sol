@@ -127,4 +127,13 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         assertApproxEqRel(positionManager.positionNetBalance(), TEN_THOUSANDS_USDC / 4 + 10_000_000, 0.0001 ether);
         assertEq(positionManager.idleCollateralAmount(), 0);
     }
+
+    function test_clearCollateral() public {
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(positionManager), 10_000_000);
+
+        positionManager.clearIdleCollateral();
+        assertEq(IERC20(asset).balanceOf(address(strategy)), 0);
+        assertEq(IERC20(asset).balanceOf(address(vault)), 10_000_000);
+    }
 }

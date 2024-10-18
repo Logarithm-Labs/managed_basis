@@ -287,6 +287,17 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         return $.requests[$.lastRequestRound];
     }
 
+    /// @notice transfer idle to the vault to process withdraw request
+    function clearIdleCollateral() public {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        uint256 _idleCollateralAmount = idleCollateralAmount();
+        if (_idleCollateralAmount > 0) {
+            address _strategy = $.strategy;
+            IERC20($.collateralToken).transfer(_strategy, idleCollateralAmount());
+            IBasisStrategy(_strategy).processAssetsToWithdraw();
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                             AGENT LOGIC
     //////////////////////////////////////////////////////////////*/
