@@ -98,4 +98,33 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         _performKeep("decreaseCollateral");
         assertTrue(strategy.pendingDecreaseCollateral() == 0, "not 0 pendingDecreaseCollateral");
     }
+
+    function test_idleCollateral_fullRedeem() public afterFullUtilized validateFinalState {
+        // make 10 USDC idle assets for the position manager
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(positionManager), 10_000_000);
+        vm.startPrank(user1);
+        vault.redeem(vault.balanceOf(user1), user1, user1);
+
+        (, uint256 deutilization) = strategy.pendingUtilizations();
+        _deutilize(deutilization);
+
+        bool claimable = vault.isClaimable(vault.getWithdrawKey(user1, 0));
+        assertTrue(claimable);
+    }
+
+    function test_idleCollateral_increaseCollateral() public {
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+
+        // make 10 USDC idle assets for the position manager
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(positionManager), 10_000_000);
+
+        _utilize(pendingUtilizationInAsset);
+
+        // collateral should be around 100000 / 4 + 10
+        assertApproxEqRel(positionManager.positionNetBalance(), TEN_THOUSANDS_USDC / 4 + 10_000_000, 0.0001 ether);
+        assertEq(positionManager.idleCollateralAmount(), 0);
+    }
 }

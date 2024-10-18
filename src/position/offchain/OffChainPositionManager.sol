@@ -155,6 +155,8 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         uint256 round = $.currentRound + 1;
 
         if (params.isIncrease) {
+            // include idle assets for increasing collateral
+            params.collateralDeltaAmount = idleCollateralAmount();
             if (params.collateralDeltaAmount > 0) {
                 (uint256 minIncreaseCollateral, uint256 maxIncreaseCollateral) = config().increaseCollateralMinMax();
                 if (
@@ -229,7 +231,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         uint256 sizeInTokens,
         uint256 netBalance,
         uint256 markPrice,
-        AdjustPositionPayload calldata params
+        AdjustPositionPayload memory params
     ) external onlyAgent {
         // 1. increments round
         // 2. stores position state in the current round
@@ -252,20 +254,20 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
             if (params.collateralDeltaAmount > 0) {
                 _transferFromAgent(params.collateralDeltaAmount);
             }
-        }
 
-        AdjustPositionPayload memory response = AdjustPositionPayload({
-            sizeDeltaInTokens: params.sizeDeltaInTokens,
-            collateralDeltaAmount: params.collateralDeltaAmount,
-            isIncrease: params.isIncrease
-        });
+            // replace collateralDeltaAmount with idleCollateralAmount if requested amount is bigger than it
+            uint256 _idleCollateralAmount = idleCollateralAmount();
+            if (_idleCollateralAmount < $.requests[requestRound].request.collateralDeltaAmount) {
+                params.collateralDeltaAmount = _idleCollateralAmount;
+            }
+        }
 
         $.positionStates[round] = state;
         $.currentRound = round;
 
         RequestInfo storage requestInfo = $.requests[requestRound];
         if (!requestInfo.isReported) {
-            requestInfo.response = response;
+            requestInfo.response = params;
             requestInfo.responseRound = round;
             requestInfo.responseTimestamp = block.timestamp;
             requestInfo.isReported = true;
@@ -333,8 +335,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
     function positionNetBalance() public view virtual override returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         PositionState memory state = $.positionStates[$.currentRound];
-        uint256 initialNetBalance =
-            state.netBalance + $.pendingCollateralIncrease + IERC20($.collateralToken).balanceOf(address(this));
+        uint256 initialNetBalance = state.netBalance + $.pendingCollateralIncrease + idleCollateralAmount();
 
         uint256 positionValue =
             IOracle($.oracle).convertTokenAmount($.indexToken, $.collateralToken, state.sizeInTokens);
@@ -482,5 +483,10 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
 
     function limitDecreaseCollateral() external view returns (uint256) {
         return config().limitDecreaseCollateral();
+    }
+
+    function idleCollateralAmount() public view returns (uint256) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return IERC20($.collateralToken).balanceOf(address(this));
     }
 }
