@@ -438,6 +438,23 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         emit Deutilize(msg.sender, amount, amountOut);
     }
 
+    function stop() external {
+        if (msg.sender != owner() && msg.sender != vault()) {
+            revert Errors.CallerNotOwnerOrVault();
+        }
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        delete $.pendingDecreaseCollateral;
+        delete $.pendingDeutilizedAssets;
+        delete $.processingRebalanceDown;
+        $.strategyStatus = StrategyStatus.PAUSE;
+        uint256 productBalance = IERC20(product()).balanceOf(address(this));
+        ManualSwapLogic.swap(productBalance, $.productToAssetSwapPath);
+        bool result = _adjustPosition(type(uint256).max, type(uint256).max, false);
+        if (!result) {
+            revert Errors.FailedStopStrategy();
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                             KEEPER LOGIC   
     //////////////////////////////////////////////////////////////*/
@@ -572,6 +589,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
 
         delete $.requestParams;
 
+        shouldPause = status == StrategyStatus.PAUSE;
         $.strategyStatus = shouldPause ? StrategyStatus.PAUSE : StrategyStatus.IDLE;
 
         emit AfterAdjustPosition(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);

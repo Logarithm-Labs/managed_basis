@@ -102,4 +102,10 @@ library Errors {
     error ManagementFeeTransfer(address feeRecipient);
 
     error SwapFailed();
+
+    error FailedStopStrategy();
+
+    error CallerNotOwnerOrVault();
+
+    error VaultShutdown();
 }

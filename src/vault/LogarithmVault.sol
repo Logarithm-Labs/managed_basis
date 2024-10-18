@@ -54,6 +54,7 @@ contract LogarithmVault is Initializable, ManagedVault {
         address priorityProvider;
         uint256 prioritizedAccRequestedWithdrawAssets;
         uint256 prioritizedProcessedWithdrawAssets;
+        bool shutdown;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.LogarithmVault")) - 1)) & ~bytes32(uint256(0xff))
@@ -136,6 +137,12 @@ contract LogarithmVault is Initializable, ManagedVault {
 
     function setPriorityProvider(address _priorityProvider) external onlyOwner {
         _getLogarithmVaultStorage().priorityProvider = _priorityProvider;
+    }
+
+    function shutdown() external onlyOwner {
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        $.strategy.stop();
+        $.shutdown = true;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -260,6 +267,10 @@ contract LogarithmVault is Initializable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        if (isShutdown()) {
+            revert Errors.VaultShutdown();
+        }
+
         IERC20 _asset = IERC20(asset());
         _asset.safeTransferFrom(caller, address(this), assets);
 
@@ -594,5 +605,10 @@ contract LogarithmVault is Initializable, ManagedVault {
 
     function nonces(address user) external view returns (uint256) {
         return _getLogarithmVaultStorage().nonces[user];
+    }
+
+    /// @notice if set to true, only withdrawals will be available. It can't be reverted.
+    function isShutdown() public view returns (bool) {
+        return _getLogarithmVaultStorage().shutdown;
     }
 }

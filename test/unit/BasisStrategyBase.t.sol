@@ -1091,28 +1091,6 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
                         REVERT TEST
     //////////////////////////////////////////////////////////////*/
 
-    // function test_afterAdjustPosition_revert_whenUtilizing() public afterDeposited {
-    //     (uint256 pendingUtilization,) = strategy.pendingUtilizations();
-    //     uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
-
-    //     uint256 amount = pendingUtilization / 2;
-    //     // bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
-    //     vm.startPrank(operator);
-    //     strategy.utilize(amount, BasisStrategy.SwapType.MANUAL, "");
-
-    //     // position manager increase reversion
-    //     vm.startPrank(GMX_ORDER_VAULT);
-    //     IERC20(asset).transfer(address(_positionManager()), pendingIncreaseCollateral / 2);
-    //     vm.startPrank(address(_positionManager()));
-    //     strategy.afterAdjustPosition(
-    //         IPositionManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
-    //     );
-
-    //     assertEq(IERC20(asset).balanceOf(address(_positionManager())), 0);
-    //     assertEq(IERC20(product).balanceOf(address(strategy)), 0);
-    //     assertApproxEqRel(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC, 0.9999 ether);
-    // }
-
     function test_afterAdjustPosition_revert_whenDeutilizing() public afterWithdrawRequestCreated {
         uint256 productBefore = IERC20(product).balanceOf(address(strategy));
 
@@ -1134,5 +1112,73 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertApproxEqRel(productAfter, productBefore, 0.9999 ether);
 
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.PAUSE));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            CIRCUIT BREAKER
+    //////////////////////////////////////////////////////////////*/
+
+    function test_circuit_breaker_stopStrategy() public afterMultipleWithdrawRequestCreated {
+        vm.startPrank(owner);
+        strategy.stop();
+        _executeOrder();
+        StrategyState memory state = helper.getStrategyState();
+        assertEq(uint256(state.strategyStatus), uint256(BasisStrategy.StrategyStatus.PAUSE), "strategyStatus");
+        assertEq(state.utilizedAssets, 0, "utilizedAssets");
+        assertEq(state.productBalance, 0, "productBalance");
+        assertEq(state.assetsToWithdraw, 0, "assetsToWithdraw");
+        assertEq(state.pendingUtilization, 0, "pendingUtilization");
+        assertEq(state.pendingDeutilization, 0, "pendingDeutilization");
+        assertEq(state.positionNetBalance, 0, "positionNetBalance");
+        assertEq(state.upkeepNeeded, false, "upkeepNeeded");
+    }
+
+    function test_circuit_breaker_revert_stopStrategy() public afterMultipleWithdrawRequestCreated {
+        address anyone = makeAddr("anyone");
+        vm.startPrank(anyone);
+        vm.expectRevert(Errors.CallerNotOwnerOrVault.selector);
+        strategy.stop();
+    }
+
+    function test_circuit_breaker_shutdown_stopStrategy() public afterMultipleWithdrawRequestCreated {
+        vm.startPrank(owner);
+        vault.shutdown();
+        _executeOrder();
+        StrategyState memory state = helper.getStrategyState();
+        assertEq(uint256(state.strategyStatus), uint256(BasisStrategy.StrategyStatus.PAUSE), "strategyStatus");
+        assertEq(state.utilizedAssets, 0, "utilizedAssets");
+        assertEq(state.productBalance, 0, "productBalance");
+        assertEq(state.assetsToWithdraw, 0, "assetsToWithdraw");
+        assertEq(state.pendingUtilization, 0, "pendingUtilization");
+        assertEq(state.pendingDeutilization, 0, "pendingDeutilization");
+        assertEq(state.positionNetBalance, 0, "positionNetBalance");
+        assertEq(state.upkeepNeeded, false, "upkeepNeeded");
+    }
+
+    function test_circuit_breaker_revert_deposit_whenShutdown() public afterMultipleWithdrawRequestCreated {
+        vm.startPrank(owner);
+        vault.shutdown();
+        vm.startPrank(user1);
+        IERC20(asset).approve(address(vault), TEN_THOUSANDS_USDC);
+        vm.expectRevert(Errors.VaultShutdown.selector);
+        vault.deposit(TEN_THOUSANDS_USDC, user1);
+    }
+
+    function test_circuit_breaker_revert_mint_whenShutdown() public afterMultipleWithdrawRequestCreated {
+        vm.startPrank(owner);
+        vault.shutdown();
+        vm.startPrank(user1);
+        uint256 shares = 10000000;
+        uint256 assets = vault.previewMint(shares);
+        IERC20(asset).approve(address(vault), assets);
+        vm.expectRevert(Errors.VaultShutdown.selector);
+        vault.mint(shares, user1);
+    }
+
+    function test_circuit_breaker_revert_shutdown() public afterMultipleWithdrawRequestCreated {
+        address anyone = makeAddr("anyone");
+        vm.startPrank(anyone);
+        vm.expectRevert();
+        vault.shutdown();
     }
 }

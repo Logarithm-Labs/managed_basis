@@ -13,4 +13,5 @@ interface IBasisStrategy {
     function asset() external view returns (address);
     function product() external view returns (address);
     function positionManager() external view returns (address);
+    function stop() external;
 }
