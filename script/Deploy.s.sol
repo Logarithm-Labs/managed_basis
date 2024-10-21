@@ -20,7 +20,8 @@ import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 contract DeployScript is Script {
     // access control addresses
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
-    address constant operator = 0x78057a43dDc57792340BC19E50e1011F8DAdEd01;
+    address constant gmxOperator = 0xe7263f18e278ea0550FaD97DDF898d134483EfC6;
+    address constant hlOperator = 0x78057a43dDc57792340BC19E50e1011F8DAdEd01;
     address constant forwarder = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
     address constant agent = 0xA2a7e3a770c38aAe24F175a38281f74731Fe477E;
 
@@ -107,7 +108,7 @@ contract DeployScript is Script {
             product,
             address(vaultGmx),
             address(oracle),
-            operator,
+            gmxOperator,
             targetLeverage,
             minLeverage,
             maxLeverage,
@@ -118,6 +119,7 @@ contract DeployScript is Script {
         console.log("Strategy GMX deployed at", address(strategyGmx));
         // deploy BasisStrategy Hl
         strategyDeployParams.vault = address(vaultHl);
+        strategyDeployParams.operator = hlOperator;
         BasisStrategy strategyHl = DeployHelper.deployBasisStrategy(strategyDeployParams);
         console.log("Strategy HL deployed at", address(strategyHl));
 

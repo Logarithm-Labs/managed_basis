@@ -63,21 +63,6 @@ contract OffChainTest is PositionMngerForkTest {
         // deploy positionManager beacon
         address positionManagerBeacon = DeployHelper.deployBeacon(address(new OffChainPositionManager()), owner);
         // deploy positionMnager beacon proxy
-        address positionManagerProxy = address(
-            new BeaconProxy(
-                positionManagerBeacon,
-                abi.encodeWithSelector(
-                    OffChainPositionManager.initialize.selector,
-                    address(config),
-                    strategy,
-                    agent,
-                    oracle,
-                    product,
-                    asset,
-                    false
-                )
-            )
-        );
         positionManager = DeployHelper.deployOffChainPositionManager(
             DeployHelper.OffChainPositionManagerDeployParams(
                 owner, address(config), positionManagerBeacon, strategy, agent, oracle, product, asset, false

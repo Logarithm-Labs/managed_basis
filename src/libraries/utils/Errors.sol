@@ -110,4 +110,7 @@ library Errors {
     error VaultShutdown();
 
     error InvalidSecurityManager();
+    
+    error NotWhitelisted(address user);
+
 }
