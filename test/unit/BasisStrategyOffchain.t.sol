@@ -48,7 +48,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         vm.startPrank(agent);
         _reportState();
 
-        _excuteOrder();
+        _executeOrder();
 
         bytes32 requestKey = vault.getWithdrawKey(user1, 0);
         assertTrue(vault.processedWithdrawAssets() < vault.accRequestedWithdrawAssets());
@@ -88,7 +88,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         vm.startPrank(operator);
         strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
         _deposit(user1, 400_000_000);
-        _excuteOrder();
+        _executeOrder();
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("decreaseCollateral");
         assertTrue(upkeepNeeded, "upkeepNeeded");

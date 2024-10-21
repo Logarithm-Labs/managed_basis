@@ -42,8 +42,6 @@ contract LogarithmVault is Initializable, ManagedVault {
         IBasisStrategy strategy;
         uint256 entryCost;
         uint256 exitCost;
-        uint256 userDepositLimit;
-        uint256 vaultDepositLimit;
         // withdraw state
         uint256 assetsToClaim; // asset balance of vault that is ready to claim
         uint256 accRequestedWithdrawAssets; // total requested withdraw assets
@@ -96,8 +94,6 @@ contract LogarithmVault is Initializable, ManagedVault {
         $.entryCost = entryCost_;
         $.exitCost = exitCost_;
 
-        $.userDepositLimit = type(uint256).max;
-        $.vaultDepositLimit = type(uint256).max;
         $.priorityProvider = priorityProvider_;
     }
 
@@ -118,12 +114,6 @@ contract LogarithmVault is Initializable, ManagedVault {
         _asset.approve(_strategy, type(uint256).max);
     }
 
-    function setDepositLimits(uint256 userLimit, uint256 vaultDepositLimit) external onlyOwner {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        $.userDepositLimit = userLimit;
-        $.vaultDepositLimit = vaultDepositLimit;
-    }
-
     function setEntryCost(uint256 _entryCost) external onlyOwner {
         require(_entryCost < 1 ether);
         _getLogarithmVaultStorage().entryCost = _entryCost;
@@ -141,34 +131,6 @@ contract LogarithmVault is Initializable, ManagedVault {
     /*//////////////////////////////////////////////////////////////
                         PUBLIC FUNCTIONS   
     //////////////////////////////////////////////////////////////*/
-
-    /// @inheritdoc ERC4626Upgradeable
-    function maxDeposit(address receiver) public view virtual override returns (uint256 allowed) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        uint256 userDepositLimit = $.userDepositLimit;
-        uint256 vaultDepositLimit = $.vaultDepositLimit;
-
-        if (userDepositLimit == type(uint256).max && vaultDepositLimit == type(uint256).max) {
-            return type(uint256).max;
-        } else {
-            uint256 sharesBalance = balanceOf(receiver);
-            uint256 sharesValue = convertToAssets(sharesBalance);
-            uint256 availableDepositorLimit =
-                userDepositLimit == type(uint256).max ? type(uint256).max : userDepositLimit - sharesValue;
-            uint256 availableStrategyLimit =
-                vaultDepositLimit == type(uint256).max ? type(uint256).max : vaultDepositLimit - totalAssets();
-            uint256 userBalance = IERC20(asset()).balanceOf(address(receiver));
-            allowed =
-                availableDepositorLimit < availableStrategyLimit ? availableDepositorLimit : availableStrategyLimit;
-            allowed = userBalance < allowed ? userBalance : allowed;
-        }
-    }
-
-    /// @inheritdoc ERC4626Upgradeable
-    function maxMint(address receiver) public view virtual override returns (uint256) {
-        uint256 maxAssets = maxDeposit(receiver);
-        return previewDeposit(maxAssets);
-    }
 
     /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
@@ -353,7 +315,7 @@ contract LogarithmVault is Initializable, ManagedVault {
     }
 
     /// @notice claim the processed withdraw request
-    function claim(bytes32 withdrawRequestKey) external virtual {
+    function claim(bytes32 withdrawRequestKey) external virtual returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
 
@@ -406,6 +368,7 @@ contract LogarithmVault is Initializable, ManagedVault {
         IERC20(asset()).safeTransfer(withdrawRequest.receiver, executedAssets);
 
         emit Claimed(withdrawRequest.receiver, withdrawRequestKey, executedAssets);
+        return executedAssets;
     }
 
     function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
@@ -441,13 +404,6 @@ contract LogarithmVault is Initializable, ManagedVault {
 
     function getWithdrawKey(address user, uint256 nonce) public view returns (bytes32) {
         return keccak256(abi.encodePacked(address(this), user, nonce));
-    }
-
-    function depositLimits() external view returns (uint256 userDepositLimit, uint256 vaultDepositLimit) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        userDepositLimit = $.userDepositLimit;
-        vaultDepositLimit = $.vaultDepositLimit;
-        return (userDepositLimit, vaultDepositLimit);
     }
 
     /*//////////////////////////////////////////////////////////////
