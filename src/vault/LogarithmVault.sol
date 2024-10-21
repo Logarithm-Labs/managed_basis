@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -19,7 +20,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title A logarithm vault
 /// @author Logarithm Labs
-contract LogarithmVault is Initializable, ManagedVault {
+contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -54,6 +55,7 @@ contract LogarithmVault is Initializable, ManagedVault {
         address priorityProvider;
         uint256 prioritizedAccRequestedWithdrawAssets;
         uint256 prioritizedProcessedWithdrawAssets;
+        address securityManager;
         bool shutdown;
     }
 
@@ -76,6 +78,17 @@ contract LogarithmVault is Initializable, ManagedVault {
     );
 
     event Claimed(address indexed claimer, bytes32 withdrawKey, uint256 assets);
+
+    /*//////////////////////////////////////////////////////////////
+                               MODIFIERS
+    //////////////////////////////////////////////////////////////*/
+
+    modifier onlySecurityManager() {
+        if (_msgSender() != securityManager()) {
+            revert Errors.InvalidSecurityManager();
+        }
+        _;
+    }
 
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
@@ -105,6 +118,11 @@ contract LogarithmVault is Initializable, ManagedVault {
     /*//////////////////////////////////////////////////////////////
                         ADMIN FUNCTIONS   
     //////////////////////////////////////////////////////////////*/
+
+    function setSecurityManager(address account) external onlyOwner {
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        $.securityManager = account;
+    }
 
     function setStrategy(address _strategy) external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
@@ -143,6 +161,22 @@ contract LogarithmVault is Initializable, ManagedVault {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         $.strategy.stop();
         $.shutdown = true;
+    }
+
+    function pause(bool stopStrategy) external onlySecurityManager whenNotPaused {
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        if (stopStrategy) {
+            $.strategy.stop();
+        } else {
+            $.strategy.pause();
+        }
+        _pause();
+    }
+
+    function unpause() external onlySecurityManager whenPaused {
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        $.strategy.unpause();
+        _unpause();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -267,6 +301,7 @@ contract LogarithmVault is Initializable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        _requireNotPaused();
         if (isShutdown()) {
             revert Errors.VaultShutdown();
         }
@@ -287,6 +322,7 @@ contract LogarithmVault is Initializable, ManagedVault {
         virtual
         override
     {
+        _requireNotPaused();
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
         if (caller != owner) {
@@ -605,6 +641,10 @@ contract LogarithmVault is Initializable, ManagedVault {
 
     function nonces(address user) external view returns (uint256) {
         return _getLogarithmVaultStorage().nonces[user];
+    }
+
+    function securityManager() public view returns (address) {
+        return _getLogarithmVaultStorage().securityManager;
     }
 
     /// @notice if set to true, only withdrawals will be available. It can't be reverted.

@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -23,7 +24,13 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title A basis strategy
 /// @author Logarithm Labs
-contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, AutomationCompatibleInterface {
+contract BasisStrategy is
+    Initializable,
+    PausableUpgradeable,
+    OwnableUpgradeable,
+    IBasisStrategy,
+    AutomationCompatibleInterface
+{
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -41,8 +48,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         IDLE,
         KEEPING,
         UTILIZING,
-        DEUTILIZING,
-        PAUSE
+        DEUTILIZING
     }
 
     struct InternalPendingDeutilization {
@@ -128,15 +134,22 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
     //////////////////////////////////////////////////////////////*/
 
     modifier onlyPositionManager() {
-        if (msg.sender != address(_getBasisStrategyStorage().positionManager)) {
+        if (_msgSender() != positionManager()) {
             revert Errors.CallerNotPositionManager();
         }
         _;
     }
 
     modifier onlyOperator() {
-        if (msg.sender != _getBasisStrategyStorage().operator) {
+        if (_msgSender() != operator()) {
             revert Errors.CallerNotOperator();
+        }
+        _;
+    }
+
+    modifier onlyOwnerOrVault() {
+        if (_msgSender() != owner() && _msgSender() != vault()) {
+            revert Errors.CallerNotOwnerOrVault();
         }
         _;
     }
@@ -157,7 +170,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         uint256 _safeMarginLeverage,
         address[] calldata _assetToProductSwapPath
     ) external initializer {
-        __Ownable_init(msg.sender);
+        __Ownable_init(_msgSender());
 
         address _asset = ILogarithmVault(_vault).asset();
 
@@ -256,10 +269,27 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
     }
 
-    function unpause() external onlyOwner {
-        // callable only when status is KEEPING
-        require(_getBasisStrategyStorage().strategyStatus == StrategyStatus.KEEPING);
-        _getBasisStrategyStorage().strategyStatus = StrategyStatus.IDLE;
+    function pause() external onlyOwnerOrVault whenNotPaused {
+        _pause();
+    }
+
+    function unpause() external onlyOwnerOrVault whenPaused {
+        _unpause();
+    }
+
+    function stop() external onlyOwnerOrVault whenNotPaused {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        delete $.pendingDecreaseCollateral;
+        delete $.pendingDeutilizedAssets;
+        delete $.processingRebalanceDown;
+        $.strategyStatus = StrategyStatus.DEUTILIZING;
+        uint256 productBalance = IERC20(product()).balanceOf(address(this));
+        ManualSwapLogic.swap(productBalance, $.productToAssetSwapPath);
+        bool result = _adjustPosition(type(uint256).max, type(uint256).max, false);
+        if (!result) {
+            revert Errors.FailedStopStrategy();
+        }
+        _pause();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -289,7 +319,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         bool _processingRebalanceDown = $.processingRebalanceDown;
 
         uint256 pendingUtilization =
-            _pendingUtilization(totalSupply, idleAssets, _targetLeverage, _processingRebalanceDown);
+            _pendingUtilization(totalSupply, idleAssets, _targetLeverage, _processingRebalanceDown, paused());
         if (pendingUtilization == 0) {
             revert Errors.ZeroPendingUtilization();
         }
@@ -317,14 +347,14 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         }
 
         uint256 pendingIncreaseCollateral_ =
-            _pendingIncreaseCollateral(idleAssets, _targetLeverage, _processingRebalanceDown);
+            _pendingIncreaseCollateral(idleAssets, _targetLeverage, _processingRebalanceDown, paused());
         uint256 collateralDeltaAmount = pendingIncreaseCollateral_.mulDiv(amount, pendingUtilization);
         // (uint256 min,) = $.positionManager.increaseCollateralMinMax();
         if (!_adjustPosition(amountOut, collateralDeltaAmount, true)) {
             revert Errors.ZeroAmountUtilization();
         } else {
             $.strategyStatus = StrategyStatus.UTILIZING;
-            emit Utilize(msg.sender, amount, amountOut);
+            emit Utilize(_msgSender(), amount, amountOut);
         }
     }
 
@@ -435,24 +465,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
 
         $.strategyStatus = StrategyStatus.DEUTILIZING;
 
-        emit Deutilize(msg.sender, amount, amountOut);
-    }
-
-    function stop() external {
-        if (msg.sender != owner() && msg.sender != vault()) {
-            revert Errors.CallerNotOwnerOrVault();
-        }
-        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        delete $.pendingDecreaseCollateral;
-        delete $.pendingDeutilizedAssets;
-        delete $.processingRebalanceDown;
-        $.strategyStatus = StrategyStatus.PAUSE;
-        uint256 productBalance = IERC20(product()).balanceOf(address(this));
-        ManualSwapLogic.swap(productBalance, $.productToAssetSwapPath);
-        bool result = _adjustPosition(type(uint256).max, type(uint256).max, false);
-        if (!result) {
-            revert Errors.FailedStopStrategy();
-        }
+        emit Deutilize(_msgSender(), amount, amountOut);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -557,15 +570,15 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         (address tokenIn,, address payer) = abi.decode(data, (address, address, address));
         uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
         if (payer == address(this)) {
-            IERC20(tokenIn).safeTransfer(msg.sender, amountToPay);
+            IERC20(tokenIn).safeTransfer(_msgSender(), amountToPay);
         } else {
-            IERC20(tokenIn).safeTransferFrom(payer, msg.sender, amountToPay);
+            IERC20(tokenIn).safeTransferFrom(payer, _msgSender(), amountToPay);
         }
     }
 
     function _verifyCallback() internal view {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        if (!$.isSwapPool[msg.sender]) {
+        if (!$.isSwapPool[_msgSender()]) {
             revert Errors.InvalidCallback();
         }
     }
@@ -589,8 +602,10 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
 
         delete $.requestParams;
 
-        shouldPause = status == StrategyStatus.PAUSE;
-        $.strategyStatus = shouldPause ? StrategyStatus.PAUSE : StrategyStatus.IDLE;
+        if (shouldPause) {
+            _pause();
+        }
+        $.strategyStatus = StrategyStatus.IDLE;
 
         emit AfterAdjustPosition(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
@@ -619,7 +634,7 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         uint256 idleAssets = _vault.idleAssets();
         bool _processingRebalanceDown = $.processingRebalanceDown;
         pendingUtilizationInAsset =
-            _pendingUtilization(totalSupply, idleAssets, $.targetLeverage, _processingRebalanceDown);
+            _pendingUtilization(totalSupply, idleAssets, $.targetLeverage, _processingRebalanceDown, paused());
         pendingDeutilizationInProduct = _pendingDeutilization(
             InternalPendingDeutilization({
                 positionManager: _positionManager,
@@ -921,21 +936,24 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         uint256 totalSupply,
         uint256 idleAssets,
         uint256 _targetLeverage,
-        bool _processingRebalanceDown
+        bool _processingRebalanceDown,
+        bool _paused
     ) public pure returns (uint256) {
-        // don't use utilze function when rebalancing or when totalSupply is zero
-        if (totalSupply == 0 || _processingRebalanceDown) {
+        // don't use utilize function when rebalancing or when totalSupply is zero, or when paused
+        if (totalSupply == 0 || _processingRebalanceDown || _paused) {
             return 0;
         } else {
             return idleAssets.mulDiv(_targetLeverage, Constants.FLOAT_PRECISION + _targetLeverage);
         }
     }
 
-    function _pendingIncreaseCollateral(uint256 idleAssets, uint256 _targetLeverage, bool _processingRebalanceDown)
-        private
-        pure
-        returns (uint256)
-    {
+    function _pendingIncreaseCollateral(
+        uint256 idleAssets,
+        uint256 _targetLeverage,
+        bool _processingRebalanceDown,
+        bool _paused
+    ) private pure returns (uint256) {
+        if (_paused) return 0;
         return _processingRebalanceDown
             ? idleAssets
             : idleAssets.mulDiv(Constants.FLOAT_PRECISION, Constants.FLOAT_PRECISION + _targetLeverage, Math.Rounding.Ceil);
@@ -1138,9 +1156,13 @@ contract BasisStrategy is Initializable, OwnableUpgradeable, IBasisStrategy, Aut
         return _getBasisStrategyStorage().strategyStatus;
     }
 
+    function targetLeverage() public view returns (uint256) {
+        return _getBasisStrategyStorage().targetLeverage;
+    }
+
     function pendingIncreaseCollateral() public view returns (uint256) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        return _pendingIncreaseCollateral($.vault.idleAssets(), $.targetLeverage, $.processingRebalanceDown);
+        return _pendingIncreaseCollateral($.vault.idleAssets(), targetLeverage(), processingRebalance(), paused());
     }
 
     function pendingDecreaseCollateral() public view returns (uint256) {

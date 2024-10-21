@@ -1111,22 +1111,47 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         assertApproxEqRel(productAfter, productBefore, 0.9999 ether);
 
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.PAUSE));
+        assertTrue(strategy.paused());
     }
 
     /*//////////////////////////////////////////////////////////////
                             CIRCUIT BREAKER
     //////////////////////////////////////////////////////////////*/
 
+    function test_circuit_breaker_pauseStrategy() public afterDeposited {
+        (uint256 pendingUtilization,) = strategy.pendingUtilizations();
+        assertGt(pendingUtilization, 0);
+        vm.startPrank(owner);
+        strategy.pause();
+        (pendingUtilization,) = strategy.pendingUtilizations();
+        uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
+        assertEq(pendingUtilization, 0);
+        assertEq(pendingIncreaseCollateral, 0);
+    }
+
+    function test_circuit_breaker_unpauseStrategy() public afterDeposited {
+        vm.startPrank(owner);
+        strategy.pause();
+        (uint256 pendingUtilization,) = strategy.pendingUtilizations();
+        uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
+        assertEq(pendingUtilization, 0);
+        assertEq(pendingIncreaseCollateral, 0);
+        vm.startPrank(owner);
+        strategy.unpause();
+        (pendingUtilization,) = strategy.pendingUtilizations();
+        assertGt(pendingUtilization, 0);
+    }
+
     function test_circuit_breaker_stopStrategy() public afterMultipleWithdrawRequestCreated {
         vm.startPrank(owner);
         strategy.stop();
         _executeOrder();
         StrategyState memory state = helper.getStrategyState();
-        assertEq(uint256(state.strategyStatus), uint256(BasisStrategy.StrategyStatus.PAUSE), "strategyStatus");
+        assertTrue(strategy.paused());
         assertEq(state.utilizedAssets, 0, "utilizedAssets");
         assertEq(state.productBalance, 0, "productBalance");
         assertEq(state.assetsToWithdraw, 0, "assetsToWithdraw");
+        assertEq(state.pendingIncreaseCollateral, 0, "pendingIncreaseCollateral");
         assertEq(state.pendingUtilization, 0, "pendingUtilization");
         assertEq(state.pendingDeutilization, 0, "pendingDeutilization");
         assertEq(state.positionNetBalance, 0, "positionNetBalance");
@@ -1145,7 +1170,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vault.shutdown();
         _executeOrder();
         StrategyState memory state = helper.getStrategyState();
-        assertEq(uint256(state.strategyStatus), uint256(BasisStrategy.StrategyStatus.PAUSE), "strategyStatus");
+        assertTrue(strategy.paused());
         assertEq(state.utilizedAssets, 0, "utilizedAssets");
         assertEq(state.productBalance, 0, "productBalance");
         assertEq(state.assetsToWithdraw, 0, "assetsToWithdraw");
@@ -1180,5 +1205,44 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.startPrank(anyone);
         vm.expectRevert();
         vault.shutdown();
+    }
+
+    error EnforcedPause();
+
+    function test_circuit_breaker_pauseVaultWithStopStrategy() public afterMultipleWithdrawRequestCreated {
+        address securityManager = makeAddr("security");
+        vm.startPrank(owner);
+        vault.setSecurityManager(securityManager);
+        vm.startPrank(securityManager);
+        vault.pause(true);
+        _executeOrder();
+
+        StrategyState memory state = helper.getStrategyState();
+        assertTrue(strategy.paused());
+        assertEq(state.utilizedAssets, 0, "utilizedAssets");
+        assertEq(state.productBalance, 0, "productBalance");
+        assertEq(state.assetsToWithdraw, 0, "assetsToWithdraw");
+        assertEq(state.pendingUtilization, 0, "pendingUtilization");
+        assertEq(state.pendingDeutilization, 0, "pendingDeutilization");
+        assertEq(state.positionNetBalance, 0, "positionNetBalance");
+        assertEq(state.upkeepNeeded, false, "upkeepNeeded");
+    }
+
+    function test_circuit_breaker_pauseVaultWithPauseStrategy() public afterMultipleWithdrawRequestCreated {
+        address securityManager = makeAddr("security");
+        vm.startPrank(owner);
+        vault.setSecurityManager(securityManager);
+        vm.startPrank(securityManager);
+        vault.pause(false);
+
+        StrategyState memory state = helper.getStrategyState();
+        assertTrue(strategy.paused());
+        assertNotEq(state.utilizedAssets, 0, "utilizedAssets");
+        assertNotEq(state.productBalance, 0, "productBalance");
+        assertEq(state.assetsToWithdraw, 0, "assetsToWithdraw");
+        assertEq(state.pendingUtilization, 0, "pendingUtilization");
+        assertNotEq(state.pendingDeutilization, 0, "pendingDeutilization");
+        assertNotEq(state.positionNetBalance, 0, "positionNetBalance");
+        assertEq(state.upkeepNeeded, false, "upkeepNeeded");
     }
 }

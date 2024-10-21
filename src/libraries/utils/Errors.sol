@@ -108,4 +108,6 @@ library Errors {
     error CallerNotOwnerOrVault();
 
     error VaultShutdown();
+
+    error InvalidSecurityManager();
 }
