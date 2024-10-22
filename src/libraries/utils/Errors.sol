@@ -103,5 +103,14 @@ library Errors {
 
     error SwapFailed();
 
+    error FailedStopStrategy();
+
+    error CallerNotOwnerOrVault();
+
+    error VaultShutdown();
+
+    error InvalidSecurityManager();
+    
     error NotWhitelisted(address user);
+
 }
