@@ -175,10 +175,10 @@ contract OffChainTest is PositionMngerForkTest {
     }
 
     function _getMarkPrice() internal view returns (uint256) {
-        uint256 oraclePrice = oracle_.getAssetPrice(product_);
-        uint256 precision =
-            10 ** (60 - uint256(IERC20Metadata(product_).decimals()) - uint256(IERC20Metadata(asset_).decimals()));
-        return oraclePrice.mulDiv(1e30, precision);
+        uint256 productPrice = oracle_.getAssetPrice(product_);
+        uint256 collateralPrice = oracle_.getAssetPrice(asset_);
+        uint256 precision = uint256(IERC20Metadata(product_).decimals());
+        return productPrice.mulDiv(precision, collateralPrice);
     }
 
     function _getExecutionParams(uint256 sizeDeltaInTokens)
