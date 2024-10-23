@@ -136,4 +136,20 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         assertEq(IERC20(asset).balanceOf(address(strategy)), 0);
         assertEq(IERC20(asset).balanceOf(address(vault)), 10_000_000);
     }
+
+    function test_leverage_whenCollateralPriceFluctuated() public validateFinalState {
+        uint256 assets = 67671611780306;
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(user1, assets);
+        _deposit(user1, assets);
+        address priceFeed = oracle.getPriceFeed(address(asset));
+        int256 currPrice = IPriceFeed(priceFeed).latestAnswer();
+        uint256 deltaPrice = Math.mulDiv(uint256(currPrice), 774831388402323407, 1 ether);
+        int256 resultedPrice = currPrice - int256(deltaPrice);
+        _mockChainlinkPriceFeedAnswer(priceFeed, resultedPrice);
+        (uint256 amount,) = strategy.pendingUtilizations();
+        vm.startPrank(operator);
+        strategy.utilize(amount, BasisStrategy.SwapType.MANUAL, "");
+        _executeOrder();
+    }
 }
