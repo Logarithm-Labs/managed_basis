@@ -43,6 +43,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         IBasisStrategy strategy;
         uint256 entryCost;
         uint256 exitCost;
+        uint256 userDepositLimit; // @TODO to be removed in production
+        uint256 vaultDepositLimit; // @TODO to be removed in production
         // withdraw state
         uint256 assetsToClaim; // asset balance of vault that is ready to claim
         uint256 accRequestedWithdrawAssets; // total requested withdraw assets
