@@ -6,13 +6,16 @@ import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/Upgradeabl
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 
 contract UpgradeVaultScript is Script {
-    UpgradeableBeacon public vaultBeacon = UpgradeableBeacon(0x6e77994e0bADCF3421d1Fb0Fb8b523FCe0c989Ee);
-    LogarithmVault public vault = LogarithmVault(0xDe56f312464F95C06EeCF4391f930877Fe4D7d93);
+    UpgradeableBeacon public vaultBeacon = UpgradeableBeacon(0x221b1b60c3a794D58D47C0916579833ea834aCC8);
+    LogarithmVault public gmxVault = LogarithmVault(0x4B57c9c6B58a454Def3Ad5AD0C15cF4974c818DE);
+    LogarithmVault public hlVault = LogarithmVault(0x6ef9500175c6ABC3952F3DFB86dE96ACD151813B);
 
     function run() public {
         vm.startBroadcast();
         // upgrade vault beacon
         address vaultImpl = address(new LogarithmVault());
         vaultBeacon.upgradeTo(vaultImpl);
+        gmxVault.setDepositLimits(type(uint256).max, type(uint256).max);
+        hlVault.setDepositLimits(type(uint256).max, type(uint256).max);
     }
 }
