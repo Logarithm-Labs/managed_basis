@@ -444,9 +444,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     /// @notice returns pending withdraw assets that will be deutilized
     function totalPendingWithdraw() public view returns (int256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        uint256 assetsToWithdraw = IERC20(asset()).balanceOf(address($.strategy));
-        return $.prioritizedAccRequestedWithdrawAssets.toInt256() + $.accRequestedWithdrawAssets.toInt256()
-            - ($.prioritizedProcessedWithdrawAssets + $.processedWithdrawAssets + assetsToWithdraw).toInt256();
+        return ($.prioritizedAccRequestedWithdrawAssets + $.accRequestedWithdrawAssets).toInt256()
+            - ($.prioritizedProcessedWithdrawAssets + $.processedWithdrawAssets + $.strategy.assetsToWithdraw()).toInt256();
     }
 
     function getWithdrawKey(address user, uint256 nonce) public view returns (bytes32) {
@@ -515,9 +514,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         if (isLast) {
             // last withdraw is claimable when utilized assets is 0
             // and assetsToWithdraw is 0
-            uint256 utilizedAssets = $.strategy.utilizedAssets();
-            uint256 assetsToWithdraw = IERC20(asset()).balanceOf(address($.strategy));
-            isExecuted = utilizedAssets == 0 && assetsToWithdraw == 0;
+            IBasisStrategy _strategy = $.strategy;
+            isExecuted = _strategy.utilizedAssets() == 0 && _strategy.assetsToWithdraw() == 0;
         } else {
             isExecuted = isPrioritizedAccount
                 ? accRequestedWithdrawAssetsOfRequest <= $.prioritizedProcessedWithdrawAssets

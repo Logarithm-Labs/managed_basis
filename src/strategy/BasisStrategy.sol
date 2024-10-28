@@ -664,6 +664,11 @@ contract BasisStrategy is
         return productValueInAssets + $.positionManager.positionNetBalance();
     }
 
+    /// @dev Assets that are pending to process withdraw requests.
+    function assetsToWithdraw() public view returns (uint256) {
+        return IERC20(asset()).balanceOf(address(this));
+    }
+
     /*//////////////////////////////////////////////////////////////
                            PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -926,9 +931,9 @@ contract BasisStrategy is
 
     /// @dev process assetsToWithdraw for the withdraw requests
     function _processAssetsToWithdraw(address _asset, ILogarithmVault _vault) private {
-        uint256 assetsToWithdraw = IERC20(_asset).balanceOf(address(this));
-        if (assetsToWithdraw == 0) return;
-        IERC20(_asset).safeTransfer(address(_vault), assetsToWithdraw);
+        uint256 _assetsToWithdraw = assetsToWithdraw();
+        if (_assetsToWithdraw == 0) return;
+        IERC20(_asset).safeTransfer(address(_vault), _assetsToWithdraw);
         _vault.processPendingWithdrawRequests();
     }
 

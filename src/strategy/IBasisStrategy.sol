@@ -5,6 +5,7 @@ import {IPositionManager} from "src/position/IPositionManager.sol";
 
 interface IBasisStrategy {
     function utilizedAssets() external view returns (uint256);
+    function assetsToWithdraw() external view returns (uint256);
     function afterAdjustPosition(IPositionManager.AdjustPositionPayload calldata responseParams) external;
     function oracle() external view returns (address);
     function vault() external view returns (address);
