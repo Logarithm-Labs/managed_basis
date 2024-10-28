@@ -844,8 +844,8 @@ contract BasisStrategy is
                 responseParams.collateralDeltaAmount, requestParams.collateralDeltaAmount, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
-                shouldPause = true;
                 if (collateralDeviation < 0) {
+                    shouldPause = true;
                     IERC20($.asset).safeTransferFrom(
                         address($.positionManager), address($.vault), uint256(-collateralDeviation)
                     );
