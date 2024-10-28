@@ -552,48 +552,48 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
                             STORAGE VIEWERS
     //////////////////////////////////////////////////////////////*/
 
-    function strategy() external view returns (address) {
+    function strategy() public view returns (address) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         return address($.strategy);
     }
 
-    function priorityProvider() external view returns (address) {
+    function priorityProvider() public view returns (address) {
         return _getLogarithmVaultStorage().priorityProvider;
     }
 
-    function entryCost() external view returns (uint256) {
+    function entryCost() public view returns (uint256) {
         return _getLogarithmVaultStorage().entryCost;
     }
 
-    function exitCost() external view returns (uint256) {
+    function exitCost() public view returns (uint256) {
         return _getLogarithmVaultStorage().exitCost;
     }
 
-    function assetsToClaim() external view returns (uint256) {
+    function assetsToClaim() public view returns (uint256) {
         return _getLogarithmVaultStorage().assetsToClaim;
     }
 
-    function accRequestedWithdrawAssets() external view returns (uint256) {
+    function accRequestedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().accRequestedWithdrawAssets;
     }
 
-    function processedWithdrawAssets() external view returns (uint256) {
+    function processedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().processedWithdrawAssets;
     }
 
-    function prioritizedAccRequestedWithdrawAssets() external view returns (uint256) {
+    function prioritizedAccRequestedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().prioritizedAccRequestedWithdrawAssets;
     }
 
-    function prioritizedProcessedWithdrawAssets() external view returns (uint256) {
+    function prioritizedProcessedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().prioritizedProcessedWithdrawAssets;
     }
 
-    function withdrawRequests(bytes32 withdrawKey) external view returns (WithdrawRequest memory) {
+    function withdrawRequests(bytes32 withdrawKey) public view returns (WithdrawRequest memory) {
         return _getLogarithmVaultStorage().withdrawRequests[withdrawKey];
     }
 
-    function nonces(address user) external view returns (uint256) {
+    function nonces(address user) public view returns (uint256) {
         return _getLogarithmVaultStorage().nonces[user];
     }
 
