@@ -273,6 +273,8 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
             requestInfo.isReported = true;
 
             IBasisStrategy($.strategy).afterAdjustPosition(params);
+        } else {
+            revert Errors.NoActiveRequests();
         }
 
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
