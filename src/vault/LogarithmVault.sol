@@ -176,12 +176,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        int256 _totalAssets = (idleAssets() + $.strategy.utilizedAssets()).toInt256() - totalPendingWithdraw();
-        if (_totalAssets > 0) {
-            return uint256(_totalAssets);
-        } else {
-            return 0;
-        }
+        (, assets) = (idleAssets() + $.strategy.utilizedAssets()).trySub(totalPendingWithdraw());
+        return assets;
     }
 
     /// @inheritdoc ERC4626Upgradeable
@@ -191,13 +187,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
             return assets;
         }
         // calculate the amount of assets that will be utilized
-        int256 _totalPendingWithdraw = totalPendingWithdraw();
-        uint256 assetsToUtilize;
-        if (_totalPendingWithdraw > 0) {
-            (, assetsToUtilize) = assets.trySub(uint256(_totalPendingWithdraw));
-        } else {
-            assetsToUtilize = assets;
-        }
+        (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
@@ -216,13 +206,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 assets = _convertToAssets(shares, Math.Rounding.Ceil);
 
         // calculate the amount of assets that will be utilized
-        int256 _totalPendingWithdraw = totalPendingWithdraw();
-        uint256 assetsToUtilize;
-        if (_totalPendingWithdraw > 0) {
-            (, assetsToUtilize) = assets.trySub(uint256(_totalPendingWithdraw));
-        } else {
-            assetsToUtilize = assets;
-        }
+        (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
@@ -450,10 +434,9 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     /// @notice returns pending withdraw assets that will be deutilized
-    function totalPendingWithdraw() public view returns (int256) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        return ($.prioritizedAccRequestedWithdrawAssets + $.accRequestedWithdrawAssets).toInt256()
-            - ($.prioritizedProcessedWithdrawAssets + $.processedWithdrawAssets + $.strategy.assetsToWithdraw()).toInt256();
+    function totalPendingWithdraw() public view returns (uint256) {
+        return prioritizedAccRequestedWithdrawAssets() + accRequestedWithdrawAssets()
+            - prioritizedProcessedWithdrawAssets() - processedWithdrawAssets();
     }
 
     function getWithdrawKey(address user, uint256 nonce) public view returns (bytes32) {
@@ -521,9 +504,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
         if (isLast) {
             // last withdraw is claimable when utilized assets is 0
-            // and assetsToWithdraw is 0
-            IBasisStrategy _strategy = $.strategy;
-            isExecuted = _strategy.utilizedAssets() == 0 && _strategy.assetsToWithdraw() == 0;
+            isExecuted = $.strategy.utilizedAssets() == 0;
         } else {
             isExecuted = isPrioritizedAccount
                 ? accRequestedWithdrawAssetsOfRequest <= $.prioritizedProcessedWithdrawAssets

@@ -456,12 +456,12 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         afterWithdrawRequestCreated
         validateFinalState
     {
-        int256 pendingWithdrawBefore = vault.totalPendingWithdraw();
+        uint256 pendingWithdrawBefore = vault.totalPendingWithdraw();
         uint256 shares = vault.previewDeposit(THOUSAND_USDC);
         _deposit(user2, THOUSAND_USDC);
         assertEq(vault.balanceOf(user2), shares);
-        int256 pendingWithdrawAfter = vault.totalPendingWithdraw();
-        assertEq(pendingWithdrawAfter + int256(THOUSAND_USDC), pendingWithdrawBefore);
+        uint256 pendingWithdrawAfter = vault.totalPendingWithdraw();
+        assertEq(pendingWithdrawAfter + THOUSAND_USDC, pendingWithdrawBefore);
         assertFalse(vault.isClaimable(vault.getWithdrawKey(user1, 0)));
     }
 
@@ -470,11 +470,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         afterWithdrawRequestCreated
         validateFinalState
     {
-        int256 pendingWithdrawBefore = vault.totalPendingWithdraw();
+        uint256 pendingWithdrawBefore = vault.totalPendingWithdraw();
         uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC);
         _deposit(user2, TEN_THOUSANDS_USDC);
         assertEq(vault.balanceOf(user2), shares);
-        int256 pendingWithdrawAfter = vault.totalPendingWithdraw();
+        uint256 pendingWithdrawAfter = vault.totalPendingWithdraw();
         assertEq(pendingWithdrawAfter, 0);
         assertTrue(vault.isClaimable(vault.getWithdrawKey(user1, 0)));
         assertTrue(pendingWithdrawBefore > 0);

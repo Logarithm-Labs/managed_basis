@@ -436,10 +436,9 @@ contract BasisStrategy is
                     $.pendingDecreaseCollateral = 0;
                 } else {
                     (min, max) = _positionManager.decreaseCollateralMinMax();
-                    int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
-                    uint256 pendingWithdraw = totalPendingWithdraw > 0 ? uint256(totalPendingWithdraw) : 0;
-                    collateralDeltaAmount = _clamp(min, pendingWithdraw, max);
-                    $.pendingDecreaseCollateral = pendingWithdraw - collateralDeltaAmount;
+                    uint256 totalPendingWithdraw = assetsToDeutilize();
+                    collateralDeltaAmount = _clamp(min, totalPendingWithdraw, max);
+                    $.pendingDecreaseCollateral = totalPendingWithdraw - collateralDeltaAmount;
                 }
             } else {
                 // when partial deutilizing
@@ -661,12 +660,18 @@ contract BasisStrategy is
         address _product = address($.product);
         uint256 productBalance = IERC20(_product).balanceOf(address(this));
         uint256 productValueInAssets = $.oracle.convertTokenAmount(_product, $.vault.asset(), productBalance);
-        return productValueInAssets + $.positionManager.positionNetBalance();
+        return productValueInAssets + $.positionManager.positionNetBalance() + assetsToWithdraw();
     }
 
     /// @dev Assets that are pending to process withdraw requests.
     function assetsToWithdraw() public view returns (uint256) {
         return IERC20(asset()).balanceOf(address(this));
+    }
+
+    function assetsToDeutilize() public view returns (uint256) {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        (, uint256 assets) = $.vault.totalPendingWithdraw().trySub(assetsToWithdraw());
+        return assets;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -975,7 +980,7 @@ contract BasisStrategy is
         uint256 positionNetBalance = params.positionManager.positionNetBalance();
         if (positionSizeInAssets == 0 || positionNetBalance == 0) return 0;
 
-        int256 totalPendingWithdraw = $.vault.totalPendingWithdraw();
+        uint256 totalPendingWithdraw = assetsToDeutilize();
         uint256 deutilization;
         if (params.processingRebalanceDown) {
             // for rebalance
@@ -987,29 +992,27 @@ contract BasisStrategy is
                 uint256 deltaLeverage = currentLeverage - _targetLeverage;
                 deutilization = positionSizeInTokens.mulDiv(deltaLeverage, currentLeverage);
                 uint256 deutilizationInAsset = $.oracle.convertTokenAmount(params.product, params.asset, deutilization);
-                uint256 totalPendingWithdrawAbs = totalPendingWithdraw < 0 ? 0 : uint256(totalPendingWithdraw);
 
                 // when totalPendingWithdraw is not enough big to prevent increasing collateral
-                if (totalPendingWithdrawAbs < deutilizationInAsset) {
-                    uint256 num = deltaLeverage + _targetLeverage.mulDiv(totalPendingWithdrawAbs, positionNetBalance);
+                if (totalPendingWithdraw < deutilizationInAsset) {
+                    uint256 num = deltaLeverage + _targetLeverage.mulDiv(totalPendingWithdraw, positionNetBalance);
                     uint256 den = currentLeverage + _targetLeverage.mulDiv(positionSizeInAssets, positionNetBalance);
                     deutilization = positionSizeInTokens.mulDiv(num, den);
                 }
             }
         } else {
-            if (totalPendingWithdraw <= 0) return 0;
+            if (totalPendingWithdraw == 0) return 0;
 
-            uint256 totalPendingWithdrawAbs = uint256(totalPendingWithdraw);
             uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
             if (
-                _pendingDecreaseCollateral > totalPendingWithdrawAbs
+                _pendingDecreaseCollateral > totalPendingWithdraw
                     || _pendingDecreaseCollateral >= (positionSizeInAssets + positionNetBalance)
             ) {
                 return 0;
             }
 
             deutilization = positionSizeInTokens.mulDiv(
-                totalPendingWithdrawAbs - _pendingDecreaseCollateral,
+                totalPendingWithdraw - _pendingDecreaseCollateral,
                 positionSizeInAssets + positionNetBalance - _pendingDecreaseCollateral
             );
         }

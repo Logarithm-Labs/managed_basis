@@ -22,7 +22,7 @@ struct StrategyState {
     uint256 productValueInAsset;
     uint256 assetsToWithdraw;
     uint256 assetsToClaim;
-    int256 totalPendingWithdraw;
+    uint256 totalPendingWithdraw;
     uint256 pendingIncreaseCollateral;
     uint256 pendingDecreaseCollateral;
     uint256 pendingUtilization;
