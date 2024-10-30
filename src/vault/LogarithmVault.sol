@@ -124,9 +124,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
         IERC20 _asset = IERC20(asset());
+        address prevStrategy = strategy();
 
-        address prevStrategy = address($.strategy);
-        if (prevStrategy != address(0)) _asset.approve(prevStrategy, 0);
+        if (prevStrategy != address(0)) {
+            IBasisStrategy(prevStrategy).stop();
+            _asset.approve(prevStrategy, 0);
+        }
 
         require(_strategy != address(0));
         $.strategy = _strategy;
