@@ -40,7 +40,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @custom:storage-location erc7201:logarithm.storage.LogarithmVault
     struct LogarithmVaultStorage {
-        IBasisStrategy strategy;
+        address strategy;
         uint256 entryCost;
         uint256 exitCost;
         // withdraw state
@@ -129,7 +129,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         if (prevStrategy != address(0)) _asset.approve(prevStrategy, 0);
 
         require(_strategy != address(0));
-        $.strategy = IBasisStrategy(_strategy);
+        $.strategy = _strategy;
         _asset.approve(_strategy, type(uint256).max);
     }
 
@@ -149,23 +149,21 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     function shutdown() external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        $.strategy.stop();
         $.shutdown = true;
+        IBasisStrategy(strategy()).stop();
     }
 
     function pause(bool stopStrategy) external onlySecurityManager whenNotPaused {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         if (stopStrategy) {
-            $.strategy.stop();
+            IBasisStrategy(strategy()).stop();
         } else {
-            $.strategy.pause();
+            IBasisStrategy(strategy()).pause();
         }
         _pause();
     }
 
     function unpause() external onlySecurityManager whenPaused {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        $.strategy.unpause();
+        IBasisStrategy(strategy()).unpause();
         _unpause();
     }
 
@@ -176,7 +174,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        (, assets) = (idleAssets() + $.strategy.utilizedAssets()).trySub(totalPendingWithdraw());
+        (, assets) = (idleAssets() + IBasisStrategy(strategy()).utilizedAssets()).trySub(totalPendingWithdraw());
         return assets;
     }
 
@@ -504,7 +502,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
         if (isLast) {
             // last withdraw is claimable when utilized assets is 0
-            isExecuted = $.strategy.utilizedAssets() == 0;
+            isExecuted = IBasisStrategy(strategy()).utilizedAssets() == 0;
         } else {
             isExecuted = isPrioritizedAccount
                 ? accRequestedWithdrawAssetsOfRequest <= $.prioritizedProcessedWithdrawAssets
@@ -542,8 +540,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     //////////////////////////////////////////////////////////////*/
 
     function strategy() public view returns (address) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        return address($.strategy);
+        return _getLogarithmVaultStorage().strategy;
     }
 
     function priorityProvider() public view returns (address) {
