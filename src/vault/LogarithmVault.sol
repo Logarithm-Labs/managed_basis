@@ -340,11 +340,19 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     function processPendingWithdrawRequests() public returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
+        uint256 _idleAssets = idleAssets();
+        if (_idleAssets == 0) return 0;
+
         (uint256 remainingAssets, uint256 processedAssetsForPrioritized) = _calcProcessedAssets(
-            idleAssets(), $.prioritizedProcessedWithdrawAssets, $.prioritizedAccRequestedWithdrawAssets
+            _idleAssets, $.prioritizedProcessedWithdrawAssets, $.prioritizedAccRequestedWithdrawAssets
         );
         if (processedAssetsForPrioritized > 0) {
             $.prioritizedProcessedWithdrawAssets += processedAssetsForPrioritized;
+        }
+
+        if (remainingAssets == 0) {
+            $.assetsToClaim += processedAssetsForPrioritized;
+            return processedAssetsForPrioritized;
         }
 
         (, uint256 processedAssets) =
