@@ -77,6 +77,17 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     event Claimed(address indexed claimer, bytes32 withdrawKey, uint256 assets);
 
+    event Shutdown(address account);
+
+    event SecurityManagerChanged(address account, address newManager);
+
+    event StrategyChanged(address account, address newStrategy);
+
+    event EntryCostChanged(address account, uint256 newEntryCost);
+
+    event ExitCostChanged(address account, uint256 newExitCost);
+
+    event PriorityProviderChanged(address account, address newPriorityProvider);
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -118,6 +129,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     function setSecurityManager(address account) external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         $.securityManager = account;
+        emit SecurityManagerChanged(_msgSender(), account);
     }
 
     function setStrategy(address _strategy) external onlyOwner {
@@ -134,26 +146,32 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         require(_strategy != address(0));
         $.strategy = _strategy;
         _asset.approve(_strategy, type(uint256).max);
+
+        emit StrategyChanged(_msgSender(), _strategy);
     }
 
     function setEntryCost(uint256 _entryCost) external onlyOwner {
         require(_entryCost < 1 ether);
         _getLogarithmVaultStorage().entryCost = _entryCost;
+        emit EntryCostChanged(_msgSender(), _entryCost);
     }
 
     function setExitCost(uint256 _exitCost) external onlyOwner {
         require(_exitCost < 1 ether);
         _getLogarithmVaultStorage().exitCost = _exitCost;
+        emit ExitCostChanged(_msgSender(), _exitCost);
     }
 
     function setPriorityProvider(address _priorityProvider) external onlyOwner {
         _getLogarithmVaultStorage().priorityProvider = _priorityProvider;
+        emit PriorityProviderChanged(_msgSender(), _priorityProvider);
     }
 
     function shutdown() external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         $.shutdown = true;
         IStrategy(strategy()).stop();
+        emit Shutdown(_msgSender());
     }
 
     function pause(bool stopStrategy) external onlySecurityManager whenNotPaused {
