@@ -11,7 +11,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
+import {IStrategy} from "src/strategy/IStrategy.sol";
 import {IPriorityProvider} from "src/vault/IPriorityProvider.sol";
 import {ManagedVault} from "src/vault/ManagedVault.sol";
 
@@ -127,7 +127,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         address prevStrategy = strategy();
 
         if (prevStrategy != address(0)) {
-            IBasisStrategy(prevStrategy).stop();
+            IStrategy(prevStrategy).stop();
             _asset.approve(prevStrategy, 0);
         }
 
@@ -153,20 +153,20 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     function shutdown() external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         $.shutdown = true;
-        IBasisStrategy(strategy()).stop();
+        IStrategy(strategy()).stop();
     }
 
     function pause(bool stopStrategy) external onlySecurityManager whenNotPaused {
         if (stopStrategy) {
-            IBasisStrategy(strategy()).stop();
+            IStrategy(strategy()).stop();
         } else {
-            IBasisStrategy(strategy()).pause();
+            IStrategy(strategy()).pause();
         }
         _pause();
     }
 
     function unpause() external onlySecurityManager whenPaused {
-        IBasisStrategy(strategy()).unpause();
+        IStrategy(strategy()).unpause();
         _unpause();
     }
 
@@ -177,7 +177,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        (, assets) = (idleAssets() + IBasisStrategy(strategy()).utilizedAssets()).trySub(totalPendingWithdraw());
+        (, assets) = (idleAssets() + IStrategy(strategy()).utilizedAssets()).trySub(totalPendingWithdraw());
         return assets;
     }
 
@@ -505,7 +505,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
         if (isLast) {
             // last withdraw is claimable when utilized assets is 0
-            isExecuted = IBasisStrategy(strategy()).utilizedAssets() == 0;
+            isExecuted = IStrategy(strategy()).utilizedAssets() == 0;
         } else {
             isExecuted = isPrioritizedAccount
                 ? accRequestedWithdrawAssetsOfRequest <= $.prioritizedProcessedWithdrawAssets
