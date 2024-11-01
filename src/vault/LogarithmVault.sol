@@ -288,6 +288,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     /// @inheritdoc ERC4626Upgradeable
+    ///
+    /// @dev This is limited by the idle assets.
     function maxWithdraw(address owner) public view virtual override returns (uint256) {
         if (paused()) {
             return 0;
@@ -299,7 +301,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     ///
-    /// @dev This is limited by the idle assets
+    /// @dev This is limited by the idle assets.
     function maxRedeem(address owner) public view virtual override returns (uint256) {
         if (paused()) {
             return 0;
