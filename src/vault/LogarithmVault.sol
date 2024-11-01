@@ -72,7 +72,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     //////////////////////////////////////////////////////////////*/
 
     event WithdrawRequested(
-        address indexed caller, address indexed receiver, address indexed owner, bytes32 withdrawKey, uint256 assets
+        address indexed caller,
+        address indexed receiver,
+        address indexed owner,
+        bytes32 withdrawKey,
+        uint256 assets,
+        uint256 shares
     );
 
     event Claimed(address indexed claimer, bytes32 withdrawKey, uint256 assets);
@@ -283,6 +288,16 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     /// @inheritdoc ERC4626Upgradeable
+    function maxWithdraw(address owner) public view virtual override returns (uint256) {
+        if (paused()) {
+            return 0;
+        }
+        uint256 assets = _convertToAssets(balanceOf(owner), Math.Rounding.Floor);
+        uint256 withdrawableAssets = idleAssets();
+        return assets > withdrawableAssets ? withdrawableAssets : assets;
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
     ///
     /// @dev This is limited by the idle assets
     function maxRedeem(address owner) public view virtual override returns (uint256) {
@@ -295,22 +310,16 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     /// @inheritdoc ERC4626Upgradeable
-    function maxWithdraw(address owner) public view virtual override returns (uint256) {
-        if (paused()) {
-            return 0;
-        }
-        uint256 assets = _convertToAssets(balanceOf(owner), Math.Rounding.Floor);
-        uint256 withdrawableAssets = idleAssets();
-        return assets > withdrawableAssets ? withdrawableAssets : assets;
-    }
-
-    /// @inheritdoc ERC4626Upgradeable
     ///
     /// @dev If there are pending withdraw requests, the deposited assets is used to process them.
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
         super._deposit(caller, receiver, assets, shares);
         processPendingWithdrawRequests();
     }
+
+    /*//////////////////////////////////////////////////////////////
+                          ASYNC WITHDRAW LOGIC
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Process pending withdraw requests with idle assets.
     ///
@@ -349,8 +358,91 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return totalProcessedAssets;
     }
 
+    /// @notice Request to withdraw assets.
+    ///
+    /// @dev Burns shares from owner and sends exactly assets of underlying tokens to receiver if the idle assets is enough,
+    /// which is just the same as ERC4626-withdraw workflow.
+    /// If the idle assets is not enough, creates a withdraw request with the shortfall assets while sending the idle assets to receiver.
+    ///
+    /// @return The withdraw key that is used in the claim function.
+    function requestWithdraw(uint256 assets, address receiver, address owner) public virtual returns (bytes32) {
+        uint256 maxAssets = maxWithdraw(owner);
+        uint256 assetsToWithdraw = assets > maxAssets ? maxAssets : assets;
+        if (assetsToWithdraw > 0) {
+            uint256 sharesToRedeem = previewWithdraw(assetsToWithdraw);
+            _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
+        }
+        // always assetsToWithdraw <= assets
+        uint256 assetsToRequest = assets - assetsToWithdraw;
+        if (assetsToRequest > 0) {
+            uint256 sharesToRequest = previewWithdraw(assetsToRequest);
+            return _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
+        }
+        return bytes32(0);
+    }
+
+    /// @notice Request to redeem shares.
+    ///
+    /// @dev Burns exactly shares from owner and sends assets of underlying tokens to receiver if the idle assets is enough,
+    /// which is just the same as ERC4626-redeem workflow.
+    /// If the idle assets is not enough, creates a withdraw request with the shortfall assets while sending the idle assets to receiver.
+    ///
+    /// @return The withdraw key that is used in the claim function.
+    function requestRedeem(uint256 shares, address receiver, address owner) public virtual returns (bytes32) {
+        uint256 maxShares = maxRedeem(owner);
+        uint256 sharesToRedeem = shares > maxShares ? maxShares : shares;
+        if (sharesToRedeem > 0) {
+            uint256 assetsToWithdraw = previewRedeem(sharesToRedeem);
+            _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
+        }
+        // always sharesToRedeem <= shares
+        uint256 sharesToRequest = shares - sharesToRedeem;
+        if (sharesToRequest > 0) {
+            uint256 assetsToRequest = previewRedeem(sharesToRequest);
+            return _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
+        }
+        return bytes32(0);
+    }
+
+    /// @dev requestWithdraw/requestRedeem common workflow.
+    function _requestWithdraw(
+        address caller,
+        address receiver,
+        address owner,
+        uint256 assetsToRequest,
+        uint256 sharesToRequest
+    ) internal virtual returns (bytes32) {
+        if (caller != owner) {
+            _spendAllowance(owner, caller, sharesToRequest);
+        }
+        _burn(owner, sharesToRequest);
+
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        uint256 _accRequestedWithdrawAssets;
+        if (isPrioritized(owner)) {
+            _accRequestedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets + assetsToRequest;
+            $.prioritizedAccRequestedWithdrawAssets = _accRequestedWithdrawAssets;
+        } else {
+            _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + assetsToRequest;
+            $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
+        }
+
+        bytes32 withdrawKey = getWithdrawKey(owner, _useNonce(owner));
+        $.withdrawRequests[withdrawKey] = WithdrawRequest({
+            requestedAssets: assetsToRequest,
+            accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
+            requestTimestamp: block.timestamp,
+            owner: owner,
+            receiver: receiver,
+            isClaimed: false
+        });
+        emit WithdrawRequested(caller, receiver, owner, withdrawKey, assetsToRequest, sharesToRequest);
+
+        return withdrawKey;
+    }
+
     /// @notice claim the processed withdraw request
-    function claim(bytes32 withdrawRequestKey) external virtual returns (uint256) {
+    function claim(bytes32 withdrawRequestKey) public virtual returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
 
