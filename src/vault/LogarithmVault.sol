@@ -189,7 +189,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        PUBLIC FUNCTIONS   
+                             ERC4626 LOGIC
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ERC4626Upgradeable
@@ -265,81 +265,58 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     /// @inheritdoc ERC4626Upgradeable
-    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
-        _requireNotPaused();
-        if (isShutdown()) {
-            revert Errors.VaultShutdown();
+    function maxDeposit(address receiver) public view virtual override returns (uint256) {
+        if (paused() || isShutdown()) {
+            return 0;
+        } else {
+            return super.maxDeposit(receiver);
         }
-
-        IERC20 _asset = IERC20(asset());
-        _asset.safeTransferFrom(caller, address(this), assets);
-
-        _mint(receiver, shares);
-
-        processPendingWithdrawRequests();
-
-        emit Deposit(caller, receiver, assets, shares);
     }
 
     /// @inheritdoc ERC4626Upgradeable
-    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
-        internal
-        virtual
-        override
-    {
-        _requireNotPaused();
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-
-        if (caller != owner) {
-            _spendAllowance(owner, caller, shares);
-        }
-
-        // If _asset is ERC777, `transfer` can trigger a reentrancy AFTER the transfer happens through the
-        // `tokensReceived` hook. On the other hand, the `tokensToSend` hook, that is triggered before the transfer,
-        // calls the vault, which is assumed not malicious.
-        //
-        // Conclusion: we need to do the transfer after the burn so that any reentrancy would happen after the
-        // shares are burned and after the assets are transferred, which is a valid state.
-        _burn(owner, shares);
-
-        uint256 _idleAssets = idleAssets();
-        if (_idleAssets >= assets) {
-            IERC20(asset()).safeTransfer(receiver, assets);
+    function maxMint(address receiver) public view virtual override returns (uint256) {
+        if (paused() || isShutdown()) {
+            return 0;
         } else {
-            // lock idle assets to claim
-            $.assetsToClaim += _idleAssets;
-
-            // request withdraw the remaining assets for strategy to deutilize
-            uint256 withdrawAssets = assets - _idleAssets;
-
-            uint256 _accRequestedWithdrawAssets;
-            if (isPrioritized(owner)) {
-                _accRequestedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets + withdrawAssets;
-                $.prioritizedAccRequestedWithdrawAssets = _accRequestedWithdrawAssets;
-            } else {
-                _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + withdrawAssets;
-                $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
-            }
-
-            bytes32 withdrawKey = getWithdrawKey(owner, _useNonce(owner));
-            $.withdrawRequests[withdrawKey] = WithdrawRequest({
-                requestedAssets: assets,
-                accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
-                requestTimestamp: block.timestamp,
-                owner: owner,
-                receiver: receiver,
-                isClaimed: false
-            });
-            emit WithdrawRequested(caller, receiver, owner, withdrawKey, assets);
+            return super.maxDeposit(receiver);
         }
-
-        emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
-    /// @notice process pending withdraw request with idle assets
-    /// Note: anyone can call this function
+    /// @inheritdoc ERC4626Upgradeable
     ///
-    /// @return processed assets
+    /// @dev This is limited by the idle assets
+    function maxRedeem(address owner) public view virtual override returns (uint256) {
+        if (paused()) {
+            return 0;
+        }
+        uint256 shares = balanceOf(owner);
+        uint256 redeemableShares = _convertToShares(idleAssets(), Math.Rounding.Ceil);
+        return shares > redeemableShares ? redeemableShares : shares;
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
+    function maxWithdraw(address owner) public view virtual override returns (uint256) {
+        if (paused()) {
+            return 0;
+        }
+        uint256 assets = _convertToAssets(balanceOf(owner), Math.Rounding.Floor);
+        uint256 withdrawableAssets = idleAssets();
+        return assets > withdrawableAssets ? withdrawableAssets : assets;
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
+    ///
+    /// @dev If there are pending withdraw requests, the deposited assets is used to process them.
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        super._deposit(caller, receiver, assets, shares);
+        processPendingWithdrawRequests();
+    }
+
+    /// @notice Process pending withdraw requests with idle assets.
+    ///
+    /// @dev This is a decentralized function that can be called by anyone.
+    ///
+    /// @return The assets used to process pending withdraw requests.
     function processPendingWithdrawRequests() public returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
