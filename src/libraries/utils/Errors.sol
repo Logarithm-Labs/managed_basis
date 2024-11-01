@@ -70,6 +70,10 @@ library Errors {
 
     error ZeroAmountUtilization();
 
+    error CallerNotAuthorized(address authorized, address caller);
+
+    error CallerNotSpotManager();
+
     error CallerNotPositionManager();
 
     error CallerNotAgent();
@@ -110,7 +114,6 @@ library Errors {
     error VaultShutdown();
 
     error InvalidSecurityManager();
-    
-    error NotWhitelisted(address user);
 
+    error NotWhitelisted(address user);
 }
