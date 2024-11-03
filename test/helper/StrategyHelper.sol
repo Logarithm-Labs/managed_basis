@@ -23,7 +23,6 @@ struct StrategyState {
     uint256 assetsToWithdraw;
     uint256 assetsToClaim;
     uint256 totalPendingWithdraw;
-    uint256 pendingIncreaseCollateral;
     uint256 pendingDecreaseCollateral;
     uint256 pendingUtilization;
     uint256 pendingDeutilization;
@@ -86,7 +85,6 @@ contract StrategyHelper {
         state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
         state.assetsToClaim = vault.assetsToClaim();
         state.totalPendingWithdraw = vault.totalPendingWithdraw();
-        state.pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
         state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
@@ -95,7 +93,7 @@ contract StrategyHelper {
         state.positionLeverage = positionManager.currentLeverage();
         state.positionSizeInTokens = positionManager.positionSizeInTokens();
         state.positionSizeInAsset = oracle.convertTokenAmount(product, asset, state.positionSizeInTokens);
-        state.processingRebalance = strategy.processingRebalance();
+        state.processingRebalance = strategy.processingRebalanceDown();
 
         state.upkeepNeeded = upkeepNeeded;
         state.rebalanceUpNeeded = rebalanceUpNeeded;
@@ -120,7 +118,6 @@ contract StrategyHelper {
         console.log("assetsToWithdraw", state.assetsToWithdraw);
         console.log("assetsToClaim", state.assetsToClaim);
         console.log("totalPendingWithdraw", state.totalPendingWithdraw);
-        console.log("pendingIncreaseCollateral", state.pendingIncreaseCollateral);
         console.log("pendingDecreaseCollateral", state.pendingDecreaseCollateral);
         console.log("pendingUtilization", state.pendingUtilization);
         console.log("pendingDeutilization", state.pendingDeutilization);

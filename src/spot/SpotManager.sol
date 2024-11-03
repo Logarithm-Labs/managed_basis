@@ -7,13 +7,14 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
+import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
 
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
-contract SpotManager is Initializable, OwnableUpgradeable {
+contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
     using SafeERC20 for IERC20;
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
@@ -64,6 +65,9 @@ contract SpotManager is Initializable, OwnableUpgradeable {
         $.strategy = _strategy;
 
         require(_asset != address(0) && _product != address(0));
+
+        $.asset = _asset;
+        $.product = _product;
 
         _setManualSwapPath(_assetToProductSwapPath, _asset, _product);
 
@@ -117,7 +121,7 @@ contract SpotManager is Initializable, OwnableUpgradeable {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
-        IBaisStrategy(strategy()).spotBuyCallback(amount, amountOut);
+        IBasisStrategy(strategy()).spotBuyCallback(amount, amountOut);
     }
 
     function sell(uint256 amount, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
@@ -129,12 +133,17 @@ contract SpotManager is Initializable, OwnableUpgradeable {
                 revert Errors.SwapFailed();
             }
         } else if (swapType == SwapType.MANUAL) {
+            SpotManagerStorage storage $ = _getSpotManagerStorage();
             amountOut = ManualSwapLogic.swap(amount, $.productToAssetSwapPath);
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
-        IBaisStrategy(strategy()).spotSellCallback(amountOut, amount);
+        IBasisStrategy(strategy()).spotSellCallback(amountOut, amount);
+    }
+
+    function exposure() external view returns (uint256) {
+        return IERC20(product()).balanceOf(address(this));
     }
 
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
