@@ -6,10 +6,10 @@ import "forge-std/Script.sol";
 import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
 
 contract ModifyGmxConfigScript is Script {
-    GmxConfig config = GmxConfig(0x2cC1567874312C3D8833509F6F6ec0d322E30514);
+    GmxConfig config = GmxConfig(0x611169E7e9C70F23E1F9C067Ee23A3B78F3c34BF);
 
     function run() public {
         vm.startBroadcast();
-        config.setLimitDecreaseCollateral(0);
+        config.setRealizedPnlDiffFactor(5e16);
     }
 }
