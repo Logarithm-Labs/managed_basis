@@ -19,6 +19,7 @@ import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {SpotManager} from "src/spot/SpotManager.sol";
 
 import {GmxHandler} from "./GmxHandler.sol";
 
@@ -122,14 +123,27 @@ contract GmxInvariants is StdInvariant, ForkTest {
                     targetLeverage,
                     minLeverage,
                     maxLeverage,
-                    safeMarginLeverage,
-                    pathWeth
+                    safeMarginLeverage
                 )
             )
         );
         strategy = BasisStrategy(strategyProxy);
         // strategy.setForwarder(forwarder);
         vm.label(address(strategy), "strategy");
+
+        // deploy spot manager
+        address spotManagerImpl = address(new SpotManager());
+        address spotManagerProxy = address(
+            new ERC1967Proxy(
+                spotManagerImpl,
+                abi.encodeWithSelector(
+                    SpotManager.initialize.selector, owner, address(strategy), asset, product, pathWeth
+                )
+            )
+        );
+        SpotManager spotManager = SpotManager(spotManagerProxy);
+        vm.label(address(spotManager), "spotManager");
+        strategy.setSpotManager(address(spotManager));
 
         vault.setStrategy(address(strategy));
         vault.setDepositLimits(MAX_DEPOSIT, MAX_DEPOSIT);

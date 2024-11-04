@@ -464,7 +464,7 @@ contract BasisStrategy is
     function spotSellCallback(uint256 assetDelta, uint256 productDelta) external authCaller(spotManager()) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         StrategyStatus status = strategyStatus();
-        if (status == StrategyStatus.UTILIZING) {
+        if (status == StrategyStatus.UTILIZING || status == StrategyStatus.IDLE) {
             // revert utilizing
             $.asset.safeTransferFrom(_msgSender(), vault(), assetDelta);
             $.strategyStatus = StrategyStatus.IDLE;
@@ -532,13 +532,13 @@ contract BasisStrategy is
         if (strategyStatus() == StrategyStatus.IDLE) {
             revert Errors.InvalidCallback();
         }
+        $.strategyStatus = StrategyStatus.IDLE;
 
         bool shouldPause;
-        bool successful;
         if (params.isIncrease) {
-            (shouldPause, successful) = _afterIncreasePosition(params);
+            shouldPause = _afterIncreasePosition(params);
         } else {
-            (shouldPause, successful) = _afterDecreasePosition(params);
+            shouldPause = _afterDecreasePosition(params);
         }
 
         delete $.requestParams;
@@ -546,8 +546,6 @@ contract BasisStrategy is
         if (shouldPause) {
             _pause();
         }
-
-        if (successful) $.strategyStatus = StrategyStatus.IDLE;
 
         emit AfterAdjustPosition(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
@@ -726,8 +724,7 @@ contract BasisStrategy is
             return result;
         }
 
-        result.hedgeDeviationInTokens =
-            _checkHedgeDeviation(_positionManager, address($.product), config().hedgeDeviationThreshold());
+        result.hedgeDeviationInTokens = _checkHedgeDeviation(_positionManager, config().hedgeDeviationThreshold());
         if (result.hedgeDeviationInTokens != 0) {
             return result;
         }
@@ -742,8 +739,8 @@ contract BasisStrategy is
             uint256 pendingDeutilization_ = _pendingDeutilization(
                 InternalPendingDeutilization({
                     positionManager: _positionManager,
-                    asset: address($.asset),
-                    product: address($.product),
+                    asset: asset(),
+                    product: product(),
                     totalSupply: _vault.totalSupply(),
                     processingRebalanceDown: false
                 })
@@ -771,12 +768,11 @@ contract BasisStrategy is
 
     function _afterIncreasePosition(IPositionManager.AdjustPositionPayload calldata responseParams)
         private
-        returns (bool shouldPause, bool successful)
+        returns (bool shouldPause)
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
         uint256 _responseDeviationThreshold = config().responseDeviationThreshold();
-        successful = true;
 
         if (requestParams.sizeDeltaInTokens > 0) {
             (bool exceedsThreshold, int256 sizeDeviation) = _checkDeviation(
@@ -787,7 +783,6 @@ contract BasisStrategy is
                 if (sizeDeviation < 0) {
                     // revert spot to make hedge size the same as spot
                     $.spotManager.sell(uint256(-sizeDeviation), ISpotManager.SwapType.MANUAL, "");
-                    successful = false;
                 }
             }
         }
@@ -799,7 +794,7 @@ contract BasisStrategy is
             if (exceedsThreshold) {
                 shouldPause = true;
                 if (collateralDeviation < 0) {
-                    IERC20($.asset).safeTransferFrom(positionManager(), vault(), uint256(-collateralDeviation));
+                    $.asset.safeTransferFrom(positionManager(), vault(), uint256(-collateralDeviation));
                 }
             }
 
@@ -813,11 +808,10 @@ contract BasisStrategy is
 
     function _afterDecreasePosition(IPositionManager.AdjustPositionPayload calldata responseParams)
         private
-        returns (bool shouldPause, bool successful)
+        returns (bool shouldPause)
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
-        successful = true;
 
         if (requestParams.sizeDeltaInTokens == type(uint256).max) {
             // when closing hedge
@@ -848,7 +842,6 @@ contract BasisStrategy is
                         ISpotManager _spotManager = $.spotManager;
                         _asset.safeTransfer(address(_spotManager), assetsToBeReverted);
                         _spotManager.buy(assetsToBeReverted, ISpotManager.SwapType.MANUAL, "");
-                        successful = false;
                     }
                 }
             }
@@ -880,7 +873,7 @@ contract BasisStrategy is
     function _processAssetsToWithdraw(address _asset) private {
         uint256 _assetsToWithdraw = assetsToWithdraw();
         if (_assetsToWithdraw == 0) return;
-        ILogarithmVault _vault = ILogarithmVault(asset());
+        ILogarithmVault _vault = ILogarithmVault(vault());
         IERC20(_asset).safeTransfer(address(_vault), _assetsToWithdraw);
         _vault.processPendingWithdrawRequests();
     }
@@ -1006,16 +999,15 @@ contract BasisStrategy is
     }
 
     /// @param _positionManager IPositionManager
-    /// @param _product address
     /// @param _hedgeDeviationThreshold uint256
     ///
     /// @return hedge deviation of int type
-    function _checkHedgeDeviation(IPositionManager _positionManager, address _product, uint256 _hedgeDeviationThreshold)
+    function _checkHedgeDeviation(IPositionManager _positionManager, uint256 _hedgeDeviationThreshold)
         internal
         view
         returns (int256)
     {
-        uint256 spotExposure = IERC20(_product).balanceOf(address(this));
+        uint256 spotExposure = ISpotManager(spotManager()).exposure();
         uint256 hedgeExposure = _positionManager.positionSizeInTokens();
         if (spotExposure == 0) {
             if (hedgeExposure == 0) {

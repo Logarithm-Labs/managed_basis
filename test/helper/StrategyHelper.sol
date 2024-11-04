@@ -6,7 +6,7 @@ import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-
+import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {IPositionManager} from "src/position/IPositionManager.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
@@ -80,7 +80,7 @@ contract StrategyHelper {
         state.utilizedAssets = strategy.utilizedAssets();
         state.idleAssets = vault.idleAssets();
         state.assetBalance = IERC20(asset).balanceOf(address(vault)) + IERC20(asset).balanceOf(address(strategy));
-        state.productBalance = IERC20(product).balanceOf(address(strategy));
+        state.productBalance = ISpotManager(strategy.spotManager()).exposure();
         state.productValueInAsset = oracle.convertTokenAmount(product, asset, state.productBalance);
         state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
         state.assetsToClaim = vault.assetsToClaim();

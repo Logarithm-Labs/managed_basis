@@ -121,7 +121,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
-        IBasisStrategy(strategy()).spotBuyCallback(amount, amountOut);
+        IBasisStrategy(_msgSender()).spotBuyCallback(amount, amountOut);
     }
 
     function sell(uint256 amount, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
@@ -139,7 +139,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
-        IBasisStrategy(strategy()).spotSellCallback(amountOut, amount);
+        IBasisStrategy(_msgSender()).spotSellCallback(amountOut, amount);
     }
 
     function exposure() external view returns (uint256) {
