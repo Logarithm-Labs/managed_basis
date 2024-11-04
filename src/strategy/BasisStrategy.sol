@@ -792,8 +792,8 @@ contract BasisStrategy is
                 responseParams.collateralDeltaAmount, requestParams.collateralDeltaAmount, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
-                shouldPause = true;
                 if (collateralDeviation < 0) {
+                    shouldPause = true;
                     $.asset.safeTransferFrom(positionManager(), vault(), uint256(-collateralDeviation));
                 }
             }
@@ -884,7 +884,7 @@ contract BasisStrategy is
         uint256 _targetLeverage,
         bool _processingRebalanceDown,
         bool _paused
-    ) public pure returns (uint256) {
+    ) private pure returns (uint256) {
         // don't use utilize function when rebalancing or when totalSupply is zero, or when paused
         if (totalSupply == 0 || _processingRebalanceDown || _paused) {
             return 0;
