@@ -10,6 +10,6 @@ contract ModifyGmxConfigScript is Script {
 
     function run() public {
         vm.startBroadcast();
-        config.setRealizedPnlDiffFactor(5e16);
+        config.setRealizedPnlDiffFactor(0.1 ether);
     }
 }

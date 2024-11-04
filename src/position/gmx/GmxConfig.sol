@@ -47,8 +47,8 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
         _updateAddresses(exchangeRouter_, reader_);
         $.callbackGasLimit = 3_000_000;
         $.referralCode = bytes32(0);
-        $.maxClaimableFundingShare = 1e16; // 1%
-        $.realizedPnlDiffFactor = 5e15; // 0.5%
+        $.maxClaimableFundingShare = 0.01 ether; // 1%
+        $.realizedPnlDiffFactor = 0.1 ether; // 10%
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
