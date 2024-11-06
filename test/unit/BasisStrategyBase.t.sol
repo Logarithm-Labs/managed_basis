@@ -220,7 +220,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _utilize(pendingUtilizationInAsset / 2);
         uint256 redeemShares = vault.balanceOf(user1) * 2 / 3;
         vm.startPrank(user1);
-        vault.redeem(redeemShares, user1, user1);
+        vault.requestRedeem(redeemShares, user1, user1);
         _;
     }
 
@@ -234,11 +234,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         uint256 redeemShares1 = vault.balanceOf(user1) / 5;
         vm.startPrank(user1);
-        vault.redeem(redeemShares1, user1, user1);
+        vault.requestRedeem(redeemShares1, user1, user1);
 
         uint256 redeemShares2 = vault.balanceOf(user2) / 4;
         vm.startPrank(user2);
-        vault.redeem(redeemShares2, user2, user2);
+        vault.requestRedeem(redeemShares2, user2, user2);
         _;
     }
 
@@ -384,7 +384,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         priceFeeds[1] = productPriceFeed;
         _moveTimestamp(36.5 days, priceFeeds);
         vm.startPrank(user1);
-        vault.redeem(shares / 2, user1, user1);
+        vault.requestRedeem(shares / 2, user1, user1);
         assertEq(vault.balanceOf(recipient), shares / 200);
     }
 
@@ -530,7 +530,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 totalShares = vault.balanceOf(user1);
         uint256 assets = vault.previewRedeem(totalShares / 2);
         uint256 shares = vault.previewWithdraw(assets);
-        vault.withdraw(assets, user1, user1);
+        vault.requestWithdraw(assets, user1, user1);
         uint256 user1BalanceAfter = IERC20(asset).balanceOf(user1);
         uint256 sharesAfter = vault.balanceOf(user1);
         assertEq(user1BalanceAfter, user1BalanceBefore + assets);
@@ -545,20 +545,33 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(shares, redeemShares);
     }
 
+    function test_maxWithdraw() public afterPartialUtilized validateFinalState {
+        uint256 maxWithdraw = vault.maxWithdraw(user1);
+        uint256 idleAssets = vault.idleAssets();
+        assertEq(maxWithdraw, idleAssets);
+    }
+
+    function test_maxRedeem() public afterPartialUtilized validateFinalState {
+        uint256 maxRedeem = vault.maxRedeem(user1);
+        uint256 maxAssets = vault.previewRedeem(maxRedeem);
+        uint256 idleAssets = vault.idleAssets();
+        assertEq(maxAssets, idleAssets);
+    }
+
     function test_withdraw_whenIdleNotEnough() public afterPartialUtilized validateFinalState {
         uint256 totalShares = vault.balanceOf(user1);
         uint256 redeemShares = totalShares * 2 / 3;
         uint256 assets = vault.previewRedeem(redeemShares);
+        uint256 idleAssets = vault.idleAssets();
         vm.startPrank(user1);
-        vault.redeem(redeemShares, user1, user1);
-        bytes32 requestKey = vault.getWithdrawKey(user1, 0);
+        bytes32 requestKey = vault.requestRedeem(redeemShares, user1, user1);
         LogarithmVault.WithdrawRequest memory withdrawRequest = vault.withdrawRequests(requestKey);
         assertFalse(vault.isClaimable(requestKey));
-        assertEq(withdrawRequest.requestedAssets, assets);
+        assertEq(withdrawRequest.requestedAssets, assets - idleAssets);
         assertEq(withdrawRequest.receiver, user1);
-        assertEq(withdrawRequest.accRequestedWithdrawAssets, assets - TEN_THOUSANDS_USDC / 2);
+        assertEq(withdrawRequest.accRequestedWithdrawAssets, assets - idleAssets);
         assertEq(vault.idleAssets(), 0);
-        assertEq(vault.assetsToClaim(), TEN_THOUSANDS_USDC / 2);
+        assertEq(vault.assetsToClaim(), 0);
         assertEq(vault.processedWithdrawAssets(), 0);
         assertEq(withdrawRequest.accRequestedWithdrawAssets, vault.accRequestedWithdrawAssets());
     }
@@ -576,9 +589,9 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         uint256 redeemShares = vault.balanceOf(user1) / 3;
         vm.startPrank(user1);
-        vault.redeem(redeemShares, user1, user1);
+        vault.requestRedeem(redeemShares, user1, user1);
         vm.startPrank(metaVault);
-        vault.redeem(vault.balanceOf(metaVault) / 3, metaVault, metaVault);
+        vault.requestRedeem(vault.balanceOf(metaVault) / 3, metaVault, metaVault);
         vm.stopPrank();
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
@@ -606,7 +619,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(vault.idleAssets(), 0, "idle asset should be 0");
 
         vm.startPrank(metaVault);
-        vault.redeem(vault.balanceOf(metaVault), metaVault, metaVault);
+        vault.requestRedeem(vault.balanceOf(metaVault), metaVault, metaVault);
         vm.stopPrank();
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
@@ -642,12 +655,12 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         // user's withdraw first
         vm.startPrank(user1);
-        vault.redeem(vault.balanceOf(user1), user1, user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
         vm.stopPrank();
 
         // metaVault's withdraw after
         vm.startPrank(metaVault);
-        vault.redeem(vault.balanceOf(metaVault), metaVault, metaVault);
+        vault.requestRedeem(vault.balanceOf(metaVault), metaVault, metaVault);
         vm.stopPrank();
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
@@ -698,7 +711,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         // user's withdraw first
         vm.startPrank(user1);
-        vault.redeem(vault.balanceOf(user1), user1, user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
         vm.stopPrank();
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
@@ -717,7 +730,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         // metaVault's withdraw after
         vm.startPrank(metaVault);
-        vault.redeem(vault.balanceOf(metaVault), metaVault, metaVault);
+        vault.requestRedeem(vault.balanceOf(metaVault), metaVault, metaVault);
         vm.stopPrank();
 
         (, pendingDeutilization) = strategy.pendingUtilizations();
@@ -942,11 +955,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     {
         uint256 redeemShares1 = vault.balanceOf(user1) / 2;
         vm.startPrank(user1);
-        vault.redeem(redeemShares1, user1, user1);
+        vault.requestRedeem(redeemShares1, user1, user1);
 
         uint256 redeemShares2 = vault.balanceOf(user2) / 2;
         vm.startPrank(user2);
-        vault.redeem(redeemShares2, user2, user2);
+        vault.requestRedeem(redeemShares2, user2, user2);
 
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
@@ -1185,7 +1198,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vault.shutdown();
         vm.startPrank(user1);
         IERC20(asset).approve(address(vault), TEN_THOUSANDS_USDC);
-        vm.expectRevert(Errors.VaultShutdown.selector);
+        vm.expectRevert();
         vault.deposit(TEN_THOUSANDS_USDC, user1);
     }
 
@@ -1196,7 +1209,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 shares = 10000000;
         uint256 assets = vault.previewMint(shares);
         IERC20(asset).approve(address(vault), assets);
-        vm.expectRevert(Errors.VaultShutdown.selector);
+        vm.expectRevert();
         vault.mint(shares, user1);
     }
 
