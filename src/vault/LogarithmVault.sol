@@ -376,9 +376,22 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     /// @dev If there are pending withdraw requests, the deposited assets is used to process them.
+    /// And disables harvesting of the performance fee as a core logarithm vault doesn't have the functionality.
+    ///
+    /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
-        super._deposit(caller, receiver, assets, shares);
+        ERC4626Upgradeable._deposit(caller, receiver, assets, shares);
         processPendingWithdrawRequests();
+    }
+
+    /// @dev Disables harvesting of the performance fee as a core logarithm vault doesn't have the functionality.
+    ///
+    /// @inheritdoc ERC4626Upgradeable
+    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
+        internal
+        override
+    {
+        ERC4626Upgradeable._withdraw(caller, receiver, owner, assets, shares);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -455,7 +468,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 shares = previewWithdraw(assets);
         uint256 sharesToRequest = shares.mulDiv(assetsToRequest, assets);
         // assets >= assetsToRequest => shares >= sharesToRequest
-        uint256 sharesToWithdraw = shares - sharesToRequest;
+        uint256 sharesToRedeem = shares - sharesToRequest;
 
         if (assetsToWithdraw > 0) {
             _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
