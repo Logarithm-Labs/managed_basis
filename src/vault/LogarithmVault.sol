@@ -466,9 +466,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 assetsToRequest = assets - assetsToWithdraw;
 
         uint256 shares = previewWithdraw(assets);
-        uint256 sharesToRequest = shares.mulDiv(assetsToRequest, assets);
-        // assets >= assetsToRequest => shares >= sharesToRequest
-        uint256 sharesToRedeem = shares - sharesToRequest;
+        uint256 sharesToRedeem = previewWithdraw(assetsToWithdraw);
+        uint256 sharesToRequest = shares - sharesToRedeem;
 
         if (assetsToWithdraw > 0) {
             _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
@@ -499,9 +498,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 sharesToRequest = shares - sharesToRedeem;
 
         uint256 assets = previewRedeem(shares);
-        uint256 assetsToRequest = assets.mulDiv(sharesToRequest, shares);
-        // shares >= sharesToRequest => assets >= assetsToRequest
-        uint256 assetsToWithdraw = assets - assetsToRequest;
+        uint256 assetsToWithdraw = previewRedeem(sharesToRedeem);
+        uint256 assetsToRequest = assets - assetsToWithdraw;
 
         if (sharesToRedeem > 0) {
             _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
