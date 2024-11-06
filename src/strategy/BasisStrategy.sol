@@ -159,6 +159,12 @@ contract BasisStrategy is
                         INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
+    function reinitialize(IPositionManager.AdjustPositionPayload calldata responseParams) external reinitializer(2) {
+        _afterDecreasePosition(responseParams);
+        _getBasisStrategyStorage().strategyStatus = StrategyStatus.IDLE;
+        _unpause();
+    }
+
     function initialize(
         address _config,
         address _product,
