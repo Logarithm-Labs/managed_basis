@@ -604,7 +604,7 @@ contract BasisStrategy is
 
         delete $.requestParams;
 
-        if (shouldPause) {
+        if (shouldPause && !paused()) {
             _pause();
         }
         $.strategyStatus = StrategyStatus.IDLE;
