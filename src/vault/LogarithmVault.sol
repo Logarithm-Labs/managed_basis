@@ -438,12 +438,18 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     /// @dev Returns the maximum amount of the underlying asset that can be withdrawn from the owner balance in the
     /// Vault, through a requestWithdraw call.
     function maxRequestWithdraw(address owner) public view returns (uint256) {
+        if (paused()) {
+            return 0;
+        }
         return super.maxWithdraw(owner);
     }
 
     /// @dev Returns the maximum amount of Vault shares that can be redeemed from the owner balance in the Vault,
     /// through a requestWithdraw call.
     function maxRequestRedeem(address owner) public view returns (uint256) {
+        if (paused()) {
+            return 0;
+        }
         return super.maxRedeem(owner);
     }
 
