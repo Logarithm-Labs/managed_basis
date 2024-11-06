@@ -542,8 +542,11 @@ contract BasisStrategy is
                     $.strategyStatus = StrategyStatus.IDLE;
                 }
             } else {
-                if (!_adjustPosition(uint256(-result.hedgeDeviationInTokens), 0, true)) {
+                uint256 hedgeDeviationInTokens = uint256(-result.hedgeDeviationInTokens);
+                if (!_adjustPosition(hedgeDeviationInTokens, 0, true)) {
+                    ManualSwapLogic.swap(hedgeDeviationInTokens, $.productToAssetSwapPath);
                     $.strategyStatus = StrategyStatus.IDLE;
+                    processAssetsToWithdraw();
                 }
             }
         } else if (result.positionManagerNeedKeep) {
@@ -678,6 +681,11 @@ contract BasisStrategy is
         returns (bool)
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+
+        // check leverage
+        if (isIncrease && collateralDeltaAmount == 0 && $.positionManager.positionNetBalance() == 0) {
+            return false;
+        }
 
         if (sizeDeltaInTokens > 0) {
             uint256 min;
@@ -1092,6 +1100,11 @@ contract BasisStrategy is
             } else {
                 return hedgeExposure.toInt256();
             }
+        }
+        if (hedgeExposure == 0) {
+            // when hedgeExposure is 0,
+            // can't perform upkeep to adjust position because there is no position
+            return 0;
         }
         (bool exceedsThreshold, int256 hedgeDeviationInTokens) =
             _checkDeviation(hedgeExposure, spotExposure, _hedgeDeviationThreshold);
