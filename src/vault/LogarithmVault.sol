@@ -360,6 +360,17 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return totalProcessedAssets;
     }
 
+    /// @dev Returns the maximum amount of the underlying asset that can be withdrawn from the owner balance in the
+    /// Vault, through a requestWithdraw call.
+    function maxRequestWithdraw(address owner) public view returns (uint256) {
+        return super.maxWithdraw(owner);
+    }
+
+    /// @dev Returns the maximum amount of Vault shares that can be redeemed from the owner balance in the Vault,
+    /// through a requestWithdraw call.
+    function maxRequestRedeem(address owner) public view returns (uint256) {
+        return super.maxRedeem(owner);
+    }
     /// @notice Request to withdraw assets.
     ///
     /// @dev Burns shares from owner and sends exactly assets of underlying tokens to receiver if the idle assets is enough,
@@ -368,16 +379,26 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     ///
     /// @return The withdraw key that is used in the claim function.
     function requestWithdraw(uint256 assets, address receiver, address owner) public virtual returns (bytes32) {
+        uint256 maxRequestAssets = maxRequestWithdraw(owner);
+        if (assets > maxRequestAssets) {
+            revert Errors.ExceededMaxRequestWithdraw(owner, assets, maxRequestAssets);
+        }
+
         uint256 maxAssets = maxWithdraw(owner);
         uint256 assetsToWithdraw = assets > maxAssets ? maxAssets : assets;
-        if (assetsToWithdraw > 0) {
-            uint256 sharesToRedeem = previewWithdraw(assetsToWithdraw);
-            _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
-        }
         // always assetsToWithdraw <= assets
         uint256 assetsToRequest = assets - assetsToWithdraw;
+
+        uint256 shares = previewWithdraw(assets);
+        uint256 sharesToRequest = shares.mulDiv(assetsToRequest, assets);
+        // assets >= assetsToRequest => shares >= sharesToRequest
+        uint256 sharesToWithdraw = shares - sharesToRequest;
+
+        if (assetsToWithdraw > 0) {
+            _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
+        }
+
         if (assetsToRequest > 0) {
-            uint256 sharesToRequest = previewWithdraw(assetsToRequest);
             return _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
         }
         return bytes32(0);
@@ -391,16 +412,26 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     ///
     /// @return The withdraw key that is used in the claim function.
     function requestRedeem(uint256 shares, address receiver, address owner) public virtual returns (bytes32) {
+        uint256 maxRequestShares = maxRequestRedeem(owner);
+        if (shares > maxRequestShares) {
+            revert Errors.ExceededMaxRequestRedeem(owner, shares, maxRequestShares);
+        }
+
         uint256 maxShares = maxRedeem(owner);
         uint256 sharesToRedeem = shares > maxShares ? maxShares : shares;
-        if (sharesToRedeem > 0) {
-            uint256 assetsToWithdraw = previewRedeem(sharesToRedeem);
-            _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
-        }
         // always sharesToRedeem <= shares
         uint256 sharesToRequest = shares - sharesToRedeem;
+
+        uint256 assets = previewRedeem(shares);
+        uint256 assetsToRequest = assets.mulDiv(sharesToRequest, shares);
+        // shares >= sharesToRequest => assets >= assetsToRequest
+        uint256 assetsToWithdraw = assets - assetsToRequest;
+
+        if (sharesToRedeem > 0) {
+            _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
+        }
+
         if (sharesToRequest > 0) {
-            uint256 assetsToRequest = previewRedeem(sharesToRequest);
             return _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
         }
         return bytes32(0);
