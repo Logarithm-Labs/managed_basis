@@ -1101,11 +1101,6 @@ contract BasisStrategy is
                 return hedgeExposure.toInt256();
             }
         }
-        if (hedgeExposure == 0) {
-            // when hedgeExposure is 0,
-            // can't perform upkeep to adjust position because there is no position
-            return 0;
-        }
         (bool exceedsThreshold, int256 hedgeDeviationInTokens) =
             _checkDeviation(hedgeExposure, spotExposure, _hedgeDeviationThreshold);
         if (exceedsThreshold) {
