@@ -5,15 +5,16 @@ import "forge-std/Script.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {DataProvider} from "src/DataProvider.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {IPositionManager} from "src/position/IPositionManager.sol";
 
 contract UpgradeStrategyScript is Script {
     UpgradeableBeacon constant beacon = UpgradeableBeacon(0xA610080Bf93CC031492a29D09DBC8b234F291ea7);
+    BasisStrategy strategy = BasisStrategy(0x166350f9b64ED99B2Aa92413A773aDCEDa1E1438);
 
     function run() public {
         vm.startBroadcast();
         address strategyImpl = address(new BasisStrategy());
         beacon.upgradeTo(strategyImpl);
-        // strategy.reinitialize();
     }
 
     function _logState(DataProvider.StrategyState memory state) internal view {

@@ -8,11 +8,12 @@ import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/Upgradeabl
 
 contract UpgradeGmxPositionManagerScript is Script {
     UpgradeableBeacon positionManagerBeacon = UpgradeableBeacon(0x91544E205446E673aeC904c53BdB7cA9b892CD5E);
+    GmxV2PositionManager positionManager = GmxV2PositionManager(0x5903078b87795b85388102E0881d545C0f36E231);
 
     function run() public {
         vm.startBroadcast();
         address positionManagerImpl = address(new GmxV2PositionManager());
         positionManagerBeacon.upgradeTo(positionManagerImpl);
-        // positionManager.reinitialize();
+        positionManager.reinitialize();
     }
 }

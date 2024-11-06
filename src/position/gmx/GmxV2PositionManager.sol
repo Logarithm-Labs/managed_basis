@@ -136,39 +136,13 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                             INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address strategy_, address config_, address gmxGasStation_, address marketKey_)
-        external
-        initializer
-    {
-        address asset = address(IBasisStrategy(strategy_).asset());
-        address product = address(IBasisStrategy(strategy_).product());
-
-        if (marketKey_ == address(0) || gmxGasStation_ == address(0)) {
-            revert Errors.InvalidMarket();
-        }
-
-        address dataStore = IGmxConfig(config_).dataStore();
-        address reader = IGmxConfig(config_).reader();
-        Market.Props memory market = IReader(reader).getMarket(dataStore, marketKey_);
-        // assuming short position open
-        if ((market.longToken != asset && market.shortToken != asset) || (market.indexToken != product)) {
-            revert Errors.InvalidInitializationAssets();
-        }
-
+    function reinitialize() external reinitializer(2) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        $.gmxGasStation = gmxGasStation_;
-        $.oracle = IBasisStrategy(strategy_).oracle();
-        $.config = config_;
-        $.strategy = strategy_;
-        $.marketToken = market.marketToken;
-        $.indexToken = market.indexToken;
-        $.longToken = market.longToken;
-        $.shortToken = market.shortToken;
-        $.collateralToken = asset;
-        $.isLong = false;
-
-        // approve strategy to max amount
-        IERC20(asset).approve($.strategy, type(uint256).max);
+        delete $.pendingCollateralAmount;
+        delete $.pendingDecreaseOrderKey;
+        delete $.pendingIncreaseOrderKey;
+        delete $.pendingPositionFeeUsdForDecrease;
+        delete $.pendingPositionFeeUsdForIncrease;
     }
 
     /*//////////////////////////////////////////////////////////////
