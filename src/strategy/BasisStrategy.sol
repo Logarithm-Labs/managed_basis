@@ -57,6 +57,7 @@ contract BasisStrategy is
         address product;
         uint256 totalSupply;
         bool processingRebalanceDown;
+        bool paused;
     }
 
     struct InternalCheckUpkeepResult {
@@ -386,7 +387,8 @@ contract BasisStrategy is
                 asset: _asset,
                 product: _product,
                 totalSupply: totalSupply,
-                processingRebalanceDown: _processingRebalanceDown
+                processingRebalanceDown: _processingRebalanceDown,
+                paused: paused()
             })
         );
 
@@ -633,15 +635,17 @@ contract BasisStrategy is
         address _product = address($.product);
         uint256 idleAssets = _vault.idleAssets();
         bool _processingRebalanceDown = $.processingRebalanceDown;
+        bool _paused = paused();
         pendingUtilizationInAsset =
-            _pendingUtilization(totalSupply, idleAssets, $.targetLeverage, _processingRebalanceDown, paused());
+            _pendingUtilization(totalSupply, idleAssets, $.targetLeverage, _processingRebalanceDown, _paused);
         pendingDeutilizationInProduct = _pendingDeutilization(
             InternalPendingDeutilization({
                 positionManager: _positionManager,
                 asset: _asset,
                 product: _product,
                 totalSupply: totalSupply,
-                processingRebalanceDown: _processingRebalanceDown
+                processingRebalanceDown: _processingRebalanceDown,
+                paused: _paused
             })
         );
 
@@ -793,7 +797,8 @@ contract BasisStrategy is
                     asset: address($.asset),
                     product: address($.product),
                     totalSupply: _vault.totalSupply(),
-                    processingRebalanceDown: false
+                    processingRebalanceDown: false,
+                    paused: paused()
                 })
             );
             (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
@@ -960,6 +965,9 @@ contract BasisStrategy is
     }
 
     function _pendingDeutilization(InternalPendingDeutilization memory params) private view returns (uint256) {
+        // disable only withdraw deutilization
+        if (!params.processingRebalanceDown && params.paused) return 0;
+
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         uint256 productBalance = IERC20(params.product).balanceOf(address(this));
