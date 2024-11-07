@@ -422,9 +422,8 @@ contract BasisStrategy is
             } else {
                 uint256 hedgeDeviationInTokens = uint256(-result.hedgeDeviationInTokens);
                 if (!_adjustPosition(hedgeDeviationInTokens, 0, true)) {
-                    ManualSwapLogic.swap(hedgeDeviationInTokens, $.productToAssetSwapPath);
                     $.strategyStatus = StrategyStatus.IDLE;
-                    processAssetsToWithdraw();
+                    $.spotManager.sell(hedgeDeviationInTokens, ISpotManager.SwapType.MANUAL, "");
                 }
             }
         } else if (result.positionManagerNeedKeep) {
@@ -471,8 +470,10 @@ contract BasisStrategy is
         StrategyStatus status = strategyStatus();
         if (status == StrategyStatus.UTILIZING || status == StrategyStatus.IDLE) {
             // revert utilizing
-            $.asset.safeTransferFrom(_msgSender(), vault(), assetDelta);
-            $.strategyStatus = StrategyStatus.IDLE;
+            ILogarithmVault _vault = $.vault;
+            $.asset.safeTransferFrom(_msgSender(), address(_vault), assetDelta);
+            if (status == StrategyStatus.UTILIZING) $.strategyStatus = StrategyStatus.IDLE;
+            _vault.processPendingWithdrawRequests();
         } else {
             if (assetDelta == 0) {
                 // fail to sell product
