@@ -1059,6 +1059,33 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _performKeep("hedgeDeviation_down");
     }
 
+    function test_performUpkeep_hedgeDeviation_down_whenNoPosition() public afterDeposited validateFinalState {
+        vm.startPrank(WETH_WHALE);
+        IERC20(product).transfer(address(spotManager), 1 ether);
+
+        assertEq(spotManager.exposure(), 1 ether, "exposure");
+
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeDeviation_down");
+        assertTrue(upkeepNeeded, "upkeepNeeded");
+        (
+            bool rebalanceDownNeeded,
+            bool deleverageNeeded,
+            int256 hedgeDeviationInTokens,
+            bool positionManagerNeedKeep,
+            ,
+            bool rebalanceUpNeeded
+        ) = helper.decodePerformData(performData);
+        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertFalse(deleverageNeeded, "deleverageNeeded");
+        assertFalse(positionManagerNeedKeep, "positionManagerNeedKeep");
+
+        assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
+
+        _performKeep("hedgeDeviation_down");
+        assertEq(spotManager.exposure(), 0, "exposure");
+    }
+
     function test_performUpkeep_hedgeDeviation_up() public afterMultipleWithdrawRequestCreated validateFinalState {
         vm.startPrank(address(WETH_WHALE));
         IERC20(product).transfer(address(spotManager), IERC20(product).balanceOf(address(spotManager)) / 10);
