@@ -51,6 +51,7 @@ contract BasisStrategy is
         address product;
         uint256 totalSupply;
         bool processingRebalanceDown;
+        bool paused;
     }
 
     struct InternalCheckUpkeepResult {
@@ -316,7 +317,8 @@ contract BasisStrategy is
                 asset: asset(),
                 product: product(),
                 totalSupply: $.vault.totalSupply(),
-                processingRebalanceDown: processingRebalanceDown()
+                processingRebalanceDown: processingRebalanceDown(),
+                paused: paused()
             })
         );
 
@@ -418,8 +420,11 @@ contract BasisStrategy is
                     $.strategyStatus = StrategyStatus.IDLE;
                 }
             } else {
-                if (!_adjustPosition(uint256(-result.hedgeDeviationInTokens), 0, true)) {
+                uint256 hedgeDeviationInTokens = uint256(-result.hedgeDeviationInTokens);
+                if (!_adjustPosition(hedgeDeviationInTokens, 0, true)) {
+                    ManualSwapLogic.swap(hedgeDeviationInTokens, $.productToAssetSwapPath);
                     $.strategyStatus = StrategyStatus.IDLE;
+                    processAssetsToWithdraw();
                 }
             }
         } else if (result.positionManagerNeedKeep) {
@@ -543,7 +548,7 @@ contract BasisStrategy is
 
         delete $.requestParams;
 
-        if (shouldPause) {
+        if (shouldPause && !paused()) {
             _pause();
         }
 
@@ -573,15 +578,17 @@ contract BasisStrategy is
         address _product = address($.product);
         uint256 idleAssets = _vault.idleAssets();
         bool _processingRebalanceDown = $.processingRebalanceDown;
+        bool _paused = paused();
         pendingUtilizationInAsset =
-            _pendingUtilization(totalSupply, idleAssets, $.targetLeverage, _processingRebalanceDown, paused());
+            _pendingUtilization(totalSupply, idleAssets, $.targetLeverage, _processingRebalanceDown, _paused);
         pendingDeutilizationInProduct = _pendingDeutilization(
             InternalPendingDeutilization({
                 positionManager: _positionManager,
                 asset: _asset,
                 product: _product,
                 totalSupply: totalSupply,
-                processingRebalanceDown: _processingRebalanceDown
+                processingRebalanceDown: _processingRebalanceDown,
+                paused: _paused
             })
         );
 
@@ -624,6 +631,11 @@ contract BasisStrategy is
         returns (bool)
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+
+        // check leverage
+        if (isIncrease && collateralDeltaAmount == 0 && $.positionManager.positionNetBalance() == 0) {
+            return false;
+        }
 
         if (sizeDeltaInTokens > 0) {
             uint256 min;
@@ -742,7 +754,8 @@ contract BasisStrategy is
                     asset: asset(),
                     product: product(),
                     totalSupply: _vault.totalSupply(),
-                    processingRebalanceDown: false
+                    processingRebalanceDown: false,
+                    paused: paused()
                 })
             );
             (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
@@ -894,6 +907,9 @@ contract BasisStrategy is
     }
 
     function _pendingDeutilization(InternalPendingDeutilization memory params) private view returns (uint256) {
+        // disable only withdraw deutilization
+        if (!params.processingRebalanceDown && params.paused) return 0;
+
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         uint256 productBalance = $.spotManager.exposure();

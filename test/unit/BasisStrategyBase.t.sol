@@ -1232,7 +1232,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertNotEq(state.productBalance, 0, "productBalance");
         assertEq(state.assetsToWithdraw, 0, "assetsToWithdraw");
         assertEq(state.pendingUtilization, 0, "pendingUtilization");
-        assertNotEq(state.pendingDeutilization, 0, "pendingDeutilization");
+        assertEq(state.pendingDeutilization, 0, "pendingDeutilization");
         assertNotEq(state.positionNetBalance, 0, "positionNetBalance");
         assertEq(state.upkeepNeeded, false, "upkeepNeeded");
     }
