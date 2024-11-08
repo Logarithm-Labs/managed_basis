@@ -14,8 +14,13 @@ import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
+/// @title SpotManager
+/// @author Logarithm Labs
+/// @notice A spot manager smart contract that buys or sells product.
+/// @dev Deployed according to the upgradeable beacon proxy pattern.
 contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
     using SafeERC20 for IERC20;
+
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -39,6 +44,20 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
             $.slot := SpotManagerStorageLocation
         }
     }
+
+    /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Emitted when spot is bought.
+    event SpotBuy(uint256 assetDelta, uint256 productDelta);
+
+    /// @dev Emitted when spot is sold.
+    event SpotSell(uint256 assetDelta, uint256 productDelta);
+
+    /*//////////////////////////////////////////////////////////////
+                               MODIFIERS
+    //////////////////////////////////////////////////////////////*/
 
     modifier authCaller(address authorized) {
         if (_msgSender() != authorized) {
@@ -106,6 +125,15 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
         $.productToAssetSwapPath = _productToAssetSwapPath;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                             BUY/SELL LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Buys product in the spot market.
+    ///
+    /// @param amount The asset amount to be swapped to product.
+    /// @param swapType The swap type.
+    /// @param swapData The data used in swapping if necessary.
     function buy(uint256 amount, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
         uint256 amountOut;
         if (swapType == SwapType.INCH_V6) {
@@ -121,9 +149,16 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
+        emit SpotBuy(amount, amountOut);
+
         IBasisStrategy(_msgSender()).spotBuyCallback(amount, amountOut);
     }
 
+    /// @dev Sells product in the spot market.
+    ///
+    /// @param amount The product amount to be swapped to asset.
+    /// @param swapType The swap type.
+    /// @param swapData The data used in swapping if necessary.
     function sell(uint256 amount, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
         uint256 amountOut;
         if (swapType == SwapType.INCH_V6) {
@@ -139,12 +174,19 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
+        emit SpotSell(amountOut, amount);
+
         IBasisStrategy(_msgSender()).spotSellCallback(amountOut, amount);
     }
 
+    /// @dev The spot exposure that is needed to be hedged by the perpetual positions.
     function exposure() external view returns (uint256) {
         return IERC20(product()).balanceOf(address(this));
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             SWAP CALLBACKS
+    //////////////////////////////////////////////////////////////*/
 
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
         require(amount0Delta > 0 || amount1Delta > 0); // swaps entirely within 0-liquidity regions are not supported
@@ -168,14 +210,21 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
         }
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            STORAGE GETTERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice The strategy address.
     function strategy() public view returns (address) {
         return _getSpotManagerStorage().strategy;
     }
 
+    /// @notice The asset address.
     function asset() public view returns (address) {
         return _getSpotManagerStorage().asset;
     }
 
+    /// @notice The product address.
     function product() public view returns (address) {
         return _getSpotManagerStorage().product;
     }
