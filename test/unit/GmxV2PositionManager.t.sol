@@ -87,18 +87,19 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         // deploy positionManager beacon
         address positionManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
         // deploy positionMnager beacon proxy
-        address gmxPositionManagerProxy = address(
-            new BeaconProxy(
-                positionManagerBeacon,
-                abi.encodeWithSelector(
-                    GmxV2PositionManager.initialize.selector,
-                    address(strategy),
-                    address(config),
-                    address(gmxGasStation),
-                    GMX_ETH_USDC_MARKET
-                )
-            )
-        );
+        address gmxPositionManagerProxy;
+        // = address(
+        //     new BeaconProxy(
+        //         positionManagerBeacon,
+        //         abi.encodeWithSelector(
+        //             GmxV2PositionManager.initialize.selector,
+        //             address(strategy),
+        //             address(config),
+        //             address(gmxGasStation),
+        //             GMX_ETH_USDC_MARKET
+        //         )
+        //     )
+        // );
         positionManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
         vm.label(address(positionManager), "positionManager");
         gmxGasStation.registerPositionManager(address(positionManager), true);

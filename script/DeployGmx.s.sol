@@ -133,19 +133,20 @@ contract DeployGmxScript is Script {
         );
         console.log("GmxPositionManagerBeacon deployed at", positionManagerBeacon);
 
-        address positionManagerProxy = address(
-            new BeaconProxy(
-                positionManagerBeacon,
-                abi.encodeWithSelector(
-                    GmxV2PositionManager.initialize.selector,
-                    // owner,
-                    address(strategyProxy),
-                    address(gmxConfigProxy),
-                    address(gasStationProxy),
-                    GMX_ETH_USDC_MARKET
-                )
-            )
-        );
+        address positionManagerProxy;
+        // = address(
+        //     new BeaconProxy(
+        //         positionManagerBeacon,
+        //         abi.encodeWithSelector(
+        //             GmxV2PositionManager.initialize.selector,
+        //             // owner,
+        //             address(strategyProxy),
+        //             address(gmxConfigProxy),
+        //             address(gasStationProxy),
+        //             GMX_ETH_USDC_MARKET
+        //         )
+        //     )
+        // );
         // require(
         //     GmxV2PositionManager(payable(positionManagerProxy)).owner() == owner,
         //     "GmxPositionManager owner is not the expected owner"

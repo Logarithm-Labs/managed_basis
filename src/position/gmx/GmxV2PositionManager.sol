@@ -143,6 +143,9 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         delete $.pendingIncreaseOrderKey;
         delete $.pendingPositionFeeUsdForDecrease;
         delete $.pendingPositionFeeUsdForIncrease;
+        delete $.sizeInTokensBefore;
+        delete $.decreasingCollateralDeltaAmount;
+        delete $.status;
     }
 
     /*//////////////////////////////////////////////////////////////
