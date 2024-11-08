@@ -136,9 +136,7 @@ contract OffChainInvariants is StdInvariant, ForkTest {
         address spotManagerProxy = address(
             new ERC1967Proxy(
                 spotManagerImpl,
-                abi.encodeWithSelector(
-                    SpotManager.initialize.selector, owner, address(strategy), asset, product, pathWeth
-                )
+                abi.encodeWithSelector(SpotManager.initialize.selector, owner, address(strategy), pathWeth)
             )
         );
         SpotManager spotManager = SpotManager(spotManagerProxy);
