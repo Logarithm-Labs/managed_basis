@@ -105,10 +105,19 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         __Ownable_init(owner_);
         __ERC20_init_unchained(name_, symbol_);
         __ERC4626_init_unchained(IERC20(asset_));
+        _setDepositLimits(type(uint256).max, type(uint256).max);
+    }
 
+    function _setDepositLimits(uint256 userLimit, uint256 vaultLimit) internal {
         ManagedVaultStorage storage $ = _getManagedVaultStorage();
-        $.userDepositLimit = type(uint256).max;
-        $.vaultDepositLimit = type(uint256).max;
+        if (userDepositLimit() != userLimit) {
+            $.userDepositLimit = userLimit;
+            emit UserDepositLimitChanged(_msgSender(), userLimit);
+        }
+        if (vaultDepositLimit() != vaultLimit) {
+            $.vaultDepositLimit = vaultLimit;
+            emit VaultDepositLimitChanged(_msgSender(), vaultLimit);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -160,15 +169,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
 
     /// @dev Sets the deposit limits including user and vault limit.
     function setDepositLimits(uint256 userLimit, uint256 vaultLimit) external onlyOwner {
-        ManagedVaultStorage storage $ = _getManagedVaultStorage();
-        if (userDepositLimit() != userLimit) {
-            $.userDepositLimit = userLimit;
-            emit UserDepositLimitChanged(_msgSender(), userLimit);
-        }
-        if (vaultDepositLimit() != vaultLimit) {
-            $.vaultDepositLimit = vaultLimit;
-            emit VaultDepositLimitChanged(_msgSender(), vaultLimit);
-        }
+        _setDepositLimits(userLimit, vaultLimit);
     }
 
     /*//////////////////////////////////////////////////////////////
