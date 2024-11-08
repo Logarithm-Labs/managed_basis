@@ -6,7 +6,7 @@ import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-
+import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {IPositionManager} from "src/position/IPositionManager.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
@@ -23,7 +23,6 @@ struct StrategyState {
     uint256 assetsToWithdraw;
     uint256 assetsToClaim;
     uint256 totalPendingWithdraw;
-    uint256 pendingIncreaseCollateral;
     uint256 pendingDecreaseCollateral;
     uint256 pendingUtilization;
     uint256 pendingDeutilization;
@@ -81,12 +80,11 @@ contract StrategyHelper {
         state.utilizedAssets = strategy.utilizedAssets();
         state.idleAssets = vault.idleAssets();
         state.assetBalance = IERC20(asset).balanceOf(address(vault)) + IERC20(asset).balanceOf(address(strategy));
-        state.productBalance = IERC20(product).balanceOf(address(strategy));
+        state.productBalance = ISpotManager(strategy.spotManager()).exposure();
         state.productValueInAsset = oracle.convertTokenAmount(product, asset, state.productBalance);
         state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
         state.assetsToClaim = vault.assetsToClaim();
         state.totalPendingWithdraw = vault.totalPendingWithdraw();
-        state.pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
         state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
@@ -95,7 +93,7 @@ contract StrategyHelper {
         state.positionLeverage = positionManager.currentLeverage();
         state.positionSizeInTokens = positionManager.positionSizeInTokens();
         state.positionSizeInAsset = oracle.convertTokenAmount(product, asset, state.positionSizeInTokens);
-        state.processingRebalance = strategy.processingRebalance();
+        state.processingRebalance = strategy.processingRebalanceDown();
 
         state.upkeepNeeded = upkeepNeeded;
         state.rebalanceUpNeeded = rebalanceUpNeeded;
@@ -120,7 +118,6 @@ contract StrategyHelper {
         console.log("assetsToWithdraw", state.assetsToWithdraw);
         console.log("assetsToClaim", state.assetsToClaim);
         console.log("totalPendingWithdraw", state.totalPendingWithdraw);
-        console.log("pendingIncreaseCollateral", state.pendingIncreaseCollateral);
         console.log("pendingDecreaseCollateral", state.pendingDecreaseCollateral);
         console.log("pendingUtilization", state.pendingUtilization);
         console.log("pendingDeutilization", state.pendingDeutilization);

@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {SpotManager} from "src/spot/SpotManager.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
 import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
@@ -96,6 +97,9 @@ contract DeployScript is Script {
         address strategyBeacon = DeployHelper.deployBeacon(address(new BasisStrategy()), owner);
         console.log("Strategy Beacon deployed at", strategyBeacon);
 
+        address spotManagerBeacon = DeployHelper.deployBeacon(address(new SpotManager()), owner);
+        console.log("SpotManager Beacon deployed at", spotManagerBeacon);
+
         // deploy BasisStrategy Gmx
         address[] memory assetToProductSwapPath = new address[](3);
         assetToProductSwapPath[0] = ArbiAddresses.USDC;
@@ -112,16 +116,26 @@ contract DeployScript is Script {
             targetLeverage,
             minLeverage,
             maxLeverage,
-            safeMarginLeverage,
-            assetToProductSwapPath
+            safeMarginLeverage
         );
         BasisStrategy strategyGmx = DeployHelper.deployBasisStrategy(strategyDeployParams);
         console.log("Strategy GMX deployed at", address(strategyGmx));
+
+        // deploy Gmx spot manager
+        SpotManager gmxSpotManager =
+            DeployHelper.deploySpotManager(spotManagerBeacon, owner, address(strategyGmx), assetToProductSwapPath);
+        console.log("SpotManager GMX deployed at", address(gmxSpotManager));
+
         // deploy BasisStrategy Hl
         strategyDeployParams.vault = address(vaultHl);
         strategyDeployParams.operator = hlOperator;
         BasisStrategy strategyHl = DeployHelper.deployBasisStrategy(strategyDeployParams);
         console.log("Strategy HL deployed at", address(strategyHl));
+
+        // deploy Gmx spot manager
+        SpotManager hlSpotManager =
+            DeployHelper.deploySpotManager(spotManagerBeacon, owner, address(strategyHl), assetToProductSwapPath);
+        console.log("SpotManager HL deployed at", address(hlSpotManager));
 
         // deploy GmxConfig
         GmxConfig gmxConfig = DeployHelper.deployGmxConfig(owner);

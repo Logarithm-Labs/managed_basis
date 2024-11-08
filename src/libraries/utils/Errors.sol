@@ -70,6 +70,10 @@ library Errors {
 
     error ZeroAmountUtilization();
 
+    error CallerNotAuthorized(address authorized, address caller);
+
+    error CallerNotSpotManager();
+
     error CallerNotPositionManager();
 
     error CallerNotAgent();
@@ -90,7 +94,7 @@ library Errors {
 
     error InvalidAdjustmentParams();
 
-    error InvalidStrategyStatus(uint8 status);
+    error InvalidStrategyStatus(uint8 currentStatus, uint8 targetStatus);
 
     error UpkeepNeeded();
 
@@ -115,4 +119,5 @@ library Errors {
 
     error ExceededMaxRequestWithdraw(address owner, uint256 assets, uint256 max);
     error ExceededMaxRequestRedeem(address owner, uint256 shares, uint256 max);
+
 }
