@@ -10,6 +10,7 @@ interface IBasisStrategy is IStrategy {
     function vault() external view returns (address);
     function asset() external view returns (address);
     function product() external view returns (address);
+    function spotManager() external view returns (address);
     function positionManager() external view returns (address);
     function processAssetsToWithdraw() external;
     // callbacks

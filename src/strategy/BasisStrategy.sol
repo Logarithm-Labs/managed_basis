@@ -20,8 +20,10 @@ import {IStrategyConfig} from "src/strategy/IStrategyConfig.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
-/// @title A basis strategy
+/// @title BasisStrategy
 /// @author Logarithm Labs
+/// @notice A basis strategy which hedges spots by opening perpetual positions while receiving funding payments.
+/// @dev Deployed according to the upgradeable beacon proxy pattern.
 contract BasisStrategy is
     Initializable,
     PausableUpgradeable,
@@ -37,6 +39,7 @@ contract BasisStrategy is
                                 ENUMS   
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Used to specify strategy's operations.
     enum StrategyStatus {
         IDLE,
         KEEPING,
@@ -45,15 +48,23 @@ contract BasisStrategy is
         FULL_DEUTILIZING
     }
 
+    /// @dev Used to optimize params of deutilization internally.
     struct InternalPendingDeutilization {
+        // The address of hedge position manager.
         IPositionManager positionManager;
+        // The address of the connected vault's underlying asset.
         address asset;
+        // The product address.
         address product;
+        // The totalSupply of shares of its connected vault
         uint256 totalSupply;
+        // The boolean value of storage variable processingRebalanceDown.
         bool processingRebalanceDown;
+        // The boolean value tells wether strategy gets paused of not.
         bool paused;
     }
 
+    /// @dev Used internally as a result of checkUpkeep function.
     struct InternalCheckUpkeepResult {
         // emergency rebalance down when idle assets not enough
         uint256 emergencyDeutilizationAmount;
@@ -92,12 +103,15 @@ contract BasisStrategy is
         uint256 maxLeverage;
         uint256 safeMarginLeverage;
         // pending state
+        // used to revert deutilized assets
         uint256 pendingDeutilizedAssets;
+        // used to decrease collateral through performUpkeep
         uint256 pendingDecreaseCollateral;
         // status state
         StrategyStatus strategyStatus;
+        // used to change deutilization calc method
         bool processingRebalanceDown;
-        // adjust position
+        // adjust position request to be used to check response
         IPositionManager.AdjustPositionPayload requestParams;
     }
 
@@ -115,16 +129,41 @@ contract BasisStrategy is
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Emitted when assets are utilized.
     event Utilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
 
+    /// @dev Emitted when assets are deutilized.
     event Deutilize(address indexed caller, uint256 productDelta, uint256 assetDelta);
 
-    event AfterAdjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease);
+    /// @dev Emitted when the hedge position gets adjusted.
+    event PositionAdjusted(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease);
+
+    /// @dev Emitted when leverage config gets changed.
+    event LeverageConfigurationChanged(
+        address indexed account,
+        uint256 targetLeverage,
+        uint256 minLeverage,
+        uint256 maxLeverage,
+        uint256 safeMarginLeverage
+    );
+
+    /// @dev Emitted when the spot manager is changed.
+    event SpotManagerChanged(address indexed account, address indexed newSpotManager);
+
+    /// @dev Emitted when the position manager is changed.
+    event PositionManagerChanged(address indexed account, address indexed newPositionManager);
+
+    /// @dev Emitted when the operator is changed.
+    event OperatorChanged(address indexed account, address indexed newOperator);
+
+    /// @dev Emitted when strategy is stopped.
+    event Stopped(address indexed account);
 
     /*//////////////////////////////////////////////////////////////
                             MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Authorize caller if it is authorized one.
     modifier authCaller(address authorized) {
         if (_msgSender() != authorized) {
             revert Errors.CallerNotAuthorized(authorized, _msgSender());
@@ -132,6 +171,7 @@ contract BasisStrategy is
         _;
     }
 
+    /// @dev Authorize caller if it is owner and vault.
     modifier onlyOwnerOrVault() {
         if (_msgSender() != owner() && _msgSender() != vault()) {
             revert Errors.CallerNotOwnerOrVault();
@@ -185,13 +225,25 @@ contract BasisStrategy is
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         if (_targetLeverage == 0) revert();
-        $.targetLeverage = _targetLeverage;
+        if (targetLeverage() != _targetLeverage) {
+            $.targetLeverage = _targetLeverage;
+        }
         if (_minLeverage >= _targetLeverage) revert();
-        $.minLeverage = _minLeverage;
+        if (minLeverage() != _minLeverage) {
+            $.minLeverage = _minLeverage;
+        }
         if (_maxLeverage <= _targetLeverage) revert();
-        $.maxLeverage = _maxLeverage;
+        if (maxLeverage() != _maxLeverage) {
+            $.maxLeverage = _maxLeverage;
+        }
         if (_safeMarginLeverage <= _maxLeverage) revert();
-        $.safeMarginLeverage = _safeMarginLeverage;
+        if (safeMarginLeverage() != _safeMarginLeverage) {
+            $.safeMarginLeverage = _safeMarginLeverage;
+        }
+
+        emit LeverageConfigurationChanged(
+            _msgSender(), _targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -202,21 +254,30 @@ contract BasisStrategy is
         if (_spotManager == address(0)) {
             revert Errors.ZeroAddress();
         }
-        _getBasisStrategyStorage().spotManager = ISpotManager(_spotManager);
+        if (spotManager() != _spotManager) {
+            _getBasisStrategyStorage().spotManager = ISpotManager(_spotManager);
+            emit SpotManagerChanged(_msgSender(), _spotManager);
+        }
     }
 
     function setPositionManager(address _positionManager) external onlyOwner {
         if (_positionManager == address(0)) {
             revert Errors.ZeroAddress();
         }
-        _getBasisStrategyStorage().positionManager = IPositionManager(_positionManager);
+        if (positionManager() != _positionManager) {
+            _getBasisStrategyStorage().positionManager = IPositionManager(_positionManager);
+            emit PositionManagerChanged(_msgSender(), _positionManager);
+        }
     }
 
     function setOperator(address _operator) external onlyOwner {
         if (_operator == address(0)) {
             revert Errors.ZeroAddress();
         }
-        _getBasisStrategyStorage().operator = _operator;
+        if (operator() != _operator) {
+            _getBasisStrategyStorage().operator = _operator;
+            emit OperatorChanged(_msgSender(), _operator);
+        }
     }
 
     function setLeverages(
@@ -245,6 +306,8 @@ contract BasisStrategy is
         ISpotManager _spotManager = $.spotManager;
         _spotManager.sell(_spotManager.exposure(), ISpotManager.SwapType.MANUAL, "");
         _pause();
+
+        emit Stopped(_msgSender());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -553,7 +616,7 @@ contract BasisStrategy is
             _pause();
         }
 
-        emit AfterAdjustPosition(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
+        emit PositionAdjusted(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
 
     function pendingUtilizations()
@@ -1110,6 +1173,18 @@ contract BasisStrategy is
 
     function targetLeverage() public view returns (uint256) {
         return _getBasisStrategyStorage().targetLeverage;
+    }
+
+    function minLeverage() public view returns (uint256) {
+        return _getBasisStrategyStorage().minLeverage;
+    }
+
+    function maxLeverage() public view returns (uint256) {
+        return _getBasisStrategyStorage().maxLeverage;
+    }
+
+    function safeMarginLeverage() public view returns (uint256) {
+        return _getBasisStrategyStorage().safeMarginLeverage;
     }
 
     function pendingDecreaseCollateral() public view returns (uint256) {
