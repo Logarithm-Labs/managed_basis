@@ -216,9 +216,9 @@ contract BasisStrategy is
         $.asset = IERC20(_asset);
         $.vault = ILogarithmVault(_vault);
         $.oracle = IOracle(_oracle);
-        $.operator = _operator;
         $.config = _config;
 
+        _setOperator(_operator);
         _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
     }
 
@@ -227,7 +227,7 @@ contract BasisStrategy is
         uint256 _minLeverage,
         uint256 _maxLeverage,
         uint256 _safeMarginLeverage
-    ) private {
+    ) internal {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         if (_targetLeverage == 0) revert();
@@ -248,6 +248,16 @@ contract BasisStrategy is
         }
 
         emit LeverageConfigUpdated(_msgSender(), _targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
+    }
+
+    function _setOperator(address newOperator) internal {
+        if (newOperator == address(0)) {
+            revert Errors.ZeroAddress();
+        }
+        if (operator() != newOperator) {
+            _getBasisStrategyStorage().operator = newOperator;
+            emit OperatorUpdated(_msgSender(), newOperator);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -276,14 +286,8 @@ contract BasisStrategy is
     }
 
     /// @notice Sets the operator.
-    function setOperator(address _operator) external onlyOwner {
-        if (_operator == address(0)) {
-            revert Errors.ZeroAddress();
-        }
-        if (operator() != _operator) {
-            _getBasisStrategyStorage().operator = _operator;
-            emit OperatorUpdated(_msgSender(), _operator);
-        }
+    function setOperator(address newOperator) external onlyOwner {
+        _setOperator(newOperator);
     }
 
     /// @notice Sets the leverages.
@@ -1153,7 +1157,7 @@ contract BasisStrategy is
     }
 
     /// @dev Validates the strategy status if it is desired one.
-    function _validateStrategyStatus(StrategyStatus targetStatus) private {
+    function _validateStrategyStatus(StrategyStatus targetStatus) private view {
         StrategyStatus currentStatus = strategyStatus();
         if (currentStatus != targetStatus) {
             revert Errors.InvalidStrategyStatus(uint8(currentStatus), uint8(targetStatus));
