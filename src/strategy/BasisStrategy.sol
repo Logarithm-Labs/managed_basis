@@ -248,10 +248,11 @@ contract BasisStrategy is
     //////////////////////////////////////////////////////////////*/
 
     function setPositionManager(address _positionManager) external onlyOwner {
-        if (_positionManager == address(0)) {
-            revert Errors.ZeroAddress();
+        if (positionManager() != _positionManager) {
+            IPositionManager newPositionManager = IPositionManager(_positionManager);
+            require(newPositionManager.collateralToken() == asset() && newPositionManager.indexToken() == product());
+            _getBasisStrategyStorage().positionManager = newPositionManager;
         }
-        _getBasisStrategyStorage().positionManager = IPositionManager(_positionManager);
     }
 
     function setOperator(address _operator) external onlyOwner {

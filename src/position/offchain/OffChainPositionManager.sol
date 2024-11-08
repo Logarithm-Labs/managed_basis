@@ -14,17 +14,25 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
+/// @title OffChainPositionManager
+/// @author Logarithm Labs
 contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPositionManager {
     using SafeCast for uint256;
     using Math for uint256;
 
+    /// @dev Used to store the state of offchain position.
     struct PositionState {
+        // The size denominated in index token.
         uint256 sizeInTokens;
+        // The collateral amount.
         uint256 netBalance;
+        // The mark price when this state is submitted.
         uint256 markPrice;
+        // The block.timestamp when this state is submitted.
         uint256 timestamp;
     }
 
+    /// @dev Used for the request and response infos.
     struct RequestInfo {
         AdjustPositionPayload request;
         AdjustPositionPayload response;
@@ -70,40 +78,10 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
     }
 
     /*//////////////////////////////////////////////////////////////
-                            INITIALIZATION
-    //////////////////////////////////////////////////////////////*/
-
-    function initialize(
-        address config_,
-        address strategy_,
-        address agent_,
-        address oracle_,
-        address indexToken_,
-        address collateralToken_,
-        bool isLong_
-    ) external initializer {
-        __Ownable_init(msg.sender);
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        $.config = config_;
-        $.strategy = strategy_;
-        $.agent = agent_;
-        $.oracle = oracle_;
-        $.indexToken = indexToken_;
-        $.collateralToken = collateralToken_;
-        $.isLong = isLong_;
-
-        // strategy is trusted
-        IERC20(collateralToken_).approve(strategy_, type(uint256).max);
-    }
-
-    function setAgent(address _agent) external onlyOwner {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        $.agent = _agent;
-    }
-
-    /*//////////////////////////////////////////////////////////////
                             EVENTS
     //////////////////////////////////////////////////////////////*/
+
+    event AgentUpdated(address indexed account, address indexed newAgent);
 
     event CreateRequest(
         uint256 indexed round, uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease
@@ -135,6 +113,40 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
             revert Errors.CallerNotAgent();
         }
         _;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    function initialize(address config_, address strategy_, address agent_, address oracle_, bool isLong_)
+        external
+        initializer
+    {
+        __Ownable_init(msg.sender);
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        $.config = config_;
+        $.strategy = strategy_;
+        $.oracle = oracle_;
+        $.indexToken = IBasisStrategy(strategy_).product();
+        address asset = IBasisStrategy(strategy_).asset();
+        $.collateralToken = asset;
+        $.isLong = isLong_;
+        _setAgent(agent_);
+        // strategy is trusted
+        IERC20(asset).approve(strategy_, type(uint256).max);
+    }
+
+    function _setAgent(address newAgent) internal {
+        if (agent() != newAgent) {
+            OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+            $.agent = newAgent;
+            emit AgentUpdated(_msgSender(), newAgent);
+        }
+    }
+
+    function setAgent(address newAgent) external onlyOwner {
+        _setAgent(newAgent);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -403,57 +415,57 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         return IOffChainConfig($.config);
     }
 
-    function agent() external view returns (address) {
+    function agent() public view returns (address) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.agent;
     }
 
-    function oracle() external view returns (address) {
+    function oracle() public view returns (address) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.oracle;
     }
 
-    function lastRequestRound() external view returns (uint256) {
+    function lastRequestRound() public view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.lastRequestRound;
     }
 
-    function currentRound() external view returns (uint256) {
+    function currentRound() public view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.currentRound;
     }
 
-    function positionState(uint256 round) external view returns (PositionState memory) {
+    function positionState(uint256 round) public view returns (PositionState memory) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.positionStates[round];
     }
 
-    function pendingCollateralIncrease() external view returns (uint256) {
+    function pendingCollateralIncrease() public view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.pendingCollateralIncrease;
     }
 
-    function requests(uint256 round) external view returns (RequestInfo memory) {
+    function requests(uint256 round) public view returns (RequestInfo memory) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.requests[round];
     }
 
-    function positionSizeInTokens() external view returns (uint256) {
+    function positionSizeInTokens() public view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.positionStates[$.currentRound].sizeInTokens;
     }
 
-    function apiVersion() external view virtual returns (string memory) {
+    function apiVersion() public view virtual returns (string memory) {
         return "0.0.1";
     }
 
-    function needKeep() external pure virtual returns (bool) {
+    function needKeep() public pure virtual returns (bool) {
         return false;
     }
 
-    function keep() external pure {}
+    function keep() public pure {}
 
-    function increaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+    function increaseCollateralMinMax() public view returns (uint256 min, uint256 max) {
         return config().increaseCollateralMinMax();
     }
 
@@ -473,7 +485,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         return (min, max);
     }
 
-    function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+    function decreaseCollateralMinMax() public view returns (uint256 min, uint256 max) {
         return config().decreaseCollateralMinMax();
     }
 
@@ -494,12 +506,20 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         return (min, max);
     }
 
-    function limitDecreaseCollateral() external view returns (uint256) {
+    function limitDecreaseCollateral() public view returns (uint256) {
         return config().limitDecreaseCollateral();
     }
 
     function idleCollateralAmount() public view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return IERC20($.collateralToken).balanceOf(address(this));
+    }
+
+    function collateralToken() public view returns (address) {
+        return _getOffChainPositionManagerStorage().collateralToken;
+    }
+
+    function indexToken() public view returns (address) {
+        return _getOffChainPositionManagerStorage().indexToken;
     }
 }

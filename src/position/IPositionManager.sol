@@ -8,6 +8,10 @@ interface IPositionManager {
         bool isIncrease;
     }
 
+    function collateralToken() external view returns (address);
+
+    function indexToken() external view returns (address);
+
     function positionNetBalance() external view returns (uint256);
 
     function currentLeverage() external view returns (uint256);
