@@ -24,19 +24,20 @@ import {IOracle} from "src/oracle/IOracle.sol";
 import {IGmxGasStation} from "src/position/gmx/IGmxGasStation.sol";
 import {IPositionManager} from "src/position/IPositionManager.sol";
 
+import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 
-/// @title A gmx position manager
+/// @title GmxV2PositionManager
 /// @author Logarithm Labs
 contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallbackReceiver, IGasFeeCallbackReceiver {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
-    uint256 constant PRECISION = 1e18;
     uint256 constant MIN_IDLE_COLLATERAL_USD = 1e31; // $10
 
+    /// @dev Describes the state of position manager.
     enum Status {
         IDLE,
         INCREASE,
@@ -45,6 +46,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         SETTLE
     }
 
+    /// @dev Used to create GMX order internally.
     struct InternalCreateOrderParams {
         bool isLong;
         bool isIncrease;
@@ -95,11 +97,6 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         uint256 positionBorrowingFactor;
         uint256 cumulativeBorrowingFeeUsd;
     }
-    // min max
-    // uint256[2] increaseSizeMinMax;
-    // uint256[2] increaseCollateralMinMax;
-    // uint256[2] decreaseSizeMinMax;
-    // uint256[2] decreaseCollateralMinMax;
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxV2PositionManager")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant GmxV2PositionManagerStorageLocation =
@@ -115,7 +112,10 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Emitted when the claimable funding fee gets claimed.
     event FundingClaimed(address indexed token, uint256 indexed amount);
+
+    /// @dev Emitted when the claimable collateral gets claimed.
     event CollateralClaimed(address indexed token, uint256 indexed amount);
 
     /*//////////////////////////////////////////////////////////////
@@ -175,6 +175,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Adjusts the gmx position.
     function adjustPosition(AdjustPositionPayload calldata params) external onlyStrategy whenNotPending {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount == 0) {
@@ -278,7 +279,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         }
     }
 
-    /// @notice keep position to claim funding and increase collateral if there are idle assets
+    /// @dev Realizes the claimable funding or increases collateral if there are idle assets
     function keep() external onlyStrategy whenNotPending {
         _getGmxV2PositionManagerStorage().status = Status.SETTLE;
         // if there is idle collateral, then increase that amount to settle the claimable funding
@@ -317,10 +318,9 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         }
     }
 
-    /// @dev claims all the claimable funding fee
-    /// this is callable by anyone
-    /// Note: collateral funding amount is transfered to this position manager
-    ///       otherwise, transfered to strategy
+    /// @dev Claims all the claimable funding fees.
+    /// This is callable by anyone.
+    /// Collateral funding amount is transferred to this position manager, otherwise transferred to strategy
     function claimFunding() public {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
 
@@ -372,11 +372,11 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         emit FundingClaimed(_longToken, longTokenAmount);
     }
 
-    /// @dev claims all the claimable collateral amount
-    /// Note: this amount stored by account, token, timeKey
-    /// and there is only event to figure it out
-    /// @param token token address derived from the gmx event: ClaimableCollateralUpdated
-    /// @param timeKey timeKey value derived from the gmx event: ClaimableCollateralUpdated
+    /// @dev Claims all the claimable collateral amount.
+    /// Note: this amount stored by account, token, timeKey and it is possible only by events to figure it out.
+    ///
+    /// @param token The token address derived from the gmx event: ClaimableCollateralUpdated
+    /// @param timeKey The timeKey value derived from the gmx event: ClaimableCollateralUpdated
     function claimCollateral(address token, uint256 timeKey) external {
         IExchangeRouter exchangeRouter = IExchangeRouter(config().exchangeRouter());
         address[] memory markets = new address[](1);
@@ -506,9 +506,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                         EXTERNAL/PUBLIC VIEWERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice total asset token amount that position holds
-    /// Note: should exclude the claimable funding amounts until claiming them
-    ///       and include the pending asset token amount and idle assets
+    /// @dev The total collateral token amount the position is holding.
     function positionNetBalance() public view returns (uint256) {
         IGmxConfig _config = config();
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
@@ -519,29 +517,29 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
             + $.pendingCollateralAmount;
     }
 
-    /// @notice current leverage of position that is based on gmx's calculation
+    /// @dev The current leverage of position that is based on gmx's calculation
     function currentLeverage() external view returns (uint256) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         IGmxConfig _config = config();
         return GmxV2Lib.getCurrentLeverage(_getGmxParams(_config), $.oracle, _config.referralStorage());
     }
 
-    /// @notice position size in index token
+    /// @dev The position size in index token
     function positionSizeInTokens() public view returns (uint256) {
         Position.Props memory position = GmxV2Lib.getPosition(_getGmxParams(config()));
         return position.numbers.sizeInTokens;
     }
 
-    /// @notice calculate the execution fee that is need from gmx when increase and decrease
+    /// @dev Calculates the execution fee that is needed from gmx when increasing and decreasing.
     ///
-    /// @return feeIncrease the execution fee for increase
-    /// @return feeDecrease the execution fee for decrease
+    /// @return feeIncrease The execution fee for increase
+    /// @return feeDecrease The execution fee for decrease
     function getExecutionFee() public view returns (uint256 feeIncrease, uint256 feeDecrease) {
         IGmxConfig _config = config();
         return GmxV2Lib.getExecutionFee(_config.dataStore(), _config.callbackGasLimit());
     }
 
-    /// @notice current claimable funding amounts that are not accrued
+    /// @dev The current claimable funding amounts that are not accrued
     function getClaimableFundingAmounts()
         external
         view
@@ -554,7 +552,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
-    /// @notice accrued claimable token amounts
+    /// @dev The accrued claimable token amounts.
     function getAccruedClaimableFundingAmounts()
         external
         view
@@ -566,7 +564,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return (claimableLongTokenAmount, claimableShortTokenAmount);
     }
 
-    /// @notice total cumulated funding fee and borrowing fee in usd including next fees
+    /// @dev The total cumulated funding fee and borrowing fee in usd including next fees.
     function cumulativeFundingAndBorrowingFeesUsd()
         external
         view
@@ -581,9 +579,9 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return (fundingFeeUsd, borrowingFeeUsd);
     }
 
-    /// @dev check if the claimable funding amount is over than max share
+    /// @dev Checks if the claimable funding amount is over than max share
     ///      or if idle collateral is bigger than minimum requirement so that
-    ///      the position can be settled to add it to position's collateral
+    ///      the position can be settled to add it to position's collateral.
     function needKeep() external view returns (bool) {
         IGmxConfig _config = config();
         address _collateralToken = collateralToken();
@@ -596,7 +594,8 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         (uint256 remainingCollateral, uint256 claimableTokenAmount) = GmxV2Lib
             .getRemainingCollateralAndClaimableFundingAmount(_getGmxParams(_config), oralcle, _config.referralStorage());
         if (remainingCollateral > 0) {
-            return claimableTokenAmount.mulDiv(PRECISION, remainingCollateral) > maxClaimableFundingShare();
+            return
+                claimableTokenAmount.mulDiv(Constants.FLOAT_PRECISION, remainingCollateral) > maxClaimableFundingShare();
         } else {
             return false;
         }
@@ -606,7 +605,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                         PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev create increase/decrease order
+    /// @dev Creates increase/decrease order
     function _createOrder(InternalCreateOrderParams memory params) private returns (bytes32) {
         if (params.isIncrease && params.collateralDeltaAmount > 0) {
             _getGmxV2PositionManagerStorage().pendingCollateralAmount = params.collateralDeltaAmount;
@@ -677,7 +676,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         IBasisStrategy(strategy()).afterAdjustPosition(callbackParams);
     }
 
-    /// @dev store new size and return delta size in tokens
+    /// @dev Stores new size and return delta size in tokens
     function _recordPositionSize(uint256 sizeInTokens) private returns (uint256) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         uint256 sizeInTokensBefore = $.sizeInTokensBefore;
@@ -687,6 +686,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return sizeDeltaInTokens;
     }
 
+    /// @dev Processes the pending position fees.
     function _processPendingPositionFee(bool isIncrease, bool isExecuted) private {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         if (isIncrease) {
@@ -704,6 +704,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         }
     }
 
+    /// @dev Derives a set of gmx params that are need to call gmx smart contracts.
     function _getGmxParams(IGmxConfig _config) private view returns (GmxV2Lib.GmxParams memory) {
         Market.Props memory market = Market.Props({
             marketToken: marketToken(),
@@ -725,14 +726,14 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                         VALIDATION FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    // @dev used in modifier which reduces the code size
+    // @dev Used in modifier which reduces the code size
     function _onlyStrategy() private view {
         if (msg.sender != strategy()) {
             revert Errors.CallerNotStrategy();
         }
     }
 
-    // @dev used to stop create orders one by on
+    // @dev Used to stop create orders one by on
     function _whenNotPending() private view {
         if (_isPending()) {
             revert Errors.AlreadyPending();
@@ -744,7 +745,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return $.pendingIncreaseOrderKey != bytes32(0) || $.pendingDecreaseOrderKey != bytes32(0);
     }
 
-    /// @dev validate if the caller is OrderHandler of gmx
+    /// @dev Validates if the caller is OrderHandler of gmx
     function _validateOrderHandler(bytes32 orderKey, bool isIncrease) private view {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         if (
@@ -772,96 +773,109 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                             STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice The address of gmx config smart contract.
     function config() public view returns (IGmxConfig) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return IGmxConfig($.config);
     }
 
+    /// @notice The address of collateral token.
     function collateralToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.collateralToken;
     }
 
+    /// @notice The address of strategy.
     function strategy() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.strategy;
     }
 
+    /// @notice The address of the gmx gas station smart contract.
     function gmxGasStation() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.gmxGasStation;
     }
 
+    /// @notice The address of gmx market token where position is opened at.
     function marketToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.marketToken;
     }
 
+    /// @notice The address of index token of the opened market.
     function indexToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.indexToken;
     }
 
+    /// @notice The address of long token of the opened market.
     function longToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.longToken;
     }
 
+    /// @notice The address of short token of the opened market.
     function shortToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.shortToken;
     }
 
+    /// @notice The direction of position.
     function isLong() public view returns (bool) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.isLong;
     }
 
+    /// @notice The max share of claimable funding before it get claimed through keeping.
     function maxClaimableFundingShare() public view returns (uint256) {
         return config().maxClaimableFundingShare();
     }
 
+    /// @notice The gmx increase order key that is in pending.
     function pendingIncreaseOrderKey() public view returns (bytes32) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.pendingIncreaseOrderKey;
     }
 
+    /// @notice The gmx decrease order key that is in pending.
     function pendingDecreaseOrderKey() public view returns (bytes32) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.pendingDecreaseOrderKey;
     }
 
-    // note: accomodate for IPositionManager interface wo impact to contract size
+    /// @notice Accommodates for IPositionManager interface wo impact to contract size.
     function increaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
-    // note: accomodate for IPositionManager interface wo impact to contract size
+    /// @notice Accommodate for IPositionManager interface wo impact to contract size.
     function increaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
-    // note: accomodate for IPositionManager interface wo impact to contract size
+    /// @notice Accommodates for IPositionManager interface wo impact to contract size.
     function decreaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
-    // note: accomodate for IPositionManager interface wo impact to contract size
+    /// @notice Accommodates for IPositionManager interface wo impact to contract size.
     function decreaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
+    /// @notice The limit decrease collateral to reduce execution costs.
     function limitDecreaseCollateral() external view returns (uint256) {
         return config().limitDecreaseCollateral();
     }
 
-    /// @notice total cumulated position fee in usd
+    /// @notice The total cumulated position fee in usd.
     function cumulativePositionFeeUsd() external view returns (uint256) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.cumulativePositionFeeUsd;
     }
 
-    /// @notice total claimed funding usd
+    /// @notice The total claimed funding fee in usd.
     function cumulativeClaimedFundingUsd() external view returns (uint256) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.cumulativeClaimedFundingUsd;

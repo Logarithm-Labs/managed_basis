@@ -8,6 +8,8 @@ import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.s
 
 import {Errors} from "src/libraries/utils/Errors.sol";
 
+/// @title GmxGasStation
+/// @author Logarithm Labs
 contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
@@ -28,10 +30,11 @@ contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
-    modifier onlyPositionManager(address caller) {
-        _onlyPositionManager(caller);
-        _;
-    }
+    /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event PositionManagerRegistered(address indexed account, address indexed positionManager, bool indexed allowed);
 
     /*//////////////////////////////////////////////////////////////
                         INITIALIZATION
@@ -53,11 +56,15 @@ contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Registers positionManager to use fund of this contract for the gmx execution fees.
     function registerPositionManager(address positionManager, bool allowed) external onlyOwner {
-        _getGmxGasStationStorage().isPositionManager[positionManager] = allowed;
+        if (isRegistered(positionManager) != allowed) {
+            _getGmxGasStationStorage().isPositionManager[positionManager] = allowed;
+            emit PositionManagerRegistered(_msgSender(), positionManager, allowed);
+        }
     }
 
-    /// @notice withdraw ETH for operators
+    /// @notice Withdraws ether of this smart contract.
     function withdraw(uint256 amount) external onlyOwner {
         (bool success,) = msg.sender.call{value: amount}("");
         assert(success);
@@ -67,21 +74,24 @@ contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev pay execution fee for gmx keepers when creating gmx orders
+    /// @dev Pays the execution fee for gmx keepers when creating gmx orders.
     ///
-    /// @param exchangeRouter is the router of gmx
-    /// @param orderVault is the vault of gmx to pay fee
-    /// @param executionFee is fee to pay
-    function payGmxExecutionFee(address exchangeRouter, address orderVault, uint256 executionFee)
-        external
-        onlyPositionManager(msg.sender)
-    {
+    /// @param exchangeRouter The address of gmx's exchangeRouter.
+    /// @param orderVault The address of gmx's orderVault.
+    /// @param executionFee The fee amount to pay.
+    function payGmxExecutionFee(address exchangeRouter, address orderVault, uint256 executionFee) external {
+        _requirePositionManager(_msgSender());
         IExchangeRouter(exchangeRouter).sendWnt{value: executionFee}(orderVault, executionFee);
     }
 
-    function _onlyPositionManager(address caller) private view {
+    function _requirePositionManager(address caller) private view {
         if (!_getGmxGasStationStorage().isPositionManager[caller]) {
             revert Errors.CallerNotPositionManager();
         }
+    }
+
+    /// @dev Tells if a positionManager is registered or not.
+    function isRegistered(address positionManager) public view returns (bool) {
+        return _getGmxGasStationStorage().isPositionManager[positionManager];
     }
 }
