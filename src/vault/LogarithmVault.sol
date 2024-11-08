@@ -113,31 +113,31 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     ///
     /// @param account The address who changed the security manager.
     /// @param newManager The address of new security manager.
-    event SecurityManagerChanged(address account, address newManager);
+    event SecurityManagerUpdated(address account, address newManager);
 
     /// @dev Emitted when a new strategy is set.
     ///
     /// @param account The address who changed strategy to a new one.
     /// @param newStrategy The address of a new strategy.
-    event StrategyChanged(address account, address newStrategy);
+    event StrategyUpdated(address account, address newStrategy);
 
     /// @dev Emitted when the entry cost configuration is changed.
     ///
     /// @param account The address who changed the entry cost configuration.
     /// @param newEntryCost The value of the new entry cost configuration.
-    event EntryCostChanged(address account, uint256 newEntryCost);
+    event EntryCostUpdated(address account, uint256 newEntryCost);
 
     /// @dev Emitted when the exit cost configuration is changed.
     ///
     /// @param account The address who changed the exit cost configuration.
     /// @param newExitCost The value of the new exit cost configuration.
-    event ExitCostChanged(address account, uint256 newExitCost);
+    event ExitCostUpdated(address account, uint256 newExitCost);
 
     /// @dev Emitted when the priority provider address is changed.
     ///
     /// @param account The address who changed the priority provider.
     /// @param newPriorityProvider The address of new priority provider.
-    event PriorityProviderChanged(address account, address newPriorityProvider);
+    event PriorityProviderUpdated(address account, address newPriorityProvider);
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -165,13 +165,32 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         string calldata symbol_
     ) external initializer {
         __ManagedVault_init(owner_, asset_, name_, symbol_);
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        _setEntryCost(entryCost_);
+        _setExitCost(exitCost_);
+        _setPriorityProvider(priorityProvider_);
+    }
 
-        require(entryCost_ < 1 ether && exitCost_ < 1 ether);
-        $.entryCost = entryCost_;
-        $.exitCost = exitCost_;
+    function _setEntryCost(uint256 value) internal {
+        require(value < 1 ether);
+        if (entryCost() != value) {
+            _getLogarithmVaultStorage().entryCost = value;
+            emit EntryCostUpdated(_msgSender(), value);
+        }
+    }
 
-        $.priorityProvider = priorityProvider_;
+    function _setExitCost(uint256 value) internal {
+        require(value < 1 ether);
+        if (exitCost() != value) {
+            _getLogarithmVaultStorage().exitCost = value;
+            emit ExitCostUpdated(_msgSender(), value);
+        }
+    }
+
+    function _setPriorityProvider(address newProvider) internal {
+        if (priorityProvider() != newProvider) {
+            _getLogarithmVaultStorage().priorityProvider = newProvider;
+            emit PriorityProviderUpdated(_msgSender(), newProvider);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -184,7 +203,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     function setSecurityManager(address account) external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         $.securityManager = account;
-        emit SecurityManagerChanged(_msgSender(), account);
+        emit SecurityManagerUpdated(_msgSender(), account);
     }
 
     /// @dev Configure the strategy.
@@ -206,27 +225,22 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         $.strategy = _strategy;
         _asset.approve(_strategy, type(uint256).max);
 
-        emit StrategyChanged(_msgSender(), _strategy);
+        emit StrategyUpdated(_msgSender(), _strategy);
     }
 
     /// @dev Configure new entry cost setting.
-    function setEntryCost(uint256 _entryCost) external onlyOwner {
-        require(_entryCost < 1 ether);
-        _getLogarithmVaultStorage().entryCost = _entryCost;
-        emit EntryCostChanged(_msgSender(), _entryCost);
+    function setEntryCost(uint256 newEntryCost) external onlyOwner {
+        _setEntryCost(newEntryCost);
     }
 
     /// @dev Configure new exit cost setting.
-    function setExitCost(uint256 _exitCost) external onlyOwner {
-        require(_exitCost < 1 ether);
-        _getLogarithmVaultStorage().exitCost = _exitCost;
-        emit ExitCostChanged(_msgSender(), _exitCost);
+    function setExitCost(uint256 newExitCost) external onlyOwner {
+        _setExitCost(newExitCost);
     }
 
     /// @dev Configure new priority provider.
-    function setPriorityProvider(address _priorityProvider) external onlyOwner {
-        _getLogarithmVaultStorage().priorityProvider = _priorityProvider;
-        emit PriorityProviderChanged(_msgSender(), _priorityProvider);
+    function setPriorityProvider(address newProvider) external onlyOwner {
+        _setPriorityProvider(newProvider);
     }
 
     /// @dev Shut down this vault.
