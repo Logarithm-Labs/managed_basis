@@ -53,7 +53,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         // make last redeem
         uint256 userShares = IERC20(address(vault)).balanceOf(address(user1));
         vm.startPrank(user1);
-        vault.redeem(userShares, user1, user1);
+        vault.requestRedeem(userShares, user1, user1);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilizeWithoutExecution(pendingDeutilization);

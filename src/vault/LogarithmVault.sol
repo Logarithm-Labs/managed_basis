@@ -18,19 +18,28 @@ import {ManagedVault} from "src/vault/ManagedVault.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
-/// @title A logarithm vault
+/// @title LogarithmVault
 /// @author Logarithm Labs
+/// @notice A core vault allowing users to deposit assets to logarithm strategies.
+/// @dev ERC4626 compliant vault with async redeem functionalities.
 contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
+    /// @notice A struct describing an user's withdraw request.
     struct WithdrawRequest {
+        /// @dev The requested assets to withdraw.
         uint256 requestedAssets;
+        /// @dev The accumulated withdraw assets value that is used for claimability.
         uint256 accRequestedWithdrawAssets;
+        /// @dev The block.timestamp when the request was created.
         uint256 requestTimestamp;
+        /// @dev The owner who requested to withdraw.
         address owner;
+        /// @dev The account who is receiving executed withdrawal assets.
         address receiver;
+        /// @dev True means claimed.
         bool isClaimed;
     }
 
@@ -71,27 +80,70 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
                             EVENTS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Emitted when a new withdraw/redeem requested is created.
+    ///
+    /// @param caller The address of withdraw requestor.
+    /// @param receiver The address who receives the withdraw assets.
+    /// @param owner The address of owner who was requested to withdraw.
+    /// @param withdrawKey The bytes32 value that identifies the withdraw request.
+    /// @param assets The asset amount that is requested to withdraw.
+    /// @param shares The share amount that is burnt.
     event WithdrawRequested(
-        address indexed caller, address indexed receiver, address indexed owner, bytes32 withdrawKey, uint256 assets
+        address indexed caller,
+        address indexed receiver,
+        address indexed owner,
+        bytes32 withdrawKey,
+        uint256 assets,
+        uint256 shares
     );
 
+    /// @dev Emitted when a withdraw request gets claimed.
+    ///
+    /// @param claimer The address who claimed the withdraw request.
+    /// @param withdrawKey The bytes32 withdraw key identifying a withdraw request.
+    /// @param assets The asset amount that is claimed.
     event Claimed(address indexed claimer, bytes32 withdrawKey, uint256 assets);
 
+    /// @dev Emitted when this vault get shutdown.
+    ///
+    /// @param account The address who shutdown this vault.
     event Shutdown(address account);
 
-    event SecurityManagerChanged(address account, address newManager);
+    /// @dev Emitted when a new security manager is set.
+    ///
+    /// @param account The address who changed the security manager.
+    /// @param newManager The address of new security manager.
+    event SecurityManagerUpdated(address account, address newManager);
 
-    event StrategyChanged(address account, address newStrategy);
+    /// @dev Emitted when a new strategy is set.
+    ///
+    /// @param account The address who changed strategy to a new one.
+    /// @param newStrategy The address of a new strategy.
+    event StrategyUpdated(address account, address newStrategy);
 
-    event EntryCostChanged(address account, uint256 newEntryCost);
+    /// @dev Emitted when the entry cost configuration is changed.
+    ///
+    /// @param account The address who changed the entry cost configuration.
+    /// @param newEntryCost The value of the new entry cost configuration.
+    event EntryCostUpdated(address account, uint256 newEntryCost);
 
-    event ExitCostChanged(address account, uint256 newExitCost);
+    /// @dev Emitted when the exit cost configuration is changed.
+    ///
+    /// @param account The address who changed the exit cost configuration.
+    /// @param newExitCost The value of the new exit cost configuration.
+    event ExitCostUpdated(address account, uint256 newExitCost);
 
-    event PriorityProviderChanged(address account, address newPriorityProvider);
+    /// @dev Emitted when the priority provider address is changed.
+    ///
+    /// @param account The address who changed the priority provider.
+    /// @param newPriorityProvider The address of new priority provider.
+    event PriorityProviderUpdated(address account, address newPriorityProvider);
+
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Reverts if the caller is not a security manager.
     modifier onlySecurityManager() {
         if (_msgSender() != securityManager()) {
             revert Errors.InvalidSecurityManager();
@@ -113,25 +165,51 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         string calldata symbol_
     ) external initializer {
         __ManagedVault_init(owner_, asset_, name_, symbol_);
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        _setEntryCost(entryCost_);
+        _setExitCost(exitCost_);
+        _setPriorityProvider(priorityProvider_);
+    }
 
-        require(entryCost_ < 1 ether && exitCost_ < 1 ether);
-        $.entryCost = entryCost_;
-        $.exitCost = exitCost_;
+    function _setEntryCost(uint256 value) internal {
+        require(value < 1 ether);
+        if (entryCost() != value) {
+            _getLogarithmVaultStorage().entryCost = value;
+            emit EntryCostUpdated(_msgSender(), value);
+        }
+    }
 
-        $.priorityProvider = priorityProvider_;
+    function _setExitCost(uint256 value) internal {
+        require(value < 1 ether);
+        if (exitCost() != value) {
+            _getLogarithmVaultStorage().exitCost = value;
+            emit ExitCostUpdated(_msgSender(), value);
+        }
+    }
+
+    function _setPriorityProvider(address newProvider) internal {
+        if (priorityProvider() != newProvider) {
+            _getLogarithmVaultStorage().priorityProvider = newProvider;
+            emit PriorityProviderUpdated(_msgSender(), newProvider);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
                         ADMIN FUNCTIONS   
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Configure the security manager.
+    ///
+    /// @param account The address of configuring security manager. A zero address means disabling security manager functions.
     function setSecurityManager(address account) external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         $.securityManager = account;
-        emit SecurityManagerChanged(_msgSender(), account);
+        emit SecurityManagerUpdated(_msgSender(), account);
     }
 
+    /// @dev Configure the strategy.
+    /// Notice:
+    /// - Approve new strategy to manage asset of this vault infinitely.
+    /// - If there is an old strategy, revoke its asset approval after stopping the strategy.
     function setStrategy(address _strategy) external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
@@ -147,26 +225,25 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         $.strategy = _strategy;
         _asset.approve(_strategy, type(uint256).max);
 
-        emit StrategyChanged(_msgSender(), _strategy);
+        emit StrategyUpdated(_msgSender(), _strategy);
     }
 
-    function setEntryCost(uint256 _entryCost) external onlyOwner {
-        require(_entryCost < 1 ether);
-        _getLogarithmVaultStorage().entryCost = _entryCost;
-        emit EntryCostChanged(_msgSender(), _entryCost);
+    /// @dev Configure new entry cost setting.
+    function setEntryCost(uint256 newEntryCost) external onlyOwner {
+        _setEntryCost(newEntryCost);
     }
 
-    function setExitCost(uint256 _exitCost) external onlyOwner {
-        require(_exitCost < 1 ether);
-        _getLogarithmVaultStorage().exitCost = _exitCost;
-        emit ExitCostChanged(_msgSender(), _exitCost);
+    /// @dev Configure new exit cost setting.
+    function setExitCost(uint256 newExitCost) external onlyOwner {
+        _setExitCost(newExitCost);
     }
 
-    function setPriorityProvider(address _priorityProvider) external onlyOwner {
-        _getLogarithmVaultStorage().priorityProvider = _priorityProvider;
-        emit PriorityProviderChanged(_msgSender(), _priorityProvider);
+    /// @dev Configure new priority provider.
+    function setPriorityProvider(address newProvider) external onlyOwner {
+        _setPriorityProvider(newProvider);
     }
 
+    /// @dev Shut down this vault.
     function shutdown() external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         $.shutdown = true;
@@ -174,6 +251,10 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         emit Shutdown(_msgSender());
     }
 
+    /// @dev Pause this vault temporarily so that deposit and withdraw functions are disabled.
+    /// This function is callable only by the security manager.
+    ///
+    /// @param stopStrategy True means stopping strategy, otherwise pausing strategy.
     function pause(bool stopStrategy) external onlySecurityManager whenNotPaused {
         if (stopStrategy) {
             IStrategy(strategy()).stop();
@@ -183,13 +264,15 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         _pause();
     }
 
+    /// @dev Unpause this vault while unpausing the connected vault.
+    /// This function is callable only by the security manager.
     function unpause() external onlySecurityManager whenPaused {
         IStrategy(strategy()).unpause();
         _unpause();
     }
 
     /*//////////////////////////////////////////////////////////////
-                        PUBLIC FUNCTIONS   
+                             ERC4626 LOGIC
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ERC4626Upgradeable
@@ -265,81 +348,75 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     /// @inheritdoc ERC4626Upgradeable
-    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
-        _requireNotPaused();
-        if (isShutdown()) {
-            revert Errors.VaultShutdown();
+    function maxDeposit(address receiver) public view virtual override returns (uint256) {
+        if (paused() || isShutdown()) {
+            return 0;
+        } else {
+            return super.maxDeposit(receiver);
         }
-
-        IERC20 _asset = IERC20(asset());
-        _asset.safeTransferFrom(caller, address(this), assets);
-
-        _mint(receiver, shares);
-
-        processPendingWithdrawRequests();
-
-        emit Deposit(caller, receiver, assets, shares);
     }
 
     /// @inheritdoc ERC4626Upgradeable
-    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
-        internal
-        virtual
-        override
-    {
-        _requireNotPaused();
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-
-        if (caller != owner) {
-            _spendAllowance(owner, caller, shares);
-        }
-
-        // If _asset is ERC777, `transfer` can trigger a reentrancy AFTER the transfer happens through the
-        // `tokensReceived` hook. On the other hand, the `tokensToSend` hook, that is triggered before the transfer,
-        // calls the vault, which is assumed not malicious.
-        //
-        // Conclusion: we need to do the transfer after the burn so that any reentrancy would happen after the
-        // shares are burned and after the assets are transferred, which is a valid state.
-        _burn(owner, shares);
-
-        uint256 _idleAssets = idleAssets();
-        if (_idleAssets >= assets) {
-            IERC20(asset()).safeTransfer(receiver, assets);
+    function maxMint(address receiver) public view virtual override returns (uint256) {
+        if (paused() || isShutdown()) {
+            return 0;
         } else {
-            // lock idle assets to claim
-            $.assetsToClaim += _idleAssets;
-
-            // request withdraw the remaining assets for strategy to deutilize
-            uint256 withdrawAssets = assets - _idleAssets;
-
-            uint256 _accRequestedWithdrawAssets;
-            if (isPrioritized(owner)) {
-                _accRequestedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets + withdrawAssets;
-                $.prioritizedAccRequestedWithdrawAssets = _accRequestedWithdrawAssets;
-            } else {
-                _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + withdrawAssets;
-                $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
-            }
-
-            bytes32 withdrawKey = getWithdrawKey(owner, _useNonce(owner));
-            $.withdrawRequests[withdrawKey] = WithdrawRequest({
-                requestedAssets: assets,
-                accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
-                requestTimestamp: block.timestamp,
-                owner: owner,
-                receiver: receiver,
-                isClaimed: false
-            });
-            emit WithdrawRequested(caller, receiver, owner, withdrawKey, assets);
+            return super.maxDeposit(receiver);
         }
-
-        emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
-    /// @notice process pending withdraw request with idle assets
-    /// Note: anyone can call this function
+    /// @dev This is limited by the idle assets.
     ///
-    /// @return processed assets
+    /// @inheritdoc ERC4626Upgradeable
+    function maxWithdraw(address owner) public view virtual override returns (uint256) {
+        if (paused()) {
+            return 0;
+        }
+        uint256 assets = super.maxWithdraw(owner);
+        uint256 withdrawableAssets = idleAssets();
+        return assets > withdrawableAssets ? withdrawableAssets : assets;
+    }
+
+    /// @dev This is limited by the idle assets.
+    ///
+    /// @inheritdoc ERC4626Upgradeable
+    function maxRedeem(address owner) public view virtual override returns (uint256) {
+        if (paused()) {
+            return 0;
+        }
+        uint256 shares = super.maxRedeem(owner);
+        uint256 redeemableShares = _convertToShares(idleAssets(), Math.Rounding.Ceil);
+        return shares > redeemableShares ? redeemableShares : shares;
+    }
+
+    /// @dev If there are pending withdraw requests, the deposited assets is used to process them.
+    /// And disables harvesting of the performance fee as a core logarithm vault doesn't have the functionality.
+    ///
+    /// @inheritdoc ERC4626Upgradeable
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        ERC4626Upgradeable._deposit(caller, receiver, assets, shares);
+        processPendingWithdrawRequests();
+    }
+
+    /// @dev Disables harvesting of the performance fee as a core logarithm vault doesn't have the functionality.
+    ///
+    /// @inheritdoc ERC4626Upgradeable
+    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
+        internal
+        override
+    {
+        ERC4626Upgradeable._withdraw(caller, receiver, owner, assets, shares);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          ASYNC WITHDRAW LOGIC
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Process pending withdraw requests with idle assets.
+    ///
+    /// @dev This is a decentralized function that can be called by anyone.
+    ///
+    /// @return The assets used to process pending withdraw requests.
     function processPendingWithdrawRequests() public returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
@@ -372,8 +449,129 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return totalProcessedAssets;
     }
 
-    /// @notice claim the processed withdraw request
-    function claim(bytes32 withdrawRequestKey) external virtual returns (uint256) {
+    /// @dev Returns the maximum amount of the underlying asset that can be withdrawn from the owner balance in the
+    /// Vault, through a requestWithdraw call.
+    function maxRequestWithdraw(address owner) public view returns (uint256) {
+        if (paused()) {
+            return 0;
+        }
+        return super.maxWithdraw(owner);
+    }
+
+    /// @dev Returns the maximum amount of Vault shares that can be redeemed from the owner balance in the Vault,
+    /// through a requestWithdraw call.
+    function maxRequestRedeem(address owner) public view returns (uint256) {
+        if (paused()) {
+            return 0;
+        }
+        return super.maxRedeem(owner);
+    }
+
+    /// @notice Request to withdraw assets.
+    ///
+    /// @dev Burns shares from owner and sends exactly assets of underlying tokens to receiver if the idle assets is enough,
+    /// which is just the same as ERC4626-withdraw workflow.
+    /// If the idle assets is not enough, creates a withdraw request with the shortfall assets while sending the idle assets to receiver.
+    ///
+    /// @return The withdraw key that is used in the claim function.
+    function requestWithdraw(uint256 assets, address receiver, address owner) public virtual returns (bytes32) {
+        uint256 maxRequestAssets = maxRequestWithdraw(owner);
+        if (assets > maxRequestAssets) {
+            revert Errors.ExceededMaxRequestWithdraw(owner, assets, maxRequestAssets);
+        }
+
+        uint256 maxAssets = maxWithdraw(owner);
+        uint256 assetsToWithdraw = assets > maxAssets ? maxAssets : assets;
+        // always assetsToWithdraw <= assets
+        uint256 assetsToRequest = assets - assetsToWithdraw;
+
+        uint256 shares = previewWithdraw(assets);
+        uint256 sharesToRedeem = previewWithdraw(assetsToWithdraw);
+        uint256 sharesToRequest = shares - sharesToRedeem;
+
+        if (assetsToWithdraw > 0) {
+            _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
+        }
+
+        if (assetsToRequest > 0) {
+            return _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
+        }
+        return bytes32(0);
+    }
+
+    /// @notice Request to redeem shares.
+    ///
+    /// @dev Burns exactly shares from owner and sends assets of underlying tokens to receiver if the idle assets is enough,
+    /// which is just the same as ERC4626-redeem workflow.
+    /// If the idle assets is not enough, creates a withdraw request with the shortfall assets while sending the idle assets to receiver.
+    ///
+    /// @return The withdraw key that is used in the claim function.
+    function requestRedeem(uint256 shares, address receiver, address owner) public virtual returns (bytes32) {
+        uint256 maxRequestShares = maxRequestRedeem(owner);
+        if (shares > maxRequestShares) {
+            revert Errors.ExceededMaxRequestRedeem(owner, shares, maxRequestShares);
+        }
+
+        uint256 maxShares = maxRedeem(owner);
+        uint256 sharesToRedeem = shares > maxShares ? maxShares : shares;
+        // always sharesToRedeem <= shares
+        uint256 sharesToRequest = shares - sharesToRedeem;
+
+        uint256 assets = previewRedeem(shares);
+        uint256 assetsToWithdraw = previewRedeem(sharesToRedeem);
+        uint256 assetsToRequest = assets - assetsToWithdraw;
+
+        if (sharesToRedeem > 0) {
+            _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
+        }
+
+        if (sharesToRequest > 0) {
+            return _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
+        }
+        return bytes32(0);
+    }
+
+    /// @dev requestWithdraw/requestRedeem common workflow.
+    function _requestWithdraw(
+        address caller,
+        address receiver,
+        address owner,
+        uint256 assetsToRequest,
+        uint256 sharesToRequest
+    ) internal virtual returns (bytes32) {
+        if (caller != owner) {
+            _spendAllowance(owner, caller, sharesToRequest);
+        }
+        _burn(owner, sharesToRequest);
+
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        uint256 _accRequestedWithdrawAssets;
+        if (isPrioritized(owner)) {
+            _accRequestedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets + assetsToRequest;
+            $.prioritizedAccRequestedWithdrawAssets = _accRequestedWithdrawAssets;
+        } else {
+            _accRequestedWithdrawAssets = $.accRequestedWithdrawAssets + assetsToRequest;
+            $.accRequestedWithdrawAssets = _accRequestedWithdrawAssets;
+        }
+
+        bytes32 withdrawKey = getWithdrawKey(owner, _useNonce(owner));
+        $.withdrawRequests[withdrawKey] = WithdrawRequest({
+            requestedAssets: assetsToRequest,
+            accRequestedWithdrawAssets: _accRequestedWithdrawAssets,
+            requestTimestamp: block.timestamp,
+            owner: owner,
+            receiver: receiver,
+            isClaimed: false
+        });
+        emit WithdrawRequested(caller, receiver, owner, withdrawKey, assetsToRequest, sharesToRequest);
+
+        return withdrawKey;
+    }
+
+    /// @notice Claim a withdraw request if it is executed
+    ///
+    /// @param withdrawRequestKey The withdraw key that was returned by requestWithdraw/requestRedeem.
+    function claim(bytes32 withdrawRequestKey) public virtual returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
 
@@ -429,6 +627,9 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return executedAssets;
     }
 
+    /// @notice Tells if the withdraw request is claimable or not.
+    ///
+    /// @param withdrawRequestKey The withdraw key that was returned by requestWithdraw/requestRedeem.
     function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
@@ -438,7 +639,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return isExecuted && !withdrawRequest.isClaimed;
     }
 
-    /// @notice determines if the withdrawal request is prioritized
+    /// @notice Tells if the owner is prioritized to withdraw.
     function isPrioritized(address owner) public view returns (bool) {
         address _priorityProvider = _getLogarithmVaultStorage().priorityProvider;
         if (_priorityProvider == address(0)) {
@@ -447,17 +648,18 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return IPriorityProvider(_priorityProvider).isPrioritized(owner);
     }
 
-    /// @notice returns idle assets that can be claimed or utilized
+    /// @notice The underlying asset amount in this vault that is free to withdraw and utilize.
     function idleAssets() public view returns (uint256) {
         return IERC20(asset()).balanceOf(address(this)) - _getLogarithmVaultStorage().assetsToClaim;
     }
 
-    /// @notice returns pending withdraw assets that will be deutilized
+    /// @notice The underlying asset amount requested to withdraw, that is not executed yet.
     function totalPendingWithdraw() public view returns (uint256) {
         return prioritizedAccRequestedWithdrawAssets() + accRequestedWithdrawAssets()
             - prioritizedProcessedWithdrawAssets() - processedWithdrawAssets();
     }
 
+    /// @dev Derives a unique withdraw key based on user address and his/her nonce.
     function getWithdrawKey(address user, uint256 nonce) public view returns (bytes32) {
         return keccak256(abi.encodePacked(address(this), user, nonce));
     }
@@ -466,14 +668,14 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
                         PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev calculate the processed withdrawal assets
+    /// @dev Calculate the processed withdrawal assets.
     ///
-    /// @param _idleAssets idle assets available for proc
-    /// @param _processedWithdrawAssets is the value of processedWithdrawAssets state
-    /// @param _accRequestedWithdrawAssets is the value of accRequestedWithdrawAssets state
+    /// @param _idleAssets The idle assets available for processing withdraw requests.
+    /// @param _processedWithdrawAssets The value of processedWithdrawAssets storage variable.
+    /// @param _accRequestedWithdrawAssets The value of accRequestedWithdrawAssets storage variable.
     ///
-    /// @return remainingAssets is the remaining asset amount after processing
-    /// @return processedAssets is the processed amount of asset
+    /// @return remainingAssets The remaining asset amount after processing
+    /// @return processedAssets The processed asset amount
     function _calcProcessedAssets(
         uint256 _idleAssets,
         uint256 _processedWithdrawAssets,
@@ -494,13 +696,13 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return (remainingAssets, processedAssets);
     }
 
-    /// @dev return executable state of withdraw request
+    /// @dev Executable state of withdraw request
     ///
-    /// @param isPrioritizedAccount tells if account is prioritized for withdrawal
-    /// @param accRequestedWithdrawAssetsOfRequest accRequestedWithdrawAssets value of withdraw request
+    /// @param isPrioritizedAccount Tells if account is prioritized for withdrawal
+    /// @param accRequestedWithdrawAssetsOfRequest The accRequestedWithdrawAssets storage value of withdraw request
     ///
-    /// @return isExecuted tells whether a request is executed or not
-    /// @return isLast tells whether a request is last or not
+    /// @return isExecuted Tells whether a request is executed or not
+    /// @return isLast Tells whether a request is last or not
     function _isWithdrawRequestExecuted(bool isPrioritizedAccount, uint256 accRequestedWithdrawAssetsOfRequest)
         internal
         view
@@ -533,7 +735,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return (isExecuted, isLast);
     }
 
-    /// @dev use nonce for each user and increase it
+    /// @dev Use nonce of the specified user and increase it
     function _useNonce(address user) internal returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         // For each vault, the nonce has an initial value of 0, can only be incremented by one, and cannot be
@@ -544,14 +746,14 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         }
     }
 
-    /// @dev calculates the cost that should be added to an amount `assets` that does not include cost.
-    /// used in {IERC4626-mint} and {IERC4626-withdraw} operations.
+    /// @dev Calculates the cost that should be added to an amount `assets` that does not include cost.
+    /// Used in {IERC4626-mint} and {IERC4626-withdraw} operations.
     function _costOnRaw(uint256 assets, uint256 costRate) private pure returns (uint256) {
         return assets.mulDiv(costRate, Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
     }
 
-    /// @dev calculates the cost part of an amount `assets` that already includes cost.
-    /// used in {IERC4626-deposit} and {IERC4626-redeem} operations.
+    /// @dev Calculates the cost part of an amount `assets` that already includes cost.
+    /// Used in {IERC4626-deposit} and {IERC4626-redeem} operations.
     function _costOnTotal(uint256 assets, uint256 costRate) private pure returns (uint256) {
         return assets.mulDiv(costRate, costRate + Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
     }
@@ -560,55 +762,73 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
                             STORAGE VIEWERS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice The address of strategy that uses the underlying asset of this vault.
     function strategy() public view returns (address) {
         return _getLogarithmVaultStorage().strategy;
     }
 
+    /// @notice The priority provider address which provides the prioritized accounts.
+    /// For example, the addresses of logarithm meta vaults are prioritized to withdraw.
+    /// Prioritizing of withdraw means that their withdraw requests are processed before the other normal withdraw requests.
     function priorityProvider() public view returns (address) {
         return _getLogarithmVaultStorage().priorityProvider;
     }
 
+    /// @notice The entry cost percent that is charged when depositing.
+    ///
+    /// @dev Denominated in 18 decimals.
     function entryCost() public view returns (uint256) {
         return _getLogarithmVaultStorage().entryCost;
     }
 
+    /// @notice The exit cost percent that is charged when withdrawing.
+    ///
+    /// @dev Denominated in 18 decimals.
     function exitCost() public view returns (uint256) {
         return _getLogarithmVaultStorage().exitCost;
     }
 
+    /// @notice The underlying asset amount that is in this vault and reserved to claim for the processed withdraw requests.
     function assetsToClaim() public view returns (uint256) {
         return _getLogarithmVaultStorage().assetsToClaim;
     }
 
+    /// @dev The accumulated underlying asset amount requested to withdraw by the normal users.
     function accRequestedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().accRequestedWithdrawAssets;
     }
 
+    /// @dev The accumulated underlying asset amount processed for the normal withdraw requests.
     function processedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().processedWithdrawAssets;
     }
 
+    /// @dev The accumulated underlying asset amount requested to withdraw by the prioritized users.
     function prioritizedAccRequestedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().prioritizedAccRequestedWithdrawAssets;
     }
 
+    /// @dev The accumulated underlying asset amount processed for the prioritized withdraw requests.
     function prioritizedProcessedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().prioritizedProcessedWithdrawAssets;
     }
 
+    /// @dev Returns the state of a withdraw request for the withdrawKey.
     function withdrawRequests(bytes32 withdrawKey) public view returns (WithdrawRequest memory) {
         return _getLogarithmVaultStorage().withdrawRequests[withdrawKey];
     }
 
+    /// @dev Returns a nonce of a user that are reserved to generate the next withdraw key.
     function nonces(address user) public view returns (uint256) {
         return _getLogarithmVaultStorage().nonces[user];
     }
 
+    /// @notice The address of security manager who is responsible for pausing/unpausing vault.
     function securityManager() public view returns (address) {
         return _getLogarithmVaultStorage().securityManager;
     }
 
-    /// @notice if set to true, only withdrawals will be available. It can't be reverted.
+    /// @notice When this vault is shutdown, only withdrawals are available. It can't be reverted.
     function isShutdown() public view returns (bool) {
         return _getLogarithmVaultStorage().shutdown;
     }

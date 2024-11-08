@@ -35,7 +35,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         // make last redeem
         uint256 userShares = IERC20(address(vault)).balanceOf(address(user1));
         vm.startPrank(user1);
-        vault.redeem(userShares, user1, user1);
+        vault.requestRedeem(userShares, user1, user1);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilizeWithoutExecution(pendingDeutilization);
@@ -105,7 +105,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         vm.startPrank(USDC_WHALE);
         IERC20(asset).transfer(address(positionManager), 10_000_000);
         vm.startPrank(user1);
-        vault.redeem(vault.balanceOf(user1), user1, user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
 
         (, uint256 deutilization) = strategy.pendingUtilizations();
         _deutilize(deutilization);

@@ -116,4 +116,8 @@ library Errors {
     error InvalidSecurityManager();
 
     error NotWhitelisted(address user);
+
+    error ExceededMaxRequestWithdraw(address owner, uint256 assets, uint256 max);
+    error ExceededMaxRequestRedeem(address owner, uint256 shares, uint256 max);
+
 }

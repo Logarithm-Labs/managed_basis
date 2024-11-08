@@ -87,7 +87,7 @@ contract OffChainHandler is OffChainTest {
 
     function redeem(uint256 shares, uint256 actorIndexSeed) public useActor(actorIndexSeed) {
         shares = bound(shares, 0, vault.balanceOf(currentActor));
-        vault.redeem(shares, currentActor, currentActor);
+        vault.requestRedeem(shares, currentActor, currentActor);
     }
 
     function claim(uint256 actorIndexSeed) public useActor(actorIndexSeed) {
