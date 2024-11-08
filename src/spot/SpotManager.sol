@@ -70,21 +70,17 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
                              INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(
-        address _owner,
-        address _strategy,
-        address _asset,
-        address _product,
-        address[] calldata _assetToProductSwapPath
-    ) external initializer {
+    function initialize(address _owner, address _strategy, address[] calldata _assetToProductSwapPath)
+        external
+        initializer
+    {
         __Ownable_init(_owner);
 
         SpotManagerStorage storage $ = _getSpotManagerStorage();
+        address _asset = IBasisStrategy(_strategy).asset();
+        address _product = IBasisStrategy(_strategy).product();
 
         $.strategy = _strategy;
-
-        require(_asset != address(0) && _product != address(0));
-
         $.asset = _asset;
         $.product = _product;
 

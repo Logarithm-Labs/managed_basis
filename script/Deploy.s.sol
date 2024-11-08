@@ -122,9 +122,8 @@ contract DeployScript is Script {
         console.log("Strategy GMX deployed at", address(strategyGmx));
 
         // deploy Gmx spot manager
-        SpotManager gmxSpotManager = DeployHelper.deploySpotManager(
-            spotManagerBeacon, owner, address(strategyGmx), asset, product, assetToProductSwapPath
-        );
+        SpotManager gmxSpotManager =
+            DeployHelper.deploySpotManager(spotManagerBeacon, owner, address(strategyGmx), assetToProductSwapPath);
         console.log("SpotManager GMX deployed at", address(gmxSpotManager));
 
         // deploy BasisStrategy Hl
@@ -134,9 +133,8 @@ contract DeployScript is Script {
         console.log("Strategy HL deployed at", address(strategyHl));
 
         // deploy Gmx spot manager
-        SpotManager hlSpotManager = DeployHelper.deploySpotManager(
-            spotManagerBeacon, owner, address(strategyHl), asset, product, assetToProductSwapPath
-        );
+        SpotManager hlSpotManager =
+            DeployHelper.deploySpotManager(spotManagerBeacon, owner, address(strategyHl), assetToProductSwapPath);
         console.log("SpotManager HL deployed at", address(hlSpotManager));
 
         // deploy GmxConfig

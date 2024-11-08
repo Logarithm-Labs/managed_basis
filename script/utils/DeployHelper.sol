@@ -114,20 +114,13 @@ library DeployHelper {
         return strategy;
     }
 
-    function deploySpotManager(
-        address beacon,
-        address owner,
-        address strategy,
-        address asset,
-        address product,
-        address[] memory assetToProductSwapPath
-    ) internal returns (SpotManager) {
+    function deploySpotManager(address beacon, address owner, address strategy, address[] memory assetToProductSwapPath)
+        internal
+        returns (SpotManager)
+    {
         address spotManagerProxy = address(
             new BeaconProxy(
-                beacon,
-                abi.encodeWithSelector(
-                    SpotManager.initialize.selector, owner, strategy, asset, product, assetToProductSwapPath
-                )
+                beacon, abi.encodeWithSelector(SpotManager.initialize.selector, owner, strategy, assetToProductSwapPath)
             )
         );
         SpotManager spotManager = SpotManager(spotManagerProxy);

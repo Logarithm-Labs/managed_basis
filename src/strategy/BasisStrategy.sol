@@ -139,7 +139,7 @@ contract BasisStrategy is
     event PositionAdjusted(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease);
 
     /// @dev Emitted when leverage config gets changed.
-    event LeverageConfigurationChanged(
+    event LeverageConfigurationUpdated(
         address indexed account,
         uint256 targetLeverage,
         uint256 minLeverage,
@@ -148,13 +148,13 @@ contract BasisStrategy is
     );
 
     /// @dev Emitted when the spot manager is changed.
-    event SpotManagerChanged(address indexed account, address indexed newSpotManager);
+    event SpotManagerUpdated(address indexed account, address indexed newSpotManager);
 
     /// @dev Emitted when the position manager is changed.
-    event PositionManagerChanged(address indexed account, address indexed newPositionManager);
+    event PositionManagerUpdated(address indexed account, address indexed newPositionManager);
 
     /// @dev Emitted when the operator is changed.
-    event OperatorChanged(address indexed account, address indexed newOperator);
+    event OperatorUpdated(address indexed account, address indexed newOperator);
 
     /// @dev Emitted when strategy is stopped.
     event Stopped(address indexed account);
@@ -247,7 +247,7 @@ contract BasisStrategy is
             $.safeMarginLeverage = _safeMarginLeverage;
         }
 
-        emit LeverageConfigurationChanged(
+        emit LeverageConfigurationUpdated(
             _msgSender(), _targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage
         );
     }
@@ -258,12 +258,11 @@ contract BasisStrategy is
 
     /// @notice Sets the spot manager.
     function setSpotManager(address _spotManager) external onlyOwner {
-        if (_spotManager == address(0)) {
-            revert Errors.ZeroAddress();
-        }
         if (spotManager() != _spotManager) {
-            _getBasisStrategyStorage().spotManager = ISpotManager(_spotManager);
-            emit SpotManagerChanged(_msgSender(), _spotManager);
+            ISpotManager manager = ISpotManager(_spotManager);
+            require(manager.asset() == asset() && manager.product() == product());
+            _getBasisStrategyStorage().spotManager = manager;
+            emit SpotManagerUpdated(_msgSender(), _spotManager);
         }
     }
 
@@ -274,7 +273,7 @@ contract BasisStrategy is
         }
         if (positionManager() != _positionManager) {
             _getBasisStrategyStorage().positionManager = IPositionManager(_positionManager);
-            emit PositionManagerChanged(_msgSender(), _positionManager);
+            emit PositionManagerUpdated(_msgSender(), _positionManager);
         }
     }
 
@@ -285,7 +284,7 @@ contract BasisStrategy is
         }
         if (operator() != _operator) {
             _getBasisStrategyStorage().operator = _operator;
-            emit OperatorChanged(_msgSender(), _operator);
+            emit OperatorUpdated(_msgSender(), _operator);
         }
     }
 

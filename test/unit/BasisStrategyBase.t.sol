@@ -157,8 +157,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         // deploy spot manager
         address spotManagerBeacon = DeployHelper.deployBeacon(address(new SpotManager()), owner);
-        spotManager =
-            DeployHelper.deploySpotManager(spotManagerBeacon, owner, address(strategy), asset, product, pathWeth);
+        spotManager = DeployHelper.deploySpotManager(spotManagerBeacon, owner, address(strategy), pathWeth);
         vm.label(address(spotManager), "spotManager");
 
         _initPositionManager(owner, address(strategy));
