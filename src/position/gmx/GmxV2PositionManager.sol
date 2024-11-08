@@ -118,6 +118,9 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
     /// @dev Emitted when the claimable collateral gets claimed.
     event CollateralClaimed(address indexed token, uint256 indexed amount);
 
+    /// @dev Emitted when a position adjustment is requested by strategy.
+    event PositionAdjustmentRequested(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease);
+
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -277,6 +280,8 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                 }
             }
         }
+
+        emit PositionAdjustmentRequested(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
 
     /// @dev Realizes the claimable funding or increases collateral if there are idle assets
