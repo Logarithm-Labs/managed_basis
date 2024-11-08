@@ -206,8 +206,6 @@ library DeployHelper {
                     params.strategy,
                     params.agent,
                     params.oracle,
-                    params.product,
-                    params.asset,
                     params.isLong
                 )
             )

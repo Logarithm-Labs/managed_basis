@@ -3,6 +3,9 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+
 import {IPositionManager} from "src/position/IPositionManager.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
@@ -10,9 +13,8 @@ import {IOffChainConfig} from "src/position/offchain/IOffChainConfig.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 /// @title OffChainPositionManager
 /// @author Logarithm Labs
@@ -58,14 +60,13 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         bool isLong;
         // position state
         uint256 currentRound;
+        // the last round where position adjusting is requested by strategy.
         uint256 lastRequestRound;
         uint256 pendingCollateralIncrease;
         mapping(uint256 round => PositionState) positionStates;
         mapping(uint256 round => RequestInfo) requests;
         uint256[] requestRounds;
     }
-
-    uint256 private constant PRECISION = 1e18;
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.OffChainPositionManager")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant OffChainPositionManagerStorageLocation =
@@ -81,11 +82,15 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
                             EVENTS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Emitted when agent gets updated.
     event AgentUpdated(address indexed account, address indexed newAgent);
 
+    /// @dev Emitted when a new request from strategy is created.
     event CreateRequest(
         uint256 indexed round, uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease
     );
+
+    /// @dev Emitted when a report is executed after requesting.
     event ReportRequest(
         uint256 indexed requestRound,
         uint256 indexed reportRound,
@@ -94,12 +99,16 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         bool isIncrease
     );
 
+    /// @dev Emitted when a increase request is created.
     event RequestIncreasePosition(uint256 collateralDeltaAmount, uint256 sizeDeltaInTokens, uint256 round);
 
+    /// @dev Emitted when a decrease request is created.
     event RequestDecreasePosition(uint256 collateralDeltaAmount, uint256 sizeDeltaInTokens, uint256 round);
 
+    /// @dev Emitted when asset is transferred to agent to increase collateral.
     event AgentTransfer(address indexed caller, uint256 amount, bool toAgent);
 
+    /// @dev Emitted when position's state is reported.
     event ReportState(uint256 positionSizeInTokens, uint256 positionNetBalance, uint256 markPrice, uint256 timestamp);
 
     /*//////////////////////////////////////////////////////////////
@@ -153,6 +162,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
                         REQUEST LOGIC 
     //////////////////////////////////////////////////////////////*/
 
+    /// @inheritdoc IPositionManager
     function adjustPosition(AdjustPositionPayload memory params) external {
         // increments round
         // stores position state from the previous round in the current round
@@ -220,7 +230,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         emit CreateRequest(round, params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
 
-    // TODO: add validation logic
+    /// @dev Called when report state of position.
     function reportState(uint256 sizeInTokens, uint256 netBalance, uint256 markPrice) external onlyAgent {
         // increments round
         // stores position state in the current round
@@ -239,6 +249,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
     }
 
+    /// @dev Called when a position adjustment request is executed while reporting the current position's state.
     function reportStateAndExecuteRequest(
         uint256 sizeInTokens,
         uint256 netBalance,
@@ -296,12 +307,13 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         );
     }
 
+    /// @dev Returns the last request that was requested from strategy.
     function getLastRequest() external view returns (RequestInfo memory) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.requests[$.lastRequestRound];
     }
 
-    /// @notice transfer idle to the vault to process withdraw request
+    /// @notice Transfers idle assets to the vault to process withdraw requests.
     function clearIdleCollateral() public {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         uint256 _idleCollateralAmount = idleCollateralAmount();
@@ -357,6 +369,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
                         POSITION STATE LOGIC
     //////////////////////////////////////////////////////////////*/
 
+    /// @inheritdoc IPositionManager
     function positionNetBalance() public view virtual override returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         PositionState memory state = $.positionStates[$.currentRound];
@@ -379,11 +392,13 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         }
     }
 
+    /// @dev Returns the current state of position.
     function currentPositionState() public view returns (PositionState memory) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.positionStates[$.currentRound];
     }
 
+    /// @inheritdoc IPositionManager
     function currentLeverage() public view returns (uint256 leverage) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         PositionState memory state = $.positionStates[$.currentRound];
@@ -403,72 +418,81 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
             netBalance = initialNetBalance - uint256(-virtualPnl);
         }
 
-        leverage = netBalance > 0 ? positionValue.mulDiv(PRECISION, netBalance) : 0;
+        leverage = netBalance > 0 ? positionValue.mulDiv(Constants.FLOAT_PRECISION, netBalance) : 0;
     }
 
     /*//////////////////////////////////////////////////////////////
-                        EXERNAL STORAGE GETTERS
+                            STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice The address of OffChainConfig smart contract.
     function config() public view returns (IOffChainConfig) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return IOffChainConfig($.config);
     }
 
+    /// @notice The address of agent.
     function agent() public view returns (address) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.agent;
     }
 
+    /// @notice The address of oracle smart contract.
     function oracle() public view returns (address) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.oracle;
     }
 
+    /// @notice The last request round.
     function lastRequestRound() public view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.lastRequestRound;
     }
 
+    /// @notice The current round which is increased by reporting state.
     function currentRound() public view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.currentRound;
     }
 
+    /// @notice The position state at a specific round.
     function positionState(uint256 round) public view returns (PositionState memory) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.positionStates[round];
     }
 
+    /// @notice The pending collateral amount that is transferred to agent to increase collateral, but not reported by agent.
     function pendingCollateralIncrease() public view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.pendingCollateralIncrease;
     }
 
+    /// @notice The request info at a specific round.
     function requests(uint256 round) public view returns (RequestInfo memory) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.requests[round];
     }
 
+    /// @inheritdoc IPositionManager
     function positionSizeInTokens() public view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.positionStates[$.currentRound].sizeInTokens;
     }
 
-    function apiVersion() public view virtual returns (string memory) {
-        return "0.0.1";
-    }
-
+    /// @inheritdoc IPositionManager
     function needKeep() public pure virtual returns (bool) {
         return false;
     }
 
+    /// @inheritdoc IPositionManager
     function keep() public pure {}
 
+    /// @inheritdoc IPositionManager
     function increaseCollateralMinMax() public view returns (uint256 min, uint256 max) {
         return config().increaseCollateralMinMax();
     }
 
+    /// @inheritdoc IPositionManager
     function increaseSizeMinMax() public view returns (uint256 min, uint256 max) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         address asset = $.collateralToken;
@@ -485,10 +509,12 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         return (min, max);
     }
 
+    /// @inheritdoc IPositionManager
     function decreaseCollateralMinMax() public view returns (uint256 min, uint256 max) {
         return config().decreaseCollateralMinMax();
     }
 
+    /// @inheritdoc IPositionManager
     function decreaseSizeMinMax() public view returns (uint256 min, uint256 max) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
@@ -506,20 +532,23 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         return (min, max);
     }
 
+    /// @inheritdoc IPositionManager
     function limitDecreaseCollateral() public view returns (uint256) {
         return config().limitDecreaseCollateral();
     }
 
-    function idleCollateralAmount() public view returns (uint256) {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        return IERC20($.collateralToken).balanceOf(address(this));
-    }
-
+    /// @inheritdoc IPositionManager
     function collateralToken() public view returns (address) {
         return _getOffChainPositionManagerStorage().collateralToken;
     }
 
+    /// @inheritdoc IPositionManager
     function indexToken() public view returns (address) {
         return _getOffChainPositionManagerStorage().indexToken;
+    }
+
+    /// @notice The balance of collateral asset of this position manager.
+    function idleCollateralAmount() public view returns (uint256) {
+        return IERC20(collateralToken()).balanceOf(address(this));
     }
 }

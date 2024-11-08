@@ -175,7 +175,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Adjusts the gmx position.
+    /// @inheritdoc IPositionManager
     function adjustPosition(AdjustPositionPayload calldata params) external onlyStrategy whenNotPending {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount == 0) {
@@ -280,6 +280,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
     }
 
     /// @dev Realizes the claimable funding or increases collateral if there are idle assets
+    /// @inheritdoc IPositionManager
     function keep() external onlyStrategy whenNotPending {
         _getGmxV2PositionManagerStorage().status = Status.SETTLE;
         // if there is idle collateral, then increase that amount to settle the claimable funding
@@ -506,7 +507,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                         EXTERNAL/PUBLIC VIEWERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev The total collateral token amount the position is holding.
+    /// @inheritdoc IPositionManager
     function positionNetBalance() public view returns (uint256) {
         IGmxConfig _config = config();
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
@@ -517,14 +518,14 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
             + $.pendingCollateralAmount;
     }
 
-    /// @dev The current leverage of position that is based on gmx's calculation
+    /// @inheritdoc IPositionManager
     function currentLeverage() external view returns (uint256) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         IGmxConfig _config = config();
         return GmxV2Lib.getCurrentLeverage(_getGmxParams(_config), $.oracle, _config.referralStorage());
     }
 
-    /// @dev The position size in index token
+    /// @inheritdoc IPositionManager
     function positionSizeInTokens() public view returns (uint256) {
         Position.Props memory position = GmxV2Lib.getPosition(_getGmxParams(config()));
         return position.numbers.sizeInTokens;
@@ -582,6 +583,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
     /// @dev Checks if the claimable funding amount is over than max share
     ///      or if idle collateral is bigger than minimum requirement so that
     ///      the position can be settled to add it to position's collateral.
+    /// @inheritdoc IPositionManager
     function needKeep() external view returns (bool) {
         IGmxConfig _config = config();
         address _collateralToken = collateralToken();
@@ -779,7 +781,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return IGmxConfig($.config);
     }
 
-    /// @notice The address of collateral token.
+    /// @inheritdoc IPositionManager
     function collateralToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.collateralToken;
@@ -803,7 +805,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return $.marketToken;
     }
 
-    /// @notice The address of index token of the opened market.
+    /// @inheritdoc IPositionManager
     function indexToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.indexToken;
@@ -844,27 +846,27 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return $.pendingDecreaseOrderKey;
     }
 
-    /// @notice Accommodates for IPositionManager interface wo impact to contract size.
+    /// @inheritdoc IPositionManager
     function increaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
-    /// @notice Accommodate for IPositionManager interface wo impact to contract size.
+    /// @inheritdoc IPositionManager
     function increaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
-    /// @notice Accommodates for IPositionManager interface wo impact to contract size.
+    /// @inheritdoc IPositionManager
     function decreaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
-    /// @notice Accommodates for IPositionManager interface wo impact to contract size.
+    /// @inheritdoc IPositionManager
     function decreaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
-    /// @notice The limit decrease collateral to reduce execution costs.
+    /// @inheritdoc IPositionManager
     function limitDecreaseCollateral() external view returns (uint256) {
         return config().limitDecreaseCollateral();
     }

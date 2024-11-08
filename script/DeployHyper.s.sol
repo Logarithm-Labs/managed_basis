@@ -129,8 +129,6 @@ contract DeployHyperScript is Script {
                     address(strategyProxy),
                     agent,
                     address(oracle),
-                    product,
-                    asset,
                     false
                 )
             )
