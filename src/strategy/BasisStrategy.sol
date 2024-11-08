@@ -139,7 +139,7 @@ contract BasisStrategy is
     event PositionAdjusted(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease);
 
     /// @dev Emitted when leverage config gets changed.
-    event LeverageConfigurationUpdated(
+    event LeverageConfigUpdated(
         address indexed account,
         uint256 targetLeverage,
         uint256 minLeverage,
@@ -247,9 +247,7 @@ contract BasisStrategy is
             $.safeMarginLeverage = _safeMarginLeverage;
         }
 
-        emit LeverageConfigurationUpdated(
-            _msgSender(), _targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage
-        );
+        emit LeverageConfigUpdated(_msgSender(), _targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
     }
 
     /*//////////////////////////////////////////////////////////////
