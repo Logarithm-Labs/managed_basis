@@ -94,7 +94,7 @@ library Errors {
 
     error InvalidAdjustmentParams();
 
-    error InvalidStrategyStatus(uint8 status);
+    error InvalidStrategyStatus(uint8 currentStatus, uint8 targetStatus);
 
     error UpkeepNeeded();
 
