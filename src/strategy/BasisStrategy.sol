@@ -461,9 +461,9 @@ contract BasisStrategy is
 
     /// @inheritdoc AutomationCompatibleInterface
     function performUpkeep(bytes calldata /*performData*/ ) external whenIdle {
-        _setStrategyStatus(StrategyStatus.KEEPING);
-
         InternalCheckUpkeepResult memory result = _checkUpkeep();
+
+        _setStrategyStatus(StrategyStatus.KEEPING);
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         if (result.emergencyDeutilizationAmount > 0) {
@@ -506,6 +506,8 @@ contract BasisStrategy is
             if (!_adjustPosition(0, result.deltaCollateralToDecrease, false)) {
                 _setStrategyStatus(StrategyStatus.IDLE);
             }
+        } else {
+            _setStrategyStatus(StrategyStatus.IDLE);
         }
     }
 
