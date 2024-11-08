@@ -11,7 +11,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
+import {IStrategy} from "src/strategy/IStrategy.sol";
 import {IPriorityProvider} from "src/vault/IPriorityProvider.sol";
 import {ManagedVault} from "src/vault/ManagedVault.sol";
 
@@ -40,7 +40,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @custom:storage-location erc7201:logarithm.storage.LogarithmVault
     struct LogarithmVaultStorage {
-        IBasisStrategy strategy;
+        address strategy;
         uint256 entryCost;
         uint256 exitCost;
         // withdraw state
@@ -77,6 +77,17 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     event Claimed(address indexed claimer, bytes32 withdrawKey, uint256 assets);
 
+    event Shutdown(address account);
+
+    event SecurityManagerChanged(address account, address newManager);
+
+    event StrategyChanged(address account, address newStrategy);
+
+    event EntryCostChanged(address account, uint256 newEntryCost);
+
+    event ExitCostChanged(address account, uint256 newExitCost);
+
+    event PriorityProviderChanged(address account, address newPriorityProvider);
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -118,54 +129,62 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     function setSecurityManager(address account) external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         $.securityManager = account;
+        emit SecurityManagerChanged(_msgSender(), account);
     }
 
     function setStrategy(address _strategy) external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
         IERC20 _asset = IERC20(asset());
+        address prevStrategy = strategy();
 
-        address prevStrategy = address($.strategy);
-        if (prevStrategy != address(0)) _asset.approve(prevStrategy, 0);
+        if (prevStrategy != address(0)) {
+            IStrategy(prevStrategy).stop();
+            _asset.approve(prevStrategy, 0);
+        }
 
         require(_strategy != address(0));
-        $.strategy = IBasisStrategy(_strategy);
+        $.strategy = _strategy;
         _asset.approve(_strategy, type(uint256).max);
+
+        emit StrategyChanged(_msgSender(), _strategy);
     }
 
     function setEntryCost(uint256 _entryCost) external onlyOwner {
         require(_entryCost < 1 ether);
         _getLogarithmVaultStorage().entryCost = _entryCost;
+        emit EntryCostChanged(_msgSender(), _entryCost);
     }
 
     function setExitCost(uint256 _exitCost) external onlyOwner {
         require(_exitCost < 1 ether);
         _getLogarithmVaultStorage().exitCost = _exitCost;
+        emit ExitCostChanged(_msgSender(), _exitCost);
     }
 
     function setPriorityProvider(address _priorityProvider) external onlyOwner {
         _getLogarithmVaultStorage().priorityProvider = _priorityProvider;
+        emit PriorityProviderChanged(_msgSender(), _priorityProvider);
     }
 
     function shutdown() external onlyOwner {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        $.strategy.stop();
         $.shutdown = true;
+        IStrategy(strategy()).stop();
+        emit Shutdown(_msgSender());
     }
 
     function pause(bool stopStrategy) external onlySecurityManager whenNotPaused {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         if (stopStrategy) {
-            $.strategy.stop();
+            IStrategy(strategy()).stop();
         } else {
-            $.strategy.pause();
+            IStrategy(strategy()).pause();
         }
         _pause();
     }
 
     function unpause() external onlySecurityManager whenPaused {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        $.strategy.unpause();
+        IStrategy(strategy()).unpause();
         _unpause();
     }
 
@@ -176,12 +195,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        int256 _totalAssets = (idleAssets() + $.strategy.utilizedAssets()).toInt256() - totalPendingWithdraw();
-        if (_totalAssets > 0) {
-            return uint256(_totalAssets);
-        } else {
-            return 0;
-        }
+        (, assets) = (idleAssets() + IStrategy(strategy()).utilizedAssets()).trySub(totalPendingWithdraw());
+        return assets;
     }
 
     /// @inheritdoc ERC4626Upgradeable
@@ -191,13 +206,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
             return assets;
         }
         // calculate the amount of assets that will be utilized
-        int256 _totalPendingWithdraw = totalPendingWithdraw();
-        uint256 assetsToUtilize;
-        if (_totalPendingWithdraw > 0) {
-            (, assetsToUtilize) = assets.trySub(uint256(_totalPendingWithdraw));
-        } else {
-            assetsToUtilize = assets;
-        }
+        (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
@@ -216,13 +225,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 assets = _convertToAssets(shares, Math.Rounding.Ceil);
 
         // calculate the amount of assets that will be utilized
-        int256 _totalPendingWithdraw = totalPendingWithdraw();
-        uint256 assetsToUtilize;
-        if (_totalPendingWithdraw > 0) {
-            (, assetsToUtilize) = assets.trySub(uint256(_totalPendingWithdraw));
-        } else {
-            assetsToUtilize = assets;
-        }
+        (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
@@ -340,11 +343,19 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     function processPendingWithdrawRequests() public returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
 
+        uint256 _idleAssets = idleAssets();
+        if (_idleAssets == 0) return 0;
+
         (uint256 remainingAssets, uint256 processedAssetsForPrioritized) = _calcProcessedAssets(
-            idleAssets(), $.prioritizedProcessedWithdrawAssets, $.prioritizedAccRequestedWithdrawAssets
+            _idleAssets, $.prioritizedProcessedWithdrawAssets, $.prioritizedAccRequestedWithdrawAssets
         );
         if (processedAssetsForPrioritized > 0) {
             $.prioritizedProcessedWithdrawAssets += processedAssetsForPrioritized;
+        }
+
+        if (remainingAssets == 0) {
+            $.assetsToClaim += processedAssetsForPrioritized;
+            return processedAssetsForPrioritized;
         }
 
         (, uint256 processedAssets) =
@@ -442,11 +453,9 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     /// @notice returns pending withdraw assets that will be deutilized
-    function totalPendingWithdraw() public view returns (int256) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        uint256 assetsToWithdraw = IERC20(asset()).balanceOf(address($.strategy));
-        return $.prioritizedAccRequestedWithdrawAssets.toInt256() + $.accRequestedWithdrawAssets.toInt256()
-            - ($.prioritizedProcessedWithdrawAssets + $.processedWithdrawAssets + assetsToWithdraw).toInt256();
+    function totalPendingWithdraw() public view returns (uint256) {
+        return prioritizedAccRequestedWithdrawAssets() + accRequestedWithdrawAssets()
+            - prioritizedProcessedWithdrawAssets() - processedWithdrawAssets();
     }
 
     function getWithdrawKey(address user, uint256 nonce) public view returns (bytes32) {
@@ -514,10 +523,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
         if (isLast) {
             // last withdraw is claimable when utilized assets is 0
-            // and assetsToWithdraw is 0
-            uint256 utilizedAssets = $.strategy.utilizedAssets();
-            uint256 assetsToWithdraw = IERC20(asset()).balanceOf(address($.strategy));
-            isExecuted = utilizedAssets == 0 && assetsToWithdraw == 0;
+            isExecuted = IStrategy(strategy()).utilizedAssets() == 0;
         } else {
             isExecuted = isPrioritizedAccount
                 ? accRequestedWithdrawAssetsOfRequest <= $.prioritizedProcessedWithdrawAssets
@@ -554,48 +560,47 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
                             STORAGE VIEWERS
     //////////////////////////////////////////////////////////////*/
 
-    function strategy() external view returns (address) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        return address($.strategy);
+    function strategy() public view returns (address) {
+        return _getLogarithmVaultStorage().strategy;
     }
 
-    function priorityProvider() external view returns (address) {
+    function priorityProvider() public view returns (address) {
         return _getLogarithmVaultStorage().priorityProvider;
     }
 
-    function entryCost() external view returns (uint256) {
+    function entryCost() public view returns (uint256) {
         return _getLogarithmVaultStorage().entryCost;
     }
 
-    function exitCost() external view returns (uint256) {
+    function exitCost() public view returns (uint256) {
         return _getLogarithmVaultStorage().exitCost;
     }
 
-    function assetsToClaim() external view returns (uint256) {
+    function assetsToClaim() public view returns (uint256) {
         return _getLogarithmVaultStorage().assetsToClaim;
     }
 
-    function accRequestedWithdrawAssets() external view returns (uint256) {
+    function accRequestedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().accRequestedWithdrawAssets;
     }
 
-    function processedWithdrawAssets() external view returns (uint256) {
+    function processedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().processedWithdrawAssets;
     }
 
-    function prioritizedAccRequestedWithdrawAssets() external view returns (uint256) {
+    function prioritizedAccRequestedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().prioritizedAccRequestedWithdrawAssets;
     }
 
-    function prioritizedProcessedWithdrawAssets() external view returns (uint256) {
+    function prioritizedProcessedWithdrawAssets() public view returns (uint256) {
         return _getLogarithmVaultStorage().prioritizedProcessedWithdrawAssets;
     }
 
-    function withdrawRequests(bytes32 withdrawKey) external view returns (WithdrawRequest memory) {
+    function withdrawRequests(bytes32 withdrawKey) public view returns (WithdrawRequest memory) {
         return _getLogarithmVaultStorage().withdrawRequests[withdrawKey];
     }
 
-    function nonces(address user) external view returns (uint256) {
+    function nonces(address user) public view returns (uint256) {
         return _getLogarithmVaultStorage().nonces[user];
     }
 

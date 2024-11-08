@@ -19,6 +19,7 @@ import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
 import {IPositionManager} from "src/position/IPositionManager.sol";
+import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
 
@@ -86,7 +87,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         (, pendingDeutilization) = strategy.pendingUtilizations();
         amount = pendingDeutilization * 1 / 10;
         vm.startPrank(operator);
-        strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
+        strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
         _deposit(user1, 400_000_000);
         _executeOrder();
 
@@ -149,7 +150,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         _mockChainlinkPriceFeedAnswer(priceFeed, resultedPrice);
         (uint256 amount,) = strategy.pendingUtilizations();
         vm.startPrank(operator);
-        strategy.utilize(amount, BasisStrategy.SwapType.MANUAL, "");
+        strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
         _executeOrder();
     }
 }

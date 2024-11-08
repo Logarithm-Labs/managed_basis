@@ -70,6 +70,10 @@ library Errors {
 
     error ZeroAmountUtilization();
 
+    error CallerNotAuthorized(address authorized, address caller);
+
+    error CallerNotSpotManager();
+
     error CallerNotPositionManager();
 
     error CallerNotAgent();
@@ -90,7 +94,7 @@ library Errors {
 
     error InvalidAdjustmentParams();
 
-    error InvalidStrategyStatus(uint8 status);
+    error InvalidStrategyStatus(uint8 currentStatus, uint8 targetStatus);
 
     error UpkeepNeeded();
 
@@ -110,7 +114,6 @@ library Errors {
     error VaultShutdown();
 
     error InvalidSecurityManager();
-    
-    error NotWhitelisted(address user);
 
+    error NotWhitelisted(address user);
 }

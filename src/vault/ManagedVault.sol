@@ -67,6 +67,12 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
 
     event ManagementFeeCollected(address indexed feeRecipient, uint256 indexed feeShares);
     event PerformanceFeeCollected(address indexed feeRecipient, uint256 indexed feeShares);
+    event FeeRecipientChanged(address account, address newFeeRecipient);
+    event ManagementFeeChanged(address account, uint256 newManagementFee);
+    event PerformanceFeeChanged(address account, uint256 newPerformanceFee);
+    event HurdleRateChanged(address account, uint256 newHurdleRate);
+    event UserDepositLimitChanged(address account, uint256 newUserDepositLimit);
+    event VaultDepositLimitChanged(address account, uint256 newVaultDepositLimit);
 
     /*//////////////////////////////////////////////////////////////
                         INITIALIZING
@@ -99,10 +105,22 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         require(_performanceFee <= MAX_PERFORMANCE_FEE);
 
         ManagedVaultStorage storage $ = _getManagedVaultStorage();
-        $.feeRecipient = _feeRecipient;
-        $.managementFee = _managementFee;
-        $.performanceFee = _performanceFee;
-        $.hurdleRate = _hurdleRate;
+        if (feeRecipient() != _feeRecipient) {
+            $.feeRecipient = _feeRecipient;
+            emit FeeRecipientChanged(_msgSender(), _feeRecipient);
+        }
+        if (managementFee() != _managementFee) {
+            $.managementFee = _managementFee;
+            emit ManagementFeeChanged(_msgSender(), _managementFee);
+        }
+        if (performanceFee() != _performanceFee) {
+            $.performanceFee = _performanceFee;
+            emit PerformanceFeeChanged(_msgSender(), _performanceFee);
+        }
+        if (hurdleRate() != _hurdleRate) {
+            $.hurdleRate = _hurdleRate;
+            emit HurdleRateChanged(_msgSender(), _hurdleRate);
+        }
     }
 
     /// @notice set whitelist provider
@@ -115,8 +133,14 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
     /// @notice set deposit limits
     function setDepositLimits(uint256 userLimit, uint256 vaultLimit) external onlyOwner {
         ManagedVaultStorage storage $ = _getManagedVaultStorage();
-        $.userDepositLimit = userLimit;
-        $.vaultDepositLimit = vaultLimit;
+        if (userDepositLimit() != userLimit) {
+            $.userDepositLimit = userLimit;
+            emit UserDepositLimitChanged(_msgSender(), userLimit);
+        }
+        if (vaultDepositLimit() != vaultLimit) {
+            $.vaultDepositLimit = vaultLimit;
+            emit VaultDepositLimitChanged(_msgSender(), vaultLimit);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
