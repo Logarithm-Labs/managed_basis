@@ -459,7 +459,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     /// @dev Returns the maximum amount of Vault shares that can be redeemed from the owner balance in the Vault,
-    /// through a requestWithdraw call.
+    /// through a requestRedeem call.
     function maxRequestRedeem(address owner) public view returns (uint256) {
         if (paused()) {
             return 0;
@@ -467,7 +467,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return super.maxRedeem(owner);
     }
 
-    /// @notice Request to withdraw assets.
+    /// @notice Requests to withdraw assets.
     ///
     /// @dev Burns shares from owner and sends exactly assets of underlying tokens to receiver if the idle assets is enough,
     /// which is just the same as ERC4626-withdraw workflow.
@@ -499,7 +499,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return bytes32(0);
     }
 
-    /// @notice Request to redeem shares.
+    /// @notice Requests to redeem shares.
     ///
     /// @dev Burns exactly shares from owner and sends assets of underlying tokens to receiver if the idle assets is enough,
     /// which is just the same as ERC4626-redeem workflow.

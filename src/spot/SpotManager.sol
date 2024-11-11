@@ -49,16 +49,17 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Emitted when spot is bought.
+    /// @dev Emitted when product is bought in spot markets.
     event SpotBuy(uint256 assetDelta, uint256 productDelta);
 
-    /// @dev Emitted when spot is sold.
+    /// @dev Emitted when product is sold in spot markets.
     event SpotSell(uint256 assetDelta, uint256 productDelta);
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Authorizes a caller if it is the specified account.
     modifier authCaller(address authorized) {
         if (_msgSender() != authorized) {
             revert Errors.CallerNotAuthorized(authorized, _msgSender());
