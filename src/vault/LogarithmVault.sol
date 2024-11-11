@@ -467,8 +467,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return totalProcessedAssets;
     }
 
-    /// @dev Returns the maximum amount of the underlying asset that can be withdrawn from the owner balance in the
-    /// Vault, through a requestWithdraw call.
+    /// @dev Returns the maximum amount of the underlying asset that can be withdrawn
+    /// from the owner balance in the Vault, through a requestWithdraw call.
     function maxRequestWithdraw(address owner) public view returns (uint256) {
         if (paused()) {
             return 0;
@@ -476,8 +476,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return super.maxWithdraw(owner);
     }
 
-    /// @dev Returns the maximum amount of Vault shares that can be redeemed from the owner balance in the Vault,
-    /// through a requestRedeem call.
+    /// @dev Returns the maximum amount of Vault shares that can be redeemed from
+    /// the owner balance in the Vault, through a requestRedeem call.
     function maxRequestRedeem(address owner) public view returns (uint256) {
         if (paused()) {
             return 0;
@@ -487,9 +487,10 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @notice Requests to withdraw assets.
     ///
-    /// @dev Burns shares from owner and sends exactly assets of underlying tokens to receiver if the idle assets is enough,
-    /// which is just the same as ERC4626-withdraw workflow.
-    /// If the idle assets is not enough, creates a withdraw request with the shortfall assets while sending the idle assets to receiver.
+    /// @dev Burns shares from owner and sends exactly assets of underlying tokens
+    /// to receiver if the idle assets is enough.
+    /// If the idle assets is not enough, creates a withdraw request with
+    /// the shortfall assets while sending the idle assets to receiver.
     ///
     /// @return The withdraw key that is used in the claim function.
     function requestWithdraw(uint256 assets, address receiver, address owner) public virtual returns (bytes32) {
@@ -519,9 +520,10 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @notice Requests to redeem shares.
     ///
-    /// @dev Burns exactly shares from owner and sends assets of underlying tokens to receiver if the idle assets is enough,
-    /// which is just the same as ERC4626-redeem workflow.
-    /// If the idle assets is not enough, creates a withdraw request with the shortfall assets while sending the idle assets to receiver.
+    /// @dev Burns exactly shares from owner and sends assets of underlying tokens
+    /// to receiver if the idle assets is enough,
+    /// If the idle assets is not enough, creates a withdraw request with
+    /// the shortfall assets while sending the idle assets to receiver.
     ///
     /// @return The withdraw key that is used in the claim function.
     function requestRedeem(uint256 shares, address receiver, address owner) public virtual returns (bytes32) {
@@ -677,7 +679,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
             - prioritizedProcessedWithdrawAssets() - processedWithdrawAssets();
     }
 
-    /// @dev Derives a unique withdraw key based on user address and his/her nonce.
+    /// @dev Derives a unique withdraw key based on the user's address and his/her nonce.
     function getWithdrawKey(address user, uint256 nonce) public view returns (bytes32) {
         return keccak256(abi.encodePacked(address(this), user, nonce));
     }
@@ -753,7 +755,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return (isExecuted, isLast);
     }
 
-    /// @dev Use nonce of the specified user and increase it
+    /// @dev Uses nonce of the specified user and increase it
     function _useNonce(address user) internal returns (uint256) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         // For each vault, the nonce has an initial value of 0, can only be incremented by one, and cannot be
