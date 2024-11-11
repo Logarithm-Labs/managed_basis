@@ -2,15 +2,61 @@
 pragma solidity ^0.8.0;
 
 library Errors {
+    /*//////////////////////////////////////////////////////////////
+                                 VAULT
+    //////////////////////////////////////////////////////////////*/
+    /// @notice Withdraw request is not executed.
     error RequestNotExecuted();
+    /// @notice Withdraw request is already claimed.
     error RequestAlreadyClaimed();
-    error InchInvalidReceiver();
-    error InchInvalidAmount(uint256 requestedAmountIn, uint256 unpackedAmountIn);
+    /// @notice User is not allowed to use protocol.
+    error NotWhitelisted(address user);
+    /// @notice Requested assets to withdraw exceeded the max amounts.
+    error ExceededMaxRequestWithdraw(address owner, uint256 assets, uint256 max);
+    /// @notice Requested shares to redeem exceeded the max amounts.
+    error ExceededMaxRequestRedeem(address owner, uint256 shares, uint256 max);
+    /// @notice Transferring of shares from/to the fee recipient is not allowed.
+    error ManagementFeeTransfer(address feeRecipient);
 
+    /*//////////////////////////////////////////////////////////////
+                                 1INCH
+    //////////////////////////////////////////////////////////////*/
+    error InchInvalidAmount(uint256 requestedAmountIn, uint256 unpackedAmountIn);
+    error InchInvalidSourceToken(address sourceToken, address requiredSourceToken);
+    error InchInvalidDestinationToken(address destinationToken, address requiredDestinationToken);
+    error InchInvalidReceiver(address receiver, address requiredReceiver);
+    error InchInsufficientSourceBalance(uint256 sourceAmount, uint256 sourceBalance);
+
+    /*//////////////////////////////////////////////////////////////
+                                 MANUAL
+    //////////////////////////////////////////////////////////////*/
     error SwapAmountExceedsBalance(uint256 swapAmount, uint256 balance);
 
+    /*//////////////////////////////////////////////////////////////
+                                 ORACLE
+    //////////////////////////////////////////////////////////////*/
     error IncosistentParamsLength();
+    /// @notice invalid chainlink price feed
+    error InvalidFeedPrice(address token, int256 price);
+    /// @notice chainlink price feed not updated
+    error PriceFeedNotUpdated(address token, uint256 timestamp, uint256 heartbeatDuration);
+    /// @notice price feed was not configured
+    error PriceFeedNotConfigured();
 
+    /*//////////////////////////////////////////////////////////////
+                                STRATEGY
+    //////////////////////////////////////////////////////////////*/
+    /// @notice zero address check
+    error ZeroAddress();
+    /// @notice price feed multiplier not configured
+    error EmptyPriceFeedMultiplier(address token);
+    error ZeroPendingUtilization();
+    error ZeroAmountUtilization();
+    error InvalidStrategyStatus(uint8 currentStatus, uint8 targetStatus);
+
+    /*//////////////////////////////////////////////////////////////
+                            POSITION MANAGER
+    //////////////////////////////////////////////////////////////*/
     /// @notice only callable by strategy
     error CallerNotStrategy();
     /// @notice invalid maket config when deploying pos manager
@@ -19,70 +65,28 @@ library Errors {
     error InvalidInitializationAssets();
     /// @notice invalid gmx callback function caller
     error CallbackNotAllowed();
-    /// @notice zero address check
-    error ZeroAddress();
-
     /// @notice only one gmx order pending allowed
     error AlreadyPending();
-
-    // errors from gmx oracle
-
-    /// @notice invalid chainlink price feed
-    error InvalidFeedPrice(address token, int256 price);
-    /// @notice chainlink price feed not updated
-    error PriceFeedNotUpdated(address token, uint256 timestamp, uint256 heartbeatDuration);
-    /// @notice price feed was not configured
-    error PriceFeedNotConfigured();
-    /// @notice price feed multiplier not configured
-    error EmptyPriceFeedMultiplier(address token);
-
-    error UnsupportedSwapType();
-
     // @notice there is not enough positive pnl when decrease collateral
     error NotEnoughPnl();
-
     error NotEnoughCollateral();
-
-    error ZeroPendingUtilization();
-
-    error ZeroAmountUtilization();
-
-    error CallerNotAuthorized(address authorized, address caller);
-
-    error CallerNotSpotManager();
-
-    error CallerNotPositionManager();
-
-    error CallerNotAgent();
-
-    error InvalidCallback();
-
     error NoActiveRequests();
-
-    error CallerNotOperator();
-
     error InvalidAdjustmentParams();
-
-    error InvalidStrategyStatus(uint8 currentStatus, uint8 targetStatus);
-
     error InvalidCollateralRequest(uint256 collateralDeltaAmount, bool isIncrease);
 
-    // vault
-    error ManagementFeeTransfer(address feeRecipient);
-
+    /*//////////////////////////////////////////////////////////////
+                              SPOT MANAGER
+    //////////////////////////////////////////////////////////////*/
+    error UnsupportedSwapType();
     error SwapFailed();
 
-    error FailedStopStrategy();
-
+    /*//////////////////////////////////////////////////////////////
+                              AUTH CALLER
+    //////////////////////////////////////////////////////////////*/
+    error CallerNotAuthorized(address authorized, address caller);
+    error CallerNotPositionManager();
+    error CallerNotAgent();
+    error InvalidCallback();
     error CallerNotOwnerOrVault();
-
-    error VaultShutdown();
-
     error InvalidSecurityManager();
-
-    error NotWhitelisted(address user);
-
-    error ExceededMaxRequestWithdraw(address owner, uint256 assets, uint256 max);
-    error ExceededMaxRequestRedeem(address owner, uint256 shares, uint256 max);
-
 }
