@@ -9,7 +9,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {ForkTest} from "test/base/ForkTest.sol";
 import {GmxV2Test} from "test/base/GmxV2Test.sol";
-
+import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
@@ -30,16 +30,15 @@ import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
 contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
     function test_afterAdjustPosition_revert_whenUtilizing() public afterDeposited {
         (uint256 pendingUtilization,) = strategy.pendingUtilizations();
-        uint256 pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
 
         uint256 amount = pendingUtilization / 2;
         // bytes memory data = _generateInchCallData(asset, product, amount, address(strategy));
         vm.startPrank(operator);
-        strategy.utilize(amount, BasisStrategy.SwapType.MANUAL, "");
+        strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
 
         // position manager increase reversion
         vm.startPrank(GMX_ORDER_VAULT);
-        IERC20(asset).transfer(address(_positionManager()), pendingIncreaseCollateral / 2);
+        IERC20(asset).transfer(address(_positionManager()), pendingUtilization / 6);
         vm.startPrank(address(_positionManager()));
         strategy.afterAdjustPosition(
             IPositionManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
@@ -54,7 +53,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         // make last redeem
         uint256 userShares = IERC20(address(vault)).balanceOf(address(user1));
         vm.startPrank(user1);
-        vault.redeem(userShares, user1, user1);
+        vault.requestRedeem(userShares, user1, user1);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilizeWithoutExecution(pendingDeutilization);
@@ -131,7 +130,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         _performKeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
         uint256 leverageAfter = _positionManager().currentLeverage();
         assertEq(leverageBefore, leverageAfter, "leverage not changed");
-        assertEq(strategy.processingRebalance(), true);
+        assertEq(strategy.processingRebalanceDown(), true);
 
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 99 / 100);
 
@@ -141,7 +140,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         (upkeepNeeded, performData) = _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         _performKeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
-        assertEq(strategy.processingRebalance(), false);
+        assertEq(strategy.processingRebalanceDown(), false);
         (upkeepNeeded, performData) = _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
         assertFalse(upkeepNeeded, "upkeepNeeded");
         (pendingUtilization, pendingDeutilization) = strategy.pendingUtilizations();

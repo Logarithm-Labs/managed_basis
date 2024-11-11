@@ -7,7 +7,7 @@ import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol"
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
-
+import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
@@ -87,7 +87,7 @@ contract OffChainHandler is OffChainTest {
 
     function redeem(uint256 shares, uint256 actorIndexSeed) public useActor(actorIndexSeed) {
         shares = bound(shares, 0, vault.balanceOf(currentActor));
-        vault.redeem(shares, currentActor, currentActor);
+        vault.requestRedeem(shares, currentActor, currentActor);
     }
 
     function claim(uint256 actorIndexSeed) public useActor(actorIndexSeed) {
@@ -109,7 +109,7 @@ contract OffChainHandler is OffChainTest {
         if (utilization == 0) return;
         amount = bound(amount, 1, utilization);
         vm.startPrank(operator);
-        strategy.utilize(amount, BasisStrategy.SwapType.MANUAL, "");
+        strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
     }
 
     function deutilize(uint256 amount) public {
@@ -117,7 +117,7 @@ contract OffChainHandler is OffChainTest {
         if (deutilization == 0) return;
         amount = bound(amount, 1, deutilization);
         vm.startPrank(operator);
-        strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
+        strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
     }
 
     function performUpkeep() public {

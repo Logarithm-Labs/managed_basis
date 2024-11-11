@@ -4,6 +4,10 @@ pragma solidity ^0.8.0;
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
+/// @title StrategyConfig
+/// @author Logarithm Labs
+/// @notice A config smart contract that is used throughout all logarithm strategies.
+/// @dev Deployed according to the UUPS upgradable pattern.
 contract StrategyConfig is UUPSUpgradeable, OwnableUpgradeable {
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
@@ -28,62 +32,98 @@ contract StrategyConfig is UUPSUpgradeable, OwnableUpgradeable {
     }
 
     /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event DeutilizationThresholdUpdated(address indexed account, uint256 value);
+    event RebalanceDeviationThresholdUpdated(address indexed account, uint256 value);
+    event HedgeDeviationThresholdUpdated(address indexed account, uint256 value);
+    event ResponseDeviationThresholdUpdated(address indexed account, uint256 value);
+
+    /*//////////////////////////////////////////////////////////////
                         INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
     function initialize(address owner_) external initializer {
         __Ownable_init(owner_);
-
         StrategyConfigStorage storage $ = _getStrategyConfigStorage();
-        $.responseDeviationThreshold = 1e16;
-        $.hedgeDeviationThreshold = 1e16; // 1%
-        $.rebalanceDeviationThreshold = 1e17; // 10%
-        $.deutilizationThreshold = 1e16; // 1%
+        _setResponseDeviationThreshold(1e16); // 1%
+        _setHedgeDeviationThreshold(1e16); // 1%
+        _setRebalanceDeviationThreshold(1e17); // 10%
+        _setDeutilizationThreshold(1e16); // 1%
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
+
+    function _setDeutilizationThreshold(uint256 threshold) private {
+        require(threshold < 1 ether);
+        if (deutilizationThreshold() != threshold) {
+            _getStrategyConfigStorage().deutilizationThreshold = threshold;
+            emit DeutilizationThresholdUpdated(_msgSender(), threshold);
+        }
+    }
+
+    function _setRebalanceDeviationThreshold(uint256 threshold) private {
+        require(threshold < 1 ether);
+        if (rebalanceDeviationThreshold() != threshold) {
+            _getStrategyConfigStorage().rebalanceDeviationThreshold = threshold;
+            emit RebalanceDeviationThresholdUpdated(_msgSender(), threshold);
+        }
+    }
+
+    function _setHedgeDeviationThreshold(uint256 threshold) private {
+        require(threshold < 1 ether);
+        if (hedgeDeviationThreshold() != threshold) {
+            _getStrategyConfigStorage().hedgeDeviationThreshold = threshold;
+            emit HedgeDeviationThresholdUpdated(_msgSender(), threshold);
+        }
+    }
+
+    function _setResponseDeviationThreshold(uint256 threshold) private {
+        require(threshold < 1 ether);
+        if (responseDeviationThreshold() != threshold) {
+            _getStrategyConfigStorage().responseDeviationThreshold = threshold;
+            emit ResponseDeviationThresholdUpdated(_msgSender(), threshold);
+        }
+    }
 
     /*//////////////////////////////////////////////////////////////
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     function setDeutilizationThreshold(uint256 threshold) external onlyOwner {
-        require(threshold < 1 ether);
-        _getStrategyConfigStorage().deutilizationThreshold = threshold;
+        _setDeutilizationThreshold(threshold);
     }
 
     function setRebalanceDeviationThreshold(uint256 threshold) external onlyOwner {
-        require(threshold < 1 ether);
-        _getStrategyConfigStorage().rebalanceDeviationThreshold = threshold;
+        _setRebalanceDeviationThreshold(threshold);
     }
 
     function setHedgeDeviationThreshold(uint256 threshold) external onlyOwner {
-        require(threshold < 1 ether);
-        _getStrategyConfigStorage().hedgeDeviationThreshold = threshold;
+        _setHedgeDeviationThreshold(threshold);
     }
 
     function setResponseDeviationThreshold(uint256 threshold) external onlyOwner {
-        require(threshold < 1 ether);
-        _getStrategyConfigStorage().responseDeviationThreshold = threshold;
+        _setRebalanceDeviationThreshold(threshold);
     }
 
     /*//////////////////////////////////////////////////////////////
                         VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function deutilizationThreshold() external view returns (uint256) {
+    function deutilizationThreshold() public view returns (uint256) {
         return _getStrategyConfigStorage().deutilizationThreshold;
     }
 
-    function rebalanceDeviationThreshold() external view returns (uint256) {
+    function rebalanceDeviationThreshold() public view returns (uint256) {
         return _getStrategyConfigStorage().rebalanceDeviationThreshold;
     }
 
-    function hedgeDeviationThreshold() external view returns (uint256) {
+    function hedgeDeviationThreshold() public view returns (uint256) {
         return _getStrategyConfigStorage().hedgeDeviationThreshold;
     }
 
-    function responseDeviationThreshold() external view returns (uint256) {
+    function responseDeviationThreshold() public view returns (uint256) {
         return _getStrategyConfigStorage().responseDeviationThreshold;
     }
 }

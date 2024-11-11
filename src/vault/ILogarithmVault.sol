@@ -5,6 +5,6 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 interface ILogarithmVault is IERC4626 {
     function idleAssets() external view returns (uint256);
-    function totalPendingWithdraw() external view returns (int256);
+    function totalPendingWithdraw() external view returns (uint256);
     function processPendingWithdrawRequests() external returns (uint256);
 }

@@ -8,7 +8,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
-
+import {SpotManager} from "src/spot/SpotManager.sol";
 import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
 import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
 import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
@@ -83,7 +83,6 @@ library DeployHelper {
         uint256 minLeverage;
         uint256 maxLeverage;
         uint256 safeMarginLeverage;
-        address[] assetToProductSwapPath;
     }
 
     function deployBasisStrategy(BasisStrategyDeployParams memory params) internal returns (BasisStrategy) {
@@ -100,8 +99,7 @@ library DeployHelper {
                     params.targetLeverage,
                     params.minLeverage,
                     params.maxLeverage,
-                    params.safeMarginLeverage,
-                    params.assetToProductSwapPath
+                    params.safeMarginLeverage
                 )
             )
         );
@@ -114,6 +112,20 @@ library DeployHelper {
         );
 
         return strategy;
+    }
+
+    function deploySpotManager(address beacon, address owner, address strategy, address[] memory assetToProductSwapPath)
+        internal
+        returns (SpotManager)
+    {
+        address spotManagerProxy = address(
+            new BeaconProxy(
+                beacon, abi.encodeWithSelector(SpotManager.initialize.selector, owner, strategy, assetToProductSwapPath)
+            )
+        );
+        SpotManager spotManager = SpotManager(spotManagerProxy);
+        BasisStrategy(strategy).setSpotManager(spotManagerProxy);
+        return spotManager;
     }
 
     function deployGmxConfig(address owner) internal returns (GmxConfig) {

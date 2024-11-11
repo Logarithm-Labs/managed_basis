@@ -11,6 +11,7 @@ import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/Upgradeabl
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
 import {ArbSysMock} from "test/mock/ArbSysMock.sol";
 import {IPositionManager} from "src/position/IPositionManager.sol";
+import {ISpotManager} from "src/spot/ISpotManager.sol";
 
 contract ProdTest is Test {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
@@ -43,8 +44,8 @@ contract ProdTest is Test {
         strategyBeacon.upgradeTo(address(new BasisStrategy()));
         (, uint256 deutilization) = strategy.pendingUtilizations();
         console.log("deutilization", deutilization);
-        (uint256 amount, BasisStrategy.SwapType swapType, bytes memory swapData) =
-            abi.decode(call_data, (uint256, BasisStrategy.SwapType, bytes));
+        (uint256 amount, ISpotManager.SwapType swapType, bytes memory swapData) =
+            abi.decode(call_data, (uint256, ISpotManager.SwapType, bytes));
         console.log("amount", amount);
         vm.startPrank(operator);
         strategy.deutilize(amount, swapType, swapData);
@@ -71,7 +72,6 @@ contract ProdTest is Test {
         console.log("assetsToWithdraw: ", state.assetsToWithdraw);
         console.log("assetsToClaim: ", state.assetsToClaim);
         console.log("totalPendingWithdraw: ", vm.toString(state.totalPendingWithdraw));
-        console.log("pendingIncreaseCollateral: ", state.pendingIncreaseCollateral);
         console.log("pendingDecreaseCollateral: ", state.pendingDecreaseCollateral);
         console.log("pendingUtilization: ", state.pendingUtilization);
         console.log("pendingDeutilization: ", state.pendingDeutilization);

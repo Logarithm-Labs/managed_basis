@@ -19,6 +19,7 @@ import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
 import {IPositionManager} from "src/position/IPositionManager.sol";
+import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
 
@@ -34,7 +35,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         // make last redeem
         uint256 userShares = IERC20(address(vault)).balanceOf(address(user1));
         vm.startPrank(user1);
-        vault.redeem(userShares, user1, user1);
+        vault.requestRedeem(userShares, user1, user1);
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilizeWithoutExecution(pendingDeutilization);
@@ -86,7 +87,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         (, pendingDeutilization) = strategy.pendingUtilizations();
         amount = pendingDeutilization * 1 / 10;
         vm.startPrank(operator);
-        strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
+        strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
         _deposit(user1, 400_000_000);
         _executeOrder();
 
@@ -104,7 +105,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         vm.startPrank(USDC_WHALE);
         IERC20(asset).transfer(address(positionManager), 10_000_000);
         vm.startPrank(user1);
-        vault.redeem(vault.balanceOf(user1), user1, user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
 
         (, uint256 deutilization) = strategy.pendingUtilizations();
         _deutilize(deutilization);
@@ -149,7 +150,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         _mockChainlinkPriceFeedAnswer(priceFeed, resultedPrice);
         (uint256 amount,) = strategy.pendingUtilizations();
         vm.startPrank(operator);
-        strategy.utilize(amount, BasisStrategy.SwapType.MANUAL, "");
+        strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
         _executeOrder();
     }
 }

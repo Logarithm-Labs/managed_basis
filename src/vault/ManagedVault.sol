@@ -15,13 +15,15 @@ import {IWhitelistProvider} from "src/whitelist/IWhitelistProvider.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
-/// @title A managed vault
+/// @title ManagedVault
 /// @author Logarithm Labs
-/// @notice Have functions to collect AUM fees
+/// @dev An abstract ERC4626 compliant vault with functions to collect AUM fees including the management fee and performance fee.
 abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable {
     using Math for uint256;
 
+    /// @notice The maximum value of management fee that can be configured.
     uint256 public constant MAX_MANAGEMENT_FEE = 5e16; // 5%
+    /// @notice The maximum value of performance fee that can be configured.
     uint256 public constant MAX_PERFORMANCE_FEE = 5e17; // 50%
 
     /*//////////////////////////////////////////////////////////////
@@ -65,8 +67,32 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Emitted when the management fee is collected to the fee recipient.
     event ManagementFeeCollected(address indexed feeRecipient, uint256 indexed feeShares);
+
+    /// @dev Emitted when the performance fee is collected to the fee recipient.
     event PerformanceFeeCollected(address indexed feeRecipient, uint256 indexed feeShares);
+
+    /// @dev Emitted when a new fee recipient is set.
+    event FeeRecipientChanged(address account, address newFeeRecipient);
+
+    /// @dev Emitted when a new management fee configuration is set.
+    event ManagementFeeChanged(address account, uint256 newManagementFee);
+
+    /// @dev Emitted when a new performance fee configuration is set.
+    event PerformanceFeeChanged(address account, uint256 newPerformanceFee);
+
+    /// @dev Emitted when a new hurdle rate configuration is set.
+    event HurdleRateChanged(address account, uint256 newHurdleRate);
+
+    /// @dev Emitted when a new deposit limit of each user is set.
+    event UserDepositLimitChanged(address account, uint256 newUserDepositLimit);
+
+    /// @dev Emitted when a new deposit limit of a vault is set.
+    event VaultDepositLimitChanged(address account, uint256 newVaultDepositLimit);
+
+    /// @dev Emitted when a new whitelist provider is set.
+    event WhitelistProviderChanged(address account, address newWhitelistProvider);
 
     /*//////////////////////////////////////////////////////////////
                         INITIALIZING
@@ -79,17 +105,31 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         __Ownable_init(owner_);
         __ERC20_init_unchained(name_, symbol_);
         __ERC4626_init_unchained(IERC20(asset_));
+        _setDepositLimits(type(uint256).max, type(uint256).max);
+    }
 
+    function _setDepositLimits(uint256 userLimit, uint256 vaultLimit) internal {
         ManagedVaultStorage storage $ = _getManagedVaultStorage();
-        $.userDepositLimit = type(uint256).max;
-        $.vaultDepositLimit = type(uint256).max;
+        if (userDepositLimit() != userLimit) {
+            $.userDepositLimit = userLimit;
+            emit UserDepositLimitChanged(_msgSender(), userLimit);
+        }
+        if (vaultDepositLimit() != vaultLimit) {
+            $.vaultDepositLimit = vaultLimit;
+            emit VaultDepositLimitChanged(_msgSender(), vaultLimit);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice fee configuration
+    /// @dev Configures the fee information.
+    ///
+    /// @param _feeRecipient The address of the fee recipient.
+    /// @param _managementFee The management fee percent that is denominated in 18 decimals.
+    /// @param _performanceFee The performance fee percent that is denominated in 18 decimals.
+    /// @param _hurdleRate The hurdle rate percent that is denominated in 18 decimals.
     function setFeeInfos(address _feeRecipient, uint256 _managementFee, uint256 _performanceFee, uint256 _hurdleRate)
         external
         onlyOwner
@@ -99,24 +139,37 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         require(_performanceFee <= MAX_PERFORMANCE_FEE);
 
         ManagedVaultStorage storage $ = _getManagedVaultStorage();
-        $.feeRecipient = _feeRecipient;
-        $.managementFee = _managementFee;
-        $.performanceFee = _performanceFee;
-        $.hurdleRate = _hurdleRate;
+        if (feeRecipient() != _feeRecipient) {
+            $.feeRecipient = _feeRecipient;
+            emit FeeRecipientChanged(_msgSender(), _feeRecipient);
+        }
+        if (managementFee() != _managementFee) {
+            $.managementFee = _managementFee;
+            emit ManagementFeeChanged(_msgSender(), _managementFee);
+        }
+        if (performanceFee() != _performanceFee) {
+            $.performanceFee = _performanceFee;
+            emit PerformanceFeeChanged(_msgSender(), _performanceFee);
+        }
+        if (hurdleRate() != _hurdleRate) {
+            $.hurdleRate = _hurdleRate;
+            emit HurdleRateChanged(_msgSender(), _hurdleRate);
+        }
     }
 
-    /// @notice set whitelist provider
+    /// @dev Sets the address of the whitelist provider.
     ///
-    /// @param provider Address of the whitelist provider, 0 means not applying whitelist
+    /// @param provider Address of the whitelist provider, address(0) means not applying whitelist.
     function setWhitelistProvider(address provider) external onlyOwner {
-        _getManagedVaultStorage().whitelistProvider = provider;
+        if (whitelistProvider() != provider) {
+            _getManagedVaultStorage().whitelistProvider = provider;
+            emit WhitelistProviderChanged(_msgSender(), provider);
+        }
     }
 
-    /// @notice set deposit limits
+    /// @dev Sets the deposit limits including user and vault limit.
     function setDepositLimits(uint256 userLimit, uint256 vaultLimit) external onlyOwner {
-        ManagedVaultStorage storage $ = _getManagedVaultStorage();
-        $.userDepositLimit = userLimit;
-        $.vaultDepositLimit = vaultLimit;
+        _setDepositLimits(userLimit, vaultLimit);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -163,12 +216,16 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         );
     }
 
+    /// @dev Harvests the performance fee when it is available.
+    ///
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
         _harvestPerformanceFeeShares(assets, shares, true);
         super._deposit(caller, receiver, assets, shares);
     }
 
+    /// @dev Harvests the performance fee when it is available.
+    ///
     /// @inheritdoc ERC4626Upgradeable
     function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
         internal
@@ -179,6 +236,8 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         super._withdraw(caller, receiver, owner, assets, shares);
     }
 
+    /// @dev Accrues the management fee when it is set.
+    ///
     /// @inheritdoc ERC20Upgradeable
     function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
         address _feeRecipient = feeRecipient();
@@ -210,7 +269,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
                            FEE LOGIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev should be called before all deposits and withdrawals
+    /// @dev Should be called before all deposits and withdrawals
     function _harvestPerformanceFeeShares(uint256 assets, uint256 shares, bool isDeposit) internal {
         address _feeRecipient = feeRecipient();
         uint256 _performanceFee = performanceFee();
@@ -234,7 +293,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         _updateHighWaterMark(_hwm, totalSupplyWithManagementFeeShares + feeShares, assets, shares, isDeposit);
     }
 
-    /// @dev should not be called when minting to fee recipient
+    /// @dev Should not be called when minting to fee recipient
     function _accrueManagementFeeShares(address _feeRecipient) private {
         uint256 _lastAccruedTimestamp = lastAccruedTimestamp();
         if (_lastAccruedTimestamp == block.timestamp) {
@@ -257,7 +316,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         }
     }
 
-    /// @notice update high water mark
+    /// @dev Updates the high water mark
     function _updateHighWaterMark(
         uint256 oldHwm,
         uint256 oldTotalSupply,
@@ -274,7 +333,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         _getManagedVaultStorage().hwm = newHwm;
     }
 
-    /// @notice calculate claimable shares for the management fee
+    /// @dev Calculates the claimable shares for the management fee
     function _nextManagementFeeShares(
         address _feeRecipient,
         uint256 _managementFee,
@@ -292,7 +351,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         return managementFeeShares;
     }
 
-    /// @notice calculate the claimable performance fee shares
+    /// @dev Calculates the claimable performance fee shares
     function _nextPerformanceFeeShares(
         uint256 _performanceFee,
         uint256 _hwm,
@@ -321,13 +380,14 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
         }
     }
 
+    /// @dev The total supply of shares including the next management fee shares.
     function _totalSupplyWithManagementFeeShares(address _feeRecipient) private view returns (uint256) {
         uint256 _totalSupply = totalSupply();
         return _totalSupply
             + _nextManagementFeeShares(_feeRecipient, managementFee(), _totalSupply, lastAccruedTimestamp());
     }
 
-    /// @notice totalSupply with management and performance fee shares
+    /// @dev The total supply of shares including the the next management and performance fee shares
     function _totalSupplyWithNextFeeShares(uint256 _totalAssets) private view returns (uint256) {
         address _feeRecipient = feeRecipient();
         uint256 totalSupplyWithManagementFeeShares = _totalSupplyWithManagementFeeShares(_feeRecipient);
@@ -349,7 +409,8 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
                             PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice mint management fee shares by anyone
+    /// @notice Mints the next accrued management fee shares.
+    /// This function can be called by anyone.
     function accrueManagementFeeShares() public {
         _accrueManagementFeeShares(feeRecipient());
     }
@@ -358,12 +419,12 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
                          PUBLIC VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice returns claimable shares of the management fee recipient
+    /// @notice Returns the accrued shares of the management fee recipient
     function nextManagementFeeShares() public view returns (uint256) {
         return _nextManagementFeeShares(feeRecipient(), managementFee(), totalSupply(), lastAccruedTimestamp());
     }
 
-    /// @notice returns claimable shares of the performance fee recipient
+    /// @notice Returns the claimable shares of the performance fee recipient
     function nextPerformanceFeeShares() public view returns (uint256) {
         return _nextPerformanceFeeShares(
             performanceFee(),
@@ -378,42 +439,53 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgr
                             STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice The address of a fee recipient who receives the management and performance fees.
     function feeRecipient() public view returns (address) {
         return _getManagedVaultStorage().feeRecipient;
     }
 
+    /// @notice The management fee percent configuration denominated in 18 decimals.
     function managementFee() public view returns (uint256) {
         return _getManagedVaultStorage().managementFee;
     }
 
+    /// @notice The performance fee percent configuration denominated in 18 decimals.
     function performanceFee() public view returns (uint256) {
         return _getManagedVaultStorage().performanceFee;
     }
 
+    /// @notice The hurdle rate configuration denominated in 18 decimals.
     function hurdleRate() public view returns (uint256) {
         return _getManagedVaultStorage().hurdleRate;
     }
 
+    /// @notice The last accrued block.timestamp when the management was accrued.
     function lastAccruedTimestamp() public view returns (uint256) {
         return _getManagedVaultStorage().lastAccruedTimestamp;
     }
 
+    /// @notice The high water mark of total assets where the performance fee was collected.
     function highWaterMark() public view returns (uint256) {
         return _getManagedVaultStorage().hwm;
     }
 
+    /// @notice The last block.timestamp when the performance fee was harvested.
     function lastHarvestedTimestamp() public view returns (uint256) {
         return _getManagedVaultStorage().lastHarvestedTimestamp;
     }
 
+    /// @notice The address of a white list provider who provides users allowed to use the vault.
+    /// Supposed to be used in private mode, and will be disabled in public mode by setting to zero address.
     function whitelistProvider() public view returns (address) {
         return _getManagedVaultStorage().whitelistProvider;
     }
 
+    /// @notice The allowed deposit limit of each user.
     function userDepositLimit() public view returns (uint256) {
         return _getManagedVaultStorage().userDepositLimit;
     }
 
+    /// @notice The allowed deposit limit of this vault.
     function vaultDepositLimit() public view returns (uint256) {
         return _getManagedVaultStorage().vaultDepositLimit;
     }

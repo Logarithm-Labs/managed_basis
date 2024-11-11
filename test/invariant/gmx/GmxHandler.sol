@@ -9,6 +9,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
+import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
@@ -87,7 +88,7 @@ contract GmxHandler is GmxV2Test {
 
     function redeem(uint256 shares, uint256 actorIndexSeed) public useActor(actorIndexSeed) {
         shares = bound(shares, 0, vault.balanceOf(currentActor));
-        vault.redeem(shares, currentActor, currentActor);
+        vault.requestRedeem(shares, currentActor, currentActor);
     }
 
     function claim(uint256 actorIndexSeed) public useActor(actorIndexSeed) {
@@ -109,7 +110,7 @@ contract GmxHandler is GmxV2Test {
         if (utilization == 0) return;
         amount = bound(amount, 1, utilization);
         vm.startPrank(operator);
-        strategy.utilize(amount, BasisStrategy.SwapType.MANUAL, "");
+        strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
     }
 
     function deutilize(uint256 amount) public {
@@ -117,7 +118,7 @@ contract GmxHandler is GmxV2Test {
         if (deutilization == 0) return;
         amount = bound(amount, 1, deutilization);
         vm.startPrank(operator);
-        strategy.deutilize(amount, BasisStrategy.SwapType.MANUAL, "");
+        strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
     }
 
     function performUpkeep() public {

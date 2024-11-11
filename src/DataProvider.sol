@@ -16,6 +16,7 @@ import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {IPositionManager} from "src/position/IPositionManager.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
 
@@ -36,8 +37,7 @@ contract DataProvider {
         uint256 productValueInAsset;
         uint256 assetsToWithdraw;
         uint256 assetsToClaim;
-        int256 totalPendingWithdraw;
-        uint256 pendingIncreaseCollateral;
+        uint256 totalPendingWithdraw;
         uint256 pendingDecreaseCollateral;
         uint256 pendingUtilization;
         uint256 pendingDeutilization;
@@ -54,6 +54,8 @@ contract DataProvider {
         bool rehedgeNeeded;
         bool positionManagerKeepNeeded;
         bool processingRebalanceDown;
+        bool strategyPaused;
+        bool vaultPaused;
     }
 
     struct GmxPositionInfo {
@@ -96,12 +98,11 @@ contract DataProvider {
         state.utilizedAssets = strategy.utilizedAssets();
         state.idleAssets = vault.idleAssets();
         state.assetBalance = IERC20(asset).balanceOf(address(vault)) + IERC20(asset).balanceOf(address(strategy));
-        state.productBalance = IERC20(product).balanceOf(address(strategy));
+        state.productBalance = ISpotManager(strategy.spotManager()).exposure();
         state.productValueInAsset = oracle.convertTokenAmount(product, asset, state.productBalance);
         state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
         state.assetsToClaim = vault.assetsToClaim();
         state.totalPendingWithdraw = vault.totalPendingWithdraw();
-        state.pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
         state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
@@ -116,7 +117,9 @@ contract DataProvider {
         state.decreaseCollateral = decreaseCollateral;
         state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
         state.positionManagerKeepNeeded = positionManagerNeedKeep;
-        state.processingRebalanceDown = strategy.processingRebalance();
+        state.processingRebalanceDown = strategy.processingRebalanceDown();
+        state.strategyPaused = strategy.paused();
+        state.vaultPaused = vault.paused();
     }
 
     function getGmxPositionInfo(address positionManagerAddr)
