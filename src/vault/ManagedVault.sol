@@ -16,8 +16,11 @@ import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title ManagedVault
+///
 /// @author Logarithm Labs
-/// @dev An abstract ERC4626 compliant vault with functions to collect AUM fees including the management fee and performance fee.
+///
+/// @dev An abstract ERC4626 compliant vault with functions
+/// to collect AUM fees including the management fee and performance fee.
 abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable {
     using Math for uint256;
 

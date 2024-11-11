@@ -19,9 +19,27 @@ import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title LogarithmVault
+///
 /// @author Logarithm Labs
-/// @notice A core vault allowing users to deposit assets to logarithm strategies.
-/// @dev ERC4626 compliant vault with async redeem functionalities.
+///
+/// @notice The Logarithm Vault supplies depositor funds to a single connected strategy,
+/// with depositors receiving shares proportional to their contributions and paying entry
+/// fees to cover the strategy’s execution costs. Vault tokens are yield-bearing and can
+/// be redeemed at any time, enabling depositors to withdraw their initial investment
+/// plus any generated yield, while incurring exit fees to cover strategy-related costs.
+/// When idle assets are available in the vault, redemptions may proceed synchronously;
+/// otherwise, they occur asynchronously as funds are withdrawn from the strategy,
+/// involving interactions with asynchronous protocols like GMX and cross-chain systems
+/// such as HyperLiquid.
+///
+/// @dev The withdrawable assets and redeemable shares are determined by the "maxRequestWithdraw"
+/// and "maxRequestRedeem" functions and are executed via "requestWithdraw" and "requestRedeem".
+/// These functions return a unique withdrawal key that can be used to check the status and
+/// claimability of the withdraw request.
+/// Standard ERC4626-compliant functions — "maxWithdraw", "maxRedeem", "withdraw", and "redeem" —
+/// remain available but operate exclusively with idle assets within the vault.
+/// The Logarithm Vault is an ERC4626-compliant, upgradeable vault with asynchronous
+/// redemption functionality, implemented through a beacon proxy pattern.
 contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     using Math for uint256;
     using SafeERC20 for IERC20;
