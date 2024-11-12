@@ -125,17 +125,17 @@ contract DeployGmxScript is Script {
         console.log("GmxGasStation deployed at", gasStationProxy);
 
         // deploy position manager
-        address positionManagerImpl = address(new GmxV2PositionManager());
-        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
+        address hedgeManagerImpl = address(new GmxV2PositionManager());
+        address hedgeManagerBeacon = address(new UpgradeableBeacon(hedgeManagerImpl, owner));
         require(
-            UpgradeableBeacon(positionManagerBeacon).owner() == owner,
+            UpgradeableBeacon(hedgeManagerBeacon).owner() == owner,
             "PositionManagerBeacon owner is not the expected owner"
         );
-        console.log("GmxPositionManagerBeacon deployed at", positionManagerBeacon);
+        console.log("GmxPositionManagerBeacon deployed at", hedgeManagerBeacon);
 
-        address positionManagerProxy = address(
+        address hedgeManagerProxy = address(
             new BeaconProxy(
-                positionManagerBeacon,
+                hedgeManagerBeacon,
                 abi.encodeWithSelector(
                     GmxV2PositionManager.initialize.selector,
                     // owner,
@@ -147,15 +147,15 @@ contract DeployGmxScript is Script {
             )
         );
         // require(
-        //     GmxV2PositionManager(payable(positionManagerProxy)).owner() == owner,
+        //     GmxV2PositionManager(payable(hedgeManagerProxy)).owner() == owner,
         //     "GmxPositionManager owner is not the expected owner"
         // );
-        console.log("GmxPositionManager deployed at", positionManagerProxy);
+        console.log("GmxPositionManager deployed at", hedgeManagerProxy);
 
         // config
         LogarithmVault(vaultProxy).setStrategy(strategyProxy);
-        BasisStrategy(strategyProxy).setPositionManager(positionManagerProxy);
-        GmxGasStation(payable(gasStationProxy)).registerPositionManager(positionManagerProxy, true);
+        BasisStrategy(strategyProxy).setHedgeManager(hedgeManagerProxy);
+        GmxGasStation(payable(gasStationProxy)).registerPositionManager(hedgeManagerProxy, true);
         // BasisStrategy(strategyProxy).setForwarder(forwarder);
 
         (bool success,) = gasStationProxy.call{value: 0.0004 ether}("");

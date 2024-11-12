@@ -51,7 +51,7 @@ contract BasisStrategy is
     /// @dev Used to optimize params of deutilization internally.
     struct InternalPendingDeutilization {
         // The address of hedge position manager.
-        IHedgeManager positionManager;
+        IHedgeManager hedgeManager;
         // The address of the connected vault's underlying asset.
         address asset;
         // The product address.
@@ -75,7 +75,7 @@ contract BasisStrategy is
         // none-zero means re-hedge
         int256 hedgeDeviationInTokens;
         // position manager is in need of keeping
-        bool positionManagerNeedKeep;
+        bool hedgeManagerNeedKeep;
         // process pendingDecreaseCollateral
         bool processPendingDecreaseCollateral;
         // rebalance up by decreasing collateral
@@ -93,11 +93,11 @@ contract BasisStrategy is
         IERC20 asset;
         ILogarithmVault vault;
         ISpotManager spotManager;
-        IHedgeManager positionManager;
+        IHedgeManager hedgeManager;
         IOracle oracle;
         address operator;
         address config;
-        // leverage state
+        // leverage config
         uint256 targetLeverage;
         uint256 minLeverage;
         uint256 maxLeverage;
@@ -151,7 +151,7 @@ contract BasisStrategy is
     event SpotManagerUpdated(address indexed account, address indexed newSpotManager);
 
     /// @dev Emitted when the position manager is changed.
-    event PositionManagerUpdated(address indexed account, address indexed newPositionManager);
+    event HedgeManagerUpdated(address indexed account, address indexed newPositionManager);
 
     /// @dev Emitted when the operator is changed.
     event OperatorUpdated(address indexed account, address indexed newOperator);
@@ -265,22 +265,22 @@ contract BasisStrategy is
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Sets the spot manager.
-    function setSpotManager(address _spotManager) external onlyOwner {
-        if (spotManager() != _spotManager) {
-            ISpotManager manager = ISpotManager(_spotManager);
+    function setSpotManager(address newSpotManager) external onlyOwner {
+        if (spotManager() != newSpotManager) {
+            ISpotManager manager = ISpotManager(newSpotManager);
             require(manager.asset() == asset() && manager.product() == product());
             _getBasisStrategyStorage().spotManager = manager;
-            emit SpotManagerUpdated(_msgSender(), _spotManager);
+            emit SpotManagerUpdated(_msgSender(), newSpotManager);
         }
     }
 
-    /// @notice Sets the position manager.
-    function setPositionManager(address _positionManager) external onlyOwner {
-        if (hedgeManager() != _positionManager) {
-            IHedgeManager newPositionManager = IHedgeManager(_positionManager);
-            require(newPositionManager.collateralToken() == asset() && newPositionManager.indexToken() == product());
-            _getBasisStrategyStorage().positionManager = newPositionManager;
-            emit PositionManagerUpdated(_msgSender(), _positionManager);
+    /// @notice Sets the hedge manager.
+    function setHedgeManager(address newHedgeManager) external onlyOwner {
+        if (hedgeManager() != newHedgeManager) {
+            IHedgeManager manager = IHedgeManager(newHedgeManager);
+            require(manager.collateralToken() == asset() && manager.indexToken() == product());
+            _getBasisStrategyStorage().hedgeManager = manager;
+            emit HedgeManagerUpdated(_msgSender(), newHedgeManager);
         }
     }
 
@@ -382,11 +382,11 @@ contract BasisStrategy is
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
-        IHedgeManager _positionManager = $.positionManager;
+        IHedgeManager _hedgeManager = $.hedgeManager;
 
         uint256 pendingDeutilization_ = _pendingDeutilization(
             InternalPendingDeutilization({
-                positionManager: _positionManager,
+                hedgeManager: _hedgeManager,
                 asset: asset(),
                 product: product(),
                 totalSupply: $.vault.totalSupply(),
@@ -405,7 +405,7 @@ contract BasisStrategy is
         }
 
         // check if amount is in the possible adjustment range
-        (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
+        (uint256 min, uint256 max) = _hedgeManager.decreaseSizeMinMax();
         amount = _clamp(min, amount, max);
 
         // can only deutilize when amount is positive
@@ -442,7 +442,7 @@ contract BasisStrategy is
         InternalCheckUpkeepResult memory result = _checkUpkeep();
 
         upkeepNeeded = result.emergencyDeutilizationAmount > 0 || result.deltaCollateralToIncrease > 0
-            || result.clearProcessingRebalanceDown || result.hedgeDeviationInTokens != 0 || result.positionManagerNeedKeep
+            || result.clearProcessingRebalanceDown || result.hedgeDeviationInTokens != 0 || result.hedgeManagerNeedKeep
             || result.processPendingDecreaseCollateral || result.deltaCollateralToDecrease > 0;
 
         performData = abi.encode(
@@ -450,7 +450,7 @@ contract BasisStrategy is
             result.deltaCollateralToIncrease,
             result.clearProcessingRebalanceDown,
             result.hedgeDeviationInTokens,
-            result.positionManagerNeedKeep,
+            result.hedgeManagerNeedKeep,
             result.processPendingDecreaseCollateral,
             result.deltaCollateralToDecrease
         );
@@ -495,8 +495,8 @@ contract BasisStrategy is
                     $.spotManager.sell(hedgeDeviationInTokens, ISpotManager.SwapType.MANUAL, "");
                 }
             }
-        } else if (result.positionManagerNeedKeep) {
-            $.positionManager.keep();
+        } else if (result.hedgeManagerNeedKeep) {
+            $.hedgeManager.keep();
         } else if (result.processPendingDecreaseCollateral) {
             if (!_adjustPosition(0, $.pendingDecreaseCollateral, false)) {
                 _setStrategyStatus(StrategyStatus.IDLE);
@@ -567,23 +567,23 @@ contract BasisStrategy is
                         collateralDeltaAmount = type(uint256).max;
                         $.pendingDecreaseCollateral = 0;
                     } else if (status == StrategyStatus.FULL_DEUTILIZING) {
-                        (uint256 min, uint256 max) = $.positionManager.decreaseCollateralMinMax();
+                        (uint256 min, uint256 max) = $.hedgeManager.decreaseCollateralMinMax();
                         uint256 pendingWithdraw = assetsToDeutilize();
                         collateralDeltaAmount = min > pendingWithdraw ? min : pendingWithdraw;
                         $.pendingDecreaseCollateral = 0;
                     } else {
                         // when partial deutilizing
-                        IHedgeManager _positionManager = $.positionManager;
-                        uint256 positionNetBalance = _positionManager.positionNetBalance();
+                        IHedgeManager _hedgeManager = $.hedgeManager;
+                        uint256 positionNetBalance = _hedgeManager.positionNetBalance();
                         uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
                         if (_pendingDecreaseCollateral > 0) {
                             (, positionNetBalance) = positionNetBalance.trySub(_pendingDecreaseCollateral);
                         }
-                        uint256 positionSizeInTokens = _positionManager.positionSizeInTokens();
+                        uint256 positionSizeInTokens = _hedgeManager.positionSizeInTokens();
                         uint256 collateralDeltaToDecrease =
                             positionNetBalance.mulDiv(productDelta, positionSizeInTokens);
                         collateralDeltaToDecrease += _pendingDecreaseCollateral;
-                        uint256 limitDecreaseCollateral = _positionManager.limitDecreaseCollateral();
+                        uint256 limitDecreaseCollateral = _hedgeManager.limitDecreaseCollateral();
                         if (collateralDeltaToDecrease < limitDecreaseCollateral) {
                             $.pendingDecreaseCollateral = collateralDeltaToDecrease;
                         } else {
@@ -654,7 +654,7 @@ contract BasisStrategy is
         }
 
         ILogarithmVault _vault = $.vault;
-        IHedgeManager _positionManager = $.positionManager;
+        IHedgeManager _hedgeManager = $.hedgeManager;
         uint256 totalSupply = _vault.totalSupply();
         address _asset = asset();
         address _product = product();
@@ -665,7 +665,7 @@ contract BasisStrategy is
             _pendingUtilization(totalSupply, idleAssets, $.targetLeverage, _processingRebalanceDown, _paused);
         pendingDeutilizationInProduct = _pendingDeutilization(
             InternalPendingDeutilization({
-                positionManager: _positionManager,
+                hedgeManager: _hedgeManager,
                 asset: _asset,
                 product: _product,
                 totalSupply: totalSupply,
@@ -674,8 +674,8 @@ contract BasisStrategy is
             })
         );
 
-        (uint256 increaseSizeMin,) = _positionManager.increaseSizeMinMax();
-        (uint256 decreaseSizeMin,) = _positionManager.decreaseSizeMinMax();
+        (uint256 increaseSizeMin,) = _hedgeManager.increaseSizeMinMax();
+        (uint256 decreaseSizeMin,) = _hedgeManager.decreaseSizeMinMax();
 
         uint256 pendingUtilizationInProduct = $.oracle.convertTokenAmount(_asset, _product, pendingUtilizationInAsset);
         if (pendingUtilizationInProduct < increaseSizeMin) pendingUtilizationInAsset = 0;
@@ -691,7 +691,7 @@ contract BasisStrategy is
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         uint256 productBalance = $.spotManager.exposure();
         uint256 productValueInAssets = $.oracle.convertTokenAmount(product(), asset(), productBalance);
-        return productValueInAssets + $.positionManager.positionNetBalance() + assetsToWithdraw();
+        return productValueInAssets + $.hedgeManager.positionNetBalance() + assetsToWithdraw();
     }
 
     /// @notice The asset balance of this strategy.
@@ -721,15 +721,15 @@ contract BasisStrategy is
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         // check leverage
-        if (isIncrease && collateralDeltaAmount == 0 && $.positionManager.positionNetBalance() == 0) {
+        if (isIncrease && collateralDeltaAmount == 0 && $.hedgeManager.positionNetBalance() == 0) {
             return false;
         }
 
         if (sizeDeltaInTokens > 0) {
             uint256 min;
             uint256 max;
-            if (isIncrease) (min, max) = $.positionManager.increaseSizeMinMax();
-            else (min, max) = $.positionManager.decreaseSizeMinMax();
+            if (isIncrease) (min, max) = $.hedgeManager.increaseSizeMinMax();
+            else (min, max) = $.hedgeManager.decreaseSizeMinMax();
 
             sizeDeltaInTokens = _clamp(min, sizeDeltaInTokens, max);
         }
@@ -737,13 +737,13 @@ contract BasisStrategy is
         if (collateralDeltaAmount > 0) {
             uint256 min;
             uint256 max;
-            if (isIncrease) (min, max) = $.positionManager.increaseCollateralMinMax();
-            else (min, max) = $.positionManager.decreaseCollateralMinMax();
+            if (isIncrease) (min, max) = $.hedgeManager.increaseCollateralMinMax();
+            else (min, max) = $.hedgeManager.decreaseCollateralMinMax();
             collateralDeltaAmount = _clamp(min, collateralDeltaAmount, max);
         }
 
         if (isIncrease && collateralDeltaAmount > 0) {
-            $.asset.safeTransferFrom(address($.vault), address($.positionManager), collateralDeltaAmount);
+            $.asset.safeTransferFrom(address($.vault), address($.hedgeManager), collateralDeltaAmount);
         }
 
         if (collateralDeltaAmount > 0 || sizeDeltaInTokens > 0) {
@@ -753,7 +753,7 @@ contract BasisStrategy is
                 isIncrease: isIncrease
             });
             $.requestParams = requestParams;
-            $.positionManager.adjustPosition(requestParams);
+            $.hedgeManager.adjustPosition(requestParams);
             return true;
         } else {
             return false;
@@ -769,9 +769,9 @@ contract BasisStrategy is
         }
 
         ILogarithmVault _vault = $.vault;
-        IHedgeManager _positionManager = $.positionManager;
+        IHedgeManager _hedgeManager = $.hedgeManager;
 
-        uint256 currentLeverage = _positionManager.currentLeverage();
+        uint256 currentLeverage = _hedgeManager.currentLeverage();
         bool _processingRebalanceDown = $.processingRebalanceDown;
         uint256 _maxLeverage = $.maxLeverage;
         uint256 _targetLeverage = $.targetLeverage;
@@ -789,9 +789,9 @@ contract BasisStrategy is
 
         if (rebalanceDownNeeded) {
             uint256 idleAssets = _vault.idleAssets();
-            (uint256 minIncreaseCollateral,) = _positionManager.increaseCollateralMinMax();
+            (uint256 minIncreaseCollateral,) = _hedgeManager.increaseCollateralMinMax();
             result.deltaCollateralToIncrease = _calculateDeltaCollateralForRebalance(
-                _positionManager.positionNetBalance(), currentLeverage, _targetLeverage
+                _hedgeManager.positionNetBalance(), currentLeverage, _targetLeverage
             );
             if (result.deltaCollateralToIncrease < minIncreaseCollateral) {
                 result.deltaCollateralToIncrease = minIncreaseCollateral;
@@ -812,8 +812,8 @@ contract BasisStrategy is
             if (deleverageNeeded && (result.deltaCollateralToIncrease > idleAssets)) {
                 (, uint256 deltaLeverage) = currentLeverage.trySub(_maxLeverage);
                 result.emergencyDeutilizationAmount =
-                    _positionManager.positionSizeInTokens().mulDiv(deltaLeverage, currentLeverage);
-                (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
+                    _hedgeManager.positionSizeInTokens().mulDiv(deltaLeverage, currentLeverage);
+                (uint256 min, uint256 max) = _hedgeManager.decreaseSizeMinMax();
                 // @issue amount can be 0 because of clamping that breaks emergency rebalance down
                 result.emergencyDeutilizationAmount = _clamp(min, result.emergencyDeutilizationAmount, max);
             }
@@ -825,21 +825,21 @@ contract BasisStrategy is
             return result;
         }
 
-        result.hedgeDeviationInTokens = _checkHedgeDeviation(_positionManager, config().hedgeDeviationThreshold());
+        result.hedgeDeviationInTokens = _checkHedgeDeviation(_hedgeManager, config().hedgeDeviationThreshold());
         if (result.hedgeDeviationInTokens != 0) {
             return result;
         }
 
-        result.positionManagerNeedKeep = _positionManager.needKeep();
-        if (result.positionManagerNeedKeep) {
+        result.hedgeManagerNeedKeep = _hedgeManager.needKeep();
+        if (result.hedgeManagerNeedKeep) {
             return result;
         }
 
-        (uint256 minDecreaseCollateral,) = _positionManager.decreaseCollateralMinMax();
+        (uint256 minDecreaseCollateral,) = _hedgeManager.decreaseCollateralMinMax();
         if (minDecreaseCollateral != 0 && $.pendingDecreaseCollateral >= minDecreaseCollateral) {
             uint256 pendingDeutilization_ = _pendingDeutilization(
                 InternalPendingDeutilization({
-                    positionManager: _positionManager,
+                    hedgeManager: _hedgeManager,
                     asset: asset(),
                     product: product(),
                     totalSupply: _vault.totalSupply(),
@@ -847,7 +847,7 @@ contract BasisStrategy is
                     paused: paused()
                 })
             );
-            (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
+            (uint256 min, uint256 max) = _hedgeManager.decreaseSizeMinMax();
             pendingDeutilization_ = _clamp(min, pendingDeutilization_, max);
             if (pendingDeutilization_ == 0) {
                 result.processPendingDecreaseCollateral = true;
@@ -857,9 +857,9 @@ contract BasisStrategy is
 
         if (rebalanceUpNeeded) {
             result.deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
-                _positionManager.positionNetBalance(), currentLeverage, _targetLeverage
+                _hedgeManager.positionNetBalance(), currentLeverage, _targetLeverage
             );
-            uint256 limitDecreaseCollateral = _positionManager.limitDecreaseCollateral();
+            uint256 limitDecreaseCollateral = _hedgeManager.limitDecreaseCollateral();
             if (result.deltaCollateralToDecrease < limitDecreaseCollateral) {
                 result.deltaCollateralToDecrease = 0;
             }
@@ -902,7 +902,7 @@ contract BasisStrategy is
             }
 
             (, bool rebalanceDownNeeded) = _checkNeedRebalance(
-                $.positionManager.currentLeverage(), targetLeverage(), config().rebalanceDeviationThreshold()
+                $.hedgeManager.currentLeverage(), targetLeverage(), config().rebalanceDeviationThreshold()
             );
             // only when rebalance was started, we need to check
             $.processingRebalanceDown = $.processingRebalanceDown && rebalanceDownNeeded;
@@ -951,7 +951,7 @@ contract BasisStrategy is
             }
 
             (, bool rebalanceDownNeeded) = _checkNeedRebalance(
-                $.positionManager.currentLeverage(), $.targetLeverage, config().rebalanceDeviationThreshold()
+                $.hedgeManager.currentLeverage(), $.targetLeverage, config().rebalanceDeviationThreshold()
             );
             // only when rebalance was started, we need to check
             $.processingRebalanceDown = processingRebalanceDown() && rebalanceDownNeeded;
@@ -1008,16 +1008,16 @@ contract BasisStrategy is
         uint256 productBalance = $.spotManager.exposure();
         if (params.totalSupply == 0) return productBalance;
 
-        uint256 positionSizeInTokens = params.positionManager.positionSizeInTokens();
+        uint256 positionSizeInTokens = params.hedgeManager.positionSizeInTokens();
         uint256 positionSizeInAssets = $.oracle.convertTokenAmount(params.product, params.asset, positionSizeInTokens);
-        uint256 positionNetBalance = params.positionManager.positionNetBalance();
+        uint256 positionNetBalance = params.hedgeManager.positionNetBalance();
         if (positionSizeInAssets == 0 || positionNetBalance == 0) return 0;
 
         uint256 totalPendingWithdraw = assetsToDeutilize();
         uint256 deutilization;
         if (params.processingRebalanceDown) {
             // for rebalance
-            uint256 currentLeverage = params.positionManager.currentLeverage();
+            uint256 currentLeverage = params.hedgeManager.currentLeverage();
             uint256 _targetLeverage = $.targetLeverage;
             if (currentLeverage > _targetLeverage) {
                 // calculate deutilization product
@@ -1108,13 +1108,13 @@ contract BasisStrategy is
     }
 
     /// @dev Checks the difference between spot and hedge sizes if it is over the configured threshold.
-    function _checkHedgeDeviation(IHedgeManager _positionManager, uint256 _hedgeDeviationThreshold)
+    function _checkHedgeDeviation(IHedgeManager _hedgeManager, uint256 _hedgeDeviationThreshold)
         internal
         view
         returns (int256)
     {
         uint256 spotExposure = ISpotManager(spotManager()).exposure();
-        uint256 hedgeExposure = _positionManager.positionSizeInTokens();
+        uint256 hedgeExposure = _hedgeManager.positionSizeInTokens();
         if (spotExposure == 0) {
             if (hedgeExposure == 0) {
                 return 0;
@@ -1126,10 +1126,10 @@ contract BasisStrategy is
             _checkDeviation(hedgeExposure, spotExposure, _hedgeDeviationThreshold);
         if (exceedsThreshold) {
             if (hedgeDeviationInTokens > 0) {
-                (uint256 min, uint256 max) = _positionManager.decreaseSizeMinMax();
+                (uint256 min, uint256 max) = _hedgeManager.decreaseSizeMinMax();
                 return int256(_clamp(min, uint256(hedgeDeviationInTokens), max));
             } else {
-                (uint256 min, uint256 max) = _positionManager.increaseSizeMinMax();
+                (uint256 min, uint256 max) = _hedgeManager.increaseSizeMinMax();
                 return -int256(_clamp(min, uint256(-hedgeDeviationInTokens), max));
             }
         }
@@ -1186,7 +1186,7 @@ contract BasisStrategy is
 
     /// @notice The address of the position manager which hedges the spot by opening perpetual positions.
     function hedgeManager() public view returns (address) {
-        return address(_getBasisStrategyStorage().positionManager);
+        return address(_getBasisStrategyStorage().hedgeManager);
     }
 
     /// @notice The address of system oracle.

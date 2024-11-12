@@ -32,7 +32,7 @@ contract GmxV2Test is PositionMngerForkTest {
 
     address constant CHAINLINK_PRICE_FEED_PROVIDER = 0x527FB0bCfF63C47761039bB386cFE181A92a4701;
 
-    GmxV2PositionManager positionManager;
+    GmxV2PositionManager hedgeManager;
 
     function _initPositionManager(address owner, address strategy) internal override returns (address) {
         vm.startPrank(owner);
@@ -47,35 +47,35 @@ contract GmxV2Test is PositionMngerForkTest {
         // topup gmxGasStation with some native token, in practice, its don't through gmxGasStation
         vm.deal(address(gmxGasStation), 10000 ether);
 
-        // deploy positionManager beacon
-        address positionManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
+        // deploy hedgeManager beacon
+        address hedgeManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
         // deploy positionMnager beacon proxy
-        positionManager = DeployHelper.deployGmxPositionManager(
+        hedgeManager = DeployHelper.deployGmxPositionManager(
             DeployHelper.GmxPositionManagerDeployParams(
-                positionManagerBeacon, address(config), strategy, address(gmxGasStation), GMX_ETH_USDC_MARKET
+                hedgeManagerBeacon, address(config), strategy, address(gmxGasStation), GMX_ETH_USDC_MARKET
             )
         );
-        vm.label(address(positionManager), "positionManager");
+        vm.label(address(hedgeManager), "hedgeManager");
         vm.stopPrank();
 
-        return address(positionManager);
+        return address(hedgeManager);
     }
 
     function _executeOrder() internal override {
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingIncreaseOrderKey());
     }
 
     function _hedgeManager() internal view override returns (IHedgeManager) {
-        return IHedgeManager(positionManager);
+        return IHedgeManager(hedgeManager);
     }
 
     function _executeOrder(bytes32 key) internal {
         if (key != bytes32(0)) {
             IOrderHandler.SetPricesParams memory oracleParams;
-            address indexToken = positionManager.indexToken();
-            address longToken = positionManager.longToken();
-            address shortToken = positionManager.shortToken();
+            address indexToken = hedgeManager.indexToken();
+            address longToken = hedgeManager.longToken();
+            address shortToken = hedgeManager.shortToken();
             vm.startPrank(GMX_ORDER_HANDLER);
             IDataStore(GMX_DATA_STORE).setAddress(
                 Keys.oracleProviderForTokenKey(indexToken), CHAINLINK_PRICE_FEED_PROVIDER
@@ -131,16 +131,16 @@ contract GmxV2Test is PositionMngerForkTest {
         return GmxV2Lib.getPositionInfo(
             GmxV2Lib.GmxParams({
                 market: Market.Props({
-                    marketToken: positionManager.marketToken(),
-                    indexToken: positionManager.indexToken(),
-                    longToken: positionManager.longToken(),
-                    shortToken: positionManager.shortToken()
+                    marketToken: hedgeManager.marketToken(),
+                    indexToken: hedgeManager.indexToken(),
+                    longToken: hedgeManager.longToken(),
+                    shortToken: hedgeManager.shortToken()
                 }),
                 dataStore: GMX_DATA_STORE,
                 reader: GMX_READER,
-                account: address(positionManager),
-                collateralToken: positionManager.collateralToken(),
-                isLong: positionManager.isLong()
+                account: address(hedgeManager),
+                collateralToken: hedgeManager.collateralToken(),
+                isLong: hedgeManager.isLong()
             }),
             oracle,
             IOrderHandler(GMX_ORDER_HANDLER).referralStorage()

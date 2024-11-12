@@ -57,9 +57,9 @@ contract OffChainHandler is OffChainTest {
         product = IERC20(_strategy.product());
         vault = LogarithmVault(_strategy.vault());
         oracle = LogarithmOracle(_strategy.oracle());
-        address positionManagerAddr = _initPositionManager(owner, address(_strategy));
+        address hedgeManagerAddr = _initPositionManager(owner, address(_strategy));
         vm.startPrank(owner);
-        strategy.setPositionManager(positionManagerAddr);
+        strategy.setHedgeManager(hedgeManagerAddr);
         vm.stopPrank();
 
         helper = new StrategyHelper(address(strategy));

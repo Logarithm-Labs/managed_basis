@@ -29,7 +29,7 @@ contract OffChainTest is PositionMngerForkTest {
     uint256 constant FLOAT_PRECISION = 1e18;
 
     address public immutable agent = makeAddr("agent");
-    OffChainPositionManager public positionManager;
+    OffChainPositionManager public hedgeManager;
     IOracle public oracle_;
     address public asset_;
     address public product_;
@@ -60,15 +60,15 @@ contract OffChainTest is PositionMngerForkTest {
         address product = IBasisStrategy(strategy).product();
         address asset = IBasisStrategy(strategy).asset();
 
-        // deploy positionManager beacon
-        address positionManagerBeacon = DeployHelper.deployBeacon(address(new OffChainPositionManager()), owner);
+        // deploy hedgeManager beacon
+        address hedgeManagerBeacon = DeployHelper.deployBeacon(address(new OffChainPositionManager()), owner);
         // deploy positionMnager beacon proxy
-        positionManager = DeployHelper.deployOffChainPositionManager(
+        hedgeManager = DeployHelper.deployOffChainPositionManager(
             DeployHelper.OffChainPositionManagerDeployParams(
-                owner, address(config), positionManagerBeacon, strategy, agent, oracle, product, asset, false
+                owner, address(config), hedgeManagerBeacon, strategy, agent, oracle, product, asset, false
             )
         );
-        vm.label(address(positionManager), "positionManager");
+        vm.label(address(hedgeManager), "hedgeManager");
 
         asset_ = asset;
         product_ = product;
@@ -77,20 +77,20 @@ contract OffChainTest is PositionMngerForkTest {
         vm.startPrank(address(this));
         IERC20(asset).approve(agent, type(uint256).max);
         vm.startPrank(agent);
-        IERC20(asset).approve(address(positionManager), type(uint256).max);
+        IERC20(asset).approve(address(hedgeManager), type(uint256).max);
         vm.stopPrank();
 
-        return address(positionManager);
+        return address(hedgeManager);
     }
 
     function _initOffChainTest(address _asset, address _product, address _oracle) internal {}
 
     function _hedgeManager() internal view override returns (IHedgeManager) {
-        return IHedgeManager(positionManager);
+        return IHedgeManager(hedgeManager);
     }
 
     function _executeOrder() internal override {
-        OffChainPositionManager.RequestInfo memory requestInfo = positionManager.getLastRequest();
+        OffChainPositionManager.RequestInfo memory requestInfo = hedgeManager.getLastRequest();
         if (!requestInfo.isReported && requestInfo.requestTimestamp != 0) {
             vm.startPrank(agent);
             IHedgeManager.AdjustPositionPayload memory request = requestInfo.request;
@@ -125,7 +125,7 @@ contract OffChainTest is PositionMngerForkTest {
 
     function _reportState() internal {
         uint256 markPrice = _getMarkPrice();
-        positionManager.reportState(positionSizeInTokens, positionNetBalance, markPrice);
+        hedgeManager.reportState(positionSizeInTokens, positionNetBalance, markPrice);
     }
 
     function _updatePositionNetBalance(uint256 netBalance) internal {
@@ -142,7 +142,7 @@ contract OffChainTest is PositionMngerForkTest {
             collateralDeltaAmount: response.collateralDeltaAmount,
             isIncrease: response.isIncrease
         });
-        positionManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
+        hedgeManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
     }
 
     function _increasePositionSize(uint256 sizeDeltaInTokens) internal returns (uint256) {

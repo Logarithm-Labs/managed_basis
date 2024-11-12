@@ -17,7 +17,7 @@ contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     /// @custom:storage-location erc7201:logarithm.storage.GmxGasStation
     struct GmxGasStationStorage {
-        mapping(address positionManager => bool) isPositionManager;
+        mapping(address hedgeManager => bool) isPositionManager;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxGasStation")) - 1)) & ~bytes32(uint256(0xff))
@@ -34,7 +34,7 @@ contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event PositionManagerRegistered(address indexed account, address indexed positionManager, bool indexed allowed);
+    event PositionManagerRegistered(address indexed account, address indexed hedgeManager, bool indexed allowed);
 
     /*//////////////////////////////////////////////////////////////
                         INITIALIZATION
@@ -56,11 +56,11 @@ contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Registers positionManager to use fund of this contract for the gmx execution fees.
-    function registerPositionManager(address positionManager, bool allowed) external onlyOwner {
-        if (isRegistered(positionManager) != allowed) {
-            _getGmxGasStationStorage().isPositionManager[positionManager] = allowed;
-            emit PositionManagerRegistered(_msgSender(), positionManager, allowed);
+    /// @dev Registers hedgeManager to use fund of this contract for the gmx execution fees.
+    function registerPositionManager(address hedgeManager, bool allowed) external onlyOwner {
+        if (isRegistered(hedgeManager) != allowed) {
+            _getGmxGasStationStorage().isPositionManager[hedgeManager] = allowed;
+            emit PositionManagerRegistered(_msgSender(), hedgeManager, allowed);
         }
     }
 
@@ -90,8 +90,8 @@ contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
-    /// @dev Tells if a positionManager is registered or not.
-    function isRegistered(address positionManager) public view returns (bool) {
-        return _getGmxGasStationStorage().isPositionManager[positionManager];
+    /// @dev Tells if a hedgeManager is registered or not.
+    function isRegistered(address hedgeManager) public view returns (bool) {
+        return _getGmxGasStationStorage().isPositionManager[hedgeManager];
     }
 }

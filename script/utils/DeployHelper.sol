@@ -174,14 +174,14 @@ library DeployHelper {
                 )
             )
         );
-        GmxV2PositionManager positionManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
-        BasisStrategy(params.strategy).setPositionManager(address(positionManager));
+        GmxV2PositionManager hedgeManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
+        BasisStrategy(params.strategy).setHedgeManager(address(hedgeManager));
         require(
-            BasisStrategy(params.strategy).hedgeManager() == address(positionManager),
-            "Strategy positionManager is not the expected positionManager"
+            BasisStrategy(params.strategy).hedgeManager() == address(hedgeManager),
+            "Strategy hedgeManager is not the expected hedgeManager"
         );
-        GmxGasStation(payable(params.gasStation)).registerPositionManager(address(positionManager), true);
-        return positionManager;
+        GmxGasStation(payable(params.gasStation)).registerPositionManager(address(hedgeManager), true);
+        return hedgeManager;
     }
 
     function deployOffChainConfig(address owner) internal returns (OffChainConfig) {
@@ -227,10 +227,10 @@ library DeployHelper {
         require(hlPositionManager.agent() == params.agent, "PositionManager agent is not the expected agent");
         require(hlPositionManager.oracle() == params.oracle, "PositionManager oracle is not the expected oracle");
 
-        BasisStrategy(params.strategy).setPositionManager(address(hlPositionManager));
+        BasisStrategy(params.strategy).setHedgeManager(address(hlPositionManager));
         require(
             BasisStrategy(params.strategy).hedgeManager() == address(hlPositionManager),
-            "Strategy positionManager is not the expected positionManager"
+            "Strategy hedgeManager is not the expected hedgeManager"
         );
         return hlPositionManager;
     }

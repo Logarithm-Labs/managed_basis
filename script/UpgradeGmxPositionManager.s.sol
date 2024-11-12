@@ -7,12 +7,12 @@ import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract UpgradeGmxPositionManagerScript is Script {
-    UpgradeableBeacon positionManagerBeacon = UpgradeableBeacon(0x91544E205446E673aeC904c53BdB7cA9b892CD5E);
+    UpgradeableBeacon hedgeManagerBeacon = UpgradeableBeacon(0x91544E205446E673aeC904c53BdB7cA9b892CD5E);
 
     function run() public {
         vm.startBroadcast();
-        address positionManagerImpl = address(new GmxV2PositionManager());
-        positionManagerBeacon.upgradeTo(positionManagerImpl);
-        // positionManager.reinitialize();
+        address hedgeManagerImpl = address(new GmxV2PositionManager());
+        hedgeManagerBeacon.upgradeTo(hedgeManagerImpl);
+        // hedgeManager.reinitialize();
     }
 }

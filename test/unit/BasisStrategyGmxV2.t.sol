@@ -83,30 +83,30 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
     }
 
-    function test_performUpkeep_positionManagerKeep() public afterFullUtilized validateFinalState {
+    function test_performUpkeep_hedgeManagerKeep() public afterFullUtilized validateFinalState {
         address[] memory priceFeeds = new address[](2);
         priceFeeds[0] = assetPriceFeed;
         priceFeeds[1] = productPriceFeed;
         _moveTimestamp(1 days, priceFeeds);
 
         vm.startPrank(address(owner));
-        GmxConfig(address(positionManager.config())).setMaxClaimableFundingShare(0.00001 ether);
+        GmxConfig(address(hedgeManager.config())).setMaxClaimableFundingShare(0.00001 ether);
 
-        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("positionManagerKeep");
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeManagerKeep");
         // assertTrue(upkeepNeeded, "upkeepNeeded");
         (
             bool rebalanceDownNeeded,
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep,
+            bool hedgeManagerNeedKeep,
             ,
             bool rebalanceUpNeeded
         ) = helper.decodePerformData(performData);
 
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        assertTrue(positionManagerNeedKeep, "positionManagerNeedKeep");
+        assertTrue(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
 
-        _performKeep("positionManagerKeep");
+        _performKeep("hedgeManagerKeep");
     }
 
     function test_performUpkeep_rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting()
@@ -120,12 +120,12 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         (bool upkeepNeeded, bytes memory performData) =
             _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool hedgeManagerNeedKeep,, bool rebalanceUpNeeded) =
             helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(positionManagerNeedKeep);
+        assertFalse(hedgeManagerNeedKeep);
         uint256 leverageBefore = _hedgeManager().currentLeverage();
         _performKeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
         uint256 leverageAfter = _hedgeManager().currentLeverage();

@@ -84,12 +84,12 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         // topup gmxGasStation with some native token, in practice, its don't through gmxGasStation
         vm.deal(address(gmxGasStation), 10000 ether);
 
-        // deploy positionManager beacon
-        address positionManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
+        // deploy hedgeManager beacon
+        address hedgeManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
         // deploy positionMnager beacon proxy
         address gmxPositionManagerProxy = address(
             new BeaconProxy(
-                positionManagerBeacon,
+                hedgeManagerBeacon,
                 abi.encodeWithSelector(
                     GmxV2PositionManager.initialize.selector,
                     address(strategy),
@@ -99,84 +99,84 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 )
             )
         );
-        positionManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
-        vm.label(address(positionManager), "positionManager");
-        gmxGasStation.registerPositionManager(address(positionManager), true);
+        hedgeManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
+        vm.label(address(hedgeManager), "hedgeManager");
+        gmxGasStation.registerPositionManager(address(hedgeManager), true);
         vm.stopPrank();
     }
 
     modifier afterHavingPosition() {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 300 * USDC_PRECISION,
                 isIncrease: true
             })
         );
-        bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
+        bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
         _;
     }
 
     function test_marketToken() public view {
-        address marketToken = positionManager.marketToken();
+        address marketToken = hedgeManager.marketToken();
         assertEq(marketToken, GMX_ETH_USDC_MARKET);
     }
 
     function test_indexToken() public view {
-        address indexToken = positionManager.indexToken();
+        address indexToken = hedgeManager.indexToken();
         assertEq(indexToken, product);
     }
 
     function test_longToken() public view {
-        address longToken = positionManager.longToken();
+        address longToken = hedgeManager.longToken();
         assertEq(longToken, product);
     }
 
     function test_shortToken() public view {
-        address shortToken = positionManager.shortToken();
+        address shortToken = hedgeManager.shortToken();
         assertEq(shortToken, asset);
     }
 
     function test_collateralToken() public view {
-        address collateralToken = positionManager.collateralToken();
+        address collateralToken = hedgeManager.collateralToken();
         assertEq(collateralToken, asset);
     }
 
     function test_adjustPosition_increasePosition() public {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 300 * USDC_PRECISION,
                 isIncrease: true
             })
         );
-        bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
+        bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
         ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(address(oracle));
         assertApproxEqRel(positionInfo.position.numbers.sizeInTokens, 1 ether, 0.99999 ether);
         assertEq(positionInfo.position.numbers.collateralAmount, 297644214);
-        assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
+        assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
     }
 
     function test_adjustPosition_increasePosition_lessThanIdleCollateral() public {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
                 isIncrease: true
             })
         );
-        bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
+        bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
         ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(address(oracle));
         assertApproxEqRel(positionInfo.position.numbers.sizeInTokens, 1 ether, 0.99999 ether);
@@ -185,10 +185,10 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
     function test_revert_adjustPosition_increasePosition_biggerThanIdleCollateral() public {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         vm.expectRevert(Errors.NotEnoughCollateral.selector);
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 400 * USDC_PRECISION,
@@ -199,9 +199,9 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
     function test_whenNotPending() public {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
@@ -210,10 +210,10 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         );
 
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         vm.expectRevert(Errors.AlreadyPending.selector);
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
@@ -225,14 +225,14 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     function test_adjustPosition_decreasePositionSize() public afterHavingPosition {
         vm.startPrank(address(strategy));
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: 0,
                 isIncrease: false
             })
         );
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         assertEq(
             positionInfoAfter.position.numbers.sizeInTokens,
@@ -243,14 +243,14 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     function test_adjustPosition_afterIncreasePositionSize() public afterHavingPosition {
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: 0,
                 isIncrease: true
             })
         );
-        bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
+        bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         assertEq(
@@ -262,16 +262,16 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     function test_adjustPosition_afterIncreasePositionCollateral() public afterHavingPosition {
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 200 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 200 * USDC_PRECISION);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
                 isIncrease: true
             })
         );
-        bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
+        bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         assertEq(
@@ -283,14 +283,14 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     function test_adjustPosition_afterDecreasePositionSize() public afterHavingPosition {
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: 0,
                 isIncrease: false
             })
         );
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         assertEq(
             strategy.sizeDeltaInTokens(),
@@ -299,25 +299,25 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     }
 
     function test_positionNetBalance_withoutPositionOpened() public view {
-        uint256 positionNetBalance = positionManager.positionNetBalance();
+        uint256 positionNetBalance = hedgeManager.positionNetBalance();
         assertEq(positionNetBalance, 0);
     }
 
     function test_positionNetBalance() public afterHavingPosition {
-        uint256 positionNetBalance = positionManager.positionNetBalance();
+        uint256 positionNetBalance = hedgeManager.positionNetBalance();
         assertEq(positionNetBalance, 294599096);
     }
 
     function test_positionNetBalance_whenPending() public afterHavingPosition {
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         // trnasfer usdc to strategy assuming there are funds deposited
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 1 ether, collateralDeltaAmount: 0, isIncrease: true})
         );
-        assertEq(positionManager.positionNetBalance(), positionNetBalanceBefore + 300 * USDC_PRECISION);
+        assertEq(hedgeManager.positionNetBalance(), positionNetBalanceBefore + 300 * USDC_PRECISION);
     }
 
     function test_adjustPosition_decreasePositionCollateral_whenPendingCollateralNotEngouh()
@@ -326,26 +326,26 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     {
         // trnasfer usdc to strategy assuming there are funds deposited
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 100 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 100 * USDC_PRECISION);
 
         uint256 collateralDelta = 200 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
             })
         );
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertEq(positionInfoAfter.position.numbers.sizeInUsd, positionInfoBefore.position.numbers.sizeInUsd);
         assertEq(positionInfoAfter.position.numbers.sizeInTokens, positionInfoBefore.position.numbers.sizeInTokens);
@@ -362,7 +362,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     function test_adjustPosition_decreasePositionCollateralAndSize_whenPositivePnl() public afterHavingPosition {
         // trnasfer usdc to strategy assuming there are funds deposited
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 100 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 100 * USDC_PRECISION);
 
         uint256 collateralDelta = 200 * USDC_PRECISION;
         uint256 sizeDeltaInTokens = 0.25 ether;
@@ -371,14 +371,14 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: sizeDeltaInTokens,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
             })
         );
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
         assertEq(
             positionInfoAfter.position.numbers.sizeInTokens,
@@ -393,22 +393,22 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
             })
         );
-        assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
-        assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
+        assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertEq(positionInfoAfter.position.numbers.sizeInUsd, positionInfoBefore.position.numbers.sizeInUsd);
         assertEq(positionInfoAfter.position.numbers.sizeInTokens, positionInfoBefore.position.numbers.sizeInTokens);
@@ -427,23 +427,23 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
             })
         );
-        assertNotEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
-        assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        assertNotEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
+        assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingIncreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertApproxEqRel(
             positionInfoAfter.position.numbers.sizeInTokens,
@@ -463,28 +463,28 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         afterHavingPosition
     {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 100 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 100 * USDC_PRECISION);
         uint256 collateralDelta = 400 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
             })
         );
-        assertNotEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
-        assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        assertNotEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
+        assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingIncreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertApproxEqRel(
             positionInfoAfter.position.numbers.sizeInTokens,
@@ -501,28 +501,28 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
     function test_adjustPosition_decreasePositionCollateral_whenNegativePnl() public afterHavingPosition {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 100 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 100 * USDC_PRECISION);
         uint256 collateralDelta = 200 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 1001 / 1000);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd < 0);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
             })
         );
-        assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
-        assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
+        assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingIncreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
 
         assertEq(positionInfoAfter.position.numbers.sizeInTokens, positionInfoBefore.position.numbers.sizeInTokens);
@@ -540,12 +540,12 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         afterHavingPosition
     {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 100 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 100 * USDC_PRECISION);
         uint256 collateralDelta = 200 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         console.log("-------before-------");
         console.log("size in usd", positionInfoBefore.position.numbers.sizeInUsd);
@@ -556,18 +556,18 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         console.log("balance", strategyBalanceBefore);
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
             })
         );
-        assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
-        assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
+        assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         console.log("-------after-------");
         console.log("size in usd", positionInfoAfter.position.numbers.sizeInUsd);
@@ -586,7 +586,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         );
         assertApproxEqRel(positionNetBalanceAfter, positionNetBalanceBefore - collateralDelta, 0.9999 ether);
         assertEq(collateralDelta, strategy.collateralDelta());
-        assertNotEq(IERC20(USDC).balanceOf(address(positionManager)), 0);
+        assertNotEq(IERC20(USDC).balanceOf(address(hedgeManager)), 0);
     }
 
     function test_adjustPosition_decreasePosition_whenDeltaCollateralIsBiggerThanRealizedPnl()
@@ -594,34 +594,34 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         afterHavingPosition
     {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 100 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 100 * USDC_PRECISION);
         uint256 collateralDelta = 300 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
             })
         );
-        assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
-        assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
+        assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertEq(
             positionInfoAfter.position.numbers.sizeInTokens + 0.5 ether,
             positionInfoBefore.position.numbers.sizeInTokens
         );
         assertEq(strategy.sizeDeltaInTokens(), 0.5 ether);
-        // assertEq(IERC20(USDC).balanceOf(address(positionManager)), 0);
+        // assertEq(IERC20(USDC).balanceOf(address(hedgeManager)), 0);
         assertApproxEqRel(positionNetBalanceAfter, positionNetBalanceBefore - collateralDelta, 0.9999 ether);
         assertEq(collateralDelta, strategy.collateralDelta());
         assertEq(strategyBalanceAfter - strategyBalanceBefore, strategy.collateralDelta());
@@ -629,28 +629,28 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
     function test_adjustPosition_decreasePosition_whenNegativePnl() public afterHavingPosition {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 100 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 100 * USDC_PRECISION);
         uint256 collateralDelta = 200 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 1001 / 1000);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd < 0);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
             })
         );
-        assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
-        assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
+        assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingIncreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         assertEq(
             positionInfoAfter.position.numbers.sizeInTokens,
@@ -666,12 +666,12 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         afterHavingPosition
     {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 100 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 100 * USDC_PRECISION);
         uint256 collateralDelta = 600 * USDC_PRECISION;
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         console.log("-------before-------");
@@ -682,19 +682,19 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         console.log("total asssets", positionNetBalanceBefore);
         console.log("balance", strategyBalanceBefore);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
             })
         );
-        assertNotEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
-        assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        assertNotEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
+        assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingIncreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         uint256 strategyBalanceAfter = IERC20(USDC).balanceOf(address(strategy));
         console.log("-------after-------");
         console.log("size in usd", positionInfoAfter.position.numbers.sizeInUsd);
@@ -709,7 +709,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
             0.99999 ether
         );
         assertApproxEqRel(strategy.sizeDeltaInTokens(), 0.5 ether, 0.99999 ether);
-        // assertEq(IERC20(USDC).balanceOf(address(positionManager)), 0);
+        // assertEq(IERC20(USDC).balanceOf(address(hedgeManager)), 0);
         assertApproxEqRel(positionNetBalanceAfter, positionNetBalanceBefore - collateralDelta, 0.9999 ether);
         assertEq(collateralDelta, strategy.collateralDelta());
         assertEq(strategyBalanceAfter - strategyBalanceBefore, strategy.collateralDelta());
@@ -717,53 +717,53 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
     function test_getClaimableFundingAmounts() public afterHavingPosition {
         _moveTimestampWithPriceFeed(3600);
-        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        (uint256 claimableLongAmount, uint256 claimableShortAmount) = hedgeManager.getClaimableFundingAmounts();
         assertTrue(claimableLongAmount > 0);
         assertTrue(claimableShortAmount > 0);
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
         );
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
-        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
+        (claimableLongAmount, claimableShortAmount) = hedgeManager.getClaimableFundingAmounts();
         assertTrue(claimableLongAmount == 0);
         assertTrue(claimableShortAmount == 0);
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         assertTrue(positionNetBalanceAfter + 1 < positionNetBalanceBefore);
     }
 
     function test_claimFunding() public afterHavingPosition {
         _moveTimestampWithPriceFeed(24 * 3600);
-        uint256 collateralBalanceBefore = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
-        uint256 productBalacneBefore = IERC20(positionManager.longToken()).balanceOf(address(strategy));
-        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        uint256 collateralBalanceBefore = IERC20(hedgeManager.collateralToken()).balanceOf(address(hedgeManager));
+        uint256 productBalacneBefore = IERC20(hedgeManager.longToken()).balanceOf(address(strategy));
+        (uint256 claimableLongAmount, uint256 claimableShortAmount) = hedgeManager.getClaimableFundingAmounts();
         (uint256 accruedClaimableLongAmountBefore, uint256 accruedClaimableShortAmountBefore) =
-            positionManager.getAccruedClaimableFundingAmounts();
+            hedgeManager.getAccruedClaimableFundingAmounts();
         assertTrue(claimableLongAmount > 0);
         assertTrue(claimableShortAmount > 0);
         address anyone = makeAddr("anyone");
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
         );
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         (uint256 accruedClaimableLongAmount, uint256 accruedClaimableShortAmount) =
-            positionManager.getAccruedClaimableFundingAmounts();
+            hedgeManager.getAccruedClaimableFundingAmounts();
         (uint256 claimableLongAmountAfter, uint256 claimableShortAmountAfter) =
-            positionManager.getClaimableFundingAmounts();
+            hedgeManager.getClaimableFundingAmounts();
         vm.startPrank(anyone);
-        positionManager.claimFunding();
+        hedgeManager.claimFunding();
         (uint256 accruedClaimableLongAmountAfter, uint256 accruedClaimableShortAmountAfter) =
-            positionManager.getAccruedClaimableFundingAmounts();
+            hedgeManager.getAccruedClaimableFundingAmounts();
         assertTrue(claimableLongAmountAfter == 0);
         assertTrue(claimableShortAmountAfter == 0);
         assertTrue(accruedClaimableLongAmountBefore == 0);
         assertTrue(accruedClaimableShortAmountBefore == 0);
         assertTrue(accruedClaimableLongAmountAfter == 0);
         assertTrue(accruedClaimableShortAmountAfter == 0);
-        uint256 collateralBalanceAfter = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
-        uint256 productBalacneAfter = IERC20(positionManager.longToken()).balanceOf(address(strategy));
+        uint256 collateralBalanceAfter = IERC20(hedgeManager.collateralToken()).balanceOf(address(hedgeManager));
+        uint256 productBalacneAfter = IERC20(hedgeManager.longToken()).balanceOf(address(strategy));
         assertApproxEqRel(collateralBalanceAfter - collateralBalanceBefore, claimableShortAmount, 0.99999 ether);
         assertEq(productBalacneAfter - productBalacneBefore, claimableLongAmount);
         assertEq(collateralBalanceAfter - collateralBalanceBefore, accruedClaimableShortAmount);
@@ -773,47 +773,47 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     function test_needKeep_idle() public afterHavingPosition {
         _moveTimestampWithPriceFeed(2 * 24 * 3600);
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 5 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 5 * USDC_PRECISION);
         vm.startPrank(address(owner));
-        bool result = positionManager.needKeep();
+        bool result = hedgeManager.needKeep();
         assertFalse(result);
 
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 10 * USDC_PRECISION);
-        result = positionManager.needKeep();
+        IERC20(USDC).transfer(address(hedgeManager), 10 * USDC_PRECISION);
+        result = hedgeManager.needKeep();
         assertTrue(result);
     }
 
     function test_needKeep_funding() public afterHavingPosition {
         _moveTimestampWithPriceFeed(2 * 24 * 3600);
         vm.startPrank(address(owner));
-        GmxConfig(address(positionManager.config())).setMaxClaimableFundingShare(0.0001 ether);
-        bool result = positionManager.needKeep();
+        GmxConfig(address(hedgeManager.config())).setMaxClaimableFundingShare(0.0001 ether);
+        bool result = hedgeManager.needKeep();
         assertTrue(result);
     }
 
     function test_performUpkeep_keep_decreaseCollateral() public afterHavingPosition {
         _moveTimestampWithPriceFeed(2 * 24 * 3600);
         vm.startPrank(address(owner));
-        GmxConfig(address(positionManager.config())).setMaxClaimableFundingShare(0.0001 ether);
-        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        GmxConfig(address(hedgeManager.config())).setMaxClaimableFundingShare(0.0001 ether);
+        (uint256 claimableLongAmount, uint256 claimableShortAmount) = hedgeManager.getClaimableFundingAmounts();
         assertTrue(claimableLongAmount > 0);
         assertTrue(claimableShortAmount > 0);
-        bool result = positionManager.needKeep();
+        bool result = hedgeManager.needKeep();
         assertTrue(result);
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
-        uint256 idleCollateralAmount = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
+        uint256 idleCollateralAmount = IERC20(hedgeManager.collateralToken()).balanceOf(address(hedgeManager));
         assertTrue(idleCollateralAmount == 0);
         vm.startPrank(address(strategy));
-        positionManager.keep();
-        assertNotEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
-        assertEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
-        idleCollateralAmount = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        hedgeManager.keep();
+        assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
+        assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
+        idleCollateralAmount = IERC20(hedgeManager.collateralToken()).balanceOf(address(hedgeManager));
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         assertTrue(positionNetBalanceAfter < positionNetBalanceBefore);
         assertApproxEqRel(idleCollateralAmount, claimableShortAmount, 0.99999 ether);
-        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        (claimableLongAmount, claimableShortAmount) = hedgeManager.getClaimableFundingAmounts();
         assertTrue(claimableLongAmount == 0);
         assertTrue(claimableShortAmount == 0);
     }
@@ -821,29 +821,29 @@ contract GmxV2PositionManagerTest is GmxV2Test {
     function test_performUpkeep_keep_increaseCollateral() public afterHavingPosition {
         _moveTimestampWithPriceFeed(2 * 24 * 3600);
         vm.startPrank(address(owner));
-        GmxConfig(address(positionManager.config())).setMaxClaimableFundingShare(0.0001 ether);
-        (uint256 claimableLongAmount, uint256 claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        GmxConfig(address(hedgeManager.config())).setMaxClaimableFundingShare(0.0001 ether);
+        (uint256 claimableLongAmount, uint256 claimableShortAmount) = hedgeManager.getClaimableFundingAmounts();
         assertTrue(claimableLongAmount > 0);
         assertTrue(claimableShortAmount > 0);
-        bool result = positionManager.needKeep();
+        bool result = hedgeManager.needKeep();
         assertTrue(result);
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
-        uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
-        uint256 idleCollateralAmount = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
+        IERC20(USDC).transfer(address(hedgeManager), 300 * USDC_PRECISION);
+        uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
+        uint256 idleCollateralAmount = IERC20(hedgeManager.collateralToken()).balanceOf(address(hedgeManager));
         assertTrue(idleCollateralAmount == 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
-        positionManager.keep();
-        uint256 positionNetBalancePending = positionManager.positionNetBalance();
-        assertNotEq(positionManager.pendingIncreaseOrderKey(), bytes32(0));
-        assertEq(positionManager.pendingDecreaseOrderKey(), bytes32(0));
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
-        uint256 positionNetBalanceAfter = positionManager.positionNetBalance();
+        hedgeManager.keep();
+        uint256 positionNetBalancePending = hedgeManager.positionNetBalance();
+        assertNotEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
+        assertEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
+        _executeOrder(hedgeManager.pendingIncreaseOrderKey());
+        uint256 positionNetBalanceAfter = hedgeManager.positionNetBalance();
         assertTrue(positionNetBalanceAfter < positionNetBalanceBefore);
         assertTrue(positionNetBalanceBefore == positionNetBalancePending);
-        idleCollateralAmount = IERC20(positionManager.collateralToken()).balanceOf(address(positionManager));
+        idleCollateralAmount = IERC20(hedgeManager.collateralToken()).balanceOf(address(hedgeManager));
         assertApproxEqRel(idleCollateralAmount, claimableShortAmount, 0.99999 ether);
-        (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
+        (claimableLongAmount, claimableShortAmount) = hedgeManager.getClaimableFundingAmounts();
         assertTrue(claimableLongAmount == 0);
         assertTrue(claimableShortAmount == 0);
     }
@@ -854,19 +854,19 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         // _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         // assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
-        uint256 accumulatedPositionFeeBefore = positionManager.cumulativePositionFeeUsd();
+        uint256 accumulatedPositionFeeBefore = hedgeManager.cumulativePositionFeeUsd();
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: sizeDeltaInTokens,
                 collateralDeltaAmount: 0,
                 isIncrease: false
             })
         );
-        _executeOrder(positionManager.pendingDecreaseOrderKey());
+        _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
 
-        uint256 accumulatedPositionFeeAfter = positionManager.cumulativePositionFeeUsd();
+        uint256 accumulatedPositionFeeAfter = hedgeManager.cumulativePositionFeeUsd();
         uint256 sizeDeltaUsd =
             positionInfoBefore.position.numbers.sizeInUsd - positionInfoAfter.position.numbers.sizeInUsd;
 
@@ -884,19 +884,19 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         // _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 9 / 10);
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         // assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
-        uint256 accumulatedPositionFeeBefore = positionManager.cumulativePositionFeeUsd();
+        uint256 accumulatedPositionFeeBefore = hedgeManager.cumulativePositionFeeUsd();
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: sizeDeltaInTokens,
                 collateralDeltaAmount: 0,
                 isIncrease: true
             })
         );
-        _executeOrder(positionManager.pendingIncreaseOrderKey());
+        _executeOrder(hedgeManager.pendingIncreaseOrderKey());
         ReaderUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
 
-        uint256 accumulatedPositionFeeAfter = positionManager.cumulativePositionFeeUsd();
+        uint256 accumulatedPositionFeeAfter = hedgeManager.cumulativePositionFeeUsd();
         uint256 sizeDeltaUsd =
             positionInfoAfter.position.numbers.sizeInUsd - positionInfoBefore.position.numbers.sizeInUsd;
 
@@ -910,25 +910,25 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
     function test_fundingAndBorrowingFees() public {
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), 30_000_000 * USDC_PRECISION);
+        IERC20(USDC).transfer(address(hedgeManager), 30_000_000 * USDC_PRECISION);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 10_000 ether,
                 collateralDeltaAmount: 30_000_000 * USDC_PRECISION,
                 isIncrease: true
             })
         );
-        bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
+        bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
-        (uint256 fundingFeeUsd, uint256 borrowingFeeUsd) = positionManager.cumulativeFundingAndBorrowingFeesUsd();
+        (uint256 fundingFeeUsd, uint256 borrowingFeeUsd) = hedgeManager.cumulativeFundingAndBorrowingFeesUsd();
         assertEq(fundingFeeUsd, 0, "funding fee 0");
         assertEq(borrowingFeeUsd, 0, "borrowing fee 0");
 
         _moveTimestampWithPriceFeed(24 * 3600);
-        (fundingFeeUsd, borrowingFeeUsd) = positionManager.cumulativeFundingAndBorrowingFeesUsd();
+        (fundingFeeUsd, borrowingFeeUsd) = hedgeManager.cumulativeFundingAndBorrowingFeesUsd();
         ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(address(oracle));
-        uint256 collateralTokenPrice = oracle.getAssetPrice(positionManager.collateralToken());
+        uint256 collateralTokenPrice = oracle.getAssetPrice(hedgeManager.collateralToken());
 
         assertEq(
             fundingFeeUsd, positionInfo.fees.funding.fundingFeeAmount * collateralTokenPrice, "funding fee is next one"
@@ -936,14 +936,13 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertEq(borrowingFeeUsd, positionInfo.fees.borrowing.borrowingFeeUsd, "borrowing fee is next one");
 
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
         );
-        bytes32 decreaseOrderKey = positionManager.pendingDecreaseOrderKey();
+        bytes32 decreaseOrderKey = hedgeManager.pendingDecreaseOrderKey();
         _executeOrder(decreaseOrderKey);
 
-        (uint256 fundingFeeUsdAfter, uint256 borrowingFeeUsdAfter) =
-            positionManager.cumulativeFundingAndBorrowingFeesUsd();
+        (uint256 fundingFeeUsdAfter, uint256 borrowingFeeUsdAfter) = hedgeManager.cumulativeFundingAndBorrowingFeesUsd();
 
         assertApproxEqRel(fundingFeeUsd, fundingFeeUsdAfter, 0.99999 ether, "funding fee not changed");
         assertEq(borrowingFeeUsd, borrowingFeeUsdAfter, "borrowing fee not changed");
@@ -952,8 +951,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertEq(positionInfo.fees.borrowing.borrowingFeeUsd, 0, "next borrowing fee 0");
 
         _moveTimestampWithPriceFeed(24 * 3600);
-        (uint256 nextFundingFeeUsd, uint256 nextBorrowingFeeUsd) =
-            positionManager.cumulativeFundingAndBorrowingFeesUsd();
+        (uint256 nextFundingFeeUsd, uint256 nextBorrowingFeeUsd) = hedgeManager.cumulativeFundingAndBorrowingFeesUsd();
 
         positionInfo = _getPositionInfo(address(oracle));
         assertEq(
@@ -968,14 +966,14 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         );
 
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: type(uint256).max,
                 collateralDeltaAmount: 0,
                 isIncrease: false
             })
         );
-        decreaseOrderKey = positionManager.pendingDecreaseOrderKey();
+        decreaseOrderKey = hedgeManager.pendingDecreaseOrderKey();
         _executeOrder(decreaseOrderKey);
 
         positionInfo = _getPositionInfo(address(oracle));
@@ -983,7 +981,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertEq(positionInfo.fees.borrowing.borrowingFeeUsd, 0, "next borrowing fee 0");
 
         (uint256 nextFundingFeeUsdAfter, uint256 nextBorrowingFeeUsdAfter) =
-            positionManager.cumulativeFundingAndBorrowingFeesUsd();
+            hedgeManager.cumulativeFundingAndBorrowingFeesUsd();
 
         assertApproxEqRel(nextFundingFeeUsd, nextFundingFeeUsdAfter, 0.99999 ether, "funding fee not changed");
         assertEq(nextBorrowingFeeUsd, nextBorrowingFeeUsdAfter, "borrowing fee not changed");
@@ -991,25 +989,25 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
     function test_maxGasCallback() public view {
         uint256 maxGas = IDataStore(GMX_DATA_STORE).getUint(Keys.MAX_CALLBACK_GAS_LIMIT);
-        assertEq(maxGas, positionManager.config().callbackGasLimit());
+        assertEq(maxGas, hedgeManager.config().callbackGasLimit());
     }
 
     function test_minSize() public {
         uint256 collateralDelta = USDC_PRECISION / 10;
         uint256 sizeDelta = oracle.convertTokenAmount(asset, product, collateralDelta);
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(positionManager), USDC_PRECISION / 10);
+        IERC20(USDC).transfer(address(hedgeManager), USDC_PRECISION / 10);
         vm.startPrank(address(strategy));
-        positionManager.adjustPosition(
+        hedgeManager.adjustPosition(
             IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: sizeDelta,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: true
             })
         );
-        bytes32 increaseOrderKey = positionManager.pendingIncreaseOrderKey();
+        bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
-        assertEq(positionManager.positionNetBalance(), collateralDelta);
+        assertEq(hedgeManager.positionNetBalance(), collateralDelta);
     }
 
     function _moveTimestampWithPriceFeed(uint256 deltaTime) internal {

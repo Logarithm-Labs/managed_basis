@@ -112,17 +112,17 @@ contract DeployHyperScript is Script {
         console.log("OffChainConfig deployed at", offChainConfigProxy);
 
         // deploy position manager
-        address positionManagerImpl = address(new OffChainPositionManager());
-        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
+        address hedgeManagerImpl = address(new OffChainPositionManager());
+        address hedgeManagerBeacon = address(new UpgradeableBeacon(hedgeManagerImpl, owner));
         require(
-            UpgradeableBeacon(positionManagerBeacon).owner() == owner,
+            UpgradeableBeacon(hedgeManagerBeacon).owner() == owner,
             "PositionManagerBeacon owner is not the expected owner"
         );
-        console.log("OffChainPositionManagerBeacon deployed at", positionManagerBeacon);
+        console.log("OffChainPositionManagerBeacon deployed at", hedgeManagerBeacon);
 
-        address positionManagerProxy = address(
+        address hedgeManagerProxy = address(
             new BeaconProxy(
-                positionManagerBeacon,
+                hedgeManagerBeacon,
                 abi.encodeWithSelector(
                     OffChainPositionManager.initialize.selector,
                     offChainConfigProxy,
@@ -134,14 +134,14 @@ contract DeployHyperScript is Script {
             )
         );
         require(
-            OffChainPositionManager(positionManagerProxy).owner() == owner,
+            OffChainPositionManager(hedgeManagerProxy).owner() == owner,
             "OffChainPositionManager owner is not the expected owner"
         );
-        console.log("OffChainPositionManager deployed at", positionManagerProxy);
+        console.log("OffChainPositionManager deployed at", hedgeManagerProxy);
 
         // config
         LogarithmVault(vaultProxy).setStrategy(strategyProxy);
-        BasisStrategy(strategyProxy).setPositionManager(positionManagerProxy);
+        BasisStrategy(strategyProxy).setHedgeManager(hedgeManagerProxy);
         // BasisStrategy(strategyProxy).setForwarder(forwarder);
         OffChainConfig(offChainConfigProxy).setSizeMinMax(
             increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax

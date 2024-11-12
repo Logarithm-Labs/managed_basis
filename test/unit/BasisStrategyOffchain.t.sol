@@ -28,7 +28,7 @@ import {console} from "forge-std/console.sol";
 contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
     function _mockChainlinkPriceFeedAnswer(address priceFeed, int256 answer) internal override {
         super._mockChainlinkPriceFeedAnswer(priceFeed, answer);
-        _updatePositionNetBalance(positionManager.positionNetBalance());
+        _updatePositionNetBalance(hedgeManager.positionNetBalance());
     }
 
     function test_deutilize_lastRedeemBelowRequestedAssets() public afterFullUtilized validateFinalState {
@@ -41,7 +41,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         _deutilizeWithoutExecution(pendingDeutilization);
 
         // manually decrease margin
-        uint256 netBalance = positionManager.positionNetBalance();
+        uint256 netBalance = hedgeManager.positionNetBalance();
         uint256 marginDecrease = netBalance / 10;
         vm.startPrank(address(this));
         IERC20(asset).transfer(USDC_WHALE, marginDecrease);
@@ -76,7 +76,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         uint256 decreaseCollateralMax = type(uint256).max;
         uint256 limitDecreaseCollateral = 50 * 1e6;
         vm.startPrank(owner);
-        address _config = address(positionManager.config());
+        address _config = address(hedgeManager.config());
         OffChainConfig(_config).setCollateralMinMax(
             increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
         );
@@ -103,7 +103,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
     function test_idleCollateral_fullRedeem() public afterFullUtilized validateFinalState {
         // make 10 USDC idle assets for the position manager
         vm.startPrank(USDC_WHALE);
-        IERC20(asset).transfer(address(positionManager), 10_000_000);
+        IERC20(asset).transfer(address(hedgeManager), 10_000_000);
         vm.startPrank(user1);
         vault.requestRedeem(vault.balanceOf(user1), user1, user1);
 
@@ -120,20 +120,20 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
 
         // make 10 USDC idle assets for the position manager
         vm.startPrank(USDC_WHALE);
-        IERC20(asset).transfer(address(positionManager), 10_000_000);
+        IERC20(asset).transfer(address(hedgeManager), 10_000_000);
 
         _utilize(pendingUtilizationInAsset);
 
         // collateral should be around 100000 / 4 + 10
-        assertApproxEqRel(positionManager.positionNetBalance(), TEN_THOUSANDS_USDC / 4 + 10_000_000, 0.0001 ether);
-        assertEq(positionManager.idleCollateralAmount(), 0);
+        assertApproxEqRel(hedgeManager.positionNetBalance(), TEN_THOUSANDS_USDC / 4 + 10_000_000, 0.0001 ether);
+        assertEq(hedgeManager.idleCollateralAmount(), 0);
     }
 
     function test_clearCollateral() public {
         vm.startPrank(USDC_WHALE);
-        IERC20(asset).transfer(address(positionManager), 10_000_000);
+        IERC20(asset).transfer(address(hedgeManager), 10_000_000);
 
-        positionManager.clearIdleCollateral();
+        hedgeManager.clearIdleCollateral();
         assertEq(IERC20(asset).balanceOf(address(strategy)), 0);
         assertEq(IERC20(asset).balanceOf(address(vault)), 10_000_000);
     }
