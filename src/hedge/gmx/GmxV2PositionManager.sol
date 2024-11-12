@@ -19,10 +19,10 @@ import {Order} from "src/externals/gmx-v2/libraries/Order.sol";
 import {Position} from "src/externals/gmx-v2/libraries/Position.sol";
 
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
-import {IGmxConfig} from "src/position/gmx/IGmxConfig.sol";
+import {IGmxConfig} from "src/hedge/gmx/IGmxConfig.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
-import {IGmxGasStation} from "src/position/gmx/IGmxGasStation.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IGmxGasStation} from "src/hedge/gmx/IGmxGasStation.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
@@ -30,7 +30,7 @@ import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 
 /// @title GmxV2PositionManager
 /// @author Logarithm Labs
-contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallbackReceiver, IGasFeeCallbackReceiver {
+contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackReceiver, IGasFeeCallbackReceiver {
     using Math for uint256;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -178,7 +178,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function adjustPosition(AdjustPositionPayload calldata params) external onlyStrategy whenNotPending {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount == 0) {
@@ -285,7 +285,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
     }
 
     /// @dev Realizes the claimable funding or increases collateral if there are idle assets
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function keep() external onlyStrategy whenNotPending {
         _getGmxV2PositionManagerStorage().status = Status.SETTLE;
         // if there is idle collateral, then increase that amount to settle the claimable funding
@@ -512,7 +512,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
                         EXTERNAL/PUBLIC VIEWERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function positionNetBalance() public view returns (uint256) {
         IGmxConfig _config = config();
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
@@ -523,14 +523,14 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
             + $.pendingCollateralAmount;
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function currentLeverage() external view returns (uint256) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         IGmxConfig _config = config();
         return GmxV2Lib.getCurrentLeverage(_getGmxParams(_config), $.oracle, _config.referralStorage());
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function positionSizeInTokens() public view returns (uint256) {
         Position.Props memory position = GmxV2Lib.getPosition(_getGmxParams(config()));
         return position.numbers.sizeInTokens;
@@ -588,7 +588,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
     /// @dev Checks if the claimable funding amount is over than max share
     ///      or if idle collateral is bigger than minimum requirement so that
     ///      the position can be settled to add it to position's collateral.
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function needKeep() external view returns (bool) {
         IGmxConfig _config = config();
         address _collateralToken = collateralToken();
@@ -786,7 +786,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return IGmxConfig($.config);
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function collateralToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.collateralToken;
@@ -810,7 +810,7 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return $.marketToken;
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function indexToken() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.indexToken;
@@ -851,27 +851,27 @@ contract GmxV2PositionManager is Initializable, IPositionManager, IOrderCallback
         return $.pendingDecreaseOrderKey;
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function increaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function increaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function decreaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function decreaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
         return (0, type(uint256).max);
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function limitDecreaseCollateral() external view returns (uint256) {
         return config().limitDecreaseCollateral();
     }

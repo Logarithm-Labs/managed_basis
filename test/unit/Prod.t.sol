@@ -5,12 +5,12 @@ import "forge-std/Test.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {DataProvider} from "src/DataProvider.sol";
-import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
 import {ArbSysMock} from "test/mock/ArbSysMock.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 
 contract ProdTest is Test {

@@ -9,12 +9,12 @@ import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {SpotManager} from "src/spot/SpotManager.sol";
-import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
-import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
+import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 
-import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
-import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
@@ -177,7 +177,7 @@ library DeployHelper {
         GmxV2PositionManager positionManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
         BasisStrategy(params.strategy).setPositionManager(address(positionManager));
         require(
-            BasisStrategy(params.strategy).positionManager() == address(positionManager),
+            BasisStrategy(params.strategy).hedgeManager() == address(positionManager),
             "Strategy positionManager is not the expected positionManager"
         );
         GmxGasStation(payable(params.gasStation)).registerPositionManager(address(positionManager), true);
@@ -229,7 +229,7 @@ library DeployHelper {
 
         BasisStrategy(params.strategy).setPositionManager(address(hlPositionManager));
         require(
-            BasisStrategy(params.strategy).positionManager() == address(hlPositionManager),
+            BasisStrategy(params.strategy).hedgeManager() == address(hlPositionManager),
             "Strategy positionManager is not the expected positionManager"
         );
         return hlPositionManager;

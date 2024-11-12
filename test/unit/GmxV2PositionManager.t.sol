@@ -21,12 +21,12 @@ import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
 import {MockStrategy} from "test/mock/MockStrategy.sol";
 
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
-import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
+import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
+import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 
@@ -110,7 +110,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 300 * USDC_PRECISION,
                 isIncrease: true
@@ -151,7 +151,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 300 * USDC_PRECISION,
                 isIncrease: true
@@ -170,7 +170,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
                 isIncrease: true
@@ -189,7 +189,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         vm.startPrank(address(strategy));
         vm.expectRevert(Errors.NotEnoughCollateral.selector);
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 400 * USDC_PRECISION,
                 isIncrease: true
@@ -202,7 +202,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
                 isIncrease: true
@@ -214,7 +214,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         vm.startPrank(address(strategy));
         vm.expectRevert(Errors.AlreadyPending.selector);
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
                 isIncrease: true
@@ -226,7 +226,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         vm.startPrank(address(strategy));
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: 0,
                 isIncrease: false
@@ -244,7 +244,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: 0,
                 isIncrease: true
@@ -265,7 +265,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         IERC20(USDC).transfer(address(positionManager), 200 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
                 isIncrease: true
@@ -284,7 +284,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         ReaderUtils.PositionInfo memory positionInfoBefore = _getPositionInfo(address(oracle));
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: 0,
                 isIncrease: false
@@ -315,11 +315,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         IERC20(USDC).transfer(address(positionManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
-                sizeDeltaInTokens: 1 ether,
-                collateralDeltaAmount: 0,
-                isIncrease: true
-            })
+            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 1 ether, collateralDeltaAmount: 0, isIncrease: true})
         );
         assertEq(positionManager.positionNetBalance(), positionNetBalanceBefore + 300 * USDC_PRECISION);
     }
@@ -341,7 +337,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
@@ -376,7 +372,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: sizeDeltaInTokens,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
@@ -402,7 +398,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
@@ -436,7 +432,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
@@ -477,7 +473,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
@@ -515,7 +511,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd < 0);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
@@ -561,7 +557,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
@@ -608,7 +604,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd > 0);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
@@ -643,7 +639,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd < 0);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
@@ -687,7 +683,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         console.log("balance", strategyBalanceBefore);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
@@ -727,7 +723,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         uint256 positionNetBalanceBefore = positionManager.positionNetBalance();
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
+            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
         );
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         (claimableLongAmount, claimableShortAmount) = positionManager.getClaimableFundingAmounts();
@@ -749,7 +745,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         address anyone = makeAddr("anyone");
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
+            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
         );
         _executeOrder(positionManager.pendingDecreaseOrderKey());
         (uint256 accruedClaimableLongAmount, uint256 accruedClaimableShortAmount) =
@@ -861,7 +857,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         uint256 accumulatedPositionFeeBefore = positionManager.cumulativePositionFeeUsd();
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: sizeDeltaInTokens,
                 collateralDeltaAmount: 0,
                 isIncrease: false
@@ -891,7 +887,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         uint256 accumulatedPositionFeeBefore = positionManager.cumulativePositionFeeUsd();
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: sizeDeltaInTokens,
                 collateralDeltaAmount: 0,
                 isIncrease: true
@@ -917,7 +913,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         IERC20(USDC).transfer(address(positionManager), 30_000_000 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 10_000 ether,
                 collateralDeltaAmount: 30_000_000 * USDC_PRECISION,
                 isIncrease: true
@@ -941,7 +937,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
+            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
         );
         bytes32 decreaseOrderKey = positionManager.pendingDecreaseOrderKey();
         _executeOrder(decreaseOrderKey);
@@ -973,7 +969,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: type(uint256).max,
                 collateralDeltaAmount: 0,
                 isIncrease: false
@@ -1005,7 +1001,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         IERC20(USDC).transfer(address(positionManager), USDC_PRECISION / 10);
         vm.startPrank(address(strategy));
         positionManager.adjustPosition(
-            IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: sizeDelta,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: true

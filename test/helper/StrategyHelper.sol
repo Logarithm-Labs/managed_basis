@@ -7,7 +7,7 @@ import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
@@ -72,7 +72,7 @@ contract StrategyHelper {
         address asset = strategy.asset();
         address product = strategy.product();
         LogarithmOracle oracle = LogarithmOracle(strategy.oracle());
-        IPositionManager positionManager = IPositionManager(strategy.positionManager());
+        IHedgeManager positionManager = IHedgeManager(strategy.hedgeManager());
 
         state.strategyStatus = uint8(strategy.strategyStatus());
         state.totalSupply = vault.totalSupply();

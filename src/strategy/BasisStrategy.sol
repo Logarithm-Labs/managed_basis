@@ -11,7 +11,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AutomationCompatibleInterface} from "src/externals/chainlink/interfaces/AutomationCompatibleInterface.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
 import {ILogarithmVault} from "src/vault/ILogarithmVault.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
@@ -51,7 +51,7 @@ contract BasisStrategy is
     /// @dev Used to optimize params of deutilization internally.
     struct InternalPendingDeutilization {
         // The address of hedge position manager.
-        IPositionManager positionManager;
+        IHedgeManager positionManager;
         // The address of the connected vault's underlying asset.
         address asset;
         // The product address.
@@ -93,7 +93,7 @@ contract BasisStrategy is
         IERC20 asset;
         ILogarithmVault vault;
         ISpotManager spotManager;
-        IPositionManager positionManager;
+        IHedgeManager positionManager;
         IOracle oracle;
         address operator;
         address config;
@@ -112,7 +112,7 @@ contract BasisStrategy is
         // used to change deutilization calc method
         bool processingRebalanceDown;
         // adjust position request to be used to check response
-        IPositionManager.AdjustPositionPayload requestParams;
+        IHedgeManager.AdjustPositionPayload requestParams;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisStrategy")) - 1)) & ~bytes32(uint256(0xff))
@@ -276,8 +276,8 @@ contract BasisStrategy is
 
     /// @notice Sets the position manager.
     function setPositionManager(address _positionManager) external onlyOwner {
-        if (positionManager() != _positionManager) {
-            IPositionManager newPositionManager = IPositionManager(_positionManager);
+        if (hedgeManager() != _positionManager) {
+            IHedgeManager newPositionManager = IHedgeManager(_positionManager);
             require(newPositionManager.collateralToken() == asset() && newPositionManager.indexToken() == product());
             _getBasisStrategyStorage().positionManager = newPositionManager;
             emit PositionManagerUpdated(_msgSender(), _positionManager);
@@ -382,7 +382,7 @@ contract BasisStrategy is
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
-        IPositionManager _positionManager = $.positionManager;
+        IHedgeManager _positionManager = $.positionManager;
 
         uint256 pendingDeutilization_ = _pendingDeutilization(
             InternalPendingDeutilization({
@@ -573,7 +573,7 @@ contract BasisStrategy is
                         $.pendingDecreaseCollateral = 0;
                     } else {
                         // when partial deutilizing
-                        IPositionManager _positionManager = $.positionManager;
+                        IHedgeManager _positionManager = $.positionManager;
                         uint256 positionNetBalance = _positionManager.positionNetBalance();
                         uint256 _pendingDecreaseCollateral = $.pendingDecreaseCollateral;
                         if (_pendingDecreaseCollateral > 0) {
@@ -602,9 +602,9 @@ contract BasisStrategy is
     }
 
     /// @dev Callback function dispatcher of the hedge position adjustment.
-    function afterAdjustPosition(IPositionManager.AdjustPositionPayload calldata params)
+    function afterAdjustPosition(IHedgeManager.AdjustPositionPayload calldata params)
         external
-        authCaller(positionManager())
+        authCaller(hedgeManager())
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
@@ -654,7 +654,7 @@ contract BasisStrategy is
         }
 
         ILogarithmVault _vault = $.vault;
-        IPositionManager _positionManager = $.positionManager;
+        IHedgeManager _positionManager = $.positionManager;
         uint256 totalSupply = _vault.totalSupply();
         address _asset = asset();
         address _product = product();
@@ -747,7 +747,7 @@ contract BasisStrategy is
         }
 
         if (collateralDeltaAmount > 0 || sizeDeltaInTokens > 0) {
-            IPositionManager.AdjustPositionPayload memory requestParams = IPositionManager.AdjustPositionPayload({
+            IHedgeManager.AdjustPositionPayload memory requestParams = IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: sizeDeltaInTokens,
                 collateralDeltaAmount: collateralDeltaAmount,
                 isIncrease: isIncrease
@@ -769,7 +769,7 @@ contract BasisStrategy is
         }
 
         ILogarithmVault _vault = $.vault;
-        IPositionManager _positionManager = $.positionManager;
+        IHedgeManager _positionManager = $.positionManager;
 
         uint256 currentLeverage = _positionManager.currentLeverage();
         bool _processingRebalanceDown = $.processingRebalanceDown;
@@ -869,12 +869,12 @@ contract BasisStrategy is
     }
 
     /// @dev Called after the hedge position is increased.
-    function _afterIncreasePosition(IPositionManager.AdjustPositionPayload calldata responseParams)
+    function _afterIncreasePosition(IHedgeManager.AdjustPositionPayload calldata responseParams)
         private
         returns (bool shouldPause)
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
+        IHedgeManager.AdjustPositionPayload memory requestParams = $.requestParams;
         uint256 _responseDeviationThreshold = config().responseDeviationThreshold();
 
         if (requestParams.sizeDeltaInTokens > 0) {
@@ -897,7 +897,7 @@ contract BasisStrategy is
             if (exceedsThreshold) {
                 if (collateralDeviation < 0) {
                     shouldPause = true;
-                    $.asset.safeTransferFrom(positionManager(), vault(), uint256(-collateralDeviation));
+                    $.asset.safeTransferFrom(hedgeManager(), vault(), uint256(-collateralDeviation));
                 }
             }
 
@@ -910,12 +910,12 @@ contract BasisStrategy is
     }
 
     /// @dev Called after the hedge position is decreased.
-    function _afterDecreasePosition(IPositionManager.AdjustPositionPayload calldata responseParams)
+    function _afterDecreasePosition(IHedgeManager.AdjustPositionPayload calldata responseParams)
         private
         returns (bool shouldPause)
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        IPositionManager.AdjustPositionPayload memory requestParams = $.requestParams;
+        IHedgeManager.AdjustPositionPayload memory requestParams = $.requestParams;
 
         if (requestParams.sizeDeltaInTokens == type(uint256).max) {
             // when closing hedge
@@ -1108,7 +1108,7 @@ contract BasisStrategy is
     }
 
     /// @dev Checks the difference between spot and hedge sizes if it is over the configured threshold.
-    function _checkHedgeDeviation(IPositionManager _positionManager, uint256 _hedgeDeviationThreshold)
+    function _checkHedgeDeviation(IHedgeManager _positionManager, uint256 _hedgeDeviationThreshold)
         internal
         view
         returns (int256)
@@ -1185,7 +1185,7 @@ contract BasisStrategy is
     }
 
     /// @notice The address of the position manager which hedges the spot by opening perpetual positions.
-    function positionManager() public view returns (address) {
+    function hedgeManager() public view returns (address) {
         return address(_getBasisStrategyStorage().positionManager);
     }
 

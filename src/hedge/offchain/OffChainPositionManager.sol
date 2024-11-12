@@ -6,10 +6,10 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
-import {IOffChainConfig} from "src/position/offchain/IOffChainConfig.sol";
+import {IOffChainConfig} from "src/hedge/offchain/IOffChainConfig.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -18,7 +18,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title OffChainPositionManager
 /// @author Logarithm Labs
-contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPositionManager {
+contract OffChainPositionManager is Initializable, OwnableUpgradeable, IHedgeManager {
     using SafeCast for uint256;
     using Math for uint256;
 
@@ -162,7 +162,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
                         REQUEST LOGIC 
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function adjustPosition(AdjustPositionPayload memory params) external {
         // increments round
         // stores position state from the previous round in the current round
@@ -369,7 +369,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
                         POSITION STATE LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function positionNetBalance() public view virtual override returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         PositionState memory state = $.positionStates[$.currentRound];
@@ -398,7 +398,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         return $.positionStates[$.currentRound];
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function currentLeverage() public view returns (uint256 leverage) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         PositionState memory state = $.positionStates[$.currentRound];
@@ -473,26 +473,26 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         return $.requests[round];
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function positionSizeInTokens() public view returns (uint256) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.positionStates[$.currentRound].sizeInTokens;
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function needKeep() public pure virtual returns (bool) {
         return false;
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function keep() public pure {}
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function increaseCollateralMinMax() public view returns (uint256 min, uint256 max) {
         return config().increaseCollateralMinMax();
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function increaseSizeMinMax() public view returns (uint256 min, uint256 max) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         address asset = $.collateralToken;
@@ -509,12 +509,12 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         return (min, max);
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function decreaseCollateralMinMax() public view returns (uint256 min, uint256 max) {
         return config().decreaseCollateralMinMax();
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function decreaseSizeMinMax() public view returns (uint256 min, uint256 max) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
 
@@ -532,17 +532,17 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IPosition
         return (min, max);
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function limitDecreaseCollateral() public view returns (uint256) {
         return config().limitDecreaseCollateral();
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function collateralToken() public view returns (address) {
         return _getOffChainPositionManagerStorage().collateralToken;
     }
 
-    /// @inheritdoc IPositionManager
+    /// @inheritdoc IHedgeManager
     function indexToken() public view returns (address) {
         return _getOffChainPositionManagerStorage().indexToken;
     }

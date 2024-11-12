@@ -9,11 +9,11 @@ import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {PositionMngerForkTest} from "./PositionMngerForkTest.sol";
-import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
+import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {console2 as console} from "forge-std/console2.sol";
 
@@ -85,24 +85,24 @@ contract OffChainTest is PositionMngerForkTest {
 
     function _initOffChainTest(address _asset, address _product, address _oracle) internal {}
 
-    function _positionManager() internal view override returns (IPositionManager) {
-        return IPositionManager(positionManager);
+    function _hedgeManager() internal view override returns (IHedgeManager) {
+        return IHedgeManager(positionManager);
     }
 
     function _executeOrder() internal override {
         OffChainPositionManager.RequestInfo memory requestInfo = positionManager.getLastRequest();
         if (!requestInfo.isReported && requestInfo.requestTimestamp != 0) {
             vm.startPrank(agent);
-            IPositionManager.AdjustPositionPayload memory request = requestInfo.request;
-            IPositionManager.AdjustPositionPayload memory response = _executeRequest(request);
+            IHedgeManager.AdjustPositionPayload memory request = requestInfo.request;
+            IHedgeManager.AdjustPositionPayload memory response = _executeRequest(request);
             _reportStateAndExecuteRequest(response);
             vm.stopPrank();
         }
     }
 
-    function _executeRequest(IPositionManager.AdjustPositionPayload memory request)
+    function _executeRequest(IHedgeManager.AdjustPositionPayload memory request)
         internal
-        returns (IPositionManager.AdjustPositionPayload memory response)
+        returns (IHedgeManager.AdjustPositionPayload memory response)
     {
         if (request.isIncrease) {
             response.isIncrease = true;
@@ -135,9 +135,9 @@ contract OffChainTest is PositionMngerForkTest {
         IERC20(asset_).transfer(address(this), netBalance);
     }
 
-    function _reportStateAndExecuteRequest(IPositionManager.AdjustPositionPayload memory response) internal {
+    function _reportStateAndExecuteRequest(IHedgeManager.AdjustPositionPayload memory response) internal {
         uint256 markPrice = _getMarkPrice();
-        IPositionManager.AdjustPositionPayload memory params = IPositionManager.AdjustPositionPayload({
+        IHedgeManager.AdjustPositionPayload memory params = IHedgeManager.AdjustPositionPayload({
             sizeDeltaInTokens: response.sizeDeltaInTokens,
             collateralDeltaAmount: response.collateralDeltaAmount,
             isIncrease: response.isIncrease

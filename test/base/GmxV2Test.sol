@@ -13,10 +13,10 @@ import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
-import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
-import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
+import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
+import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
 import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
@@ -66,8 +66,8 @@ contract GmxV2Test is PositionMngerForkTest {
         _executeOrder(positionManager.pendingIncreaseOrderKey());
     }
 
-    function _positionManager() internal view override returns (IPositionManager) {
-        return IPositionManager(positionManager);
+    function _hedgeManager() internal view override returns (IHedgeManager) {
+        return IHedgeManager(positionManager);
     }
 
     function _executeOrder(bytes32 key) internal {

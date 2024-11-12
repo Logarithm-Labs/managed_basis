@@ -14,14 +14,14 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 
-import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
-import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
+import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 
 import {console} from "forge-std/console.sol";
 

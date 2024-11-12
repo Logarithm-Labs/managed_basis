@@ -13,11 +13,11 @@ import {MarketUtils} from "src/externals/gmx-v2/libraries/MarketUtils.sol";
 import {Price} from "src/externals/gmx-v2/libraries/Price.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
 
 contract DataProvider {
@@ -69,7 +69,7 @@ contract DataProvider {
 
     function getStrategyState(address _strategy) external view returns (StrategyState memory state) {
         BasisStrategy strategy = BasisStrategy(_strategy);
-        IPositionManager positionManager = IPositionManager(strategy.positionManager());
+        IHedgeManager positionManager = IHedgeManager(strategy.hedgeManager());
         LogarithmVault vault = LogarithmVault(strategy.vault());
         IOracle oracle = IOracle(strategy.oracle());
         address asset = strategy.asset();

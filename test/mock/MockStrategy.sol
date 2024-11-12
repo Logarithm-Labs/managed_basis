@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
 contract MockStrategy {
     uint256 public sizeDeltaInTokens;
@@ -26,7 +26,7 @@ contract MockStrategy {
         return 3 ether;
     }
 
-    function afterAdjustPosition(IPositionManager.AdjustPositionPayload calldata params) external {
+    function afterAdjustPosition(IHedgeManager.AdjustPositionPayload calldata params) external {
         sizeDeltaInTokens = params.sizeDeltaInTokens;
         collateralDelta = params.collateralDeltaAmount;
         if (params.collateralDeltaAmount > 0 && !params.isIncrease) {
