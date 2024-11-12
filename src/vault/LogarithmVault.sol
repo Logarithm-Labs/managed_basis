@@ -38,8 +38,8 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 /// claimability of the withdraw request.
 /// Standard ERC4626-compliant functions — `maxWithdraw`, `maxRedeem`, `withdraw`, and `redeem` —
 /// remain available but operate exclusively with idle assets within the vault.
-/// The Logarithm Vault is an ERC4626-compliant, upgradeable vault with asynchronous
-/// redemption functionality, implemented through a beacon proxy pattern.
+/// LogarithmVault is an ERC4626-compliant, upgradeable vault with asynchronous
+/// redemption functionality, deployed through a beacon proxy pattern.
 contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     using Math for uint256;
     using SafeERC20 for IERC20;

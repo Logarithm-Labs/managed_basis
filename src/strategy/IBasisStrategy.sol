@@ -5,13 +5,13 @@ import {IStrategy} from "src/strategy/IStrategy.sol";
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
 interface IBasisStrategy is IStrategy {
-    function assetsToWithdraw() external view returns (uint256);
     function oracle() external view returns (address);
     function vault() external view returns (address);
     function asset() external view returns (address);
     function product() external view returns (address);
     function spotManager() external view returns (address);
     function hedgeManager() external view returns (address);
+    function assetsToWithdraw() external view returns (uint256);
     function processAssetsToWithdraw() external;
     // callbacks
     function afterAdjustPosition(IHedgeManager.AdjustPositionPayload calldata responseParams) external;

@@ -21,9 +21,21 @@ import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title BasisStrategy
+///
 /// @author Logarithm Labs
-/// @notice A basis strategy which hedges spots by opening perpetual positions while receiving funding payments.
-/// @dev Deployed according to the upgradeable beacon proxy pattern.
+///
+/// @notice BasisStrategy implements a delta-neutral basis trading strategy.
+/// By simultaneously buying a spot asset and selling a perpetual contract,
+/// the strategy seeks to hedge the price risk of the spot position while
+/// generating revenue from funding payments.
+/// The contract allows depositors to provide capital through the connected vault,
+/// which is then deployed across both the spot and perpetual markets.
+/// Profits are derived from the funding payments collected from the short perpetual position,
+/// aiming for yield independent of price direction.
+///
+/// @dev SpotManager and HedgeManager are connected as separated smart contracts
+/// to manage spot and hedge positions.
+/// BasisStrategy is an upgradeable smart contract, deployed through a beacon proxy pattern.
 contract BasisStrategy is
     Initializable,
     PausableUpgradeable,
@@ -36,7 +48,7 @@ contract BasisStrategy is
     using SafeCast for uint256;
 
     /*//////////////////////////////////////////////////////////////
-                                ENUMS   
+                                 TYPES
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Used to specify strategy's operations.
@@ -48,7 +60,7 @@ contract BasisStrategy is
         FULL_DEUTILIZING
     }
 
-    /// @dev Used to optimize params of deutilization internally.
+    /// @dev Used internally to optimize params of deutilization.
     struct InternalPendingDeutilization {
         // The address of hedge position manager.
         IHedgeManager hedgeManager;
@@ -299,9 +311,8 @@ contract BasisStrategy is
         _setLeverages(_targetLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
     }
 
-    /// @notice Pauses strategy.
-    ///
-    /// @dev If paused, utilizing and deutilizing for withdrawal are disabled, while upkeep logic keeps working.
+    /// @notice Pauses strategy, disabling utilizing and deutilizing for withdraw requests,
+    /// while all logics related to keeping are still available.
     function pause() external onlyOwnerOrVault whenNotPaused {
         _pause();
     }
@@ -311,9 +322,8 @@ contract BasisStrategy is
         _unpause();
     }
 
-    /// @notice Stop strategy.
-    ///
-    /// @dev Pauses and swaps all products back to assets.
+    /// @notice Pauses strategy while swapping all products back to assets
+    /// and closing the hedge position.
     function stop() external onlyOwnerOrVault whenNotPaused {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         delete $.pendingDecreaseCollateral;
@@ -332,6 +342,8 @@ contract BasisStrategy is
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Utilizes assets to increase the spot size.
+    /// Right after the increase, the hedge position is also increased
+    /// as the same amount as the spot size increased.
     ///
     /// @dev Uses assets in vault. Callable only by the operator.
     ///
@@ -368,6 +380,8 @@ contract BasisStrategy is
     }
 
     /// @notice Deutilizes products to decrease the spot size.
+    /// Right after the decrease, the hedge position is also decreased
+    /// as the same amount as the spot size decreased.
     ///
     /// @dev Called when processing withdraw requests, when deleveraging the position, and when there are funding risks.
     /// Callable only by the operator.
@@ -430,7 +444,7 @@ contract BasisStrategy is
                             KEEPER LOGIC   
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Processes assets in this strategy for the withdraw requests.
+    /// @notice Processes assets in Strategy for the withdraw requests.
     ///
     /// @dev Callable by anyone and only when strategy is in the IDLE status.
     function processAssetsToWithdraw() public whenIdle {
@@ -515,6 +529,7 @@ contract BasisStrategy is
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Called after product is bought.
+    /// Increases the hedge position size if the swap operation is for utilizing.
     function spotBuyCallback(uint256 assetDelta, uint256 productDelta) external authCaller(spotManager()) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         if (strategyStatus() == StrategyStatus.UTILIZING) {
@@ -538,6 +553,7 @@ contract BasisStrategy is
     }
 
     /// @dev Called after product is sold.
+    /// Decreases the hedge position if the swap operation is not for reverting.
     function spotSellCallback(uint256 assetDelta, uint256 productDelta) external authCaller(spotManager()) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         StrategyStatus status = strategyStatus();
@@ -558,6 +574,9 @@ contract BasisStrategy is
 
                 uint256 collateralDeltaAmount;
                 uint256 sizeDeltaInTokens = productDelta;
+                // if the operation is not for processing rebalance down,
+                // that means deutilizing for withdraw requests, then decreases
+                // the collateral of hedge position as well.
                 if (!processingRebalanceDown()) {
                     if ($.vault.totalSupply() == 0 || ISpotManager(_msgSender()).exposure() == 0) {
                         // in case of redeeming all by users,
@@ -631,7 +650,8 @@ contract BasisStrategy is
 
     /// @notice Returns available pending utilization and deutilization amounts.
     ///
-    /// @dev The operator uses these values on offchain side to call utilize or deutilize functions.
+    /// @dev The operator uses these values on offchain side to decide the parameters
+    /// for calling utilize or deutilize functions.
     /// Both of those values can't be none-zero at the same time.
     ///
     /// @return pendingUtilizationInAsset The available pending utilization amount in asset.
@@ -684,7 +704,7 @@ contract BasisStrategy is
         return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
     }
 
-    /// @notice The total underlying asset amount that is utilized by this strategy.
+    /// @notice The total underlying asset amount that has been utilized by this strategy.
     ///
     /// @dev Includes the product balance, the position net balance, and the asset balance of this strategy.
     function utilizedAssets() public view returns (uint256) {
@@ -1060,7 +1080,7 @@ contract BasisStrategy is
     }
 
     /// @dev Should be called under the condition that denominator != 0.
-    /// Note: check if response of position adjustment is in allowed deviation
+    /// Note: check if response of position adjustment is in the allowed deviation
     function _checkDeviation(uint256 numerator, uint256 denominator, uint256 deviationThreshold)
         internal
         pure
