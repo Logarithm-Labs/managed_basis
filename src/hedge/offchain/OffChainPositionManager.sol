@@ -17,7 +17,18 @@ import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title OffChainPositionManager
+///
 /// @author Logarithm Labs
+///
+/// @notice OffChainPositionManager is a smart contract component designed to interact
+/// with off-chain perpetual protocols to manage hedge positions.
+/// By coordinating with off-chain systems, such as through an oracle or relayer network,
+/// the contract adjusts perpetual positions to maintain a target exposure aligned with
+/// the strategy’s requirements.
+/// This component is ideal for delta-neutral strategies seeking yield from
+/// funding payments on off-chain perpetual markets.
+///
+/// @dev OffChainPositionManager is an upgradeable smart contract, deployed through the beacon proxy pattern.
 contract OffChainPositionManager is Initializable, OwnableUpgradeable, IHedgeManager {
     using SafeCast for uint256;
     using Math for uint256;
@@ -115,6 +126,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IHedgeMan
                             MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Authorize caller if it is a configured agent.
     modifier onlyAgent() {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         // agent is added to access controll for testing purposes
@@ -230,7 +242,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IHedgeMan
         emit CreateRequest(round, params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
 
-    /// @dev Called when report state of position.
+    /// @dev Reports the state of the hedge position.
     function reportState(uint256 sizeInTokens, uint256 netBalance, uint256 markPrice) external onlyAgent {
         // increments round
         // stores position state in the current round
@@ -249,7 +261,8 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IHedgeMan
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
     }
 
-    /// @dev Called when a position adjustment request is executed while reporting the current position's state.
+    /// @dev Reports the state of the hedge position while calling the strategy's callback functions
+    /// if there is a position adjustment request from the strategy.
     function reportStateAndExecuteRequest(
         uint256 sizeInTokens,
         uint256 netBalance,

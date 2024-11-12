@@ -9,7 +9,10 @@ import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.s
 import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title GmxGasStation
+///
 /// @author Logarithm Labs
+///
+/// @dev GmxGasStation is designed to pay GMX orders' execution gas costs.
 contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT

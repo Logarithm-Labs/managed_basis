@@ -29,7 +29,15 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 
 /// @title GmxV2PositionManager
+///
 /// @author Logarithm Labs
+///
+/// @notice GmxV2PositionManager is a dedicated smart contract that interacts with the GMX protocol
+/// to maintain and adjust short positions in alignment with the strategy’s delta-neutral requirements.
+/// This manager operates as an auxiliary component to the main strategy, ensuring that the
+/// hedge remains effective by dynamically adjusting the size of the short position based on market movements.
+///
+/// @dev GmxV2PositionManager is an upgradeable smart contract, deployed through the beacon proxy pattern.
 contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackReceiver, IGasFeeCallbackReceiver {
     using Math for uint256;
     using SafeERC20 for IERC20;
@@ -285,6 +293,7 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
     }
 
     /// @dev Realizes the claimable funding or increases collateral if there are idle assets
+    ///
     /// @inheritdoc IHedgeManager
     function keep() external onlyStrategy whenNotPending {
         _getGmxV2PositionManagerStorage().status = Status.SETTLE;
@@ -379,7 +388,8 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
     }
 
     /// @dev Claims all the claimable collateral amount.
-    /// Note: this amount stored by account, token, timeKey and it is possible only by events to figure it out.
+    /// Note: This amount is stored by account, token, timeKey and
+    /// therefore the only way to figure it out is to use GMX events.
     ///
     /// @param token The token address derived from the gmx event: ClaimableCollateralUpdated
     /// @param timeKey The timeKey value derived from the gmx event: ClaimableCollateralUpdated
@@ -524,7 +534,7 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
     }
 
     /// @inheritdoc IHedgeManager
-    function currentLeverage() external view returns (uint256) {
+    function currentLeverage() public view returns (uint256) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         IGmxConfig _config = config();
         return GmxV2Lib.getCurrentLeverage(_getGmxParams(_config), $.oracle, _config.referralStorage());
@@ -612,7 +622,7 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
                         PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Creates increase/decrease order
+    /// @dev Creates increase/decrease GMX order
     function _createOrder(InternalCreateOrderParams memory params) private returns (bytes32) {
         if (params.isIncrease && params.collateralDeltaAmount > 0) {
             _getGmxV2PositionManagerStorage().pendingCollateralAmount = params.collateralDeltaAmount;
@@ -654,6 +664,7 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
         return orderKey;
     }
 
+    /// @dev Used in GMX callback functions.
     function _processIncreasePosition(uint256 initialCollateralDeltaAmount, uint256 sizeInTokens) private {
         AdjustPositionPayload memory callbackParams;
         if (initialCollateralDeltaAmount > 0) {
@@ -665,6 +676,7 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
         IBasisStrategy(strategy()).afterAdjustPosition(callbackParams);
     }
 
+    /// @dev Used in GMX callback functions.
     function _processDecreasePosition(uint256 sizeInTokens) private {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         AdjustPositionPayload memory callbackParams;
@@ -747,6 +759,7 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
         }
     }
 
+    /// @dev True when a GMX order has been submitted, but not executed.
     function _isPending() private view returns (bool) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         return $.pendingIncreaseOrderKey != bytes32(0) || $.pendingDecreaseOrderKey != bytes32(0);

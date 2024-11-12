@@ -15,9 +15,17 @@ import {Constants} from "src/libraries/utils/Constants.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
 /// @title SpotManager
+///
 /// @author Logarithm Labs
-/// @notice A spot manager smart contract that buys or sells product.
-/// @dev Deployed according to the upgradeable beacon proxy pattern.
+///
+/// @notice SpotManager is a dedicated smart contract that manages spot positions
+/// for a trading strategy, enabling it to buy or sell assets on a decentralized exchange (DEX)
+/// or other spot market. This manager operates in tandem with a basis strategy,
+/// allowing it to adjust the spot position dynamically based on the strategy’s target exposure.
+/// The primary objective is to provide liquidity for the basis trade, maintaining optimal
+/// spot exposure relative to the short hedge position.
+///
+/// @dev SpotManager is an upgradeable smart contract, deployed through the beacon proxy pattern.
 contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
     using SafeERC20 for IERC20;
 
