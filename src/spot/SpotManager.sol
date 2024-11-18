@@ -96,7 +96,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
         _setManualSwapPath(_assetToProductSwapPath, _asset, _product);
 
         // approve strategy to max amount
-        IERC20(_asset).approve($.strategy, type(uint256).max);
+        IERC20(_asset).approve(_strategy, type(uint256).max);
     }
 
     function _setManualSwapPath(address[] calldata _assetToProductSwapPath, address _asset, address _product) private {
