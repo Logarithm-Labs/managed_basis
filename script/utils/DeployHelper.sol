@@ -9,12 +9,12 @@ import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {SpotManager} from "src/spot/SpotManager.sol";
-import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
-import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
+import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 
-import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
-import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
@@ -174,14 +174,14 @@ library DeployHelper {
                 )
             )
         );
-        GmxV2PositionManager positionManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
-        BasisStrategy(params.strategy).setPositionManager(address(positionManager));
+        GmxV2PositionManager hedgeManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
+        BasisStrategy(params.strategy).setHedgeManager(address(hedgeManager));
         require(
-            BasisStrategy(params.strategy).positionManager() == address(positionManager),
-            "Strategy positionManager is not the expected positionManager"
+            BasisStrategy(params.strategy).hedgeManager() == address(hedgeManager),
+            "Strategy hedgeManager is not the expected hedgeManager"
         );
-        GmxGasStation(payable(params.gasStation)).registerPositionManager(address(positionManager), true);
-        return positionManager;
+        GmxGasStation(payable(params.gasStation)).registerPositionManager(address(hedgeManager), true);
+        return hedgeManager;
     }
 
     function deployOffChainConfig(address owner) internal returns (OffChainConfig) {
@@ -218,8 +218,6 @@ library DeployHelper {
                     params.strategy,
                     params.agent,
                     params.oracle,
-                    params.product,
-                    params.asset,
                     params.isLong
                 )
             )
@@ -229,10 +227,10 @@ library DeployHelper {
         require(hlPositionManager.agent() == params.agent, "PositionManager agent is not the expected agent");
         require(hlPositionManager.oracle() == params.oracle, "PositionManager oracle is not the expected oracle");
 
-        BasisStrategy(params.strategy).setPositionManager(address(hlPositionManager));
+        BasisStrategy(params.strategy).setHedgeManager(address(hlPositionManager));
         require(
-            BasisStrategy(params.strategy).positionManager() == address(hlPositionManager),
-            "Strategy positionManager is not the expected positionManager"
+            BasisStrategy(params.strategy).hedgeManager() == address(hlPositionManager),
+            "Strategy hedgeManager is not the expected hedgeManager"
         );
         return hlPositionManager;
     }

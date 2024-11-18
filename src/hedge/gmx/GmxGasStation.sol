@@ -8,6 +8,11 @@ import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.s
 
 import {Errors} from "src/libraries/utils/Errors.sol";
 
+/// @title GmxGasStation
+///
+/// @author Logarithm Labs
+///
+/// @dev GmxGasStation is designed to pay GMX orders' execution gas costs.
 contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
@@ -15,7 +20,7 @@ contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     /// @custom:storage-location erc7201:logarithm.storage.GmxGasStation
     struct GmxGasStationStorage {
-        mapping(address positionManager => bool) isPositionManager;
+        mapping(address hedgeManager => bool) isPositionManager;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.GmxGasStation")) - 1)) & ~bytes32(uint256(0xff))
@@ -28,10 +33,11 @@ contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
-    modifier onlyPositionManager(address caller) {
-        _onlyPositionManager(caller);
-        _;
-    }
+    /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event PositionManagerRegistered(address indexed account, address indexed hedgeManager, bool indexed allowed);
 
     /*//////////////////////////////////////////////////////////////
                         INITIALIZATION
@@ -53,11 +59,15 @@ contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function registerPositionManager(address positionManager, bool allowed) external onlyOwner {
-        _getGmxGasStationStorage().isPositionManager[positionManager] = allowed;
+    /// @dev Registers hedgeManager to use fund of this contract for the gmx execution fees.
+    function registerPositionManager(address hedgeManager, bool allowed) external onlyOwner {
+        if (isRegistered(hedgeManager) != allowed) {
+            _getGmxGasStationStorage().isPositionManager[hedgeManager] = allowed;
+            emit PositionManagerRegistered(_msgSender(), hedgeManager, allowed);
+        }
     }
 
-    /// @notice withdraw ETH for operators
+    /// @notice Withdraws ether of this smart contract.
     function withdraw(uint256 amount) external onlyOwner {
         (bool success,) = msg.sender.call{value: amount}("");
         assert(success);
@@ -67,21 +77,24 @@ contract GmxGasStation is UUPSUpgradeable, Ownable2StepUpgradeable {
                         EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev pay execution fee for gmx keepers when creating gmx orders
+    /// @dev Pays the execution fee for gmx keepers when creating gmx orders.
     ///
-    /// @param exchangeRouter is the router of gmx
-    /// @param orderVault is the vault of gmx to pay fee
-    /// @param executionFee is fee to pay
-    function payGmxExecutionFee(address exchangeRouter, address orderVault, uint256 executionFee)
-        external
-        onlyPositionManager(msg.sender)
-    {
+    /// @param exchangeRouter The address of gmx's exchangeRouter.
+    /// @param orderVault The address of gmx's orderVault.
+    /// @param executionFee The fee amount to pay.
+    function payGmxExecutionFee(address exchangeRouter, address orderVault, uint256 executionFee) external {
+        _requirePositionManager(_msgSender());
         IExchangeRouter(exchangeRouter).sendWnt{value: executionFee}(orderVault, executionFee);
     }
 
-    function _onlyPositionManager(address caller) private view {
+    function _requirePositionManager(address caller) private view {
         if (!_getGmxGasStationStorage().isPositionManager[caller]) {
             revert Errors.CallerNotPositionManager();
         }
+    }
+
+    /// @dev Tells if a hedgeManager is registered or not.
+    function isRegistered(address hedgeManager) public view returns (bool) {
+        return _getGmxGasStationStorage().isPositionManager[hedgeManager];
     }
 }

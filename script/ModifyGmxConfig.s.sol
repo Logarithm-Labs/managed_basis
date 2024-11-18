@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
 
-import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
+import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 
 contract ModifyGmxConfigScript is Script {
     GmxConfig config = GmxConfig(0x611169E7e9C70F23E1F9C067Ee23A3B78F3c34BF);

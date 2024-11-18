@@ -58,7 +58,7 @@ contract UpgradeStrategyAndVaultScript is Script {
         console.log("deleverageNeeded: ", state.deleverageNeeded);
         console.log("decreaseCollateral: ", state.decreaseCollateral);
         console.log("rehedgeNeeded: ", state.rehedgeNeeded);
-        console.log("positionManagerKeepNeeded: ", state.positionManagerKeepNeeded);
+        console.log("hedgeManagerKeepNeeded: ", state.hedgeManagerKeepNeeded);
         console.log("processingRebalanceDown: ", state.processingRebalanceDown);
         console.log("");
     }

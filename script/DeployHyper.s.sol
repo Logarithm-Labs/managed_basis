@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
-import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
-import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
+import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
@@ -112,38 +112,36 @@ contract DeployHyperScript is Script {
         console.log("OffChainConfig deployed at", offChainConfigProxy);
 
         // deploy position manager
-        address positionManagerImpl = address(new OffChainPositionManager());
-        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
+        address hedgeManagerImpl = address(new OffChainPositionManager());
+        address hedgeManagerBeacon = address(new UpgradeableBeacon(hedgeManagerImpl, owner));
         require(
-            UpgradeableBeacon(positionManagerBeacon).owner() == owner,
+            UpgradeableBeacon(hedgeManagerBeacon).owner() == owner,
             "PositionManagerBeacon owner is not the expected owner"
         );
-        console.log("OffChainPositionManagerBeacon deployed at", positionManagerBeacon);
+        console.log("OffChainPositionManagerBeacon deployed at", hedgeManagerBeacon);
 
-        address positionManagerProxy = address(
+        address hedgeManagerProxy = address(
             new BeaconProxy(
-                positionManagerBeacon,
+                hedgeManagerBeacon,
                 abi.encodeWithSelector(
                     OffChainPositionManager.initialize.selector,
                     offChainConfigProxy,
                     address(strategyProxy),
                     agent,
                     address(oracle),
-                    product,
-                    asset,
                     false
                 )
             )
         );
         require(
-            OffChainPositionManager(positionManagerProxy).owner() == owner,
+            OffChainPositionManager(hedgeManagerProxy).owner() == owner,
             "OffChainPositionManager owner is not the expected owner"
         );
-        console.log("OffChainPositionManager deployed at", positionManagerProxy);
+        console.log("OffChainPositionManager deployed at", hedgeManagerProxy);
 
         // config
         LogarithmVault(vaultProxy).setStrategy(strategyProxy);
-        BasisStrategy(strategyProxy).setPositionManager(positionManagerProxy);
+        BasisStrategy(strategyProxy).setHedgeManager(hedgeManagerProxy);
         // BasisStrategy(strategyProxy).setForwarder(forwarder);
         OffChainConfig(offChainConfigProxy).setSizeMinMax(
             increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax

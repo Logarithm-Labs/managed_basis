@@ -5,12 +5,12 @@ import "forge-std/Test.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {DataProvider} from "src/DataProvider.sol";
-import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
 import {ArbSysMock} from "test/mock/ArbSysMock.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 
 contract ProdTest is Test {
@@ -20,8 +20,7 @@ contract ProdTest is Test {
     LogarithmVault vault = LogarithmVault(0x4B57c9c6B58a454Def3Ad5AD0C15cF4974c818DE);
     BasisStrategy constant strategy = BasisStrategy(0x166350f9b64ED99B2Aa92413A773aDCEDa1E1438);
     DataProvider constant dataProvider = DataProvider(0x8B92925a63B580A9bBD9e0D8D185aDea850160A8);
-    OffChainPositionManager constant positionManager =
-        OffChainPositionManager(0x9901A001995230C20ba227bD006CFE9D4B3bee34);
+    OffChainPositionManager constant hedgeManager = OffChainPositionManager(0x9901A001995230C20ba227bD006CFE9D4B3bee34);
 
     UpgradeableBeacon strategyBeacon = UpgradeableBeacon(0xA610080Bf93CC031492a29D09DBC8b234F291ea7);
     address constant asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
@@ -86,7 +85,7 @@ contract ProdTest is Test {
         console.log("deleverageNeeded: ", state.deleverageNeeded);
         console.log("decreaseCollateral: ", state.decreaseCollateral);
         console.log("rehedgeNeeded: ", state.rehedgeNeeded);
-        console.log("positionManagerKeepNeeded: ", state.positionManagerKeepNeeded);
+        console.log("hedgeManagerKeepNeeded: ", state.hedgeManagerKeepNeeded);
         console.log("processingRebalanceDown: ", state.processingRebalanceDown);
     }
 }

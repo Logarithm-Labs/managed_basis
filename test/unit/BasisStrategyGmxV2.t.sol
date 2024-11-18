@@ -17,10 +17,10 @@ import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
-import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
+import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
@@ -38,13 +38,13 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
 
         // position manager increase reversion
         vm.startPrank(GMX_ORDER_VAULT);
-        IERC20(asset).transfer(address(_positionManager()), pendingUtilization / 6);
-        vm.startPrank(address(_positionManager()));
+        IERC20(asset).transfer(address(_hedgeManager()), pendingUtilization / 6);
+        vm.startPrank(address(_hedgeManager()));
         strategy.afterAdjustPosition(
-            IPositionManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
+            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
         );
 
-        assertEq(IERC20(asset).balanceOf(address(_positionManager())), 0);
+        assertEq(IERC20(asset).balanceOf(address(_hedgeManager())), 0);
         assertEq(IERC20(product).balanceOf(address(strategy)), 0);
         assertApproxEqRel(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC, 0.9999 ether);
     }
@@ -83,30 +83,30 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
     }
 
-    function test_performUpkeep_positionManagerKeep() public afterFullUtilized validateFinalState {
+    function test_performUpkeep_hedgeManagerKeep() public afterFullUtilized validateFinalState {
         address[] memory priceFeeds = new address[](2);
         priceFeeds[0] = assetPriceFeed;
         priceFeeds[1] = productPriceFeed;
         _moveTimestamp(1 days, priceFeeds);
 
         vm.startPrank(address(owner));
-        GmxConfig(address(positionManager.config())).setMaxClaimableFundingShare(0.00001 ether);
+        GmxConfig(address(hedgeManager.config())).setMaxClaimableFundingShare(0.00001 ether);
 
-        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("positionManagerKeep");
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeManagerKeep");
         // assertTrue(upkeepNeeded, "upkeepNeeded");
         (
             bool rebalanceDownNeeded,
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep,
+            bool hedgeManagerNeedKeep,
             ,
             bool rebalanceUpNeeded
         ) = helper.decodePerformData(performData);
 
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        assertTrue(positionManagerNeedKeep, "positionManagerNeedKeep");
+        assertTrue(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
 
-        _performKeep("positionManagerKeep");
+        _performKeep("hedgeManagerKeep");
     }
 
     function test_performUpkeep_rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting()
@@ -120,15 +120,15 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         (bool upkeepNeeded, bytes memory performData) =
             _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool positionManagerNeedKeep,, bool rebalanceUpNeeded) =
+        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool hedgeManagerNeedKeep,, bool rebalanceUpNeeded) =
             helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(positionManagerNeedKeep);
-        uint256 leverageBefore = _positionManager().currentLeverage();
+        assertFalse(hedgeManagerNeedKeep);
+        uint256 leverageBefore = _hedgeManager().currentLeverage();
         _performKeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
-        uint256 leverageAfter = _positionManager().currentLeverage();
+        uint256 leverageAfter = _hedgeManager().currentLeverage();
         assertEq(leverageBefore, leverageAfter, "leverage not changed");
         assertEq(strategy.processingRebalanceDown(), true);
 

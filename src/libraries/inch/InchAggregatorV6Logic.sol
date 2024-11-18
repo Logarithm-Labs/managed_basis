@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import "src/externals/1inch/interfaces/IAggregationRouterV6.sol";
 import "src/externals/uniswap/interfaces/IUniswapPool.sol";
+import "src/libraries/utils/Errors.sol";
 
 import "./AddressLib.sol";
 import "./ProtocolLib.sol";
@@ -12,12 +13,6 @@ import "./ProtocolLib.sol";
 library InchAggregatorV6Logic {
     using AddressLib for Address;
     using ProtocolLib for Address;
-
-    error InchInvalidSourceToken(address sourceToken, address requiredSourceToken);
-    error InchInvalidDestinationToken(address destinationToken, address requiredDestinationToken);
-    error InchInvalidReceiver(address receiver, address requiredReceiver);
-    error InchInsufficientSourceBalance(uint256 sourceAmount, uint256 sourceBalance);
-    error InchInvalidAmount(uint256 requestedAmountIn, uint256 unpackedAmountIn);
 
     address private constant _AGGREGATOR_V6_ADDRESS = 0x111111125421cA6dc452d289314280a0f8842A65;
     uint256 private constant _UNISWAP_ZERO_FOR_ONE_OFFSET = 247;
@@ -74,25 +69,25 @@ library InchAggregatorV6Logic {
 
         // validate swap data and approve ERC20
         if (amount != amountIn) {
-            revert InchInvalidAmount(amount, amountIn);
+            revert Errors.InchInvalidAmount(amount, amountIn);
         }
         if (isUtilize) {
             if (srcToken != asset) {
-                revert InchInvalidSourceToken(srcToken, asset);
+                revert Errors.InchInvalidSourceToken(srcToken, asset);
             }
             if (dstToken != product) {
-                revert InchInvalidDestinationToken(dstToken, product);
+                revert Errors.InchInvalidDestinationToken(dstToken, product);
             }
         } else {
             if (srcToken != product) {
-                revert InchInvalidSourceToken(srcToken, product);
+                revert Errors.InchInvalidSourceToken(srcToken, product);
             }
             if (dstToken != asset) {
-                revert InchInvalidDestinationToken(dstToken, asset);
+                revert Errors.InchInvalidDestinationToken(dstToken, asset);
             }
         }
         if (receiver != address(this)) {
-            revert InchInvalidReceiver(receiver, address(this));
+            revert Errors.InchInvalidReceiver(receiver, address(this));
         }
         uint256 sourceBalance;
         if (srcToken == _ETH_ADDRESS) {
@@ -102,7 +97,7 @@ library InchAggregatorV6Logic {
             IERC20(srcToken).approve(_AGGREGATOR_V6_ADDRESS, amountIn);
         }
         if (sourceBalance < amountIn) {
-            revert InchInsufficientSourceBalance(amountIn, sourceBalance);
+            revert Errors.InchInsufficientSourceBalance(amountIn, sourceBalance);
         }
 
         // perform swap

@@ -9,11 +9,11 @@ import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {PositionMngerForkTest} from "./PositionMngerForkTest.sol";
-import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
+import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {console2 as console} from "forge-std/console2.sol";
 
@@ -29,7 +29,7 @@ contract OffChainTest is PositionMngerForkTest {
     uint256 constant FLOAT_PRECISION = 1e18;
 
     address public immutable agent = makeAddr("agent");
-    OffChainPositionManager public positionManager;
+    OffChainPositionManager public hedgeManager;
     IOracle public oracle_;
     address public asset_;
     address public product_;
@@ -60,15 +60,15 @@ contract OffChainTest is PositionMngerForkTest {
         address product = IBasisStrategy(strategy).product();
         address asset = IBasisStrategy(strategy).asset();
 
-        // deploy positionManager beacon
-        address positionManagerBeacon = DeployHelper.deployBeacon(address(new OffChainPositionManager()), owner);
+        // deploy hedgeManager beacon
+        address hedgeManagerBeacon = DeployHelper.deployBeacon(address(new OffChainPositionManager()), owner);
         // deploy positionMnager beacon proxy
-        positionManager = DeployHelper.deployOffChainPositionManager(
+        hedgeManager = DeployHelper.deployOffChainPositionManager(
             DeployHelper.OffChainPositionManagerDeployParams(
-                owner, address(config), positionManagerBeacon, strategy, agent, oracle, product, asset, false
+                owner, address(config), hedgeManagerBeacon, strategy, agent, oracle, product, asset, false
             )
         );
-        vm.label(address(positionManager), "positionManager");
+        vm.label(address(hedgeManager), "hedgeManager");
 
         asset_ = asset;
         product_ = product;
@@ -77,32 +77,32 @@ contract OffChainTest is PositionMngerForkTest {
         vm.startPrank(address(this));
         IERC20(asset).approve(agent, type(uint256).max);
         vm.startPrank(agent);
-        IERC20(asset).approve(address(positionManager), type(uint256).max);
+        IERC20(asset).approve(address(hedgeManager), type(uint256).max);
         vm.stopPrank();
 
-        return address(positionManager);
+        return address(hedgeManager);
     }
 
     function _initOffChainTest(address _asset, address _product, address _oracle) internal {}
 
-    function _positionManager() internal view override returns (IPositionManager) {
-        return IPositionManager(positionManager);
+    function _hedgeManager() internal view override returns (IHedgeManager) {
+        return IHedgeManager(hedgeManager);
     }
 
     function _executeOrder() internal override {
-        OffChainPositionManager.RequestInfo memory requestInfo = positionManager.getLastRequest();
+        OffChainPositionManager.RequestInfo memory requestInfo = hedgeManager.getLastRequest();
         if (!requestInfo.isReported && requestInfo.requestTimestamp != 0) {
             vm.startPrank(agent);
-            IPositionManager.AdjustPositionPayload memory request = requestInfo.request;
-            IPositionManager.AdjustPositionPayload memory response = _executeRequest(request);
+            IHedgeManager.AdjustPositionPayload memory request = requestInfo.request;
+            IHedgeManager.AdjustPositionPayload memory response = _executeRequest(request);
             _reportStateAndExecuteRequest(response);
             vm.stopPrank();
         }
     }
 
-    function _executeRequest(IPositionManager.AdjustPositionPayload memory request)
+    function _executeRequest(IHedgeManager.AdjustPositionPayload memory request)
         internal
-        returns (IPositionManager.AdjustPositionPayload memory response)
+        returns (IHedgeManager.AdjustPositionPayload memory response)
     {
         if (request.isIncrease) {
             response.isIncrease = true;
@@ -125,7 +125,7 @@ contract OffChainTest is PositionMngerForkTest {
 
     function _reportState() internal {
         uint256 markPrice = _getMarkPrice();
-        positionManager.reportState(positionSizeInTokens, positionNetBalance, markPrice);
+        hedgeManager.reportState(positionSizeInTokens, positionNetBalance, markPrice);
     }
 
     function _updatePositionNetBalance(uint256 netBalance) internal {
@@ -135,14 +135,14 @@ contract OffChainTest is PositionMngerForkTest {
         IERC20(asset_).transfer(address(this), netBalance);
     }
 
-    function _reportStateAndExecuteRequest(IPositionManager.AdjustPositionPayload memory response) internal {
+    function _reportStateAndExecuteRequest(IHedgeManager.AdjustPositionPayload memory response) internal {
         uint256 markPrice = _getMarkPrice();
-        IPositionManager.AdjustPositionPayload memory params = IPositionManager.AdjustPositionPayload({
+        IHedgeManager.AdjustPositionPayload memory params = IHedgeManager.AdjustPositionPayload({
             sizeDeltaInTokens: response.sizeDeltaInTokens,
             collateralDeltaAmount: response.collateralDeltaAmount,
             isIncrease: response.isIncrease
         });
-        positionManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
+        hedgeManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
     }
 
     function _increasePositionSize(uint256 sizeDeltaInTokens) internal returns (uint256) {

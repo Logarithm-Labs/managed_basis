@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
-import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
+import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
 
 contract RescueFundScript is Script {
     GmxGasStation public oldGmxGasStation = GmxGasStation(payable(0xB758989eeBB4D5EF2da4FbD6E37f898dd1d49b2a));
