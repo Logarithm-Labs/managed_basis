@@ -530,7 +530,7 @@ library GmxV2Lib {
         return IReader(params.reader).getPosition(IDataStore(params.dataStore), positionKey);
     }
 
-    /// @dev get position info including propeties and realizing pnl and fees and price impact
+    /// @dev get position info including properties and realizing pnl and fees and price impact
     /// Note: providing info when closing the whole position
     function _getPositionInfo(
         GmxParams calldata params,

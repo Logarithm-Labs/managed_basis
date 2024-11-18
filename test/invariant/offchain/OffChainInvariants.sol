@@ -14,7 +14,7 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {ForkTest} from "test/base/ForkTest.sol";
 import {MockPriceFeed} from "test/mock/MockPriceFeed.sol";
 
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
@@ -162,16 +162,16 @@ contract OffChainInvariants is StdInvariant, ForkTest {
 
     function invariant_leverageShouldBeBetweenMinAndMaxWhenUpkeepNotNeeded() public view {
         (bool upkeepNeeded,) = strategy.checkUpkeep("");
-        IPositionManager positionManager = IPositionManager(strategy.positionManager());
-        uint256 sizeInTokens = positionManager.positionSizeInTokens();
-        uint256 positionBalance = positionManager.positionNetBalance();
+        IHedgeManager hedgeManager = IHedgeManager(strategy.hedgeManager());
+        uint256 sizeInTokens = hedgeManager.positionSizeInTokens();
+        uint256 positionBalance = hedgeManager.positionNetBalance();
         BasisStrategy.StrategyStatus status = strategy.strategyStatus();
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         if (
             !upkeepNeeded && sizeInTokens != 0 && status == BasisStrategy.StrategyStatus.IDLE
                 && pendingDeutilization == 0 && positionBalance != 0
         ) {
-            uint256 currLeverage = positionManager.currentLeverage();
+            uint256 currLeverage = hedgeManager.currentLeverage();
             assertTrue(currLeverage >= minLeverage, "minLeverage");
             assertTrue(currLeverage <= maxLeverage, "maxLeverage");
         }

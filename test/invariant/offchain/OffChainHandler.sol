@@ -12,9 +12,9 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
-import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
+import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 
 import {OffChainTest} from "test/base/OffChainTest.sol";
 import {ForkTest} from "test/base/ForkTest.sol";
@@ -57,9 +57,9 @@ contract OffChainHandler is OffChainTest {
         product = IERC20(_strategy.product());
         vault = LogarithmVault(_strategy.vault());
         oracle = LogarithmOracle(_strategy.oracle());
-        address positionManagerAddr = _initPositionManager(owner, address(_strategy));
+        address hedgeManagerAddr = _initPositionManager(owner, address(_strategy));
         vm.startPrank(owner);
-        strategy.setPositionManager(positionManagerAddr);
+        strategy.setHedgeManager(hedgeManagerAddr);
         vm.stopPrank();
 
         helper = new StrategyHelper(address(strategy));

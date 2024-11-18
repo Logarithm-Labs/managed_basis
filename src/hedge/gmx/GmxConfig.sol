@@ -7,6 +7,8 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 
+/// @title GmxConfig
+/// @author Logarithm Labs
 contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
@@ -38,17 +40,26 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
     }
 
     /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event CallbackGasLimitUpdated(address indexed account, uint256 newGasLimit);
+    event ReferralCodeUpdated(address indexed account, bytes32 newReferralCode);
+    event MaxClaimableFundingShareUpdated(address indexed account, uint256 newFundingShare);
+    event LimitDecreaseCollateralUpdated(address indexed account, uint256 newLimitDecreaseCollateral);
+    event RealizedPnlDiffFactorUpdated(address indexed account, uint256 newRealizedPnlDiffFactor);
+
+    /*//////////////////////////////////////////////////////////////
                         INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
     function initialize(address owner_, address exchangeRouter_, address reader_) external initializer {
         __Ownable_init(owner_);
-        GmxConfigStorage storage $ = _getGmxConfigStorage();
         _updateAddresses(exchangeRouter_, reader_);
-        $.callbackGasLimit = 3_000_000;
-        $.referralCode = bytes32(0);
-        $.maxClaimableFundingShare = 0.01 ether; // 1%
-        $.realizedPnlDiffFactor = 0.1 ether; // 10%
+        _setCallbackGasLimit(3_000_000);
+        _setReferralCode(bytes32(0));
+        _setMaxClaimableFundingShare(0.01 ether); // 1%
+        _setRealizedPnlDiffFactor(0.1 ether); // 10%
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
@@ -64,6 +75,43 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
         $.reader = reader_;
     }
 
+    function _setCallbackGasLimit(uint256 callbackGasLimit_) internal {
+        if (callbackGasLimit() != callbackGasLimit_) {
+            _getGmxConfigStorage().callbackGasLimit = callbackGasLimit_;
+            emit CallbackGasLimitUpdated(_msgSender(), callbackGasLimit_);
+        }
+    }
+
+    function _setReferralCode(bytes32 referralCode_) internal {
+        if (referralCode() != referralCode_) {
+            _getGmxConfigStorage().referralCode = referralCode_;
+            emit ReferralCodeUpdated(_msgSender(), referralCode_);
+        }
+    }
+
+    function _setMaxClaimableFundingShare(uint256 _maxClaimableFundingShare) internal {
+        require(_maxClaimableFundingShare < 1 ether);
+        if (maxClaimableFundingShare() != _maxClaimableFundingShare) {
+            _getGmxConfigStorage().maxClaimableFundingShare = _maxClaimableFundingShare;
+            emit MaxClaimableFundingShareUpdated(_msgSender(), _maxClaimableFundingShare);
+        }
+    }
+
+    function _setLimitDecreaseCollateral(uint256 _limit) internal {
+        if (limitDecreaseCollateral() != _limit) {
+            _getGmxConfigStorage().limitDecreaseCollateral = _limit;
+            emit LimitDecreaseCollateralUpdated(_msgSender(), _limit);
+        }
+    }
+
+    function _setRealizedPnlDiffFactor(uint256 _diffFactor) internal {
+        require(_diffFactor < 1 ether);
+        if (realizedPnlDiffFactor() != _diffFactor) {
+            _getGmxConfigStorage().realizedPnlDiffFactor = _diffFactor;
+            emit RealizedPnlDiffFactorUpdated(_msgSender(), _diffFactor);
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -73,72 +121,70 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
     }
 
     function setCallbackGasLimit(uint256 callbackGasLimit_) external onlyOwner {
-        _getGmxConfigStorage().callbackGasLimit = callbackGasLimit_;
+        _setCallbackGasLimit(callbackGasLimit_);
     }
 
     function setReferralCode(bytes32 referralCode_) external onlyOwner {
-        _getGmxConfigStorage().referralCode = referralCode_;
+        _setReferralCode(referralCode_);
     }
 
     function setMaxClaimableFundingShare(uint256 _maxClaimableFundingShare) external onlyOwner {
-        require(_maxClaimableFundingShare < 1 ether);
-        _getGmxConfigStorage().maxClaimableFundingShare = _maxClaimableFundingShare;
+        _setMaxClaimableFundingShare(_maxClaimableFundingShare);
     }
 
     function setLimitDecreaseCollateral(uint256 _limit) external onlyOwner {
-        _getGmxConfigStorage().limitDecreaseCollateral = _limit;
+        _setLimitDecreaseCollateral(_limit);
     }
 
     function setRealizedPnlDiffFactor(uint256 _diffFactor) external onlyOwner {
-        require(_diffFactor < 1 ether);
-        _getGmxConfigStorage().realizedPnlDiffFactor = _diffFactor;
+        _setRealizedPnlDiffFactor(_diffFactor);
     }
 
     /*//////////////////////////////////////////////////////////////
-                        EXTERNAL FUNCTIONS
+                        PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function dataStore() external view returns (address) {
+    function dataStore() public view returns (address) {
         return _getGmxConfigStorage().dataStore;
     }
 
-    function exchangeRouter() external view returns (address) {
+    function exchangeRouter() public view returns (address) {
         return _getGmxConfigStorage().exchangeRouter;
     }
 
-    function orderHandler() external view returns (address) {
+    function orderHandler() public view returns (address) {
         return _getGmxConfigStorage().orderHandler;
     }
 
-    function orderVault() external view returns (address) {
+    function orderVault() public view returns (address) {
         return _getGmxConfigStorage().orderVault;
     }
 
-    function referralStorage() external view returns (address) {
+    function referralStorage() public view returns (address) {
         return _getGmxConfigStorage().referralStorage;
     }
 
-    function reader() external view returns (address) {
+    function reader() public view returns (address) {
         return _getGmxConfigStorage().reader;
     }
 
-    function callbackGasLimit() external view returns (uint256) {
+    function callbackGasLimit() public view returns (uint256) {
         return _getGmxConfigStorage().callbackGasLimit;
     }
 
-    function referralCode() external view returns (bytes32) {
+    function referralCode() public view returns (bytes32) {
         return _getGmxConfigStorage().referralCode;
     }
 
-    function maxClaimableFundingShare() external view returns (uint256) {
+    function maxClaimableFundingShare() public view returns (uint256) {
         return _getGmxConfigStorage().maxClaimableFundingShare;
     }
 
-    function limitDecreaseCollateral() external view returns (uint256) {
+    function limitDecreaseCollateral() public view returns (uint256) {
         return _getGmxConfigStorage().limitDecreaseCollateral;
     }
 
-    function realizedPnlDiffFactor() external view returns (uint256) {
+    function realizedPnlDiffFactor() public view returns (uint256) {
         return _getGmxConfigStorage().realizedPnlDiffFactor;
     }
 }

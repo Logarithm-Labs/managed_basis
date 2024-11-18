@@ -13,11 +13,11 @@ import {MarketUtils} from "src/externals/gmx-v2/libraries/MarketUtils.sol";
 import {Price} from "src/externals/gmx-v2/libraries/Price.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
 
 contract DataProvider {
@@ -52,7 +52,7 @@ contract DataProvider {
         bool deleverageNeeded;
         bool decreaseCollateral;
         bool rehedgeNeeded;
-        bool positionManagerKeepNeeded;
+        bool hedgeManagerKeepNeeded;
         bool processingRebalanceDown;
         bool strategyPaused;
         bool vaultPaused;
@@ -69,7 +69,7 @@ contract DataProvider {
 
     function getStrategyState(address _strategy) external view returns (StrategyState memory state) {
         BasisStrategy strategy = BasisStrategy(_strategy);
-        IPositionManager positionManager = IPositionManager(strategy.positionManager());
+        IHedgeManager hedgeManager = IHedgeManager(strategy.hedgeManager());
         LogarithmVault vault = LogarithmVault(strategy.vault());
         IOracle oracle = IOracle(strategy.oracle());
         address asset = strategy.asset();
@@ -77,7 +77,7 @@ contract DataProvider {
         bool rebalanceDownNeeded;
         bool deleverageNeeded;
         int256 hedgeDeviationInTokens;
-        bool positionManagerNeedKeep;
+        bool hedgeManagerNeedKeep;
         bool decreaseCollateral;
         bool rebalanceUpNeeded;
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
@@ -86,7 +86,7 @@ contract DataProvider {
                 rebalanceDownNeeded,
                 deleverageNeeded,
                 hedgeDeviationInTokens,
-                positionManagerNeedKeep,
+                hedgeManagerNeedKeep,
                 decreaseCollateral,
                 rebalanceUpNeeded
             ) = _decodePerformData(performData);
@@ -107,38 +107,33 @@ contract DataProvider {
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
         state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
         state.processedWithdrawAssets = vault.processedWithdrawAssets();
-        state.positionNetBalance = positionManager.positionNetBalance();
-        state.positionLeverage = positionManager.currentLeverage();
-        state.positionSizeInTokens = positionManager.positionSizeInTokens();
+        state.positionNetBalance = hedgeManager.positionNetBalance();
+        state.positionLeverage = hedgeManager.currentLeverage();
+        state.positionSizeInTokens = hedgeManager.positionSizeInTokens();
         state.upkeepNeeded = upkeepNeeded;
         state.rebalanceUpNeeded = rebalanceUpNeeded;
         state.rebalanceDownNeeded = rebalanceDownNeeded;
         state.deleverageNeeded = deleverageNeeded;
         state.decreaseCollateral = decreaseCollateral;
         state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
-        state.positionManagerKeepNeeded = positionManagerNeedKeep;
+        state.hedgeManagerKeepNeeded = hedgeManagerNeedKeep;
         state.processingRebalanceDown = strategy.processingRebalanceDown();
         state.strategyPaused = strategy.paused();
         state.vaultPaused = vault.paused();
     }
 
-    function getGmxPositionInfo(address positionManagerAddr)
-        external
-        view
-        returns (GmxPositionInfo memory positionInfo)
-    {
-        GmxV2PositionManager positionManager = GmxV2PositionManager(positionManagerAddr);
-        BasisStrategy strategy = BasisStrategy(positionManager.strategy());
+    function getGmxPositionInfo(address hedgeManagerAddr) external view returns (GmxPositionInfo memory positionInfo) {
+        GmxV2PositionManager hedgeManager = GmxV2PositionManager(hedgeManagerAddr);
+        BasisStrategy strategy = BasisStrategy(hedgeManager.strategy());
         Market.Props memory market = Market.Props({
-            marketToken: positionManager.marketToken(),
-            indexToken: positionManager.indexToken(),
-            longToken: positionManager.longToken(),
-            shortToken: positionManager.shortToken()
+            marketToken: hedgeManager.marketToken(),
+            indexToken: hedgeManager.indexToken(),
+            longToken: hedgeManager.longToken(),
+            shortToken: hedgeManager.shortToken()
         });
         IOracle oracle = IOracle(strategy.oracle());
-        bytes32 positionKey = _getPositionKey(
-            positionManagerAddr, market.marketToken, positionManager.collateralToken(), positionManager.isLong()
-        );
+        bytes32 positionKey =
+            _getPositionKey(hedgeManagerAddr, market.marketToken, hedgeManager.collateralToken(), hedgeManager.isLong());
         Position.Props memory position = IReader(GMX_READER).getPosition(IDataStore(GMX_DATA_STORE), positionKey);
 
         // position size in usd
@@ -171,8 +166,8 @@ contract DataProvider {
             // hence, liquidationPrice = (collateralUsd + sizeInUsd - fees - minCollateralUsdForLeverage) / sizeInTokens
 
             // positionNetBalance * collateralPrice == remainingCollateralUsd
-            uint256 positionNetBalance = positionManager.positionNetBalance();
-            uint256 collateralTokenPrice = oracle.getAssetPrice(positionManager.collateralToken());
+            uint256 positionNetBalance = hedgeManager.positionNetBalance();
+            uint256 collateralTokenPrice = oracle.getAssetPrice(hedgeManager.collateralToken());
             uint256 positionNetBalanceUsd = positionNetBalance * collateralTokenPrice;
             positionInfo.liquidationPrice = (
                 positionNetBalanceUsd.toInt256() - positionInfo.unrealizedPnlUsd + position.numbers.sizeInUsd.toInt256()
@@ -181,21 +176,21 @@ contract DataProvider {
         }
 
         // accumulated funding fee
-        uint256 cumulativeClaimedFundingUsd = positionManager.cumulativeClaimedFundingUsd();
+        uint256 cumulativeClaimedFundingUsd = hedgeManager.cumulativeClaimedFundingUsd();
         (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount) =
-            positionManager.getAccruedClaimableFundingAmounts();
+            hedgeManager.getAccruedClaimableFundingAmounts();
         (uint256 nextClaimableLongTokenAmount, uint256 nextClaimableShortTokenAmount) =
-            positionManager.getClaimableFundingAmounts();
+            hedgeManager.getClaimableFundingAmounts();
         uint256 longTokenPrice = oracle.getAssetPrice(market.longToken);
         uint256 shortTokenPrice = oracle.getAssetPrice(market.shortToken);
         uint256 claimableFundingUsd = (claimableLongTokenAmount + nextClaimableLongTokenAmount) * longTokenPrice
             + (claimableShortTokenAmount + nextClaimableShortTokenAmount) * shortTokenPrice;
-        (uint256 fundingFeeUsd, uint256 borrowingFeeUsd) = positionManager.cumulativeFundingAndBorrowingFeesUsd();
+        (uint256 fundingFeeUsd, uint256 borrowingFeeUsd) = hedgeManager.cumulativeFundingAndBorrowingFeesUsd();
         positionInfo.accumulatedFundingFeesUsd = (cumulativeClaimedFundingUsd + claimableFundingUsd).toInt256()
             - (fundingFeeUsd + borrowingFeeUsd).toInt256();
 
         // accumulated position fee
-        positionInfo.accumulatedPositionFeesUsd = positionManager.cumulativePositionFeeUsd();
+        positionInfo.accumulatedPositionFeesUsd = hedgeManager.cumulativePositionFeeUsd();
     }
 
     function _getPositionKey(address account, address marketToken, address collateralToken, bool isLong)
@@ -229,7 +224,7 @@ contract DataProvider {
             bool rebalanceDownNeeded,
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep,
+            bool hedgeManagerNeedKeep,
             bool decreaseCollateral,
             bool rebalanceUpNeeded
         )
@@ -244,7 +239,7 @@ contract DataProvider {
             deltaCollateralToIncrease,
             clearProcessingRebalanceDown,
             hedgeDeviationInTokens,
-            positionManagerNeedKeep,
+            hedgeManagerNeedKeep,
             decreaseCollateral,
             deltaCollateralToDecrease
         ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, bool, uint256));
