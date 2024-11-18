@@ -79,12 +79,14 @@ library Errors {
     //////////////////////////////////////////////////////////////*/
     error UnsupportedSwapType();
     error SwapFailed();
+    error InvalidStargate();
+    error BrotherSwapperNotInit();
 
     /*//////////////////////////////////////////////////////////////
                               AUTH CALLER
     //////////////////////////////////////////////////////////////*/
     error CallerNotAuthorized(address authorized, address caller);
-    error CallerNotPositionManager();
+    error GasCallerNotAllowed();
     error CallerNotAgent();
     error InvalidCallback();
     error CallerNotOwnerOrVault();

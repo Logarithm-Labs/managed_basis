@@ -9,6 +9,8 @@ import {IStargate, Ticket} from "src/externals/stargate/interfaces/IStargate.sol
 library StargateUtils {
     using OptionsBuilder for bytes;
 
+    uint128 constant COMPOSE_CALL_GAS_LIMIT = 300_000;
+
     function prepareTakeTaxiAndSwap(
         address _stargate,
         uint32 _dstEid,
@@ -17,7 +19,7 @@ library StargateUtils {
         bytes memory _composeMsg
     ) internal view returns (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) {
         bytes memory extraOptions = _composeMsg.length > 0
-            ? OptionsBuilder.newOptions().addExecutorLzComposeOption(0, 200_000, 0) // compose gas limit
+            ? OptionsBuilder.newOptions().addExecutorLzComposeOption(0, COMPOSE_CALL_GAS_LIMIT, 0) // compose gas limit
             : bytes("");
 
         sendParam = SendParam({

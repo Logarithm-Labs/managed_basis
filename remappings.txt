@@ -5,3 +5,4 @@
 @layerzerolabs/lz-evm-messagelib-v2/=lib/layerzero-v2/packages/layerzero-v2/evm/messagelib/
 @layerzerolabs/test-devtools-evm-foundry/=lib/devtools/packages/test-devtools-evm-foundry/
 @layerzerolabs/oapp-evm/=lib/devtools/packages/oapp-evm/
+solidity-bytes-utils/=lib/solidity-bytes-utils/
