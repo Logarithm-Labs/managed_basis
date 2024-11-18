@@ -10,7 +10,7 @@ import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {SpotManager} from "src/spot/SpotManager.sol";
 import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
-import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
+import {GasStation} from "src/gas-station/GasStation.sol";
 import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
@@ -143,11 +143,11 @@ library DeployHelper {
         return gmxConfig;
     }
 
-    function deployGmxGasStation(address owner) internal returns (GmxGasStation) {
-        address gasStationImpl = address(new GmxGasStation());
+    function deployGasStation(address owner) internal returns (GasStation) {
+        address gasStationImpl = address(new GasStation());
         address gasStationProxy =
-            address(new ERC1967Proxy(gasStationImpl, abi.encodeWithSelector(GmxGasStation.initialize.selector, owner)));
-        return GmxGasStation(payable(gasStationProxy));
+            address(new ERC1967Proxy(gasStationImpl, abi.encodeWithSelector(GasStation.initialize.selector, owner)));
+        return GasStation(payable(gasStationProxy));
     }
 
     struct GmxPositionManagerDeployParams {
@@ -180,7 +180,7 @@ library DeployHelper {
             BasisStrategy(params.strategy).hedgeManager() == address(hedgeManager),
             "Strategy hedgeManager is not the expected hedgeManager"
         );
-        GmxGasStation(payable(params.gasStation)).registerPositionManager(address(hedgeManager), true);
+        GasStation(payable(params.gasStation)).registerManager(address(hedgeManager), true);
         return hedgeManager;
     }
 

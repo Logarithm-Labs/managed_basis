@@ -9,7 +9,7 @@ import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
-import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
+import {GasStation} from "src/gas-station/GasStation.sol";
 import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
@@ -57,7 +57,7 @@ contract DeployScript is Script {
 
     // predeployed contracts
     LogarithmOracle public oracle = LogarithmOracle(0x26aD95BDdc540ac3Af223F3eB6aA07C13d7e08c9);
-    // GmxGasStation public gmxGasStation = GmxGasStation(payable(0xB758989eeBB4D5EF2da4FbD6E37f898dd1d49b2a));
+    // GasStation public gasStation = GasStation(payable(0xB758989eeBB4D5EF2da4FbD6E37f898dd1d49b2a));
 
     function run() public {
         vm.startBroadcast();
@@ -141,9 +141,9 @@ contract DeployScript is Script {
         GmxConfig gmxConfig = DeployHelper.deployGmxConfig(owner);
         console.log("GmxConfig deployed at", address(gmxConfig));
 
-        // deploy GmxGasStation
-        GmxGasStation gmxGasStation = DeployHelper.deployGmxGasStation(owner);
-        console.log("GmxGasStation deployed at", address(gmxGasStation));
+        // deploy GasStation
+        GasStation gasStation = DeployHelper.deployGasStation(owner);
+        console.log("GasStation deployed at", address(gasStation));
 
         // deploy GmxPositionManagerBeacon
         address gmxPositionManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
@@ -155,7 +155,7 @@ contract DeployScript is Script {
                 gmxPositionManagerBeacon,
                 address(gmxConfig),
                 address(strategyGmx),
-                address(gmxGasStation),
+                address(gasStation),
                 ArbiAddresses.GMX_ETH_USDC_MARKET
             )
         );

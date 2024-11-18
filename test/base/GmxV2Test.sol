@@ -14,7 +14,7 @@ import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
 import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
-import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
+import {GasStation} from "src/gas-station/GasStation.sol";
 import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
@@ -40,19 +40,19 @@ contract GmxV2Test is PositionMngerForkTest {
         GmxConfig config = DeployHelper.deployGmxConfig(owner);
         vm.label(address(config), "config");
 
-        // deploy gmxGasStation
-        GmxGasStation gmxGasStation = DeployHelper.deployGmxGasStation(owner);
-        vm.label(address(gmxGasStation), "gmxGasStation");
+        // deploy GasStation
+        GasStation gasStation = DeployHelper.deployGasStation(owner);
+        vm.label(address(gasStation), "GasStation");
 
-        // topup gmxGasStation with some native token, in practice, its don't through gmxGasStation
-        vm.deal(address(gmxGasStation), 10000 ether);
+        // topup gasStation with some native token, in practice, its don't through gasStation
+        vm.deal(address(gasStation), 10000 ether);
 
         // deploy hedgeManager beacon
         address hedgeManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
         // deploy positionMnager beacon proxy
         hedgeManager = DeployHelper.deployGmxPositionManager(
             DeployHelper.GmxPositionManagerDeployParams(
-                hedgeManagerBeacon, address(config), strategy, address(gmxGasStation), GMX_ETH_USDC_MARKET
+                hedgeManagerBeacon, address(config), strategy, address(gasStation), GMX_ETH_USDC_MARKET
             )
         );
         vm.label(address(hedgeManager), "hedgeManager");

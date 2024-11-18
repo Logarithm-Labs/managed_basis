@@ -24,7 +24,7 @@ import {MockStrategy} from "test/mock/MockStrategy.sol";
 import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
+import {GasStation} from "src/gas-station/GasStation.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
@@ -48,7 +48,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
     MockStrategy strategy;
     LogarithmOracle oracle;
-    GmxGasStation gmxGasStation;
+    GasStation gasStation;
 
     function setUp() public {
         _forkArbitrum(237215502);
@@ -77,12 +77,12 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         GmxConfig config = DeployHelper.deployGmxConfig(owner);
         vm.label(address(config), "config");
 
-        // deploy gmxGasStation
-        gmxGasStation = DeployHelper.deployGmxGasStation(owner);
-        vm.label(address(gmxGasStation), "gmxGasStation");
+        // deploy GasStation
+        gasStation = DeployHelper.deployGasStation(owner);
+        vm.label(address(gasStation), "gasStation");
 
-        // topup gmxGasStation with some native token, in practice, its don't through gmxGasStation
-        vm.deal(address(gmxGasStation), 10000 ether);
+        // topup gasStation with some native token, in practice, its don't through gasStation
+        vm.deal(address(gasStation), 10000 ether);
 
         // deploy hedgeManager beacon
         address hedgeManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
@@ -94,14 +94,14 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                     GmxV2PositionManager.initialize.selector,
                     address(strategy),
                     address(config),
-                    address(gmxGasStation),
+                    address(gasStation),
                     GMX_ETH_USDC_MARKET
                 )
             )
         );
         hedgeManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
         vm.label(address(hedgeManager), "hedgeManager");
-        gmxGasStation.registerPositionManager(address(hedgeManager), true);
+        gasStation.registerManager(address(hedgeManager), true);
         vm.stopPrank();
     }
 

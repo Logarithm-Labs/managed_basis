@@ -18,7 +18,7 @@ import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {SpotManager} from "src/spot/SpotManager.sol";
 import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
+import {GasStation} from "src/gas-station/GasStation.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";

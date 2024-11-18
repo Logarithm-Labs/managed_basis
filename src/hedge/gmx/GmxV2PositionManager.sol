@@ -21,7 +21,7 @@ import {Position} from "src/externals/gmx-v2/libraries/Position.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
 import {IGmxConfig} from "src/hedge/gmx/IGmxConfig.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
-import {IGmxGasStation} from "src/hedge/gmx/IGmxGasStation.sol";
+import {IGasStation} from "src/gas-station/IGasStation.sol";
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
 import {Constants} from "src/libraries/utils/Constants.sol";
@@ -75,7 +75,7 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
     struct GmxV2PositionManagerStorage {
         // configuration
         address oracle;
-        address gmxGasStation;
+        address gasStation;
         address config;
         address strategy;
         address marketToken;
@@ -147,14 +147,14 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
                             INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address strategy_, address config_, address gmxGasStation_, address marketKey_)
+    function initialize(address strategy_, address config_, address gasStation_, address marketKey_)
         external
         initializer
     {
         address asset = address(IBasisStrategy(strategy_).asset());
         address product = address(IBasisStrategy(strategy_).product());
 
-        if (marketKey_ == address(0) || gmxGasStation_ == address(0)) {
+        if (marketKey_ == address(0) || gasStation_ == address(0)) {
             revert Errors.InvalidMarket();
         }
 
@@ -167,7 +167,7 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
         }
 
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        $.gmxGasStation = gmxGasStation_;
+        $.gasStation = gasStation_;
         $.oracle = IBasisStrategy(strategy_).oracle();
         $.config = config_;
         $.strategy = strategy_;
@@ -514,7 +514,7 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
 
     /// @inheritdoc IGasFeeCallbackReceiver
     function refundExecutionFee(bytes32, /* key */ EventUtils.EventLogData memory /* eventData */ ) external payable {
-        (bool success,) = gmxGasStation().call{value: msg.value}("");
+        (bool success,) = gasStation().call{value: msg.value}("");
         assert(success);
     }
 
@@ -630,7 +630,7 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
         }
         (uint256 increaseExecutionFee, uint256 decreaseExecutionFee) = getExecutionFee();
         uint256 executionFee = params.isIncrease ? increaseExecutionFee : decreaseExecutionFee;
-        IGmxGasStation(gmxGasStation()).payGmxExecutionFee(params.exchangeRouter, params.orderVault, executionFee);
+        IGasStation(gasStation()).payGmxExecutionFee(params.exchangeRouter, params.orderVault, executionFee);
         address[] memory swapPath;
         bytes32 orderKey = IExchangeRouter(params.exchangeRouter).createOrder(
             IBaseOrderUtils.CreateOrderParams({
@@ -812,9 +812,9 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
     }
 
     /// @notice The address of the gmx gas station smart contract.
-    function gmxGasStation() public view returns (address) {
+    function gasStation() public view returns (address) {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
-        return $.gmxGasStation;
+        return $.gasStation;
     }
 
     /// @notice The address of gmx market token where position is opened at.

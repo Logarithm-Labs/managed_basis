@@ -7,7 +7,7 @@ import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
-import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
+import {GasStation} from "src/gas-station/GasStation.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -116,13 +116,11 @@ contract DeployGmxScript is Script {
         console.log("GmxConfig deployed at", gmxConfigProxy);
 
         // deploy gas station
-        address gasStationImpl = address(new GmxGasStation());
+        address gasStationImpl = address(new GasStation());
         address gasStationProxy =
-            address(new ERC1967Proxy(gasStationImpl, abi.encodeWithSelector(GmxGasStation.initialize.selector, owner)));
-        require(
-            GmxGasStation(payable(gasStationProxy)).owner() == owner, "GmxGasStation owner is not the expected owner"
-        );
-        console.log("GmxGasStation deployed at", gasStationProxy);
+            address(new ERC1967Proxy(gasStationImpl, abi.encodeWithSelector(GasStation.initialize.selector, owner)));
+        require(GasStation(payable(gasStationProxy)).owner() == owner, "GasStation owner is not the expected owner");
+        console.log("GasStation deployed at", gasStationProxy);
 
         // deploy position manager
         address hedgeManagerImpl = address(new GmxV2PositionManager());
@@ -155,7 +153,7 @@ contract DeployGmxScript is Script {
         // config
         LogarithmVault(vaultProxy).setStrategy(strategyProxy);
         BasisStrategy(strategyProxy).setHedgeManager(hedgeManagerProxy);
-        GmxGasStation(payable(gasStationProxy)).registerPositionManager(hedgeManagerProxy, true);
+        GasStation(payable(gasStationProxy)).registerManager(hedgeManagerProxy, true);
         // BasisStrategy(strategyProxy).setForwarder(forwarder);
 
         (bool success,) = gasStationProxy.call{value: 0.0004 ether}("");
