@@ -8,7 +8,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
-contract ManagedVaultTest is ManagedVault {
+contract ManagedVaultSpec is ManagedVault {
     function initialize(address owner_, address asset_, string calldata name_, string calldata symbol_)
         external
         initializer
@@ -30,7 +30,7 @@ contract ManagedVaultTest is ManagedVault {
     // }
 }
 
-contract ManagedVaultSpecTest is ForkTest {
+contract ManagedVaultTest is ForkTest {
     address owner = makeAddr("owner");
     address user = makeAddr("user");
     address recipient = makeAddr("recipient");
