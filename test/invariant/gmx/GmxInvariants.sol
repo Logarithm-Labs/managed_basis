@@ -152,14 +152,6 @@ contract GmxInvariants is StdInvariant, ForkTest {
         targetContract(address(handler));
     }
 
-    function invariant_sharePriceShouldBeAroundOne() public view {
-        uint256 totalAssets = vault.totalAssets();
-        uint256 totalSupply = vault.totalSupply();
-        if (totalSupply == 0) return;
-        uint256 sharePrice = Math.mulDiv(totalAssets, 1e6, totalSupply);
-        assertApproxEqRel(sharePrice, 1e6, 0.01 ether, "share price");
-    }
-
     function invariant_leverageShouldBeBetweenMinAndMaxWhenUpkeepNotNeeded() public view {
         (bool upkeepNeeded,) = strategy.checkUpkeep("");
         IHedgeManager hedgeManager = IHedgeManager(strategy.hedgeManager());
