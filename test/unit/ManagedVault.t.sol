@@ -8,7 +8,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
-contract ManagedVaultSpec is ManagedVault {
+contract ManagedVaultTest is ManagedVault {
     function initialize(address owner_, address asset_, string calldata name_, string calldata symbol_)
         external
         initializer

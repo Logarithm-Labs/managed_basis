@@ -5,7 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 
 import {WhitelistProvider} from "src/whitelist/WhitelistProvider.sol";
 
-contract WhitelistProviderSpecTest is Test {
+contract WhitelistProviderTest is Test {
     WhitelistProvider provider;
     address owner = makeAddr("owner");
     address user1 = makeAddr("user1");
