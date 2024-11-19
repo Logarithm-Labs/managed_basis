@@ -46,7 +46,6 @@ contract StrategyConfig is UUPSUpgradeable, OwnableUpgradeable {
 
     function initialize(address owner_) external initializer {
         __Ownable_init(owner_);
-        StrategyConfigStorage storage $ = _getStrategyConfigStorage();
         _setResponseDeviationThreshold(1e16); // 1%
         _setHedgeDeviationThreshold(1e16); // 1%
         _setRebalanceDeviationThreshold(1e17); // 10%

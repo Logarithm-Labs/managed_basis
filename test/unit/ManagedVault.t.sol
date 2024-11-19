@@ -30,7 +30,7 @@ contract ManagedVaultSpec is ManagedVault {
     // }
 }
 
-contract ManagedVaultSpecTest is ForkTest {
+contract ManagedVaultTest is ForkTest {
     address owner = makeAddr("owner");
     address user = makeAddr("user");
     address recipient = makeAddr("recipient");
