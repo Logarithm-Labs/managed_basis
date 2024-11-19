@@ -363,9 +363,6 @@ contract BasisStrategy is
         uint256 pendingUtilization = _pendingUtilization(
             _vault.totalSupply(), _vault.idleAssets(), targetLeverage(), processingRebalanceDown(), paused()
         );
-        if (pendingUtilization == 0) {
-            revert Errors.ZeroPendingUtilization();
-        }
 
         amount = amount > pendingUtilization ? pendingUtilization : amount;
 
