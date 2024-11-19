@@ -583,7 +583,7 @@ contract BasisStrategy is
                         collateralDeltaAmount = type(uint256).max;
                         $.pendingDecreaseCollateral = 0;
                     } else if (status == StrategyStatus.FULL_DEUTILIZING) {
-                        (uint256 min, uint256 max) = $.hedgeManager.decreaseCollateralMinMax();
+                        (uint256 min,) = $.hedgeManager.decreaseCollateralMinMax();
                         uint256 pendingWithdraw = assetsToDeutilize();
                         collateralDeltaAmount = min > pendingWithdraw ? min : pendingWithdraw;
                         $.pendingDecreaseCollateral = 0;
