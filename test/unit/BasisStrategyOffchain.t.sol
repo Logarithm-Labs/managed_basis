@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {InchTest} from "test/base/InchTest.sol";
-import {GmxV2Test} from "test/base/GmxV2Test.sol";
 import {OffChainTest} from "test/base/OffChainTest.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
@@ -12,7 +11,6 @@ import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol"
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
-import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 
 import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";

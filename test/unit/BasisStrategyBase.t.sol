@@ -10,15 +10,11 @@ import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol"
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
-import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
-import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
 
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {SpotManager} from "src/spot/SpotManager.sol";
-import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
@@ -105,8 +101,8 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
                 address(priorityProvider),
                 entryCost,
                 exitCost,
-                "Logarithm Basis USDC-WETH GMX (Alpha)",
-                "log-b-usdc-weth-gmx-a"
+                "Logarithm Basis USDC-WETH HL (Alpha)",
+                "log-b-usdc-weth-hl-a"
             )
         );
         vm.label(address(vault), "vault");
