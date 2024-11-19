@@ -341,34 +341,12 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IHedgeMan
                             AGENT LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    // TODO: remove function after testing
-    function forcedTransferToAgent(uint256 amount) external onlyAgent {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-
-        if (msg.sender != $.agent) {
-            revert Errors.CallerNotAgent();
-        }
-
-        _transferToAgent(amount);
-    }
-
     function _transferToAgent(uint256 amount) internal {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         $.pendingCollateralIncrease += amount;
         IERC20($.collateralToken).transfer($.agent, amount);
 
         emit AgentTransfer(msg.sender, amount, true);
-    }
-
-    // TODO: remove function after testing
-    function forcedTransferFromAgent(uint256 amount) external onlyAgent {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-
-        if (msg.sender != $.agent) {
-            revert Errors.CallerNotAgent();
-        }
-
-        _transferFromAgent(amount);
     }
 
     function _transferFromAgent(uint256 amount) internal {
