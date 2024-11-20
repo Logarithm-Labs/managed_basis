@@ -94,14 +94,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeManagerKeep");
         // assertTrue(upkeepNeeded, "upkeepNeeded");
-        (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool hedgeManagerNeedKeep,
-            ,
-            bool rebalanceUpNeeded
-        ) = helper.decodePerformData(performData);
+        (,,, bool hedgeManagerNeedKeep,,) = helper.decodePerformData(performData);
 
         assertTrue(upkeepNeeded, "upkeepNeeded");
         assertTrue(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
@@ -120,7 +113,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         (bool upkeepNeeded, bytes memory performData) =
             _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded, bool deleverageNeeded,, bool hedgeManagerNeedKeep,, bool rebalanceUpNeeded) =
+        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep,, bool rebalanceUpNeeded) =
             helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);

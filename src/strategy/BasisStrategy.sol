@@ -363,9 +363,6 @@ contract BasisStrategy is
         uint256 pendingUtilization = _pendingUtilization(
             _vault.totalSupply(), _vault.idleAssets(), targetLeverage(), processingRebalanceDown(), paused()
         );
-        if (pendingUtilization == 0) {
-            revert Errors.ZeroPendingUtilization();
-        }
 
         amount = amount > pendingUtilization ? pendingUtilization : amount;
 
@@ -586,7 +583,7 @@ contract BasisStrategy is
                         collateralDeltaAmount = type(uint256).max;
                         $.pendingDecreaseCollateral = 0;
                     } else if (status == StrategyStatus.FULL_DEUTILIZING) {
-                        (uint256 min, uint256 max) = $.hedgeManager.decreaseCollateralMinMax();
+                        (uint256 min,) = $.hedgeManager.decreaseCollateralMinMax();
                         uint256 pendingWithdraw = assetsToDeutilize();
                         collateralDeltaAmount = min > pendingWithdraw ? min : pendingWithdraw;
                         $.pendingDecreaseCollateral = 0;

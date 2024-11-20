@@ -566,7 +566,6 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         (, assets) = (idleAssets() + IStrategy(strategy()).utilizedAssets()).trySub(totalPendingWithdraw());
         return assets;
     }
