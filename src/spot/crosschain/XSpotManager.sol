@@ -2,9 +2,12 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
+import {OFTComposeMsgCodec} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTComposeMsgCodec.sol";
 import {MessagingFee, SendParam} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
 import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 
@@ -13,6 +16,7 @@ import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
 import {IGasStation} from "src/gas-station/IGasStation.sol";
 import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
+import {ILogarithmMessenger, SendParams, QuoteParams} from "src/messenger/ILogarithmMessenger.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
@@ -24,14 +28,21 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 /// to/from BrotherSwapper in the destination blockchain and tracks the product exposure.
 ///
 /// @dev Deployed according to the upgradeable beacon proxy pattern.
-contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, ISpotManager {
+contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, ILayerZeroComposer, ISpotManager {
     using SafeERC20 for IERC20;
+    using OptionsBuilder for bytes;
+    using Math for uint256;
+
+    uint128 constant SWAPPER_GAS_LIMIT = 300_000;
+    uint128 constant SELL_RESPONSE_FEE = 0.001 ether;
 
     address public immutable strategy;
     address public immutable asset;
     address public immutable product;
     address public immutable gasStation;
+    address public immutable endpoint;
     address public immutable stargate;
+    address public immutable messenger;
     // destination configure
     uint32 public immutable dstEid;
 
@@ -70,7 +81,14 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
                              INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    constructor(address _strategy, address _gasStation, address _stargate, uint32 _dstEid) {
+    constructor(
+        address _strategy,
+        address _gasStation,
+        address _endpoint,
+        address _stargate,
+        address _messenger,
+        uint32 _dstEid
+    ) {
         address _asset = IBasisStrategy(_strategy).asset();
         address _product = IBasisStrategy(_strategy).product();
 
@@ -89,6 +107,9 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
 
         stargate = _stargate;
         dstEid = _dstEid;
+
+        messenger = _messenger;
+        endpoint = _endpoint;
 
         // approve strategy to max amount
         IERC20(_asset).approve(_strategy, type(uint256).max);
@@ -131,16 +152,60 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
         IStargate(stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
     }
 
-    function sell(uint256 amount, SwapType swapType, bytes calldata swapData) external {}
-    function exposure() external view returns (uint256) {}
+    function sell(uint256 amount, SwapType swapType, bytes calldata swapData) external {
+        bytes memory payload = abi.encode(amount, swapType, swapData);
+        bytes memory options =
+            OptionsBuilder.newOptions().addExecutorLzReceiveOption(SWAPPER_GAS_LIMIT, SELL_RESPONSE_FEE);
+        bytes32 receiver = swapper();
+        (uint256 nativeFee,) = ILogarithmMessenger(messenger).quote(
+            QuoteParams({
+                sender: address(this),
+                dstEid: dstEid,
+                receiver: receiver,
+                payload: payload,
+                lzReceiveOption: options
+            })
+        );
+        IGasStation(gasStation).withdraw(nativeFee);
+        ILogarithmMessenger(messenger).sendMessage{value: nativeFee}(
+            SendParams({dstEid: dstEid, receiver: receiver, payload: payload, lzReceiveOption: options})
+        );
+    }
 
+    // TODO
+    function exposure() public view returns (uint256) {
+        return 0;
+    }
+
+    /// @dev Called after buying.
     function receiveMessage(bytes32 _sender, bytes calldata _payload) external payable {
+        require(_msgSender() == messenger);
         require(_sender == swapper());
         uint256 amountOut = abi.decode(_payload, (uint256));
         uint256 _pendingAssets = pendingAssets();
         delete _getXSpotManagerStorage().pendingAssets;
         _getXSpotManagerStorage().exposure += amountOut;
         IBasisStrategy(strategy).spotBuyCallback(_pendingAssets, amountOut);
+        emit SpotBuy(_pendingAssets, amountOut);
+    }
+
+    /// @dev Called after selling.
+    function lzCompose(
+        address _from,
+        bytes32 _guid,
+        bytes calldata _message,
+        address _executor,
+        bytes calldata _extraData
+    ) external payable {
+        require(_from == stargate, "!stargate");
+        require(_msgSender() == endpoint, "!endpoint");
+        uint256 amountLD = OFTComposeMsgCodec.amountLD(_message);
+        bytes memory _composeMessage = OFTComposeMsgCodec.composeMsg(_message);
+        uint256 amount = abi.decode(_composeMessage, (uint256));
+        (, uint256 newExposure) = exposure().trySub(amountLD);
+        _getXSpotManagerStorage().exposure = newExposure;
+        IBasisStrategy(_msgSender()).spotSellCallback(amountLD, amount);
+        emit SpotSell(amountLD, amount);
     }
 
     /// @dev Refunds eth

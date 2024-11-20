@@ -7,6 +7,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTComposeMsgCodec.sol";
+import {MessagingFee, SendParam} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
 import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 
 import {IStargate} from "src/externals/stargate/interfaces/IStargate.sol";
@@ -14,12 +15,13 @@ import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.so
 
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {ILogarithmMessenger, SendParams as LogSendParams} from "src/messenger/ILogarithmMessenger.sol";
+import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 
-contract BrotherSwapper is Initializable, OwnableUpgradeable, ILayerZeroComposer {
+contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient, ILayerZeroComposer {
     using SafeERC20 for IERC20;
     using OptionsBuilder for bytes;
 
@@ -159,6 +161,34 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, ILayerZeroComposer
                 lzReceiveOption: options
             })
         );
+    }
+
+    function receiveMessage(bytes32 _sender, bytes calldata _payload) external payable {
+        require(_msgSender() == messenger);
+        require(_sender == dstSpotManager);
+        (uint256 amount, ISpotManager.SwapType swapType, bytes memory swapData) =
+            abi.decode(_payload, (uint256, ISpotManager.SwapType, bytes));
+
+        uint256 amountOut;
+        if (swapType == ISpotManager.SwapType.INCH_V6) {
+            bool success;
+            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, asset, product, false, swapData);
+            if (!success) {
+                revert Errors.SwapFailed();
+            }
+        } else if (swapType == ISpotManager.SwapType.MANUAL) {
+            amountOut = ManualSwapLogic.swap(amount, productToAssetSwapPath());
+        } else {
+            // TODO: fallback swap
+            revert Errors.UnsupportedSwapType();
+        }
+
+        IERC20(asset).forceApprove(stargate, amountOut);
+        bytes memory _composeMsg = abi.encode(amount);
+        (, SendParam memory sendParam, MessagingFee memory messagingFee) = StargateUtils.prepareTakeTaxi(
+            stargate, dstEid, amountOut, StargateUtils.bytes32ToAddress(dstSpotManager), _composeMsg
+        );
+        IStargate(stargate).sendToken{value: msg.value}(sendParam, messagingFee, address(this));
     }
 
     /*//////////////////////////////////////////////////////////////
