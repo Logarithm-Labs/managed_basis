@@ -12,7 +12,7 @@ import {
 import {OptionsBuilder, ExecutorOptions} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 
 import {MsgCodec} from "./MsgCodec.sol";
-import {ILogarithmMessenger} from "./ILogarithmMessenger.sol";
+import {ILogarithmMessenger, QuoteParams, SendParams} from "./ILogarithmMessenger.sol";
 import {IMessageRecipient} from "./IMessageRecipient.sol";
 
 contract LogarithmMessenger is OApp, ILogarithmMessenger {
@@ -71,43 +71,43 @@ contract LogarithmMessenger is OApp, ILogarithmMessenger {
                             MESSAGING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function quote(QuoteParam calldata param) public view returns (uint256 nativeFee, uint256 lzTokenFee) {
-        (, uint128 value) = ExecutorOptions.decodeLzReceiveOption(param.lzReceiveOption);
+    function quote(QuoteParams calldata params) public view returns (uint256 nativeFee, uint256 lzTokenFee) {
+        (, uint128 value) = ExecutorOptions.decodeLzReceiveOption(params.lzReceiveOption);
         MessagingFee memory fee = _quote(
-            param.dstEid,
-            MsgCodec.encode(param.sender, param.receiver, value, param.payload),
-            param.lzReceiveOption,
+            params.dstEid,
+            MsgCodec.encode(params.sender, params.receiver, value, params.payload),
+            params.lzReceiveOption,
             false
         );
         return (fee.nativeFee, fee.lzTokenFee);
     }
 
     /// @dev Can be called only by authorized accounts.
-    function sendMessage(SendParam calldata param) external payable {
+    function sendMessage(SendParams calldata params) external payable {
         _authCaller(_msgSender());
-        (, uint128 value) = ExecutorOptions.decodeLzReceiveOption(param.lzReceiveOption);
+        (, uint128 value) = ExecutorOptions.decodeLzReceiveOption(params.lzReceiveOption);
         _lzSend(
-            param.dstEid,
-            MsgCodec.encode(_msgSender(), param.receiver, value, param.payload),
-            param.lzReceiveOption,
+            params.dstEid,
+            MsgCodec.encode(_msgSender(), params.receiver, value, params.payload),
+            params.lzReceiveOption,
             MessagingFee(msg.value, 0),
             payable(_msgSender())
         );
     }
 
     function _lzReceive(
-        Origin calldata _origin,
-        bytes32 _guid,
+        Origin calldata, /*_origin*/
+        bytes32, /*_guid*/
         bytes calldata _message,
-        address _executor,
-        bytes calldata _extraData
+        address, /*_executor*/
+        bytes calldata /*_extraData*/
     ) internal override {
         // validate vale
         if (msg.value < _message.value()) {
             revert LM__INSUFFICIENT_VALUE();
         }
         address receiver = MsgCodec.bytes32ToAddress(_message.receiver());
-        IMessageRecipient(receiver).sendMessage{value: msg.value}(_message.sender(), _message.payload());
+        IMessageRecipient(receiver).receiveMessage{value: msg.value}(_message.sender(), _message.payload());
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -10,6 +10,7 @@ library StargateUtils {
     using OptionsBuilder for bytes;
 
     uint128 constant COMPOSE_CALL_GAS_LIMIT = 300_000;
+    uint128 constant COMPOSE_CALL_VALUE = 0.001 ether;
 
     function prepareTakeTaxiAndSwap(
         address _stargate,
@@ -19,7 +20,7 @@ library StargateUtils {
         bytes memory _composeMsg
     ) internal view returns (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) {
         bytes memory extraOptions = _composeMsg.length > 0
-            ? OptionsBuilder.newOptions().addExecutorLzComposeOption(0, COMPOSE_CALL_GAS_LIMIT, 0) // compose gas limit
+            ? OptionsBuilder.newOptions().addExecutorLzComposeOption(0, COMPOSE_CALL_GAS_LIMIT, COMPOSE_CALL_VALUE)
             : bytes("");
 
         sendParam = SendParam({
@@ -47,5 +48,9 @@ library StargateUtils {
 
     function addressToBytes32(address _addr) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(_addr)));
+    }
+
+    function bytes32ToAddress(bytes32 _b) internal pure returns (address) {
+        return address(uint160(uint256(_b)));
     }
 }
