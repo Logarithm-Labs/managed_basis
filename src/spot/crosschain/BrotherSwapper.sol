@@ -21,7 +21,7 @@ import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.so
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
-import {Constants} from "src/libaries/utils/Constants.sol";
+import {Constants} from "src/libraries/utils/Constants.sol";
 
 contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient, ILayerZeroComposer {
     using SafeERC20 for IERC20;

@@ -20,7 +20,7 @@ import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {ILogarithmMessenger, SendParams, QuoteParams} from "src/messenger/ILogarithmMessenger.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
-import {Constants} from "src/libaries/utils/Constants.sol";
+import {Constants} from "src/libraries/utils/Constants.sol";
 
 /// @title XSpotManager
 //
