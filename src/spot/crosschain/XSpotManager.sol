@@ -16,6 +16,7 @@ import {IStargate} from "src/externals/stargate/interfaces/IStargate.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
 import {IGasStation} from "src/gas-station/IGasStation.sol";
 import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {ILogarithmMessenger, SendParams, QuoteParams} from "src/messenger/ILogarithmMessenger.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
@@ -36,6 +37,7 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
     using Math for uint256;
 
     address public immutable strategy;
+    address public immutable oracle;
     address public immutable asset;
     address public immutable product;
     address public immutable gasStation;
@@ -105,6 +107,7 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
         address _product = IBasisStrategy(_strategy).product();
 
         strategy = _strategy;
+        oracle = IBasisStrategy(_strategy).oracle();
         asset = _asset;
         product = _product;
 
@@ -202,7 +205,7 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
     }
 
     /*//////////////////////////////////////////////////////////////
-                             BUY/SELL LOGIC
+                               MAIN LOGIC
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Requests Swapper to buy product.
@@ -259,10 +262,17 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
         );
     }
 
-    // TODO
     function exposure() public view returns (uint256) {
         return _getXSpotManagerStorage().exposure;
     }
+
+    function getAssetValue() public view returns (uint256) {
+        return pendingAssets() + IOracle(oracle).convertTokenAmount(product, asset, exposure());
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                               FALLBACKS
+    //////////////////////////////////////////////////////////////*/
 
     /// @dev Called after buying.
     function receiveMessage(bytes32 _sender, bytes calldata _payload) external payable {
