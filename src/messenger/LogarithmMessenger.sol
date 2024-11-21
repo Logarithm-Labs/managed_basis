@@ -72,10 +72,9 @@ contract LogarithmMessenger is OApp, ILogarithmMessenger {
     //////////////////////////////////////////////////////////////*/
 
     function quote(QuoteParams calldata params) public view returns (uint256 nativeFee, uint256 lzTokenFee) {
-        (, uint128 value) = ExecutorOptions.decodeLzReceiveOption(params.lzReceiveOption);
         MessagingFee memory fee = _quote(
             params.dstEid,
-            MsgCodec.encode(params.sender, params.receiver, value, params.payload),
+            MsgCodec.encode(params.sender, params.receiver, params.value, params.payload),
             params.lzReceiveOption,
             false
         );
@@ -85,10 +84,9 @@ contract LogarithmMessenger is OApp, ILogarithmMessenger {
     /// @dev Can be called only by authorized accounts.
     function sendMessage(SendParams calldata params) external payable {
         _authCaller(_msgSender());
-        (, uint128 value) = ExecutorOptions.decodeLzReceiveOption(params.lzReceiveOption);
         _lzSend(
             params.dstEid,
-            MsgCodec.encode(_msgSender(), params.receiver, value, params.payload),
+            MsgCodec.encode(_msgSender(), params.receiver, params.value, params.payload),
             params.lzReceiveOption,
             MessagingFee(msg.value, 0),
             payable(_msgSender())

@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTComposeMsgCodec.sol";
 import {MessagingFee, SendParam} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
@@ -32,6 +33,7 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
     address public immutable messenger;
     bytes32 public immutable dstSpotManager;
     uint32 public immutable dstEid;
+    uint32 public immutable srcEid;
 
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
@@ -76,6 +78,7 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
         endpoint = _endpoint;
         messenger = _messenger;
         dstEid = _dstEid;
+        srcEid = ILayerZeroEndpointV2(_endpoint).eid();
         dstSpotManager = _dstSpotManager;
     }
 
@@ -129,13 +132,19 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
     ) external payable {
         require(_from == stargate, "!stargate");
         require(_msgSender() == endpoint, "!endpoint");
-        require(msg.value >= StargateUtils.COMPOSE_CALL_VALUE);
 
         uint256 amountLD = OFTComposeMsgCodec.amountLD(_message);
         bytes memory _composeMessage = OFTComposeMsgCodec.composeMsg(_message);
 
-        (ISpotManager.SwapType swapType, bytes memory swapData) =
-            abi.decode(_composeMessage, (ISpotManager.SwapType, bytes));
+        // decode composeMessage
+        // composeMessage = abi.encode(returnOptionsLength, returnOptions, responseFee, swapType, swapData);
+        uint256 returnOptionsLength = abi.decode(_composeMessage, (uint256));
+        bytes memory returnOptions = _composeMessage[32:32 + returnOptionsLength];
+        (uint256 responseFee, ISpotManager.SwapType swapType, bytes memory swapData) =
+            abi.decode(_composeMessage[32 + returnOptionsLength:], (uint256, ISpotManager.SwapType, bytes));
+
+        // validate msg.value
+        require(msg.value >= responseFee, "insufficient value");
 
         uint256 amountOut;
         if (swapType == ISpotManager.SwapType.INCH_V6) {
@@ -151,14 +160,13 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
             revert Errors.UnsupportedSwapType();
         }
 
-        bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
-
         ILogarithmMessenger(messenger).sendMessage{value: msg.value}(
             LogSendParams({
                 dstEid: dstEid,
+                value: 0,
                 receiver: dstSpotManager,
                 payload: abi.encode(amountOut),
-                lzReceiveOption: options
+                lzReceiveOption: returnOptions
             })
         );
     }

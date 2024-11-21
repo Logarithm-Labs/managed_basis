@@ -9,52 +9,17 @@ import {IStargate, Ticket} from "src/externals/stargate/interfaces/IStargate.sol
 library StargateUtils {
     using OptionsBuilder for bytes;
 
-    uint128 constant COMPOSE_CALL_GAS_LIMIT = 300_000;
-    uint128 constant COMPOSE_CALL_VALUE = 0.001 ether;
-
-    function prepareTakeTaxiAndSwap(
-        address _stargate,
-        uint32 _dstEid,
-        uint256 _amount,
-        address _composer,
-        bytes memory _composeMsg
-    ) internal view returns (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) {
-        bytes memory extraOptions = _composeMsg.length > 0
-            ? OptionsBuilder.newOptions().addExecutorLzComposeOption(0, COMPOSE_CALL_GAS_LIMIT, COMPOSE_CALL_VALUE)
-            : bytes("");
-
-        sendParam = SendParam({
-            dstEid: _dstEid,
-            to: addressToBytes32(_composer),
-            amountLD: _amount,
-            minAmountLD: _amount,
-            extraOptions: extraOptions,
-            composeMsg: _composeMsg,
-            oftCmd: ""
-        });
-
-        IStargate stargate = IStargate(_stargate);
-
-        (,, OFTReceipt memory receipt) = stargate.quoteOFT(sendParam);
-        sendParam.minAmountLD = receipt.amountReceivedLD;
-
-        messagingFee = stargate.quoteSend(sendParam, false);
-        valueToSend = messagingFee.nativeFee;
-
-        if (stargate.token() == address(0x0)) {
-            valueToSend += sendParam.amountLD;
-        }
-    }
-
     function prepareTakeTaxi(
         address _stargate,
         uint32 _dstEid,
         uint256 _amount,
         address _composer,
+        uint128 _composeCallGasLimit,
+        uint128 _composeCallValue,
         bytes memory _composeMsg
     ) internal view returns (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) {
         bytes memory extraOptions = _composeMsg.length > 0
-            ? OptionsBuilder.newOptions().addExecutorLzComposeOption(0, COMPOSE_CALL_GAS_LIMIT, 0)
+            ? OptionsBuilder.newOptions().addExecutorLzComposeOption(0, _composeCallGasLimit, _composeCallValue)
             : bytes("");
 
         sendParam = SendParam({

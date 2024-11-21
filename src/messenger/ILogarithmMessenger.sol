@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 struct QuoteParams {
     address sender;
     uint32 dstEid;
+    uint128 value;
     bytes32 receiver;
     bytes payload;
     bytes lzReceiveOption;
@@ -11,6 +12,7 @@ struct QuoteParams {
 
 struct SendParams {
     uint32 dstEid;
+    uint128 value;
     bytes32 receiver;
     bytes payload;
     bytes lzReceiveOption;
