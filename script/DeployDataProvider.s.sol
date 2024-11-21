@@ -11,7 +11,6 @@ contract DeployDataProviderScript is Script {
         // deploy DataProvider
         vm.startBroadcast();
         DataProvider dataProvider = new DataProvider();
-        DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(strategy));
         console.log("DataProvider deployed at", address(dataProvider));
     }
 }

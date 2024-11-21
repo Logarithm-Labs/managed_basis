@@ -16,6 +16,7 @@ interface ISpotManager {
     function buy(uint256 amount, SwapType swapType, bytes calldata swapData) external;
     function sell(uint256 amount, SwapType swapType, bytes calldata swapData) external;
     function exposure() external view returns (uint256);
+    function getAssetValue() external view returns (uint256);
     function asset() external view returns (address);
     function product() external view returns (address);
 }

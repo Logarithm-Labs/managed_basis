@@ -7,6 +7,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
+import {IOracle} from "src/oracle/IOracle.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
@@ -35,6 +36,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
 
     struct SpotManagerStorage {
         address strategy;
+        address oracle;
         address asset;
         address product;
         // manual swap state
@@ -80,6 +82,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
         address _product = IBasisStrategy(_strategy).product();
 
         $.strategy = _strategy;
+        $.oracle = IBasisStrategy(_strategy).oracle();
         $.asset = _asset;
         $.product = _product;
 
@@ -175,8 +178,13 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
     }
 
     /// @dev The spot exposure that is needed to be hedged by the perpetual positions.
-    function exposure() external view returns (uint256) {
+    function exposure() public view returns (uint256) {
         return IERC20(product()).balanceOf(address(this));
+    }
+
+    /// @dev Returns the product amount in asset.
+    function getAssetValue() public view returns (uint256) {
+        return IOracle(oralce()).convertTokenAmount(product(), asset(), exposure());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -212,6 +220,11 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
     /// @notice The strategy address.
     function strategy() public view returns (address) {
         return _getSpotManagerStorage().strategy;
+    }
+
+    /// @notice The oracle address.
+    function oralce() public view returns (address) {
+        return _getSpotManagerStorage().oracle;
     }
 
     /// @notice The asset address.

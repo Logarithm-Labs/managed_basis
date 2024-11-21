@@ -190,7 +190,6 @@ contract DeployScript is Script {
 
         // deploy DataProvider
         DataProvider dataProvider = new DataProvider();
-        DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(strategyHl));
         console.log("DataProvider deployed at", address(dataProvider));
     }
 }

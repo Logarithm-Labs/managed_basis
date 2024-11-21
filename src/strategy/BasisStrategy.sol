@@ -583,7 +583,7 @@ contract BasisStrategy is
                         collateralDeltaAmount = type(uint256).max;
                         $.pendingDecreaseCollateral = 0;
                     } else if (status == StrategyStatus.FULL_DEUTILIZING) {
-                        (uint256 min, uint256 max) = $.hedgeManager.decreaseCollateralMinMax();
+                        (uint256 min,) = $.hedgeManager.decreaseCollateralMinMax();
                         uint256 pendingWithdraw = assetsToDeutilize();
                         collateralDeltaAmount = min > pendingWithdraw ? min : pendingWithdraw;
                         $.pendingDecreaseCollateral = 0;
@@ -706,9 +706,7 @@ contract BasisStrategy is
     /// @dev Includes the product balance, the position net balance, and the asset balance of this strategy.
     function utilizedAssets() public view returns (uint256) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        uint256 productBalance = $.spotManager.exposure();
-        uint256 productValueInAssets = $.oracle.convertTokenAmount(product(), asset(), productBalance);
-        return productValueInAssets + $.hedgeManager.positionNetBalance() + assetsToWithdraw();
+        return $.spotManager.getAssetValue() + $.hedgeManager.positionNetBalance() + assetsToWithdraw();
     }
 
     /// @notice The asset balance of this strategy.
