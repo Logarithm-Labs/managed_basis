@@ -15,12 +15,13 @@ import {IStargate} from "src/externals/stargate/interfaces/IStargate.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
 import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {ILogarithmMessenger, SendParams as LogSendParams} from "src/messenger/ILogarithmMessenger.sol";
+import {ILogarithmMessenger, SendParams, QuoteParams} from "src/messenger/ILogarithmMessenger.sol";
 import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
+import {Constants} from "src/libaries/utils/Constants.sol";
 
 contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient, ILayerZeroComposer {
     using SafeERC20 for IERC20;
@@ -118,33 +119,37 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
         $.productToAssetSwapPath = _productToAssetSwapPath;
     }
 
+    function withdraw(address payable _to, uint256 _amount) external onlyOwner {
+        (bool success,) = _to.call{value: _amount}("");
+        if (!success) {
+            revert();
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                             CROSSCHAIN LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Called after asset has been transferred to this.
+    /// @dev Called after asset has been transferred to this when requesting buy.
     function lzCompose(
         address _from,
-        bytes32 _guid,
+        bytes32, /*_guid*/
         bytes calldata _message,
-        address _executor,
-        bytes calldata _extraData
+        address, /*_executor*/
+        bytes calldata /*_extraData*/
     ) external payable {
         require(_from == stargate, "!stargate");
         require(_msgSender() == endpoint, "!endpoint");
+        // validate msg.value
+        require(msg.value >= Constants.MAX_BUY_RESPONSE_FEE, "insufficient value");
 
         uint256 amountLD = OFTComposeMsgCodec.amountLD(_message);
         bytes memory _composeMessage = OFTComposeMsgCodec.composeMsg(_message);
 
         // decode composeMessage
-        // composeMessage = abi.encode(returnOptionsLength, returnOptions, responseFee, swapType, swapData);
-        uint256 returnOptionsLength = abi.decode(_composeMessage, (uint256));
-        bytes memory returnOptions = _composeMessage[32:32 + returnOptionsLength];
-        (uint256 responseFee, ISpotManager.SwapType swapType, bytes memory swapData) =
-            abi.decode(_composeMessage[32 + returnOptionsLength:], (uint256, ISpotManager.SwapType, bytes));
-
-        // validate msg.value
-        require(msg.value >= responseFee, "insufficient value");
+        // composeMessage = abi.encode(buyResGasLimit(), swapType, swapData);
+        (uint128 buyResGasLimit, ISpotManager.SwapType swapType, bytes memory swapData) =
+            abi.decode(_composeMessage, (uint128, ISpotManager.SwapType, bytes));
 
         uint256 amountOut;
         if (swapType == ISpotManager.SwapType.INCH_V6) {
@@ -160,22 +165,34 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
             revert Errors.UnsupportedSwapType();
         }
 
-        ILogarithmMessenger(messenger).sendMessage{value: msg.value}(
-            LogSendParams({
+        bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(buyResGasLimit, 0);
+        (uint256 nativeFee,) = ILogarithmMessenger(messenger).quote(
+            QuoteParams({
+                sender: address(this),
+                value: 0,
+                dstEid: dstEid,
+                receiver: dstSpotManager,
+                payload: abi.encode(amountOut),
+                lzReceiveOption: options
+            })
+        );
+        ILogarithmMessenger(messenger).sendMessage{value: nativeFee}(
+            SendParams({
                 dstEid: dstEid,
                 value: 0,
                 receiver: dstSpotManager,
                 payload: abi.encode(amountOut),
-                lzReceiveOption: returnOptions
+                lzReceiveOption: options
             })
         );
     }
 
+    /// @dev Called when sell request is sent from XSpotManager.
     function receiveMessage(bytes32 _sender, bytes calldata _payload) external payable {
         require(_msgSender() == messenger);
         require(_sender == dstSpotManager);
-        (uint256 amount, ISpotManager.SwapType swapType, bytes memory swapData) =
-            abi.decode(_payload, (uint256, ISpotManager.SwapType, bytes));
+        (uint128 sellResGasLimit, uint256 amount, ISpotManager.SwapType swapType, bytes memory swapData) =
+            abi.decode(_payload, (uint128, uint256, ISpotManager.SwapType, bytes));
 
         uint256 amountOut;
         if (swapType == ISpotManager.SwapType.INCH_V6) {
@@ -193,10 +210,11 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
 
         IERC20(asset).forceApprove(stargate, amountOut);
         bytes memory _composeMsg = abi.encode(amount);
-        (, SendParam memory sendParam, MessagingFee memory messagingFee) = StargateUtils.prepareTakeTaxi(
-            stargate, dstEid, amountOut, StargateUtils.bytes32ToAddress(dstSpotManager), _composeMsg
+        (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) = StargateUtils
+            .prepareTakeTaxi(
+            stargate, dstEid, amountOut, StargateUtils.bytes32ToAddress(dstSpotManager), sellResGasLimit, 0, _composeMsg
         );
-        IStargate(stargate).sendToken{value: msg.value}(sendParam, messagingFee, address(this));
+        IStargate(stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
     }
 
     /*//////////////////////////////////////////////////////////////

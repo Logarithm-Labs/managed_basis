@@ -20,6 +20,7 @@ import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {ILogarithmMessenger, SendParams, QuoteParams} from "src/messenger/ILogarithmMessenger.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
+import {Constants} from "src/libaries/utils/Constants.sol";
 
 /// @title XSpotManager
 //
@@ -33,9 +34,6 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
     using SafeERC20 for IERC20;
     using OptionsBuilder for bytes;
     using Math for uint256;
-
-    uint128 constant SWAPPER_GAS_LIMIT = 300_000;
-    uint128 constant SELL_RESPONSE_FEE = 0.001 ether;
 
     address public immutable strategy;
     address public immutable asset;
@@ -127,18 +125,13 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
         endpoint = _endpoint;
     }
 
-    function initialize(
-        address _owner,
-        uint128 _buyReqGasLimit,
-        uint128 _buyResGasLimit,
-        uint128 _sellReqGasLimit,
-        uint128 _sellResGasLimit
-    ) external initializer {
+    function initialize(address _owner) external initializer {
         __Ownable_init(_owner);
-        _setBuyReqGasLimit(_buyReqGasLimit);
-        _setBuyResGasLimit(_buyResGasLimit);
-        _setSellReqGasLimit(_sellReqGasLimit);
-        _setSellResGasLimit(_sellResGasLimit);
+
+        _setBuyReqGasLimit(300_000);
+        _setBuyResGasLimit(400_000);
+        _setSellReqGasLimit(300_000);
+        _setSellResGasLimit(400_000);
 
         // approve strategy to max amount
         IERC20(asset).approve(strategy, type(uint256).max);
@@ -201,36 +194,31 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
         _setSellResGasLimit(newLimit);
     }
 
+    function withdraw(address payable _to, uint256 _amount) external onlyOwner {
+        (bool success,) = _to.call{value: _amount}("");
+        if (!success) {
+            revert();
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                              BUY/SELL LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Requests BrotherSwapper to buy product.
+    /// @dev Requests Swapper to buy product.
     ///
     /// @param amount The asset amount to be used to buy product.
     /// @param swapType The swap type.
     /// @param swapData The data used in swapping if necessary.
     function buy(uint256 amount, SwapType swapType, bytes calldata swapData) external authCaller(strategy) {
-        // build lzReceiveOption for response
-        bytes memory returnOptions = OptionsBuilder.newOptions().addExecutorLzReceiveOption(buyResGasLimit(), 0);
         address composer = _validateBrotherSwapper();
-        // estimate fee in response
-        (uint256 responseFee,) = ILogarithmMessenger(messenger).quote(
-            QuoteParams({
-                sender: composer,
-                value: 0,
-                dstEid: srcEid,
-                receiver: StargateUtils.addressToBytes32(address(this)),
-                payload: abi.encode(uint256(0)),
-                lzReceiveOption: returnOptions
-            })
-        );
         // build compose message
-        uint256 returnOptionsLength = returnOptions.length();
-        bytes memory _composeMsg = abi.encode(returnOptionsLength, returnOptions, responseFee, swapType, swapData);
+        bytes memory _composeMsg = abi.encode(buyResGasLimit(), swapType, swapData);
         // prepare send
         (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) = StargateUtils
-            .prepareTakeTaxi(stargate, dstEid, amount, composer, buyReqGasLimit(), responseFee, _composeMsg);
+            .prepareTakeTaxi(
+            stargate, dstEid, amount, composer, buyReqGasLimit(), Constants.MAX_BUY_RESPONSE_FEE, _composeMsg
+        );
         // withdraw fee
         IGasStation(gasStation).withdraw(valueToSend);
         // send token
@@ -239,15 +227,20 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
         IStargate(stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
     }
 
+    /// @dev Requests Swapper to sell product.
+    ///
+    /// @param amount The asset amount to be used to sell product.
+    /// @param swapType The swap type.
+    /// @param swapData The data used in swapping if necessary.
     function sell(uint256 amount, SwapType swapType, bytes calldata swapData) external {
-        bytes memory payload = abi.encode(amount, swapType, swapData);
+        bytes memory payload = abi.encode(sellResGasLimit(), amount, swapType, swapData);
         bytes memory options =
-            OptionsBuilder.newOptions().addExecutorLzReceiveOption(SWAPPER_GAS_LIMIT, SELL_RESPONSE_FEE);
+            OptionsBuilder.newOptions().addExecutorLzReceiveOption(sellReqGasLimit(), Constants.MAX_SELL_RESPONSE_FEE);
         bytes32 receiver = swapper();
         (uint256 nativeFee,) = ILogarithmMessenger(messenger).quote(
             QuoteParams({
                 sender: address(this),
-                value: SELL_RESPONSE_FEE,
+                value: Constants.MAX_SELL_RESPONSE_FEE,
                 dstEid: dstEid,
                 receiver: receiver,
                 payload: payload,
@@ -258,7 +251,7 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
         ILogarithmMessenger(messenger).sendMessage{value: nativeFee}(
             SendParams({
                 dstEid: dstEid,
-                value: SELL_RESPONSE_FEE,
+                value: Constants.MAX_SELL_RESPONSE_FEE,
                 receiver: receiver,
                 payload: payload,
                 lzReceiveOption: options
@@ -268,7 +261,7 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
 
     // TODO
     function exposure() public view returns (uint256) {
-        return 0;
+        return _getXSpotManagerStorage().exposure;
     }
 
     /// @dev Called after buying.
@@ -279,17 +272,18 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
         uint256 _pendingAssets = pendingAssets();
         delete _getXSpotManagerStorage().pendingAssets;
         _getXSpotManagerStorage().exposure += amountOut;
-        IBasisStrategy(strategy).spotBuyCallback(_pendingAssets, amountOut);
         emit SpotBuy(_pendingAssets, amountOut);
+
+        IBasisStrategy(strategy).spotBuyCallback(_pendingAssets, amountOut);
     }
 
     /// @dev Called after selling.
     function lzCompose(
         address _from,
-        bytes32 _guid,
+        bytes32, /*_guid*/
         bytes calldata _message,
-        address _executor,
-        bytes calldata _extraData
+        address, /*_executor*/
+        bytes calldata /*_extraData*/
     ) external payable {
         require(_from == stargate, "!stargate");
         require(_msgSender() == endpoint, "!endpoint");
@@ -298,8 +292,9 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
         uint256 amount = abi.decode(_composeMessage, (uint256));
         (, uint256 newExposure) = exposure().trySub(amountLD);
         _getXSpotManagerStorage().exposure = newExposure;
-        IBasisStrategy(_msgSender()).spotSellCallback(amountLD, amount);
         emit SpotSell(amountLD, amount);
+
+        IBasisStrategy(strategy).spotSellCallback(amountLD, amount);
     }
 
     /// @dev Refunds eth
