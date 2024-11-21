@@ -23,6 +23,8 @@ import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 
+import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
+
 /// @title XSpotManager
 //
 /// @author Logarithm Labs
@@ -31,7 +33,14 @@ import {Constants} from "src/libraries/utils/Constants.sol";
 /// to/from BrotherSwapper in the destination blockchain and tracks the product exposure.
 ///
 /// @dev Deployed according to the upgradeable beacon proxy pattern.
-contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, ILayerZeroComposer, ISpotManager {
+contract XSpotManager is
+    Initializable,
+    AssetValueTransmitter,
+    OwnableUpgradeable,
+    IMessageRecipient,
+    ILayerZeroComposer,
+    ISpotManager
+{
     using SafeERC20 for IERC20;
     using OptionsBuilder for bytes;
     using Math for uint256;
@@ -102,7 +111,7 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
         address _stargate,
         address _messenger,
         uint32 _dstEid
-    ) {
+    ) AssetValueTransmitter(IBasisStrategy(_strategy).product()) {
         address _asset = IBasisStrategy(_strategy).asset();
         address _product = IBasisStrategy(_strategy).product();
 
@@ -232,11 +241,11 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
 
     /// @dev Requests Swapper to sell product.
     ///
-    /// @param amount The asset amount to be used to sell product.
+    /// @param amount The asset amount in local decimals to be used to sell product.
     /// @param swapType The swap type.
     /// @param swapData The data used in swapping if necessary.
     function sell(uint256 amount, SwapType swapType, bytes calldata swapData) external {
-        bytes memory payload = abi.encode(sellResGasLimit(), amount, swapType, swapData);
+        bytes memory payload = abi.encode(sellResGasLimit(), _toSD(amount), swapType, swapData);
         bytes memory options =
             OptionsBuilder.newOptions().addExecutorLzReceiveOption(sellReqGasLimit(), Constants.MAX_SELL_RESPONSE_FEE);
         bytes32 receiver = swapper();
@@ -278,13 +287,14 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
     function receiveMessage(bytes32 _sender, bytes calldata _payload) external payable {
         require(_msgSender() == messenger);
         require(_sender == swapper());
-        uint256 amountOut = abi.decode(_payload, (uint256));
+        uint64 productsSD = abi.decode(_payload, (uint64));
+        uint256 productsLD = _toLD(productsSD);
         uint256 _pendingAssets = pendingAssets();
         delete _getXSpotManagerStorage().pendingAssets;
-        _getXSpotManagerStorage().exposure += amountOut;
-        emit SpotBuy(_pendingAssets, amountOut);
+        _getXSpotManagerStorage().exposure += productsLD;
+        emit SpotBuy(_pendingAssets, productsLD);
 
-        IBasisStrategy(strategy).spotBuyCallback(_pendingAssets, amountOut);
+        IBasisStrategy(strategy).spotBuyCallback(_pendingAssets, productsLD);
     }
 
     /// @dev Called after selling.
@@ -297,14 +307,15 @@ contract XSpotManager is Initializable, OwnableUpgradeable, IMessageRecipient, I
     ) external payable {
         require(_from == stargate, "!stargate");
         require(_msgSender() == endpoint, "!endpoint");
-        uint256 amountLD = OFTComposeMsgCodec.amountLD(_message);
+        uint256 assetsLD = OFTComposeMsgCodec.amountLD(_message);
         bytes memory _composeMessage = OFTComposeMsgCodec.composeMsg(_message);
-        uint256 amount = abi.decode(_composeMessage, (uint256));
-        (, uint256 newExposure) = exposure().trySub(amountLD);
+        uint64 productsSD = abi.decode(_composeMessage, (uint64));
+        uint256 productsLD = _toLD(productsSD);
+        (, uint256 newExposure) = exposure().trySub(productsLD);
         _getXSpotManagerStorage().exposure = newExposure;
-        emit SpotSell(amountLD, amount);
+        emit SpotSell(assetsLD, productsLD);
 
-        IBasisStrategy(strategy).spotSellCallback(amountLD, amount);
+        IBasisStrategy(strategy).spotSellCallback(assetsLD, productsLD);
     }
 
     /// @dev Refunds eth

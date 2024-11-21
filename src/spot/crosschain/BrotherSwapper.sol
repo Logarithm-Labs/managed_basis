@@ -23,7 +23,15 @@ import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 
-contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient, ILayerZeroComposer {
+import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
+
+contract BrotherSwapper is
+    Initializable,
+    AssetValueTransmitter,
+    OwnableUpgradeable,
+    IMessageRecipient,
+    ILayerZeroComposer
+{
     using SafeERC20 for IERC20;
     using OptionsBuilder for bytes;
 
@@ -68,7 +76,7 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
         address _messenger,
         bytes32 _dstSpotManager,
         uint32 _dstEid
-    ) {
+    ) AssetValueTransmitter(_product) {
         asset = _asset;
         product = _product;
         // validate stargate
@@ -143,7 +151,7 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
         // validate msg.value
         require(msg.value >= Constants.MAX_BUY_RESPONSE_FEE, "insufficient value");
 
-        uint256 amountLD = OFTComposeMsgCodec.amountLD(_message);
+        uint256 assetsLD = OFTComposeMsgCodec.amountLD(_message);
         bytes memory _composeMessage = OFTComposeMsgCodec.composeMsg(_message);
 
         // decode composeMessage
@@ -151,20 +159,21 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
         (uint128 buyResGasLimit, ISpotManager.SwapType swapType, bytes memory swapData) =
             abi.decode(_composeMessage, (uint128, ISpotManager.SwapType, bytes));
 
-        uint256 amountOut;
+        uint256 productsLD;
         if (swapType == ISpotManager.SwapType.INCH_V6) {
             bool success;
-            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amountLD, asset, product, true, swapData);
+            (productsLD, success) = InchAggregatorV6Logic.executeSwap(assetsLD, asset, product, true, swapData);
             if (!success) {
                 revert Errors.SwapFailed();
             }
         } else if (swapType == ISpotManager.SwapType.MANUAL) {
-            amountOut = ManualSwapLogic.swap(amountLD, assetToProductSwapPath());
+            productsLD = ManualSwapLogic.swap(assetsLD, assetToProductSwapPath());
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
 
+        uint64 productsSD = _toSD(productsLD);
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(buyResGasLimit, 0);
         (uint256 nativeFee,) = ILogarithmMessenger(messenger).quote(
             QuoteParams({
@@ -172,7 +181,7 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
                 value: 0,
                 dstEid: dstEid,
                 receiver: dstSpotManager,
-                payload: abi.encode(amountOut),
+                payload: abi.encode(productsSD),
                 lzReceiveOption: options
             })
         );
@@ -181,7 +190,7 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
                 dstEid: dstEid,
                 value: 0,
                 receiver: dstSpotManager,
-                payload: abi.encode(amountOut),
+                payload: abi.encode(productsSD),
                 lzReceiveOption: options
             })
         );
@@ -191,28 +200,28 @@ contract BrotherSwapper is Initializable, OwnableUpgradeable, IMessageRecipient,
     function receiveMessage(bytes32 _sender, bytes calldata _payload) external payable {
         require(_msgSender() == messenger);
         require(_sender == dstSpotManager);
-        (uint128 sellResGasLimit, uint256 amount, ISpotManager.SwapType swapType, bytes memory swapData) =
-            abi.decode(_payload, (uint128, uint256, ISpotManager.SwapType, bytes));
-
-        uint256 amountOut;
+        (uint128 sellResGasLimit, uint64 productsSD, ISpotManager.SwapType swapType, bytes memory swapData) =
+            abi.decode(_payload, (uint128, uint64, ISpotManager.SwapType, bytes));
+        uint256 productsLD = _toLD(productsSD);
+        uint256 assetsLD;
         if (swapType == ISpotManager.SwapType.INCH_V6) {
             bool success;
-            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, asset, product, false, swapData);
+            (assetsLD, success) = InchAggregatorV6Logic.executeSwap(productsLD, asset, product, false, swapData);
             if (!success) {
                 revert Errors.SwapFailed();
             }
         } else if (swapType == ISpotManager.SwapType.MANUAL) {
-            amountOut = ManualSwapLogic.swap(amount, productToAssetSwapPath());
+            assetsLD = ManualSwapLogic.swap(productsLD, productToAssetSwapPath());
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
 
-        IERC20(asset).forceApprove(stargate, amountOut);
-        bytes memory _composeMsg = abi.encode(amount);
+        IERC20(asset).forceApprove(stargate, assetsLD);
+        bytes memory _composeMsg = abi.encode(productsSD);
         (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) = StargateUtils
             .prepareTakeTaxi(
-            stargate, dstEid, amountOut, StargateUtils.bytes32ToAddress(dstSpotManager), sellResGasLimit, 0, _composeMsg
+            stargate, dstEid, assetsLD, StargateUtils.bytes32ToAddress(dstSpotManager), sellResGasLimit, 0, _composeMsg
         );
         IStargate(stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
     }
