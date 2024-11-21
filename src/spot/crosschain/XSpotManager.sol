@@ -219,33 +219,37 @@ contract XSpotManager is
 
     /// @dev Requests Swapper to buy product.
     ///
-    /// @param amount The asset amount to be used to buy product.
+    /// @param amountLD The asset amount in local decimals to buy product.
     /// @param swapType The swap type.
     /// @param swapData The data used in swapping if necessary.
-    function buy(uint256 amount, SwapType swapType, bytes calldata swapData) external authCaller(strategy) {
+    /// Important: In case of 1Inch swapData, it must be derived on the dest chain.
+    /// At this time, the amount decimals should be the one on the dest chain as well.
+    function buy(uint256 amountLD, SwapType swapType, bytes calldata swapData) external authCaller(strategy) {
         address composer = _validateBrotherSwapper();
         // build compose message
         bytes memory _composeMsg = abi.encode(buyResGasLimit(), swapType, swapData);
         // prepare send
         (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) = StargateUtils
             .prepareTakeTaxi(
-            stargate, dstEid, amount, composer, buyReqGasLimit(), Constants.MAX_BUY_RESPONSE_FEE, _composeMsg
+            stargate, dstEid, amountLD, composer, buyReqGasLimit(), Constants.MAX_BUY_RESPONSE_FEE, _composeMsg
         );
         // withdraw fee
         IGasStation(gasStation).withdraw(valueToSend);
         // send token
-        _getXSpotManagerStorage().pendingAssets = amount;
-        IERC20(asset).forceApprove(stargate, amount);
+        _getXSpotManagerStorage().pendingAssets = amountLD;
+        IERC20(asset).forceApprove(stargate, amountLD);
         IStargate(stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
     }
 
     /// @dev Requests Swapper to sell product.
     ///
-    /// @param amount The asset amount in local decimals to be used to sell product.
+    /// @param amountLD The product amount in local decimals to be sold.
     /// @param swapType The swap type.
     /// @param swapData The data used in swapping if necessary.
-    function sell(uint256 amount, SwapType swapType, bytes calldata swapData) external {
-        bytes memory payload = abi.encode(sellResGasLimit(), _toSD(amount), swapType, swapData);
+    /// Important: In case of 1Inch swapData, it must be derived on the dest chain.
+    /// At this time, the amount decimals should be the one on the dest chain as well.
+    function sell(uint256 amountLD, SwapType swapType, bytes calldata swapData) external {
+        bytes memory payload = abi.encode(sellResGasLimit(), _toSD(amountLD), swapType, swapData);
         bytes memory options =
             OptionsBuilder.newOptions().addExecutorLzReceiveOption(sellReqGasLimit(), Constants.MAX_SELL_RESPONSE_FEE);
         bytes32 receiver = swapper();
