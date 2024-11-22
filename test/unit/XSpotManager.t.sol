@@ -8,8 +8,8 @@ import {ForkTest} from "test/base/ForkTest.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
 import {GasStation} from "src/gas-station/GasStation.sol";
-import {LogarithmMessenger} from "src/messenger/LogarithmMessenger.sol";
 
+import {LogarithmMessenger} from "logarithm_messenger/LogarithmMessenger.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 
 import {MockStrategy} from "test/mock/MockStrategy.sol";

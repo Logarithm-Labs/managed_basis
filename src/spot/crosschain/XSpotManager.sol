@@ -12,13 +12,14 @@ import {OFTComposeMsgCodec} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/li
 import {MessagingFee, SendParam} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
 import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 
+import {IMessageRecipient} from "logarithm_messenger/IMessageRecipient.sol";
+import {ILogarithmMessenger, SendParams} from "logarithm_messenger/ILogarithmMessenger.sol";
+
 import {IStargate} from "src/externals/stargate/interfaces/IStargate.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
 import {IGasStation} from "src/gas-station/IGasStation.sol";
-import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {ILogarithmMessenger, SendParams} from "src/messenger/ILogarithmMessenger.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
