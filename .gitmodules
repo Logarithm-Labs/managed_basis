@@ -13,6 +13,4 @@
 [submodule "lib/layerzero-v2"]
 	path = lib/layerzero-v2
 	url = https://github.com/LayerZero-Labs/layerzero-v2
-[submodule "lib/logarithm_messenger"]
-	path = lib/logarithm_messenger
-	url = https://github.com/Logarithm-Labs/logarithm_messenger
+
