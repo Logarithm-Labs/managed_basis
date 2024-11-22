@@ -5,6 +5,7 @@ import {MessagingFee, OFTReceipt, SendParam} from "@layerzerolabs/lz-evm-oapp-v2
 import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 
 import {IStargate, Ticket} from "src/externals/stargate/interfaces/IStargate.sol";
+import {AddressCast} from "src/libraries/utils/AddressCast.sol";
 
 library StargateUtils {
     using OptionsBuilder for bytes;
@@ -24,7 +25,7 @@ library StargateUtils {
 
         sendParam = SendParam({
             dstEid: _dstEid,
-            to: addressToBytes32(_composer),
+            to: AddressCast.addressToBytes32(_composer),
             amountLD: _amount,
             minAmountLD: _amount,
             extraOptions: extraOptions,
@@ -43,13 +44,5 @@ library StargateUtils {
         if (stargate.token() == address(0x0)) {
             valueToSend += sendParam.amountLD;
         }
-    }
-
-    function addressToBytes32(address _addr) internal pure returns (bytes32) {
-        return bytes32(uint256(uint160(_addr)));
-    }
-
-    function bytes32ToAddress(bytes32 _b) internal pure returns (address) {
-        return address(uint160(uint256(_b)));
     }
 }

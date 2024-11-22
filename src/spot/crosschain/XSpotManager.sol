@@ -18,10 +18,11 @@ import {IGasStation} from "src/gas-station/IGasStation.sol";
 import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {ILogarithmMessenger, SendParams, QuoteParams} from "src/messenger/ILogarithmMessenger.sol";
+import {ILogarithmMessenger, SendParams} from "src/messenger/ILogarithmMessenger.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
+import {AddressCast} from "src/libraries/utils/AddressCast.sol";
 
 import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
 
@@ -253,26 +254,16 @@ contract XSpotManager is
         bytes memory options =
             OptionsBuilder.newOptions().addExecutorLzReceiveOption(sellReqGasLimit(), Constants.MAX_SELL_RESPONSE_FEE);
         bytes32 receiver = swapper();
-        (uint256 nativeFee,) = ILogarithmMessenger(messenger).quote(
-            QuoteParams({
-                sender: address(this),
-                value: Constants.MAX_SELL_RESPONSE_FEE,
-                dstEid: dstEid,
-                receiver: receiver,
-                payload: payload,
-                lzReceiveOption: options
-            })
-        );
+        SendParams memory params = SendParams({
+            dstEid: dstEid,
+            value: Constants.MAX_SELL_RESPONSE_FEE,
+            receiver: receiver,
+            payload: payload,
+            lzReceiveOption: options
+        });
+        (uint256 nativeFee,) = ILogarithmMessenger(messenger).quote(address(this), params);
         IGasStation(gasStation).withdraw(nativeFee);
-        ILogarithmMessenger(messenger).sendMessage{value: nativeFee}(
-            SendParams({
-                dstEid: dstEid,
-                value: Constants.MAX_SELL_RESPONSE_FEE,
-                receiver: receiver,
-                payload: payload,
-                lzReceiveOption: options
-            })
-        );
+        ILogarithmMessenger(messenger).sendMessage{value: nativeFee}(params);
     }
 
     function exposure() public view returns (uint256) {
@@ -340,7 +331,7 @@ contract XSpotManager is
         if (_swapper == bytes32(0)) {
             revert Errors.BrotherSwapperNotInit();
         }
-        return StargateUtils.bytes32ToAddress(_swapper);
+        return AddressCast.bytes32ToAddress(_swapper);
     }
 
     /*//////////////////////////////////////////////////////////////

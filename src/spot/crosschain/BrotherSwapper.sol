@@ -15,13 +15,14 @@ import {IStargate} from "src/externals/stargate/interfaces/IStargate.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
 import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {ILogarithmMessenger, SendParams, QuoteParams} from "src/messenger/ILogarithmMessenger.sol";
+import {ILogarithmMessenger, SendParams} from "src/messenger/ILogarithmMessenger.sol";
 import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
+import {AddressCast} from "src/libraries/utils/AddressCast.sol";
 
 import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
 
@@ -175,25 +176,15 @@ contract BrotherSwapper is
 
         uint64 productsSD = _toSD(productsLD);
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(buyResGasLimit, 0);
-        (uint256 nativeFee,) = ILogarithmMessenger(messenger).quote(
-            QuoteParams({
-                sender: address(this),
-                value: 0,
-                dstEid: dstEid,
-                receiver: dstSpotManager,
-                payload: abi.encode(productsSD),
-                lzReceiveOption: options
-            })
-        );
-        ILogarithmMessenger(messenger).sendMessage{value: nativeFee}(
-            SendParams({
-                dstEid: dstEid,
-                value: 0,
-                receiver: dstSpotManager,
-                payload: abi.encode(productsSD),
-                lzReceiveOption: options
-            })
-        );
+        SendParams memory params = SendParams({
+            dstEid: dstEid,
+            value: 0,
+            receiver: dstSpotManager,
+            payload: abi.encode(productsSD),
+            lzReceiveOption: options
+        });
+        (uint256 nativeFee,) = ILogarithmMessenger(messenger).quote(address(this), params);
+        ILogarithmMessenger(messenger).sendMessage{value: nativeFee}(params);
     }
 
     /// @dev Called when sell request is sent from XSpotManager.
@@ -221,7 +212,7 @@ contract BrotherSwapper is
         bytes memory _composeMsg = abi.encode(productsSD);
         (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) = StargateUtils
             .prepareTakeTaxi(
-            stargate, dstEid, assetsLD, StargateUtils.bytes32ToAddress(dstSpotManager), sellResGasLimit, 0, _composeMsg
+            stargate, dstEid, assetsLD, AddressCast.bytes32ToAddress(dstSpotManager), sellResGasLimit, 0, _composeMsg
         );
         IStargate(stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
     }

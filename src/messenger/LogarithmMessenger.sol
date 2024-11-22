@@ -12,8 +12,9 @@ import {
 import {OptionsBuilder, ExecutorOptions} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 
 import {MsgCodec} from "./MsgCodec.sol";
-import {ILogarithmMessenger, QuoteParams, SendParams} from "./ILogarithmMessenger.sol";
+import {ILogarithmMessenger, SendParams} from "./ILogarithmMessenger.sol";
 import {IMessageRecipient} from "./IMessageRecipient.sol";
+import {AddressCast} from "src/libraries/utils/AddressCast.sol";
 
 contract LogarithmMessenger is OApp, ILogarithmMessenger {
     using MsgCodec for bytes;
@@ -71,10 +72,14 @@ contract LogarithmMessenger is OApp, ILogarithmMessenger {
                             MESSAGING LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    function quote(QuoteParams calldata params) public view returns (uint256 nativeFee, uint256 lzTokenFee) {
+    function quote(address sender, SendParams calldata params)
+        public
+        view
+        returns (uint256 nativeFee, uint256 lzTokenFee)
+    {
         MessagingFee memory fee = _quote(
             params.dstEid,
-            MsgCodec.encode(params.sender, params.receiver, params.value, params.payload),
+            MsgCodec.encode(sender, params.receiver, params.value, params.payload),
             params.lzReceiveOption,
             false
         );
@@ -104,7 +109,7 @@ contract LogarithmMessenger is OApp, ILogarithmMessenger {
         if (msg.value < _message.value()) {
             revert LM__INSUFFICIENT_VALUE();
         }
-        address receiver = MsgCodec.bytes32ToAddress(_message.receiver());
+        address receiver = AddressCast.bytes32ToAddress(_message.receiver());
         IMessageRecipient(receiver).receiveMessage{value: msg.value}(_message.sender(), _message.payload());
     }
 
