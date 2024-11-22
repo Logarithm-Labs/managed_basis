@@ -15,8 +15,6 @@ import {IStargate} from "src/externals/stargate/interfaces/IStargate.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
 import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {ILogarithmMessenger, SendParams} from "src/messenger/ILogarithmMessenger.sol";
-import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
@@ -25,6 +23,8 @@ import {Constants} from "src/libraries/utils/Constants.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
 
 import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
+import {ILogarithmMessenger, SendParams} from "./ILogarithmMessenger.sol";
+import {IMessageRecipient} from "./IMessageRecipient.sol";
 
 contract BrotherSwapper is
     Initializable,

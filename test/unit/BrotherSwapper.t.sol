@@ -6,7 +6,7 @@ import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {ForkTest} from "test/base/ForkTest.sol";
 import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
-import {LogarithmMessenger} from "src/messenger/LogarithmMessenger.sol";
+import {ILogarithmMessenger} from "src/spot/crosschain/ILogarithmMessenger.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 
 contract BrotherSwapperTest is ForkTest {
@@ -19,11 +19,11 @@ contract BrotherSwapperTest is ForkTest {
 
     uint256 TEN_THOUSAND_USDC = 10_000 * USDC_PRECISION;
     BrotherSwapper swapper;
-    LogarithmMessenger messenger;
+    ILogarithmMessenger messenger;
 
     function setUp() public {
         _forkArbitrum(0);
-        messenger = new LogarithmMessenger(ARBI_ENDPOINT, owner);
+        messenger = new ILogarithmMessenger(ARBI_ENDPOINT, owner);
         swapper =
             new BrotherSwapper(USDC, WETH, ARBI_ENDPOINT, ARBI_STARTGATE, address(messenger), dstSpotManager, DST_EID);
 
