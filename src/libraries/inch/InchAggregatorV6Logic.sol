@@ -224,52 +224,59 @@ library InchAggregatorV6Logic {
         }
     }
 
-    function _repackSwapDataWith(bytes calldata data, uint256 modifiedAmount) internal returns (bytes memory) {
+    function _repackSwapDataWith(bytes calldata data, uint256 modifiedAmount)
+        internal
+        pure
+        returns (bytes memory modifiedData)
+    {
         bytes4 selector = bytes4(data[:4]);
         if (selector == IAggregationRouterV6.swap.selector) {
             (address executor, IAggregationRouterV6.SwapDescription memory desc, bytes memory swapData) =
                 abi.decode(data[4:], (address, IAggregationRouterV6.SwapDescription, bytes));
             desc.amount = modifiedAmount;
-            return abi.encodePacked(selector, abi.encode(executor, desc, swapData));
+            modifiedData = abi.encodePacked(selector, abi.encode(executor, desc, swapData));
         } else {
             Address finalDex;
             if (selector == IAggregationRouterV6.unoswap.selector) {
                 (Address token, uint256 amount, uint256 minReturn, Address dex) =
                     abi.decode(data[4:], (Address, uint256, uint256, Address));
-                return abi.encodePacked(selector, abi.encode(token, modifiedAmount, minReturn, dex));
+                modifiedData = abi.encodePacked(selector, abi.encode(token, modifiedAmount, minReturn, dex));
             } else if (selector == IAggregationRouterV6.unoswapTo.selector) {
                 (Address to, Address token, uint256 amount, uint256 minReturn, Address dex) =
                     abi.decode(data[4:], (Address, Address, uint256, uint256, Address));
-                return abi.encodePacked(selector, abi.encode(to, token, modifiedAmount, minReturn, dex));
+                modifiedData = abi.encodePacked(selector, abi.encode(to, token, modifiedAmount, minReturn, dex));
             } else if (selector == IAggregationRouterV6.unoswap2.selector) {
                 (Address token, uint256 amount, uint256 minReturn, Address dex, Address dex2) =
                     abi.decode(data[4:], (Address, uint256, uint256, Address, Address));
-                return abi.encodePacked(selector, abi.encode(token, modifiedAmount, minReturn, dex, dex2));
+                modifiedData = abi.encodePacked(selector, abi.encode(token, modifiedAmount, minReturn, dex, dex2));
             } else if (selector == IAggregationRouterV6.unoswapTo2.selector) {
                 (Address to, Address token, uint256 amount, uint256 minReturn, Address dex, Address dex2) =
                     abi.decode(data[4:], (Address, Address, uint256, uint256, Address, Address));
-                return abi.encodePacked(selector, abi.encode(to, token, modifiedAmount, minReturn, dex, dex2));
+                modifiedData = abi.encodePacked(selector, abi.encode(to, token, modifiedAmount, minReturn, dex, dex2));
             } else if (selector == IAggregationRouterV6.unoswap3.selector) {
                 (Address token, uint256 amount, uint256 minReturn, Address dex, Address dex2, Address dex3) =
                     abi.decode(data[4:], (Address, uint256, uint256, Address, Address, Address));
-                return abi.encodePacked(selector, abi.encode(token, modifiedAmount, minReturn, dex, dex2, dex3));
+                modifiedData = abi.encodePacked(selector, abi.encode(token, modifiedAmount, minReturn, dex, dex2, dex3));
             } else if (selector == IAggregationRouterV6.unoswapTo3.selector) {
                 (Address to, Address token, uint256 amount, uint256 minReturn, Address dex, Address dex2, Address dex3)
                 = abi.decode(data[4:], (Address, Address, uint256, uint256, Address, Address, Address));
-                return abi.encodePacked(selector, abi.encode(to, token, modifiedAmount, minReturn, dex, dex2, dex3));
+                modifiedData =
+                    abi.encodePacked(selector, abi.encode(to, token, modifiedAmount, minReturn, dex, dex2, dex3));
             } else if (selector == IAggregationRouterV6.ethUnoswap.selector) {
-                return data;
+                modifiedData = data;
             } else if (selector == IAggregationRouterV6.ethUnoswapTo.selector) {
-                return data;
+                modifiedData = data;
             } else if (selector == IAggregationRouterV6.ethUnoswap2.selector) {
-                return data;
+                modifiedData = data;
             } else if (selector == IAggregationRouterV6.ethUnoswapTo2.selector) {
-                return data;
+                modifiedData = data;
             } else if (selector == IAggregationRouterV6.ethUnoswap3.selector) {
-                return data;
+                modifiedData = data;
             } else if (selector == IAggregationRouterV6.ethUnoswapTo3.selector) {
-                return data;
+                modifiedData = data;
             }
         }
+
+        return modifiedData;
     }
 }
