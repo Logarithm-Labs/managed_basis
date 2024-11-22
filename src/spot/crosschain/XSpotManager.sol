@@ -12,9 +12,6 @@ import {OFTComposeMsgCodec} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/li
 import {MessagingFee, SendParam} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
 import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 
-import {IMessageRecipient} from "logarithm_messenger/IMessageRecipient.sol";
-import {ILogarithmMessenger, SendParams} from "logarithm_messenger/ILogarithmMessenger.sol";
-
 import {IStargate} from "src/externals/stargate/interfaces/IStargate.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
 import {IGasStation} from "src/gas-station/IGasStation.sol";
@@ -25,6 +22,8 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
 
+import {IMessageRecipient} from "./IMessageRecipient.sol";
+import {ILogarithmMessenger, SendParams} from "./ILogarithmMessenger.sol";
 import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
 
 /// @title XSpotManager

@@ -22,9 +22,8 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
 
-import {IMessageRecipient} from "logarithm_messenger/IMessageRecipient.sol";
-import {ILogarithmMessenger, SendParams} from "logarithm_messenger/ILogarithmMessenger.sol";
-
+import {IMessageRecipient} from "./IMessageRecipient.sol";
+import {ILogarithmMessenger, SendParams} from "./ILogarithmMessenger.sol";
 import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
 
 contract BrotherSwapper is

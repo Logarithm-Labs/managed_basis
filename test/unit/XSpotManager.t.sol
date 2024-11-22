@@ -9,9 +9,9 @@ import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
 import {GasStation} from "src/gas-station/GasStation.sol";
 
-import {LogarithmMessenger} from "logarithm_messenger/LogarithmMessenger.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 
+import {MockMessenger} from "test/mock/MockMessenger.sol";
 import {MockStrategy} from "test/mock/MockStrategy.sol";
 
 contract XSpotManagerTest is ForkTest {
@@ -27,13 +27,13 @@ contract XSpotManagerTest is ForkTest {
     MockStrategy strategy;
     GasStation gasStation;
     XSpotManager spotManager;
-    LogarithmMessenger messenger;
+    MockMessenger messenger;
 
     function setUp() public {
         _forkArbitrum(0);
         strategy = new MockStrategy(address(this));
         gasStation = DeployHelper.deployGasStation(owner);
-        messenger = new LogarithmMessenger(ARBI_ENDPOINT, owner);
+        messenger = new MockMessenger();
         spotManager = new XSpotManager(
             address(strategy), address(gasStation), ARBI_ENDPOINT, ARBI_STARTGATE, address(messenger), DST_EID
         );
