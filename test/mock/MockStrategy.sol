@@ -10,6 +10,11 @@ contract MockStrategy {
     uint256 public collateralDelta;
     address public oracle;
 
+    uint256 public buyAssetDelta;
+    uint256 public buyProductDelta;
+    uint256 public sellAssetDelta;
+    uint256 public sellProductDelta;
+
     constructor(address _oracle) {
         oracle = _oracle;
     }
@@ -32,5 +37,15 @@ contract MockStrategy {
         if (params.collateralDeltaAmount > 0 && !params.isIncrease) {
             IERC20(asset()).transferFrom(msg.sender, address(this), collateralDelta);
         }
+    }
+
+    function spotBuyCallback(uint256 assetDelta, uint256 productDelta) external {
+        buyAssetDelta = assetDelta;
+        buyProductDelta = productDelta;
+    }
+
+    function spotSellCallback(uint256 assetDelta, uint256 productDelta) external {
+        sellAssetDelta = assetDelta;
+        sellProductDelta = productDelta;
     }
 }

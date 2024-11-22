@@ -30,4 +30,15 @@ contract InchSpecTest is InchTest {
         uint256 productBalance = IERC20(product).balanceOf(address(this));
         assertEq(amountOut, productBalance);
     }
+
+    function test_inchSwap_withFees() public {
+        uint256 amount = 1000 * 1e6;
+        uint256 amountWoFee = 1000 * 1e6 - 10e6;
+        _writeTokenBalance(address(this), asset, amount);
+        bytes memory data = _generateInchCallData(asset, product, amount, address(this));
+        (uint256 amountOut, bool success) = InchAggregatorV6Logic.executeSwap(amountWoFee, asset, product, true, data);
+        assertTrue(success);
+        uint256 productBalance = IERC20(product).balanceOf(address(this));
+        assertEq(amountOut, productBalance);
+    }
 }
