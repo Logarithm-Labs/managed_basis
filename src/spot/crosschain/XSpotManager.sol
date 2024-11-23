@@ -302,9 +302,12 @@ contract XSpotManager is
     ) external payable {
         require(_from == stargate, "!stargate");
         require(_msgSender() == endpoint, "!endpoint");
+        bytes32 sender = OFTComposeMsgCodec.composeFrom(_message);
+        require(sender == swapper(), "!swapper");
         uint256 assetsLD = OFTComposeMsgCodec.amountLD(_message);
-        bytes memory _composeMessage = OFTComposeMsgCodec.composeMsg(_message);
-        uint64 productsSD = abi.decode(_composeMessage, (uint64));
+        bytes memory composeMsg = OFTComposeMsgCodec.composeMsg(_message);
+        require(composeMsg.length == 32, "wrong msg");
+        uint64 productsSD = abi.decode(composeMsg, (uint64));
         uint256 productsLD = _toLD(productsSD);
         (, uint256 newExposure) = exposure().trySub(productsLD);
         _getXSpotManagerStorage().exposure = newExposure;

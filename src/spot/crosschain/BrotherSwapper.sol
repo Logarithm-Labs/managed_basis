@@ -151,14 +151,16 @@ contract BrotherSwapper is
         require(_msgSender() == endpoint, "!endpoint");
         // validate msg.value
         require(msg.value >= Constants.MAX_BUY_RESPONSE_FEE, "insufficient value");
+        bytes32 sender = OFTComposeMsgCodec.composeFrom(_message);
+        require(sender == dstSpotManager, "!spotManager");
 
         uint256 assetsLD = OFTComposeMsgCodec.amountLD(_message);
-        bytes memory _composeMessage = OFTComposeMsgCodec.composeMsg(_message);
+        bytes memory composeMsg = OFTComposeMsgCodec.composeMsg(_message);
 
         // decode composeMessage
         // composeMessage = abi.encode(buyResGasLimit(), swapType, swapData);
         (uint128 buyResGasLimit, ISpotManager.SwapType swapType, bytes memory swapData) =
-            abi.decode(_composeMessage, (uint128, ISpotManager.SwapType, bytes));
+            abi.decode(composeMsg, (uint128, ISpotManager.SwapType, bytes));
 
         uint256 productsLD;
         if (swapType == ISpotManager.SwapType.INCH_V6) {
