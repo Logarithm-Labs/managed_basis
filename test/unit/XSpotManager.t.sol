@@ -85,7 +85,7 @@ contract XSpotManagerTest is ForkTest {
         spotManager.sell(amount, ISpotManager.SwapType.MANUAL, "");
         uint64 productSD = uint64(amount / spotManager.decimalConversionRate());
         uint256 assetLD = 100 * 1e16;
-        bytes memory composeMsg = abi.encode(swapper, productSD);
+        bytes memory composeMsg = abi.encodePacked(swapper, abi.encode(productSD));
         bytes memory message = OFTComposeMsgCodec.encode(0, 1, assetLD, composeMsg);
         vm.startPrank(ARBI_ENDPOINT);
         spotManager.lzCompose(ARBI_STARTGATE, bytes32(0), message, address(0), "");

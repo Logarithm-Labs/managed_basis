@@ -239,8 +239,8 @@ contract BrotherSwapper is
     }
 
     function _verifyCallback() internal view {
-        if (isSwapPool(_msgSender())) {
-            revert Errors.InvalidCallback();
+        if (!isSwapPool(_msgSender())) {
+            revert Errors.CallerNotRegisteredPool();
         }
     }
 

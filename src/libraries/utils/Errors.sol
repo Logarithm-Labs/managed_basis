@@ -91,4 +91,5 @@ library Errors {
     error InvalidCallback();
     error CallerNotOwnerOrVault();
     error InvalidSecurityManager();
+    error CallerNotRegisteredPool();
 }
