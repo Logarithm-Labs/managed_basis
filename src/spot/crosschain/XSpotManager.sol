@@ -238,7 +238,7 @@ contract XSpotManager is
         IGasStation(gasStation).withdraw(valueToSend);
         // send token
         IERC20(asset).forceApprove(stargate, amountLD);
-        OFTReceipt memory receipt =
+        (, OFTReceipt memory receipt,) =
             IStargate(stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
         // always receipt.amountSentLD <= amountLD
         uint256 dust = amountLD - receipt.amountSentLD;
