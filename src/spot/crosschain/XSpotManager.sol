@@ -9,7 +9,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTComposeMsgCodec.sol";
-import {MessagingFee, SendParam} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
+import {MessagingFee, SendParam, OFTReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
 import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 
 import {IStargate} from "src/externals/stargate/interfaces/IStargate.sol";
@@ -237,9 +237,16 @@ contract XSpotManager is
         // withdraw fee
         IGasStation(gasStation).withdraw(valueToSend);
         // send token
-        _getXSpotManagerStorage().pendingAssets = amountLD;
         IERC20(asset).forceApprove(stargate, amountLD);
-        IStargate(stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
+        OFTReceipt memory receipt =
+            IStargate(stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
+        // always receipt.amountSentLD <= amountLD
+        uint256 dust = amountLD - receipt.amountSentLD;
+        if (dust > 0) {
+            // refund dust
+            IERC20(asset).safeTransfer(strategy, dust);
+        }
+        _getXSpotManagerStorage().pendingAssets = receipt.amountSentLD;
     }
 
     /// @dev Requests Swapper to sell product.
