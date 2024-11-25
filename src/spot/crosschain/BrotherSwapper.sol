@@ -64,8 +64,12 @@ contract BrotherSwapper is
         }
     }
 
-    event BuyProcessed(uint256 indexed assetsReceived, uint256 indexed productsSwapped);
-    event SellProcessed(uint256 indexed productsRequested, uint256 indexed assetsSwapped);
+    event BuyProcessed(
+        ISpotManager.SwapType indexed swapType, uint256 indexed assetsReceived, uint256 indexed productsSwapped
+    );
+    event SellProcessed(
+        ISpotManager.SwapType indexed swapType, uint256 indexed productsRequested, uint256 indexed assetsSwapped
+    );
 
     /*//////////////////////////////////////////////////////////////
                              INITIALIZATION
@@ -193,7 +197,7 @@ contract BrotherSwapper is
         address _messenger = messenger();
         (uint256 nativeFee,) = ILogarithmMessenger(_messenger).quote(address(this), params);
         ILogarithmMessenger(_messenger).sendMessage{value: nativeFee}(params);
-        emit BuyProcessed(assetsLD, productsLD);
+        emit BuyProcessed(swapType, assetsLD, productsLD);
     }
 
     /// @dev Called when sell request is sent from XSpotManager.
@@ -233,7 +237,7 @@ contract BrotherSwapper is
             _composeMsg
         );
         IStargate(_stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
-        emit SellProcessed(productsLD, assetsLD);
+        emit SellProcessed(swapType, productsLD, assetsLD);
     }
 
     /*//////////////////////////////////////////////////////////////
