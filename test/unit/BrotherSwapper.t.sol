@@ -11,11 +11,12 @@ import {GasStation} from "src/gas-station/GasStation.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
+import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
 
 contract BrotherSwapperTest is ForkTest {
     address owner = makeAddr("owner");
 
-    address constant ARBI_ENDPOINT = 0x1a44076050125825900e736c501f859c50fE728c;
+    address constant ARBI_ENDPOINT = ArbiAddresses.LZ_V2_ENDPOINT;
     address constant ARBI_STARTGATE = 0xe8CDF27AcD73a434D661C84887215F7598e7d0d3;
     uint32 constant DST_EID = 30101;
     bytes32 constant dstSpotManager = bytes32(abi.encodePacked("dstSpotManager"));
@@ -33,7 +34,7 @@ contract BrotherSwapperTest is ForkTest {
         beacon = DeployHelper.deployBeacon(address(new BrotherSwapper()), owner);
         address[] memory pathWeth = new address[](3);
         pathWeth[0] = USDC;
-        pathWeth[1] = UNISWAPV3_WETH_USDC;
+        pathWeth[1] = UNI_V3_POOL_WETH_USDC;
         pathWeth[2] = WETH;
         swapper = DeployHelper.deployBrotherSwapper(
             DeployHelper.DeployBrotherSwapperParams({
@@ -54,7 +55,7 @@ contract BrotherSwapperTest is ForkTest {
         gasStation.registerManager(address(swapper), true);
         vm.deal(address(gasStation), 0.5 ether);
 
-        assertTrue(swapper.isSwapPool(UNISWAPV3_WETH_USDC), "pool");
+        assertTrue(swapper.isSwapPool(UNI_V3_POOL_WETH_USDC), "pool");
     }
 
     function test_buy(uint256 assets) public {

@@ -24,7 +24,7 @@ abstract contract ForkTest is Test {
     address constant USDC_WHALE = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
     address constant WETH_WHALE = 0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8;
 
-    address constant UNISWAPV3_WETH_USDC = ArbiAddresses.UNISWAPV3_WETH_USDC;
+    address constant UNI_V3_POOL_WETH_USDC = ArbiAddresses.UNI_V3_POOL_WETH_USDC;
     address constant CHL_USDC_USD_PRICE_FEED = ArbiAddresses.CHL_USDC_USD_PRICE_FEED;
     address constant CHL_ETH_USD_PRICE_FEED = ArbiAddresses.CHL_ETH_USD_PRICE_FEED;
 

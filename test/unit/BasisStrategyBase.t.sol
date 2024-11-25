@@ -73,7 +73,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.label(address(oracle), "oracle");
 
         // mock uniswap
-        _mockUniswapPool(UNISWAPV3_WETH_USDC, address(oracle));
+        _mockUniswapPool(UNI_V3_POOL_WETH_USDC, address(oracle));
 
         // set oracle price feed
         address[] memory assets = new address[](2);
@@ -92,7 +92,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         address[] memory pathWeth = new address[](3);
         pathWeth[0] = USDC;
-        pathWeth[1] = UNISWAPV3_WETH_USDC;
+        pathWeth[1] = UNI_V3_POOL_WETH_USDC;
         pathWeth[2] = WETH;
 
         priorityProvider = new MockPriorityProvider();
