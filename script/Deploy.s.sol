@@ -12,7 +12,6 @@ import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
 import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-import {DataProvider} from "src/DataProvider.sol";
 
 import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
@@ -187,9 +186,5 @@ contract DeployScript is Script {
             )
         );
         console.log("PositionManager HL deployed at", address(hlPositionManager));
-
-        // deploy DataProvider
-        DataProvider dataProvider = new DataProvider();
-        console.log("DataProvider deployed at", address(dataProvider));
     }
 }
