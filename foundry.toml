@@ -2,7 +2,6 @@
 src = 'src'
 out = 'out'
 libs = ['lib']
-eth-rpc-url = "https://arb-mainnet.g.alchemy.com/v2/PeyMa7ljzBjqJxkH6AnLfVH8zRWOtE1n"
 # block_number = 220831280
 # fork_block_number = 220831280
 solc = '0.8.28'

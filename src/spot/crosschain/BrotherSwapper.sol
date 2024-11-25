@@ -252,7 +252,7 @@ contract BrotherSwapper is
                             UNISWAP CALLBACK
     //////////////////////////////////////////////////////////////*/
 
-    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
+    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) public {
         require(amount0Delta > 0 || amount1Delta > 0); // swaps entirely within 0-liquidity regions are not supported
         if (data.length != 96) {
             revert Errors.InvalidCallback();
@@ -265,6 +265,10 @@ contract BrotherSwapper is
         } else {
             IERC20(tokenIn).safeTransferFrom(payer, _msgSender(), amountToPay);
         }
+    }
+
+    function pancakeV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
+        uniswapV3SwapCallback(amount0Delta, amount1Delta, data);
     }
 
     function _verifyCallback() internal view {
