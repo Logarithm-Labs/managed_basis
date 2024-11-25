@@ -5,7 +5,6 @@ import "forge-std/Script.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {DataProvider} from "src/DataProvider.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
 
 contract UpgradeStrategyScript is Script {
     UpgradeableBeacon constant beacon = UpgradeableBeacon(0xA610080Bf93CC031492a29D09DBC8b234F291ea7);

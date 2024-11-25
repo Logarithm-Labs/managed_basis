@@ -5,8 +5,8 @@ import "forge-std/Test.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {DataProvider} from "src/DataProvider.sol";
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
-import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
@@ -65,8 +65,8 @@ contract ProdTest is Test {
 
         (uint256 utilization,) = gmxStrategy.pendingUtilizations();
         console.log("utilization", utilization);
-        (uint256 amount, BasisStrategy.SwapType swapType, bytes memory swapData) =
-            abi.decode(call_data, (uint256, BasisStrategy.SwapType, bytes));
+        (uint256 amount, ISpotManager.SwapType swapType, bytes memory swapData) =
+            abi.decode(call_data, (uint256, ISpotManager.SwapType, bytes));
         console.log("amount", amount);
         vm.startPrank(operator);
         gmxStrategy.utilize(amount, swapType, swapData);

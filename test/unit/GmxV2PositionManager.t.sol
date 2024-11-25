@@ -100,9 +100,9 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         //         )
         //     )
         // );
-        positionManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
-        vm.label(address(positionManager), "positionManager");
-        gmxGasStation.registerPositionManager(address(positionManager), true);
+        hedgeManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
+        vm.label(address(hedgeManager), "hedgeManager");
+        gasStation.registerManager(address(hedgeManager), true);
         vm.stopPrank();
     }
 

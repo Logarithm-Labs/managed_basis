@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
-import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 
 contract StopStrategyScript is Script {
