@@ -2,16 +2,33 @@
 pragma solidity ^0.8.0;
 
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-contract AssetValueTransmitter {
-    uint256 public immutable decimalConversionRate;
+contract AssetValueTransmitter is Initializable {
+    struct AssetValueTransmitterStorage {
+        uint256 decimalConversionRate;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("logarithm.storage.AssetValueTransmitter")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant AssetValueTransmitterStorageLocation =
+        0xffa42cc651855e3cdbd9f807a4ac01c247d708aaa78a63ef65214d3514c36800;
+
+    function _getAssetValueTransmitterStorage() private pure returns (AssetValueTransmitterStorage storage $) {
+        assembly {
+            $.slot := AssetValueTransmitterStorageLocation
+        }
+    }
 
     error InvalidLocalDecimals();
 
-    constructor(address asset) {
+    function __AssetValueTransmitter_init(address asset) internal {
         uint8 localDecimals = IERC20Metadata(asset).decimals();
         if (localDecimals < sharedDecimals()) revert InvalidLocalDecimals();
-        decimalConversionRate = 10 ** (localDecimals - sharedDecimals());
+        _getAssetValueTransmitterStorage().decimalConversionRate = 10 ** (localDecimals - sharedDecimals());
+    }
+
+    function decimalConversionRate() public view returns (uint256) {
+        return _getAssetValueTransmitterStorage().decimalConversionRate;
     }
 
     /// @dev Retrieves the shared decimals of the transmitter.
@@ -33,20 +50,21 @@ contract AssetValueTransmitter {
     /// @dev Prevents the loss of dust when moving amounts between chains with different decimals.
     /// @dev eg. uint(123) with a conversion rate of 100 becomes uint(100).
     function _removeDust(uint256 _amountLD) internal view virtual returns (uint256 amountLD) {
-        return (_amountLD / decimalConversionRate) * decimalConversionRate;
+        uint256 _decimalConversionRate = decimalConversionRate();
+        return (_amountLD / _decimalConversionRate) * _decimalConversionRate;
     }
 
     /// @dev Internal function to convert an amount from shared decimals into local decimals.
     /// @param _amountSD The amount in shared decimals.
     /// @return amountLD The amount in local decimals.
     function _toLD(uint64 _amountSD) internal view virtual returns (uint256 amountLD) {
-        return _amountSD * decimalConversionRate;
+        return _amountSD * decimalConversionRate();
     }
 
     /// @dev Internal function to convert an amount from local decimals into shared decimals.
     /// @param _amountLD The amount in local decimals.
     /// @return amountSD The amount in shared decimals.
     function _toSD(uint256 _amountLD) internal view virtual returns (uint64 amountSD) {
-        return uint64(_amountLD / decimalConversionRate);
+        return uint64(_amountLD / decimalConversionRate());
     }
 }

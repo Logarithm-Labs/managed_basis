@@ -15,6 +15,8 @@ contract MockStrategy {
     uint256 public sellAssetDelta;
     uint256 public sellProductDelta;
 
+    address public spotManager;
+
     constructor(address _oracle) {
         oracle = _oracle;
     }
@@ -47,5 +49,9 @@ contract MockStrategy {
     function spotSellCallback(uint256 assetDelta, uint256 productDelta) external {
         sellAssetDelta = assetDelta;
         sellProductDelta = productDelta;
+    }
+
+    function setSpotManager(address _spotManager) external {
+        spotManager = _spotManager;
     }
 }

@@ -36,19 +36,18 @@ contract BrotherSwapper is
     using SafeERC20 for IERC20;
     using OptionsBuilder for bytes;
 
-    address public immutable asset;
-    address public immutable product;
-    address public immutable endpoint;
-    address public immutable stargate;
-    address public immutable messenger;
-    bytes32 public immutable dstSpotManager;
-    uint32 public immutable dstEid;
-    uint32 public immutable srcEid;
-
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
     struct BrotherSwapperStorage {
+        address asset;
+        address product;
+        address endpoint;
+        address stargate;
+        address messenger;
+        bytes32 dstSpotManager;
+        uint32 dstEid;
+        uint32 srcEid;
         // manual swap state
         mapping(address => bool) isSwapPool;
         address[] assetToProductSwapPath;
@@ -69,32 +68,34 @@ contract BrotherSwapper is
                              INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
+    function initialize(
+        address _owner,
         address _asset,
         address _product,
         address _endpoint,
         address _stargate,
         address _messenger,
         bytes32 _dstSpotManager,
-        uint32 _dstEid
-    ) AssetValueTransmitter(_product) {
-        asset = _asset;
-        product = _product;
+        uint32 _dstEid,
+        address[] calldata _assetToProductSwapPath
+    ) external initializer {
+        BrotherSwapperStorage storage $ = _getBrotherSwapperStorage();
+        $.asset = _asset;
+        $.product = _product;
         // validate stargate
         if (IStargate(_stargate).token() != _asset) {
             revert Errors.InvalidStargate();
         }
-        stargate = _stargate;
-        endpoint = _endpoint;
-        messenger = _messenger;
-        dstEid = _dstEid;
-        srcEid = ILayerZeroEndpointV2(_endpoint).eid();
-        dstSpotManager = _dstSpotManager;
-    }
+        $.stargate = _stargate;
+        $.endpoint = _endpoint;
+        $.messenger = _messenger;
+        $.dstEid = _dstEid;
+        $.srcEid = ILayerZeroEndpointV2(_endpoint).eid();
+        $.dstSpotManager = _dstSpotManager;
 
-    function initialize(address _owner, address[] calldata _assetToProductSwapPath) external initializer {
+        __AssetValueTransmitter_init(_product);
         __Ownable_init(_owner);
-        _setManualSwapPath(_assetToProductSwapPath, asset, product);
+        _setManualSwapPath(_assetToProductSwapPath, _asset, _product);
     }
 
     function _setManualSwapPath(address[] calldata _assetToProductSwapPath, address _asset, address _product) private {
@@ -147,12 +148,13 @@ contract BrotherSwapper is
         address, /*_executor*/
         bytes calldata /*_extraData*/
     ) external payable {
-        require(_from == stargate, "!stargate");
-        require(_msgSender() == endpoint, "!endpoint");
+        require(_from == stargate(), "!stargate");
+        require(_msgSender() == endpoint(), "!endpoint");
         // validate msg.value
         require(msg.value >= Constants.MAX_BUY_RESPONSE_FEE, "insufficient value");
         bytes32 sender = OFTComposeMsgCodec.composeFrom(_message);
-        require(sender == dstSpotManager, "!spotManager");
+        bytes32 _dstSpotManager = dstSpotManager();
+        require(sender == _dstSpotManager, "!spotManager");
 
         uint256 assetsLD = OFTComposeMsgCodec.amountLD(_message);
         bytes memory composeMsg = OFTComposeMsgCodec.composeMsg(_message);
@@ -165,7 +167,7 @@ contract BrotherSwapper is
         uint256 productsLD;
         if (swapType == ISpotManager.SwapType.INCH_V6) {
             bool success;
-            (productsLD, success) = InchAggregatorV6Logic.executeSwap(assetsLD, asset, product, true, swapData);
+            (productsLD, success) = InchAggregatorV6Logic.executeSwap(assetsLD, asset(), product(), true, swapData);
             if (!success) {
                 revert Errors.SwapFailed();
             }
@@ -179,27 +181,30 @@ contract BrotherSwapper is
         uint64 productsSD = _toSD(productsLD);
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(buyResGasLimit, 0);
         SendParams memory params = SendParams({
-            dstEid: dstEid,
+            dstEid: dstEid(),
             value: 0,
-            receiver: dstSpotManager,
+            receiver: _dstSpotManager,
             payload: abi.encode(productsSD),
             lzReceiveOption: options
         });
-        (uint256 nativeFee,) = ILogarithmMessenger(messenger).quote(address(this), params);
-        ILogarithmMessenger(messenger).sendMessage{value: nativeFee}(params);
+        address _messenger = messenger();
+        (uint256 nativeFee,) = ILogarithmMessenger(_messenger).quote(address(this), params);
+        ILogarithmMessenger(_messenger).sendMessage{value: nativeFee}(params);
     }
 
     /// @dev Called when sell request is sent from XSpotManager.
     function receiveMessage(bytes32 _sender, bytes calldata _payload) external payable {
-        require(_msgSender() == messenger);
-        require(_sender == dstSpotManager);
+        require(_msgSender() == messenger());
+        bytes32 _dstSpotManager = dstSpotManager();
+        require(_sender == _dstSpotManager);
         (uint128 sellResGasLimit, uint64 productsSD, ISpotManager.SwapType swapType, bytes memory swapData) =
             abi.decode(_payload, (uint128, uint64, ISpotManager.SwapType, bytes));
         uint256 productsLD = _toLD(productsSD);
         uint256 assetsLD;
+        address _asset = asset();
         if (swapType == ISpotManager.SwapType.INCH_V6) {
             bool success;
-            (assetsLD, success) = InchAggregatorV6Logic.executeSwap(productsLD, asset, product, false, swapData);
+            (assetsLD, success) = InchAggregatorV6Logic.executeSwap(productsLD, _asset, product(), false, swapData);
             if (!success) {
                 revert Errors.SwapFailed();
             }
@@ -210,13 +215,20 @@ contract BrotherSwapper is
             revert Errors.UnsupportedSwapType();
         }
 
-        IERC20(asset).forceApprove(stargate, assetsLD);
+        address _stargate = stargate();
+        IERC20(_asset).forceApprove(_stargate, assetsLD);
         bytes memory _composeMsg = abi.encode(productsSD);
         (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) = StargateUtils
             .prepareTakeTaxi(
-            stargate, dstEid, assetsLD, AddressCast.bytes32ToAddress(dstSpotManager), sellResGasLimit, 0, _composeMsg
+            _stargate,
+            dstEid(),
+            assetsLD,
+            AddressCast.bytes32ToAddress(_dstSpotManager),
+            sellResGasLimit,
+            0,
+            _composeMsg
         );
-        IStargate(stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
+        IStargate(_stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -247,6 +259,38 @@ contract BrotherSwapper is
     /*//////////////////////////////////////////////////////////////
                             STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
+
+    function asset() public view returns (address) {
+        return _getBrotherSwapperStorage().asset;
+    }
+
+    function product() public view returns (address) {
+        return _getBrotherSwapperStorage().product;
+    }
+
+    function endpoint() public view returns (address) {
+        return _getBrotherSwapperStorage().endpoint;
+    }
+
+    function stargate() public view returns (address) {
+        return _getBrotherSwapperStorage().stargate;
+    }
+
+    function messenger() public view returns (address) {
+        return _getBrotherSwapperStorage().messenger;
+    }
+
+    function dstSpotManager() public view returns (bytes32) {
+        return _getBrotherSwapperStorage().dstSpotManager;
+    }
+
+    function dstEid() public view returns (uint32) {
+        return _getBrotherSwapperStorage().dstEid;
+    }
+
+    function srcEid() public view returns (uint32) {
+        return _getBrotherSwapperStorage().srcEid;
+    }
 
     function isSwapPool(address pool) public view returns (bool) {
         return _getBrotherSwapperStorage().isSwapPool[pool];

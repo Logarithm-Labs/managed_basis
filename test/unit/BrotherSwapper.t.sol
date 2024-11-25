@@ -9,6 +9,7 @@ import {MockMessenger} from "test/mock/MockMessenger.sol";
 import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
+import {DeployHelper} from "script/utils/DeployHelper.sol";
 
 contract BrotherSwapperTest is ForkTest {
     address owner = makeAddr("owner");
@@ -21,19 +22,32 @@ contract BrotherSwapperTest is ForkTest {
     uint256 TEN_THOUSAND_USDC = 10_000 * USDC_PRECISION;
     BrotherSwapper swapper;
     MockMessenger messenger;
+    address beacon;
 
     function setUp() public {
         _forkArbitrum(0);
         messenger = new MockMessenger();
-        swapper =
-            new BrotherSwapper(USDC, WETH, ARBI_ENDPOINT, ARBI_STARTGATE, address(messenger), dstSpotManager, DST_EID);
+        beacon = DeployHelper.deployBeacon(address(new BrotherSwapper()), owner);
 
         address[] memory pathWeth = new address[](3);
         pathWeth[0] = USDC;
         pathWeth[1] = UNISWAPV3_WETH_USDC;
         pathWeth[2] = WETH;
 
-        swapper.initialize(owner, pathWeth);
+        swapper = DeployHelper.deployBrotherSwapper(
+            DeployHelper.DeployBrotherSwapperParams({
+                beacon: beacon,
+                owner: owner,
+                asset: USDC,
+                product: WETH,
+                endpoint: ARBI_ENDPOINT,
+                stargate: ARBI_STARTGATE,
+                messenger: address(messenger),
+                dstSpotManager: dstSpotManager,
+                dstEid: DST_EID,
+                assetToProductSwapPath: pathWeth
+            })
+        );
 
         vm.deal(ARBI_ENDPOINT, 100 ether);
         vm.deal(address(messenger), 100 ether);

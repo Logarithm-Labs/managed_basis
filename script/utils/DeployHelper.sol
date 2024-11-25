@@ -9,6 +9,8 @@ import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {SpotManager} from "src/spot/SpotManager.sol";
+import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
+import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
 import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {GasStation} from "src/gas-station/GasStation.sol";
 import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
@@ -241,5 +243,71 @@ library DeployHelper {
             address(new ERC1967Proxy(oracleImpl, abi.encodeWithSelector(LogarithmOracle.initialize.selector, owner)));
         LogarithmOracle oracle = LogarithmOracle(oracleProxy);
         return oracle;
+    }
+
+    struct DeployXSpotManagerParams {
+        address beacon;
+        address owner;
+        address strategy;
+        address gasStation;
+        address endpoint;
+        address stargate;
+        address messenger;
+        uint32 dstEid;
+    }
+
+    function deployXSpotManager(DeployXSpotManagerParams memory params) internal returns (XSpotManager) {
+        address xSpotManagerProxy = address(
+            new BeaconProxy(
+                params.beacon,
+                abi.encodeWithSelector(
+                    XSpotManager.initialize.selector,
+                    params.owner,
+                    params.strategy,
+                    params.gasStation,
+                    params.endpoint,
+                    params.stargate,
+                    params.messenger,
+                    params.dstEid
+                )
+            )
+        );
+        XSpotManager spotManager = XSpotManager(payable(xSpotManagerProxy));
+        BasisStrategy(params.strategy).setSpotManager(xSpotManagerProxy);
+        return spotManager;
+    }
+
+    struct DeployBrotherSwapperParams {
+        address beacon;
+        address owner;
+        address asset;
+        address product;
+        address endpoint;
+        address stargate;
+        address messenger;
+        bytes32 dstSpotManager;
+        uint32 dstEid;
+        address[] assetToProductSwapPath;
+    }
+
+    function deployBrotherSwapper(DeployBrotherSwapperParams memory params) internal returns (BrotherSwapper) {
+        address swapperProxy = address(
+            new BeaconProxy(
+                params.beacon,
+                abi.encodeWithSelector(
+                    BrotherSwapper.initialize.selector,
+                    params.owner,
+                    params.asset,
+                    params.product,
+                    params.endpoint,
+                    params.stargate,
+                    params.messenger,
+                    params.dstSpotManager,
+                    params.dstEid,
+                    params.assetToProductSwapPath
+                )
+            )
+        );
+        return BrotherSwapper(payable(swapperProxy));
     }
 }

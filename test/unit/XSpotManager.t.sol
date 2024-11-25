@@ -14,6 +14,7 @@ import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {MockOracle} from "test/mock/MockOracle.sol";
 import {MockMessenger} from "test/mock/MockMessenger.sol";
 import {MockStrategy} from "test/mock/MockStrategy.sol";
+import {DeployHelper} from "script/utils/DeployHelper.sol";
 
 contract XSpotManagerTest is ForkTest {
     address owner = makeAddr("owner");
@@ -30,18 +31,28 @@ contract XSpotManagerTest is ForkTest {
     XSpotManager spotManager;
     MockMessenger messenger;
     MockOracle oracle;
+    address beacon;
 
     function setUp() public {
         _forkArbitrum(0);
+        vm.startPrank(owner);
         oracle = new MockOracle();
         strategy = new MockStrategy(address(oracle));
         gasStation = DeployHelper.deployGasStation(owner);
         messenger = new MockMessenger();
-        spotManager = new XSpotManager(
-            address(strategy), address(gasStation), ARBI_ENDPOINT, ARBI_STARTGATE, address(messenger), DST_EID
+        beacon = DeployHelper.deployBeacon(address(new XSpotManager()), owner);
+        spotManager = DeployHelper.deployXSpotManager(
+            DeployHelper.DeployXSpotManagerParams({
+                beacon: beacon,
+                owner: owner,
+                strategy: address(strategy),
+                gasStation: address(gasStation),
+                endpoint: ARBI_ENDPOINT,
+                stargate: ARBI_STARTGATE,
+                messenger: address(messenger),
+                dstEid: DST_EID
+            })
         );
-        spotManager.initialize(owner);
-        vm.startPrank(owner);
         spotManager.setSwapper(swapper);
         vm.deal(address(gasStation), 10000 ether);
         gasStation.registerManager(address(spotManager), true);
