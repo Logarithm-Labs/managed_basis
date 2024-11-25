@@ -152,7 +152,6 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
         initializer
     {
         address asset = address(IBasisStrategy(strategy_).asset());
-        address product = address(IBasisStrategy(strategy_).product());
 
         if (marketKey_ == address(0) || gasStation_ == address(0)) {
             revert Errors.InvalidMarket();
@@ -162,7 +161,7 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
         address reader = IGmxConfig(config_).reader();
         Market.Props memory market = IReader(reader).getMarket(dataStore, marketKey_);
         // assuming short position open
-        if ((market.longToken != asset && market.shortToken != asset) || (market.indexToken != product)) {
+        if ((market.longToken != asset && market.shortToken != asset)) {
             revert Errors.InvalidInitializationAssets();
         }
 
