@@ -17,7 +17,7 @@ contract BrotherSwapperTest is ForkTest {
     address owner = makeAddr("owner");
 
     address constant ARBI_ENDPOINT = ArbiAddresses.LZ_V2_ENDPOINT;
-    address constant ARBI_STARTGATE = 0xe8CDF27AcD73a434D661C84887215F7598e7d0d3;
+    address constant ARBI_STARTGATE = ArbiAddresses.STARGATE_POOL_USDC;
     uint32 constant DST_EID = 30101;
     bytes32 constant dstSpotManager = bytes32(abi.encodePacked("dstSpotManager"));
 
