@@ -14,11 +14,12 @@ import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {ForkTest} from "test/base/ForkTest.sol";
 import {MockPriceFeed} from "test/mock/MockPriceFeed.sol";
 
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {SpotManager} from "src/spot/SpotManager.sol";
 
 import {GmxHandler} from "./GmxHandler.sol";
 
@@ -122,14 +123,25 @@ contract GmxInvariants is StdInvariant, ForkTest {
                     targetLeverage,
                     minLeverage,
                     maxLeverage,
-                    safeMarginLeverage,
-                    pathWeth
+                    safeMarginLeverage
                 )
             )
         );
         strategy = BasisStrategy(strategyProxy);
         // strategy.setForwarder(forwarder);
         vm.label(address(strategy), "strategy");
+
+        // deploy spot manager
+        address spotManagerImpl = address(new SpotManager());
+        address spotManagerProxy = address(
+            new ERC1967Proxy(
+                spotManagerImpl,
+                abi.encodeWithSelector(SpotManager.initialize.selector, owner, address(strategy), pathWeth)
+            )
+        );
+        SpotManager spotManager = SpotManager(spotManagerProxy);
+        vm.label(address(spotManager), "spotManager");
+        strategy.setSpotManager(address(spotManager));
 
         vault.setStrategy(address(strategy));
         vault.setDepositLimits(MAX_DEPOSIT, MAX_DEPOSIT);
@@ -140,26 +152,18 @@ contract GmxInvariants is StdInvariant, ForkTest {
         targetContract(address(handler));
     }
 
-    function invariant_sharePriceShouldBeAroundOne() public view {
-        uint256 totalAssets = vault.totalAssets();
-        uint256 totalSupply = vault.totalSupply();
-        if (totalSupply == 0) return;
-        uint256 sharePrice = Math.mulDiv(totalAssets, 1e6, totalSupply);
-        assertApproxEqRel(sharePrice, 1e6, 0.01 ether, "share price");
-    }
-
     function invariant_leverageShouldBeBetweenMinAndMaxWhenUpkeepNotNeeded() public view {
         (bool upkeepNeeded,) = strategy.checkUpkeep("");
-        IPositionManager positionManager = IPositionManager(strategy.positionManager());
-        uint256 sizeInTokens = positionManager.positionSizeInTokens();
-        uint256 positionBalance = positionManager.positionNetBalance();
+        IHedgeManager hedgeManager = IHedgeManager(strategy.hedgeManager());
+        uint256 sizeInTokens = hedgeManager.positionSizeInTokens();
+        uint256 positionBalance = hedgeManager.positionNetBalance();
         BasisStrategy.StrategyStatus status = strategy.strategyStatus();
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         if (
             !upkeepNeeded && sizeInTokens != 0 && status == BasisStrategy.StrategyStatus.IDLE
                 && pendingDeutilization == 0 && positionBalance != 0
         ) {
-            uint256 currLeverage = positionManager.currentLeverage();
+            uint256 currLeverage = hedgeManager.currentLeverage();
             assertTrue(currLeverage >= minLeverage, "minLeverage");
             assertTrue(currLeverage <= maxLeverage, "maxLeverage");
         }

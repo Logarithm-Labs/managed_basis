@@ -11,7 +11,8 @@ import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
 import {ArbSysMock} from "test/mock/ArbSysMock.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
+import {ISpotManager} from "src/spot/ISpotManager.sol";
 
 contract ProdTest is Test {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
@@ -45,8 +46,8 @@ contract ProdTest is Test {
 
         (, uint256 deutilization) = gmxStrategy.pendingUtilizations();
         console.log("deutilization", deutilization);
-        (uint256 amount, BasisStrategy.SwapType swapType, bytes memory swapData) =
-            abi.decode(call_data, (uint256, BasisStrategy.SwapType, bytes));
+        (uint256 amount, ISpotManager.SwapType swapType, bytes memory swapData) =
+            abi.decode(call_data, (uint256, ISpotManager.SwapType, bytes));
         console.log("amount", amount);
         vm.startPrank(operator);
         gmxStrategy.deutilize(amount, swapType, swapData);
@@ -96,7 +97,6 @@ contract ProdTest is Test {
         console.log("assetsToWithdraw: ", state.assetsToWithdraw);
         console.log("assetsToClaim: ", state.assetsToClaim);
         console.log("totalPendingWithdraw: ", vm.toString(state.totalPendingWithdraw));
-        console.log("pendingIncreaseCollateral: ", state.pendingIncreaseCollateral);
         console.log("pendingDecreaseCollateral: ", state.pendingDecreaseCollateral);
         console.log("pendingUtilization: ", state.pendingUtilization);
         console.log("pendingDeutilization: ", state.pendingDeutilization);
@@ -111,7 +111,7 @@ contract ProdTest is Test {
         console.log("deleverageNeeded: ", state.deleverageNeeded);
         console.log("decreaseCollateral: ", state.decreaseCollateral);
         console.log("rehedgeNeeded: ", state.rehedgeNeeded);
-        console.log("positionManagerKeepNeeded: ", state.positionManagerKeepNeeded);
+        console.log("hedgeManagerKeepNeeded: ", state.hedgeManagerKeepNeeded);
         console.log("processingRebalanceDown: ", state.processingRebalanceDown);
     }
 }

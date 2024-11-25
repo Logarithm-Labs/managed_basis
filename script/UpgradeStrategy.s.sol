@@ -33,7 +33,6 @@ contract UpgradeStrategyScript is Script {
         console.log("assetsToWithdraw: ", state.assetsToWithdraw);
         console.log("assetsToClaim: ", state.assetsToClaim);
         console.log("totalPendingWithdraw: ", vm.toString(state.totalPendingWithdraw));
-        console.log("pendingIncreaseCollateral: ", state.pendingIncreaseCollateral);
         console.log("pendingDecreaseCollateral: ", state.pendingDecreaseCollateral);
         console.log("pendingUtilization: ", state.pendingUtilization);
         console.log("pendingDeutilization: ", state.pendingDeutilization);
@@ -48,7 +47,7 @@ contract UpgradeStrategyScript is Script {
         console.log("deleverageNeeded: ", state.deleverageNeeded);
         console.log("decreaseCollateral: ", state.decreaseCollateral);
         console.log("rehedgeNeeded: ", state.rehedgeNeeded);
-        console.log("positionManagerKeepNeeded: ", state.positionManagerKeepNeeded);
+        console.log("hedgeManagerKeepNeeded: ", state.hedgeManagerKeepNeeded);
         console.log("processingRebalanceDown: ", state.processingRebalanceDown);
         console.log("");
     }

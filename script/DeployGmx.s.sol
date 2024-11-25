@@ -4,10 +4,10 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
-import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
+import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
-import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
+import {GasStation} from "src/gas-station/GasStation.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -116,22 +116,20 @@ contract DeployGmxScript is Script {
         console.log("GmxConfig deployed at", gmxConfigProxy);
 
         // deploy gas station
-        address gasStationImpl = address(new GmxGasStation());
+        address gasStationImpl = address(new GasStation());
         address gasStationProxy =
-            address(new ERC1967Proxy(gasStationImpl, abi.encodeWithSelector(GmxGasStation.initialize.selector, owner)));
-        require(
-            GmxGasStation(payable(gasStationProxy)).owner() == owner, "GmxGasStation owner is not the expected owner"
-        );
-        console.log("GmxGasStation deployed at", gasStationProxy);
+            address(new ERC1967Proxy(gasStationImpl, abi.encodeWithSelector(GasStation.initialize.selector, owner)));
+        require(GasStation(payable(gasStationProxy)).owner() == owner, "GasStation owner is not the expected owner");
+        console.log("GasStation deployed at", gasStationProxy);
 
         // deploy position manager
-        address positionManagerImpl = address(new GmxV2PositionManager());
-        address positionManagerBeacon = address(new UpgradeableBeacon(positionManagerImpl, owner));
+        address hedgeManagerImpl = address(new GmxV2PositionManager());
+        address hedgeManagerBeacon = address(new UpgradeableBeacon(hedgeManagerImpl, owner));
         require(
-            UpgradeableBeacon(positionManagerBeacon).owner() == owner,
+            UpgradeableBeacon(hedgeManagerBeacon).owner() == owner,
             "PositionManagerBeacon owner is not the expected owner"
         );
-        console.log("GmxPositionManagerBeacon deployed at", positionManagerBeacon);
+        console.log("GmxPositionManagerBeacon deployed at", hedgeManagerBeacon);
 
         address positionManagerProxy;
         // = address(
@@ -148,15 +146,15 @@ contract DeployGmxScript is Script {
         //     )
         // );
         // require(
-        //     GmxV2PositionManager(payable(positionManagerProxy)).owner() == owner,
+        //     GmxV2PositionManager(payable(hedgeManagerProxy)).owner() == owner,
         //     "GmxPositionManager owner is not the expected owner"
         // );
-        console.log("GmxPositionManager deployed at", positionManagerProxy);
+        console.log("GmxPositionManager deployed at", hedgeManagerProxy);
 
         // config
         LogarithmVault(vaultProxy).setStrategy(strategyProxy);
-        BasisStrategy(strategyProxy).setPositionManager(positionManagerProxy);
-        GmxGasStation(payable(gasStationProxy)).registerPositionManager(positionManagerProxy, true);
+        BasisStrategy(strategyProxy).setHedgeManager(hedgeManagerProxy);
+        GasStation(payable(gasStationProxy)).registerManager(hedgeManagerProxy, true);
         // BasisStrategy(strategyProxy).setForwarder(forwarder);
 
         (bool success,) = gasStationProxy.call{value: 0.0004 ether}("");

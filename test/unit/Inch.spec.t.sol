@@ -21,13 +21,24 @@ contract InchSpecTest is InchTest {
         _forkArbitrum(0);
     }
 
-    function test_inchSwap() public {
-        uint256 amount = 1000 * 1e6;
+    function test_inchSwap_woFees(uint256 amount) public {
+        amount = bound(amount, 1000, 50000 * 1e6);
         _writeTokenBalance(address(this), asset, amount);
         bytes memory data = _generateInchCallData(asset, product, amount, address(this));
         (uint256 amountOut, bool success) = InchAggregatorV6Logic.executeSwap(amount, asset, product, true, data);
-        assertTrue(success);
+        assertTrue(success, "swap failed");
         uint256 productBalance = IERC20(product).balanceOf(address(this));
-        assertEq(amountOut, productBalance);
+        assertEq(amountOut, productBalance, "product balance");
+    }
+
+    function test_inchSwap_withFees(uint256 amount) public {
+        amount = bound(amount, 1000, 50000 * 1e6);
+        uint256 amountWoFee = amount * 999 / 1000;
+        _writeTokenBalance(address(this), asset, amountWoFee);
+        bytes memory data = _generateInchCallData(asset, product, amount, address(this));
+        (uint256 amountOut, bool success) = InchAggregatorV6Logic.executeSwap(amountWoFee, asset, product, true, data);
+        assertTrue(success, "swap failed");
+        uint256 productBalance = IERC20(product).balanceOf(address(this));
+        assertEq(amountOut, productBalance, "product balance");
     }
 }

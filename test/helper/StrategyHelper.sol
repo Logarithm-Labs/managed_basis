@@ -6,8 +6,8 @@ import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {ISpotManager} from "src/spot/ISpotManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
 import {console2 as console} from "forge-std/console2.sol";
 
@@ -22,8 +22,7 @@ struct StrategyState {
     uint256 productValueInAsset;
     uint256 assetsToWithdraw;
     uint256 assetsToClaim;
-    int256 totalPendingWithdraw;
-    uint256 pendingIncreaseCollateral;
+    uint256 totalPendingWithdraw;
     uint256 pendingDecreaseCollateral;
     uint256 pendingUtilization;
     uint256 pendingDeutilization;
@@ -39,7 +38,7 @@ struct StrategyState {
     bool rebalanceDownNeeded;
     bool deleverageNeeded;
     bool rehedgeNeeded;
-    bool positionManagerKeepNeeded;
+    bool hedgeManagerKeepNeeded;
 }
 
 contract StrategyHelper {
@@ -58,13 +57,13 @@ contract StrategyHelper {
         bool deleverageNeeded;
         bool decreaseCollateral;
         int256 hedgeDeviationInTokens;
-        bool positionManagerNeedKeep;
+        bool hedgeManagerNeedKeep;
         if (performData.length > 0) {
             (
                 rebalanceDownNeeded,
                 deleverageNeeded,
                 hedgeDeviationInTokens,
-                positionManagerNeedKeep,
+                hedgeManagerNeedKeep,
                 decreaseCollateral,
                 rebalanceUpNeeded
             ) = decodePerformData(performData);
@@ -73,7 +72,7 @@ contract StrategyHelper {
         address asset = strategy.asset();
         address product = strategy.product();
         LogarithmOracle oracle = LogarithmOracle(strategy.oracle());
-        IPositionManager positionManager = IPositionManager(strategy.positionManager());
+        IHedgeManager hedgeManager = IHedgeManager(strategy.hedgeManager());
 
         state.strategyStatus = uint8(strategy.strategyStatus());
         state.totalSupply = vault.totalSupply();
@@ -81,28 +80,27 @@ contract StrategyHelper {
         state.utilizedAssets = strategy.utilizedAssets();
         state.idleAssets = vault.idleAssets();
         state.assetBalance = IERC20(asset).balanceOf(address(vault)) + IERC20(asset).balanceOf(address(strategy));
-        state.productBalance = IERC20(product).balanceOf(address(strategy));
+        state.productBalance = ISpotManager(strategy.spotManager()).exposure();
         state.productValueInAsset = oracle.convertTokenAmount(product, asset, state.productBalance);
         state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
         state.assetsToClaim = vault.assetsToClaim();
         state.totalPendingWithdraw = vault.totalPendingWithdraw();
-        state.pendingIncreaseCollateral = strategy.pendingIncreaseCollateral();
         state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
         state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
         state.processedWithdrawAssets = vault.processedWithdrawAssets();
-        state.positionNetBalance = positionManager.positionNetBalance();
-        state.positionLeverage = positionManager.currentLeverage();
-        state.positionSizeInTokens = positionManager.positionSizeInTokens();
+        state.positionNetBalance = hedgeManager.positionNetBalance();
+        state.positionLeverage = hedgeManager.currentLeverage();
+        state.positionSizeInTokens = hedgeManager.positionSizeInTokens();
         state.positionSizeInAsset = oracle.convertTokenAmount(product, asset, state.positionSizeInTokens);
-        state.processingRebalance = strategy.processingRebalance();
+        state.processingRebalance = strategy.processingRebalanceDown();
 
         state.upkeepNeeded = upkeepNeeded;
         state.rebalanceUpNeeded = rebalanceUpNeeded;
         state.rebalanceDownNeeded = rebalanceDownNeeded;
         state.deleverageNeeded = deleverageNeeded;
         state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
-        state.positionManagerKeepNeeded = positionManagerNeedKeep;
+        state.hedgeManagerKeepNeeded = hedgeManagerNeedKeep;
     }
 
     function logStrategyState(string memory stateName, StrategyState memory state) public pure {
@@ -120,7 +118,6 @@ contract StrategyHelper {
         console.log("assetsToWithdraw", state.assetsToWithdraw);
         console.log("assetsToClaim", state.assetsToClaim);
         console.log("totalPendingWithdraw", state.totalPendingWithdraw);
-        console.log("pendingIncreaseCollateral", state.pendingIncreaseCollateral);
         console.log("pendingDecreaseCollateral", state.pendingDecreaseCollateral);
         console.log("pendingUtilization", state.pendingUtilization);
         console.log("pendingDeutilization", state.pendingDeutilization);
@@ -135,7 +132,7 @@ contract StrategyHelper {
         console.log("rebalanceDownNeeded", state.rebalanceDownNeeded);
         console.log("deleverageNeeded", state.deleverageNeeded);
         console.log("rehedgeNeeded", state.rehedgeNeeded);
-        console.log("positionManagerNeedKeep", state.positionManagerKeepNeeded);
+        console.log("hedgeManagerNeedKeep", state.hedgeManagerKeepNeeded);
         console.log("processingRebalance", state.processingRebalance);
         console.log("");
     }
@@ -147,7 +144,7 @@ contract StrategyHelper {
             bool rebalanceDownNeeded,
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
-            bool positionManagerNeedKeep,
+            bool hedgeManagerNeedKeep,
             bool decreaseCollateral,
             bool rebalanceUpNeeded
         )
@@ -162,7 +159,7 @@ contract StrategyHelper {
             deltaCollateralToIncrease,
             clearProcessingRebalanceDown,
             hedgeDeviationInTokens,
-            positionManagerNeedKeep,
+            hedgeManagerNeedKeep,
             decreaseCollateral,
             deltaCollateralToDecrease
         ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, bool, uint256));

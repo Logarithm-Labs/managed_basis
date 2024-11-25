@@ -4,12 +4,13 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {SpotManager} from "src/spot/SpotManager.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
-import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
-import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
-import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
-import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
+import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
+import {GasStation} from "src/gas-station/GasStation.sol";
+import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
 
@@ -56,7 +57,7 @@ contract DeployScript is Script {
 
     // predeployed contracts
     LogarithmOracle public oracle = LogarithmOracle(0x26aD95BDdc540ac3Af223F3eB6aA07C13d7e08c9);
-    // GmxGasStation public gmxGasStation = GmxGasStation(payable(0xB758989eeBB4D5EF2da4FbD6E37f898dd1d49b2a));
+    // GasStation public gasStation = GasStation(payable(0xB758989eeBB4D5EF2da4FbD6E37f898dd1d49b2a));
 
     function run() public {
         vm.startBroadcast();
@@ -96,6 +97,9 @@ contract DeployScript is Script {
         address strategyBeacon = DeployHelper.deployBeacon(address(new BasisStrategy()), owner);
         console.log("Strategy Beacon deployed at", strategyBeacon);
 
+        address spotManagerBeacon = DeployHelper.deployBeacon(address(new SpotManager()), owner);
+        console.log("SpotManager Beacon deployed at", spotManagerBeacon);
+
         // deploy BasisStrategy Gmx
         address[] memory assetToProductSwapPath = new address[](3);
         assetToProductSwapPath[0] = ArbiAddresses.USDC;
@@ -112,24 +116,34 @@ contract DeployScript is Script {
             targetLeverage,
             minLeverage,
             maxLeverage,
-            safeMarginLeverage,
-            assetToProductSwapPath
+            safeMarginLeverage
         );
         BasisStrategy strategyGmx = DeployHelper.deployBasisStrategy(strategyDeployParams);
         console.log("Strategy GMX deployed at", address(strategyGmx));
+
+        // deploy Gmx spot manager
+        SpotManager gmxSpotManager =
+            DeployHelper.deploySpotManager(spotManagerBeacon, owner, address(strategyGmx), assetToProductSwapPath);
+        console.log("SpotManager GMX deployed at", address(gmxSpotManager));
+
         // deploy BasisStrategy Hl
         strategyDeployParams.vault = address(vaultHl);
         strategyDeployParams.operator = hlOperator;
         BasisStrategy strategyHl = DeployHelper.deployBasisStrategy(strategyDeployParams);
         console.log("Strategy HL deployed at", address(strategyHl));
 
+        // deploy Gmx spot manager
+        SpotManager hlSpotManager =
+            DeployHelper.deploySpotManager(spotManagerBeacon, owner, address(strategyHl), assetToProductSwapPath);
+        console.log("SpotManager HL deployed at", address(hlSpotManager));
+
         // deploy GmxConfig
         GmxConfig gmxConfig = DeployHelper.deployGmxConfig(owner);
         console.log("GmxConfig deployed at", address(gmxConfig));
 
-        // deploy GmxGasStation
-        GmxGasStation gmxGasStation = DeployHelper.deployGmxGasStation(owner);
-        console.log("GmxGasStation deployed at", address(gmxGasStation));
+        // deploy GasStation
+        GasStation gasStation = DeployHelper.deployGasStation(owner);
+        console.log("GasStation deployed at", address(gasStation));
 
         // deploy GmxPositionManagerBeacon
         address gmxPositionManagerBeacon = DeployHelper.deployBeacon(address(new GmxV2PositionManager()), owner);
@@ -141,7 +155,7 @@ contract DeployScript is Script {
                 gmxPositionManagerBeacon,
                 address(gmxConfig),
                 address(strategyGmx),
-                address(gmxGasStation),
+                address(gasStation),
                 ArbiAddresses.GMX_ETH_USDC_MARKET
             )
         );
@@ -176,7 +190,6 @@ contract DeployScript is Script {
 
         // deploy DataProvider
         DataProvider dataProvider = new DataProvider();
-        DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(strategyHl));
         console.log("DataProvider deployed at", address(dataProvider));
     }
 }

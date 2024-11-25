@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IStrategy} from "src/strategy/IStrategy.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
-interface IBasisStrategy {
-    function utilizedAssets() external view returns (uint256);
-    function afterAdjustPosition(IPositionManager.AdjustPositionPayload calldata responseParams) external;
+interface IBasisStrategy is IStrategy {
     function oracle() external view returns (address);
     function vault() external view returns (address);
     function asset() external view returns (address);
     function product() external view returns (address);
-    function positionManager() external view returns (address);
-    function stop() external;
-    function pause() external;
-    function unpause() external;
+    function spotManager() external view returns (address);
+    function hedgeManager() external view returns (address);
+    function assetsToWithdraw() external view returns (uint256);
     function processAssetsToWithdraw() external;
+    // callbacks
+    function afterAdjustPosition(IHedgeManager.AdjustPositionPayload calldata responseParams) external;
+    function spotBuyCallback(uint256 assetDelta, uint256 productDelta) external;
+    function spotSellCallback(uint256 assetDelta, uint256 productDelta) external;
 }

@@ -2,13 +2,20 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
-import {IPositionManager} from "src/position/IPositionManager.sol";
+import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
 contract MockStrategy {
     uint256 public sizeDeltaInTokens;
     uint256 public executionCost;
     uint256 public collateralDelta;
     address public oracle;
+
+    uint256 public buyAssetDelta;
+    uint256 public buyProductDelta;
+    uint256 public sellAssetDelta;
+    uint256 public sellProductDelta;
+
+    address public spotManager;
 
     constructor(address _oracle) {
         oracle = _oracle;
@@ -26,11 +33,25 @@ contract MockStrategy {
         return 3 ether;
     }
 
-    function afterAdjustPosition(IPositionManager.AdjustPositionPayload calldata params) external {
+    function afterAdjustPosition(IHedgeManager.AdjustPositionPayload calldata params) external {
         sizeDeltaInTokens = params.sizeDeltaInTokens;
         collateralDelta = params.collateralDeltaAmount;
         if (params.collateralDeltaAmount > 0 && !params.isIncrease) {
             IERC20(asset()).transferFrom(msg.sender, address(this), collateralDelta);
         }
+    }
+
+    function spotBuyCallback(uint256 assetDelta, uint256 productDelta) external {
+        buyAssetDelta = assetDelta;
+        buyProductDelta = productDelta;
+    }
+
+    function spotSellCallback(uint256 assetDelta, uint256 productDelta) external {
+        sellAssetDelta = assetDelta;
+        sellProductDelta = productDelta;
+    }
+
+    function setSpotManager(address _spotManager) external {
+        spotManager = _spotManager;
     }
 }

@@ -8,13 +8,15 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {SpotManager} from "src/spot/SpotManager.sol";
+import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
+import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
+import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
+import {GasStation} from "src/gas-station/GasStation.sol";
+import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 
-import {GmxConfig} from "src/position/gmx/GmxConfig.sol";
-import {GmxGasStation} from "src/position/gmx/GmxGasStation.sol";
-import {GmxV2PositionManager} from "src/position/gmx/GmxV2PositionManager.sol";
-
-import {OffChainConfig} from "src/position/offchain/OffChainConfig.sol";
-import {OffChainPositionManager} from "src/position/offchain/OffChainPositionManager.sol";
+import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
@@ -83,7 +85,6 @@ library DeployHelper {
         uint256 minLeverage;
         uint256 maxLeverage;
         uint256 safeMarginLeverage;
-        address[] assetToProductSwapPath;
     }
 
     function deployBasisStrategy(BasisStrategyDeployParams memory params) internal returns (BasisStrategy) {
@@ -100,8 +101,7 @@ library DeployHelper {
                     params.targetLeverage,
                     params.minLeverage,
                     params.maxLeverage,
-                    params.safeMarginLeverage,
-                    params.assetToProductSwapPath
+                    params.safeMarginLeverage
                 )
             )
         );
@@ -114,6 +114,20 @@ library DeployHelper {
         );
 
         return strategy;
+    }
+
+    function deploySpotManager(address beacon, address owner, address strategy, address[] memory assetToProductSwapPath)
+        internal
+        returns (SpotManager)
+    {
+        address spotManagerProxy = address(
+            new BeaconProxy(
+                beacon, abi.encodeWithSelector(SpotManager.initialize.selector, owner, strategy, assetToProductSwapPath)
+            )
+        );
+        SpotManager spotManager = SpotManager(spotManagerProxy);
+        BasisStrategy(strategy).setSpotManager(spotManagerProxy);
+        return spotManager;
     }
 
     function deployGmxConfig(address owner) internal returns (GmxConfig) {
@@ -131,11 +145,11 @@ library DeployHelper {
         return gmxConfig;
     }
 
-    function deployGmxGasStation(address owner) internal returns (GmxGasStation) {
-        address gasStationImpl = address(new GmxGasStation());
+    function deployGasStation(address owner) internal returns (GasStation) {
+        address gasStationImpl = address(new GasStation());
         address gasStationProxy =
-            address(new ERC1967Proxy(gasStationImpl, abi.encodeWithSelector(GmxGasStation.initialize.selector, owner)));
-        return GmxGasStation(payable(gasStationProxy));
+            address(new ERC1967Proxy(gasStationImpl, abi.encodeWithSelector(GasStation.initialize.selector, owner)));
+        return GasStation(payable(gasStationProxy));
     }
 
     struct GmxPositionManagerDeployParams {
@@ -206,8 +220,6 @@ library DeployHelper {
                     params.strategy,
                     params.agent,
                     params.oracle,
-                    params.product,
-                    params.asset,
                     params.isLong
                 )
             )
@@ -217,10 +229,10 @@ library DeployHelper {
         require(hlPositionManager.agent() == params.agent, "PositionManager agent is not the expected agent");
         require(hlPositionManager.oracle() == params.oracle, "PositionManager oracle is not the expected oracle");
 
-        BasisStrategy(params.strategy).setPositionManager(address(hlPositionManager));
+        BasisStrategy(params.strategy).setHedgeManager(address(hlPositionManager));
         require(
-            BasisStrategy(params.strategy).positionManager() == address(hlPositionManager),
-            "Strategy positionManager is not the expected positionManager"
+            BasisStrategy(params.strategy).hedgeManager() == address(hlPositionManager),
+            "Strategy hedgeManager is not the expected hedgeManager"
         );
         return hlPositionManager;
     }
@@ -231,5 +243,73 @@ library DeployHelper {
             address(new ERC1967Proxy(oracleImpl, abi.encodeWithSelector(LogarithmOracle.initialize.selector, owner)));
         LogarithmOracle oracle = LogarithmOracle(oracleProxy);
         return oracle;
+    }
+
+    struct DeployXSpotManagerParams {
+        address beacon;
+        address owner;
+        address strategy;
+        address gasStation;
+        address endpoint;
+        address stargate;
+        address messenger;
+        uint32 dstEid;
+    }
+
+    function deployXSpotManager(DeployXSpotManagerParams memory params) internal returns (XSpotManager) {
+        address xSpotManagerProxy = address(
+            new BeaconProxy(
+                params.beacon,
+                abi.encodeWithSelector(
+                    XSpotManager.initialize.selector,
+                    params.owner,
+                    params.strategy,
+                    params.gasStation,
+                    params.endpoint,
+                    params.stargate,
+                    params.messenger,
+                    params.dstEid
+                )
+            )
+        );
+        XSpotManager spotManager = XSpotManager(payable(xSpotManagerProxy));
+        BasisStrategy(params.strategy).setSpotManager(xSpotManagerProxy);
+        return spotManager;
+    }
+
+    struct DeployBrotherSwapperParams {
+        address beacon;
+        address owner;
+        address asset;
+        address product;
+        address endpoint;
+        address stargate;
+        address gasStation;
+        address messenger;
+        bytes32 dstSpotManager;
+        uint32 dstEid;
+        address[] assetToProductSwapPath;
+    }
+
+    function deployBrotherSwapper(DeployBrotherSwapperParams memory params) internal returns (BrotherSwapper) {
+        address swapperProxy = address(
+            new BeaconProxy(
+                params.beacon,
+                abi.encodeWithSelector(
+                    BrotherSwapper.initialize.selector,
+                    params.owner,
+                    params.asset,
+                    params.product,
+                    params.endpoint,
+                    params.stargate,
+                    params.messenger,
+                    params.gasStation,
+                    params.dstSpotManager,
+                    params.dstEid,
+                    params.assetToProductSwapPath
+                )
+            )
+        );
+        return BrotherSwapper(payable(swapperProxy));
     }
 }
