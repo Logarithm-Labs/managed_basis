@@ -87,6 +87,8 @@ contract XSpotManager is
     event BuyResGasLimitUpdated(address indexed account, uint128 indexed newBuyResGasLimit);
     event SellReqGasLimitUpdated(address indexed account, uint128 indexed newSellReqGasLimit);
     event SellResGasLimitUpdated(address indexed account, uint128 indexed newSellResGasLimit);
+    event BuyRequested(address indexed caller, SwapType indexed swapType, uint256 assetsSent, uint256 assetsReceived);
+    event SellRequested(address indexed caller, SwapType indexed swapType, uint256 indexed products);
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -242,9 +244,10 @@ contract XSpotManager is
         uint256 dust = amountLD - receipt.amountSentLD;
         if (dust > 0) {
             // refund dust
-            IERC20(asset()).safeTransfer(strategy(), dust);
+            IERC20(asset()).safeTransfer(_msgSender(), dust);
         }
         _getXSpotManagerStorage().pendingAssets = receipt.amountSentLD;
+        emit BuyRequested(_msgSender(), swapType, receipt.amountSentLD, receipt.amountReceivedLD);
     }
 
     /// @dev Requests Swapper to sell product.
@@ -254,8 +257,9 @@ contract XSpotManager is
     /// @param swapData The data used in swapping if necessary.
     /// Important: In case of 1Inch swapData, it must be derived on the dest chain.
     /// At this time, the amount decimals should be the one on the dest chain as well.
-    function sell(uint256 amountLD, SwapType swapType, bytes calldata swapData) external {
-        bytes memory payload = abi.encode(sellResGasLimit(), _toSD(amountLD), swapType, swapData);
+    function sell(uint256 amountLD, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
+        amountLD = _toSD(amountLD);
+        bytes memory payload = abi.encode(sellResGasLimit(), amountLD, swapType, swapData);
         bytes memory options =
             OptionsBuilder.newOptions().addExecutorLzReceiveOption(sellReqGasLimit(), Constants.MAX_SELL_RESPONSE_FEE);
         bytes32 receiver = swapper();
@@ -270,6 +274,7 @@ contract XSpotManager is
         (uint256 nativeFee,) = ILogarithmMessenger(_messenger).quote(address(this), params);
         IGasStation(gasStation()).withdraw(nativeFee);
         ILogarithmMessenger(_messenger).sendMessage{value: nativeFee}(params);
+        emit SellRequested(_msgSender(), swapType, amountLD);
     }
 
     function exposure() public view returns (uint256) {
