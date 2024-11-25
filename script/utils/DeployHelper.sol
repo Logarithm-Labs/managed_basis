@@ -284,6 +284,7 @@ library DeployHelper {
         address product;
         address endpoint;
         address stargate;
+        address gasStation;
         address messenger;
         bytes32 dstSpotManager;
         uint32 dstEid;
@@ -302,6 +303,7 @@ library DeployHelper {
                     params.endpoint,
                     params.stargate,
                     params.messenger,
+                    params.gasStation,
                     params.dstSpotManager,
                     params.dstEid,
                     params.assetToProductSwapPath

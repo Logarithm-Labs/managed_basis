@@ -230,10 +230,8 @@ contract XSpotManager is
         bytes memory _composeMsg = abi.encode(buyResGasLimit(), swapType, swapData);
         address _stargate = stargate();
         // prepare send
-        (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) = StargateUtils
-            .prepareTakeTaxi(
-            _stargate, dstEid(), amountLD, composer, buyReqGasLimit(), Constants.MAX_BUY_RESPONSE_FEE, _composeMsg
-        );
+        (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) =
+            StargateUtils.prepareTakeTaxi(_stargate, dstEid(), amountLD, composer, buyReqGasLimit(), _composeMsg);
         // withdraw fee
         IGasStation(gasStation()).withdraw(valueToSend);
         // send token
@@ -260,16 +258,10 @@ contract XSpotManager is
     function sell(uint256 amountLD, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
         amountLD = _toSD(amountLD);
         bytes memory payload = abi.encode(sellResGasLimit(), amountLD, swapType, swapData);
-        bytes memory options =
-            OptionsBuilder.newOptions().addExecutorLzReceiveOption(sellReqGasLimit(), Constants.MAX_SELL_RESPONSE_FEE);
+        bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(sellReqGasLimit(), 0);
         bytes32 receiver = swapper();
-        SendParams memory params = SendParams({
-            dstEid: dstEid(),
-            value: Constants.MAX_SELL_RESPONSE_FEE,
-            receiver: receiver,
-            payload: payload,
-            lzReceiveOption: options
-        });
+        SendParams memory params =
+            SendParams({dstEid: dstEid(), value: 0, receiver: receiver, payload: payload, lzReceiveOption: options});
         address _messenger = messenger();
         (uint256 nativeFee,) = ILogarithmMessenger(_messenger).quote(address(this), params);
         IGasStation(gasStation()).withdraw(nativeFee);

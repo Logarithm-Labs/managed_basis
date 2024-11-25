@@ -15,6 +15,7 @@ import {IStargate} from "src/externals/stargate/interfaces/IStargate.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
 import {ISpotManager} from "src/spot/ISpotManager.sol";
+import {IGasStation} from "src/gas-station/IGasStation.sol";
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
 import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
@@ -45,6 +46,7 @@ contract BrotherSwapper is
         address endpoint;
         address stargate;
         address messenger;
+        address gasStation;
         bytes32 dstSpotManager;
         uint32 dstEid;
         uint32 srcEid;
@@ -82,6 +84,7 @@ contract BrotherSwapper is
         address _endpoint,
         address _stargate,
         address _messenger,
+        address _gasStation,
         bytes32 _dstSpotManager,
         uint32 _dstEid,
         address[] calldata _assetToProductSwapPath
@@ -96,6 +99,7 @@ contract BrotherSwapper is
         $.stargate = _stargate;
         $.endpoint = _endpoint;
         $.messenger = _messenger;
+        $.gasStation = _gasStation;
         $.dstEid = _dstEid;
         $.srcEid = ILayerZeroEndpointV2(_endpoint).eid();
         $.dstSpotManager = _dstSpotManager;
@@ -143,6 +147,16 @@ contract BrotherSwapper is
         }
     }
 
+    /// @dev Refunds eth
+    receive() external payable {
+        address _gasStation = gasStation();
+        if (_msgSender() != _gasStation) {
+            // if caller is not the gas station, refund eth to the gasStation
+            (bool success,) = _gasStation.call{value: msg.value}("");
+            assert(success);
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                             CROSSCHAIN LOGIC
     //////////////////////////////////////////////////////////////*/
@@ -157,8 +171,6 @@ contract BrotherSwapper is
     ) external payable {
         require(_from == stargate(), "!stargate");
         require(_msgSender() == endpoint(), "!endpoint");
-        // validate msg.value
-        require(msg.value >= Constants.MAX_BUY_RESPONSE_FEE, "insufficient value");
         bytes32 sender = OFTComposeMsgCodec.composeFrom(_message);
         bytes32 _dstSpotManager = dstSpotManager();
         require(sender == _dstSpotManager, "!spotManager");
@@ -196,6 +208,7 @@ contract BrotherSwapper is
         });
         address _messenger = messenger();
         (uint256 nativeFee,) = ILogarithmMessenger(_messenger).quote(address(this), params);
+        IGasStation(gasStation()).withdraw(nativeFee);
         ILogarithmMessenger(_messenger).sendMessage{value: nativeFee}(params);
         emit BuyProcessed(swapType, assetsLD, productsLD);
     }
@@ -228,14 +241,9 @@ contract BrotherSwapper is
         bytes memory _composeMsg = abi.encode(productsSD);
         (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) = StargateUtils
             .prepareTakeTaxi(
-            _stargate,
-            dstEid(),
-            assetsLD,
-            AddressCast.bytes32ToAddress(_dstSpotManager),
-            sellResGasLimit,
-            0,
-            _composeMsg
+            _stargate, dstEid(), assetsLD, AddressCast.bytes32ToAddress(_dstSpotManager), sellResGasLimit, _composeMsg
         );
+        IGasStation(gasStation()).withdraw(valueToSend);
         IStargate(_stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
         emit SellProcessed(swapType, productsLD, assetsLD);
     }
@@ -289,6 +297,10 @@ contract BrotherSwapper is
         return _getBrotherSwapperStorage().messenger;
     }
 
+    function gasStation() public view returns (address) {
+        return _getBrotherSwapperStorage().gasStation;
+    }
+
     function dstSpotManager() public view returns (bytes32) {
         return _getBrotherSwapperStorage().dstSpotManager;
     }
@@ -312,6 +324,4 @@ contract BrotherSwapper is
     function productToAssetSwapPath() public view returns (address[] memory) {
         return _getBrotherSwapperStorage().productToAssetSwapPath;
     }
-
-    receive() external payable {}
 }

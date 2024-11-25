@@ -7,6 +7,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {ForkTest} from "test/base/ForkTest.sol";
 import {MockMessenger} from "test/mock/MockMessenger.sol";
 import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
+import {GasStation} from "src/gas-station/GasStation.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
@@ -23,17 +24,17 @@ contract BrotherSwapperTest is ForkTest {
     BrotherSwapper swapper;
     MockMessenger messenger;
     address beacon;
+    GasStation gasStation;
 
     function setUp() public {
         _forkArbitrum(0);
         messenger = new MockMessenger();
+        gasStation = DeployHelper.deployGasStation(owner);
         beacon = DeployHelper.deployBeacon(address(new BrotherSwapper()), owner);
-
         address[] memory pathWeth = new address[](3);
         pathWeth[0] = USDC;
         pathWeth[1] = UNISWAPV3_WETH_USDC;
         pathWeth[2] = WETH;
-
         swapper = DeployHelper.deployBrotherSwapper(
             DeployHelper.DeployBrotherSwapperParams({
                 beacon: beacon,
@@ -43,14 +44,15 @@ contract BrotherSwapperTest is ForkTest {
                 endpoint: ARBI_ENDPOINT,
                 stargate: ARBI_STARTGATE,
                 messenger: address(messenger),
+                gasStation: address(gasStation),
                 dstSpotManager: dstSpotManager,
                 dstEid: DST_EID,
                 assetToProductSwapPath: pathWeth
             })
         );
-
-        vm.deal(ARBI_ENDPOINT, 100 ether);
-        vm.deal(address(messenger), 100 ether);
+        vm.startPrank(owner);
+        gasStation.registerManager(address(swapper), true);
+        vm.deal(address(gasStation), 0.5 ether);
 
         assertTrue(swapper.isSwapPool(UNISWAPV3_WETH_USDC), "pool");
     }
@@ -64,7 +66,7 @@ contract BrotherSwapperTest is ForkTest {
             abi.encodePacked(dstSpotManager, abi.encode(gaslimit, ISpotManager.SwapType.MANUAL, swapData));
         bytes memory message = OFTComposeMsgCodec.encode(0, 1, assets, composeMsg);
         vm.startPrank(ARBI_ENDPOINT);
-        swapper.lzCompose{value: Constants.MAX_BUY_RESPONSE_FEE}(ARBI_STARTGATE, bytes32(0), message, address(0), "");
+        swapper.lzCompose(ARBI_STARTGATE, bytes32(0), message, address(0), "");
 
         assertEq(IERC20(USDC).balanceOf(address(swapper)), 0, "asset balance");
         assertGt(IERC20(WETH).balanceOf(address(swapper)), 0, "product balance");
@@ -79,7 +81,7 @@ contract BrotherSwapperTest is ForkTest {
         bytes memory swapData;
         bytes memory payload = abi.encode(uint128(200_000), productsSD, ISpotManager.SwapType.MANUAL, swapData);
         vm.startPrank(address(messenger));
-        swapper.receiveMessage{value: Constants.MAX_SELL_RESPONSE_FEE}(dstSpotManager, payload);
+        swapper.receiveMessage(dstSpotManager, payload);
         assertEq(IERC20(USDC).balanceOf(address(swapper)), 0, "asset balance");
         assertEq(IERC20(WETH).balanceOf(address(swapper)), 0, "product balance");
     }

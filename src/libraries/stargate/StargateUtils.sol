@@ -16,11 +16,10 @@ library StargateUtils {
         uint256 _amount,
         address _composer,
         uint128 _composeCallGasLimit,
-        uint128 _composeCallValue,
         bytes memory _composeMsg
     ) internal view returns (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) {
         bytes memory extraOptions = _composeMsg.length > 0
-            ? OptionsBuilder.newOptions().addExecutorLzComposeOption(0, _composeCallGasLimit, _composeCallValue)
+            ? OptionsBuilder.newOptions().addExecutorLzComposeOption(0, _composeCallGasLimit, 0)
             : bytes("");
 
         sendParam = SendParam({
