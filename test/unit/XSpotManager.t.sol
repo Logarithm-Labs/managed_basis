@@ -56,7 +56,6 @@ contract XSpotManagerTest is ForkTest {
         );
         spotManager.setSwapper(swapper);
         vm.deal(address(gasStation), 10000 ether);
-        gasStation.registerManager(address(spotManager), true);
         _writeTokenBalance(address(strategy), USDC, TEN_THOUSAND_USDC);
     }
 

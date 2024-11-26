@@ -32,7 +32,8 @@ contract BrotherSwapperTest is Test {
     GasStation gasStation;
 
     function setUp() public {
-        vm.createSelectFork("https://bsc-dataseed.binance.org");
+        vm.createSelectFork("bnb_smart_chain");
+        vm.startPrank(owner);
         messenger = new MockMessenger();
         gasStation = DeployHelper.deployGasStation(owner);
         beacon = DeployHelper.deployBeacon(address(new BrotherSwapper()), owner);
@@ -58,8 +59,7 @@ contract BrotherSwapperTest is Test {
                 assetToProductSwapPath: path
             })
         );
-        vm.startPrank(owner);
-        gasStation.registerManager(address(swapper), true);
+
         vm.deal(address(gasStation), 0.5 ether);
     }
 
