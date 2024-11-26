@@ -274,6 +274,7 @@ library DeployHelper {
         );
         XSpotManager spotManager = XSpotManager(payable(xSpotManagerProxy));
         BasisStrategy(params.strategy).setSpotManager(xSpotManagerProxy);
+        GasStation(payable(params.gasStation)).registerManager(xSpotManagerProxy, true);
         return spotManager;
     }
 
@@ -310,6 +311,7 @@ library DeployHelper {
                 )
             )
         );
+        GasStation(payable(params.gasStation)).registerManager(swapperProxy, true);
         return BrotherSwapper(payable(swapperProxy));
     }
 }

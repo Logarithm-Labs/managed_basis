@@ -290,7 +290,7 @@ contract BasisStrategy is
     function setHedgeManager(address newHedgeManager) external onlyOwner {
         if (hedgeManager() != newHedgeManager) {
             IHedgeManager manager = IHedgeManager(newHedgeManager);
-            require(manager.collateralToken() == asset() && manager.indexToken() == product());
+            require(manager.collateralToken() == asset());
             _getBasisStrategyStorage().hedgeManager = manager;
             emit HedgeManagerUpdated(_msgSender(), newHedgeManager);
         }

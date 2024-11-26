@@ -15,13 +15,14 @@ import {MockOracle} from "test/mock/MockOracle.sol";
 import {MockMessenger} from "test/mock/MockMessenger.sol";
 import {MockStrategy} from "test/mock/MockStrategy.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
+import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
 
 contract XSpotManagerTest is ForkTest {
     address owner = makeAddr("owner");
 
     bytes32 constant swapper = bytes32(abi.encodePacked("swapper"));
-    address constant ARBI_ENDPOINT = 0x1a44076050125825900e736c501f859c50fE728c;
-    address constant ARBI_STARTGATE = 0xe8CDF27AcD73a434D661C84887215F7598e7d0d3;
+    address constant ARBI_ENDPOINT = ArbiAddresses.LZ_V2_ENDPOINT;
+    address constant ARBI_STARTGATE = ArbiAddresses.STARGATE_POOL_USDC;
     uint32 constant DST_EID = 30101;
 
     uint256 TEN_THOUSAND_USDC = 10_000 * USDC_PRECISION;
@@ -55,7 +56,6 @@ contract XSpotManagerTest is ForkTest {
         );
         spotManager.setSwapper(swapper);
         vm.deal(address(gasStation), 10000 ether);
-        gasStation.registerManager(address(spotManager), true);
         _writeTokenBalance(address(strategy), USDC, TEN_THOUSAND_USDC);
     }
 
