@@ -8,11 +8,12 @@ library ArbiAddresses {
     address constant GMX_ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
     address constant GMX_READER = 0x5Ca84c34a381434786738735265b9f3FD814b824;
     address constant GMX_ETH_USDC_MARKET = 0x70d95587d40A2caf56bd97485aB3Eec10Bee6336;
+    address constant GMX_DOGE_USDC_MARKET = 0x6853EA96FF216fAb11D2d930CE3C508556A4bdc4;
     address constant GMX_KEEPER = 0xE47b36382DC50b90bCF6176Ddb159C4b9333A7AB;
 
     address constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
-    address constant DOGE = CHL_DOGE_USD_PRICE_FEE; // does not exist on arbitrum
+    address constant DOGE = CHL_DOGE_USD_PRICE_FEED; // does not exist on arbitrum
 
     address constant STARGATE_POOL_USDC = 0xe8CDF27AcD73a434D661C84887215F7598e7d0d3;
     address constant LZ_V2_ENDPOINT = 0x1a44076050125825900e736c501f859c50fE728c;
@@ -21,5 +22,7 @@ library ArbiAddresses {
 
     address constant CHL_USDC_USD_PRICE_FEED = 0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3;
     address constant CHL_ETH_USD_PRICE_FEED = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612;
-    address constant CHL_DOGE_USD_PRICE_FEE = 0x9A7FB1b3950837a8D9b40517626E11D4127C098C;
+    address constant CHL_DOGE_USD_PRICE_FEED = 0x9A7FB1b3950837a8D9b40517626E11D4127C098C;
+
+    address constant LOGARITHM_MESSENGER = 0x2075ec9937fc576Ed9909a7266be0FF8521aAaEa;
 }
