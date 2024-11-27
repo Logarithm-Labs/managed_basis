@@ -7,6 +7,46 @@ import "./Price.sol";
 // @title PositionPricingUtils
 // @dev Library for position pricing functions
 library PositionPricingUtils {
+    // @dev PositionFees struct to contain fee values
+    // @param feeReceiverAmount the amount for the fee receiver
+    // @param feeAmountForPool the amount of fees for the pool
+    // @param positionFeeAmountForPool the position fee amount for the pool
+    // @param positionFeeAmount the fee amount for increasing / decreasing the position
+    // @param borrowingFeeAmount the borrowing fee amount
+    // @param totalCostAmount the total cost amount in tokens
+    struct PositionFees {
+        PositionReferralFees referral;
+        PositionProFees pro;
+        PositionFundingFees funding;
+        PositionBorrowingFees borrowing;
+        PositionUiFees ui;
+        PositionLiquidationFees liquidation;
+        Price.Props collateralTokenPrice;
+        uint256 positionFeeFactor;
+        uint256 protocolFeeAmount;
+        uint256 positionFeeReceiverFactor;
+        uint256 feeReceiverAmount;
+        uint256 feeAmountForPool;
+        uint256 positionFeeAmountForPool;
+        uint256 positionFeeAmount;
+        uint256 totalCostAmountExcludingFunding;
+        uint256 totalCostAmount;
+        uint256 totalDiscountAmount;
+    }
+
+    struct PositionProFees {
+        uint256 traderTier;
+        uint256 traderDiscountFactor;
+        uint256 traderDiscountAmount;
+    }
+
+    struct PositionLiquidationFees {
+        uint256 liquidationFeeUsd;
+        uint256 liquidationFeeAmount;
+        uint256 liquidationFeeReceiverFactor;
+        uint256 liquidationFeeAmountForFeeReceiver;
+    }
+
     // @param affiliate the referral affiliate of the trader
     // @param traderDiscountAmount the discount amount for the trader
     // @param affiliateRewardAmount the affiliate reward amount
@@ -15,6 +55,8 @@ library PositionPricingUtils {
         address affiliate;
         address trader;
         uint256 totalRebateFactor;
+        uint256 affiliateRewardFactor;
+        uint256 adjustedAffiliateRewardFactor;
         uint256 traderDiscountFactor;
         uint256 totalRebateAmount;
         uint256 traderDiscountAmount;
@@ -28,7 +70,7 @@ library PositionPricingUtils {
         uint256 borrowingFeeAmountForFeeReceiver;
     }
 
-    // @param fundingFeeAmount the position's funding fee amount in collateral token
+    // @param fundingFeeAmount the position's funding fee amount
     // @param claimableLongTokenAmount the negative funding fee in long token that is claimable
     // @param claimableShortTokenAmount the negative funding fee in short token that is claimable
     // @param latestLongTokenFundingAmountPerSize the latest long token funding
@@ -48,29 +90,5 @@ library PositionPricingUtils {
         address uiFeeReceiver;
         uint256 uiFeeReceiverFactor;
         uint256 uiFeeAmount;
-    }
-
-    // @dev PositionFees struct to contain fee values
-    // @param feeReceiverAmount the amount for the fee receiver
-    // @param feeAmountForPool the amount of fees for the pool
-    // @param positionFeeAmountForPool the position fee amount for the pool
-    // @param positionFeeAmount the fee amount for increasing / decreasing the position
-    // @param borrowingFeeAmount the borrowing fee amount
-    // @param totalCostAmount the total cost amount in collateral tokens
-    struct PositionFees {
-        PositionReferralFees referral;
-        PositionFundingFees funding;
-        PositionBorrowingFees borrowing;
-        PositionUiFees ui;
-        Price.Props collateralTokenPrice;
-        uint256 positionFeeFactor;
-        uint256 protocolFeeAmount;
-        uint256 positionFeeReceiverFactor;
-        uint256 feeReceiverAmount;
-        uint256 feeAmountForPool;
-        uint256 positionFeeAmountForPool;
-        uint256 positionFeeAmount;
-        uint256 totalCostAmountExcludingFunding;
-        uint256 totalCostAmount;
     }
 }
