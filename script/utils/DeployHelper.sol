@@ -19,7 +19,6 @@ import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-import {DataProvider} from "src/DataProvider.sol";
 
 import {ArbiAddresses} from "./ArbiAddresses.sol";
 
