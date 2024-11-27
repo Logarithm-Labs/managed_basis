@@ -91,7 +91,7 @@ contract GmxV2PositionManagerTest is GmxV2Test {
             new BeaconProxy(
                 positionManagerBeacon,
                 abi.encodeWithSelector(
-                    GmxV2PositionManager.initialize.selector,
+                    GmxV2PositionManager.reinitialize.selector,
                     address(strategy),
                     address(config),
                     address(gmxGasStation),
