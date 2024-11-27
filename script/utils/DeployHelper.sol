@@ -164,26 +164,26 @@ library DeployHelper {
         internal
         returns (GmxV2PositionManager)
     {
-        // address gmxPositionManagerProxy = address(
-        //     new BeaconProxy(
-        //         params.beacon,
-        //         abi.encodeWithSelector(
-        //             GmxV2PositionManager.initialize.selector,
-        //             params.strategy,
-        //             params.config,
-        //             params.gasStation,
-        //             params.marketKey
-        //         )
-        //     )
-        // );
-        // GmxV2PositionManager positionManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
-        // BasisStrategy(params.strategy).setPositionManager(address(positionManager));
-        // require(
-        //     BasisStrategy(params.strategy).positionManager() == address(positionManager),
-        //     "Strategy positionManager is not the expected positionManager"
-        // );
-        // GmxGasStation(payable(params.gasStation)).registerPositionManager(address(positionManager), true);
-        // return positionManager;
+        address gmxPositionManagerProxy = address(
+            new BeaconProxy(
+                params.beacon,
+                abi.encodeWithSelector(
+                    GmxV2PositionManager.initialize.selector,
+                    params.strategy,
+                    params.config,
+                    params.gasStation,
+                    params.marketKey
+                )
+            )
+        );
+        GmxV2PositionManager positionManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
+        BasisStrategy(params.strategy).setHedgeManager(address(positionManager));
+        require(
+            BasisStrategy(params.strategy).hedgeManager() == address(positionManager),
+            "Strategy positionManager is not the expected positionManager"
+        );
+        GasStation(payable(params.gasStation)).registerManager(address(positionManager), true);
+        return positionManager;
     }
 
     function deployOffChainConfig(address owner) internal returns (OffChainConfig) {
