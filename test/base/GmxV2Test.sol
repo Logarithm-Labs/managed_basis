@@ -9,7 +9,7 @@ import {PositionMngerForkTest} from "./PositionMngerForkTest.sol";
 
 import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
-import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
+import {ReaderPositionUtils} from "src/externals/gmx-v2/libraries/ReaderPositionUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 import {GmxV2Lib} from "src/libraries/gmx/GmxV2Lib.sol";
@@ -127,7 +127,7 @@ contract GmxV2Test is PositionMngerForkTest {
         }
     }
 
-    function _getPositionInfo(address oracle) internal view returns (ReaderUtils.PositionInfo memory) {
+    function _getPositionInfo(address oracle) internal view returns (ReaderPositionUtils.PositionInfo memory) {
         return GmxV2Lib.getPositionInfo(
             GmxV2Lib.GmxParams({
                 market: Market.Props({

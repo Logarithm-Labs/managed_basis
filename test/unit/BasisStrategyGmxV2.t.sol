@@ -13,7 +13,7 @@ import {GmxV2Test} from "test/base/GmxV2Test.sol";
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IDataStore} from "src/externals/gmx-v2/interfaces/IDataStore.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
-import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
+import {ReaderPositionUtils} from "src/externals/gmx-v2/libraries/ReaderPositionUtils.sol";
 import {Market} from "src/externals/gmx-v2/libraries/Market.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 

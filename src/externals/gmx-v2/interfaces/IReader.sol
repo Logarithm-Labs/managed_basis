@@ -7,7 +7,7 @@ import "src/externals/gmx-v2/interfaces/IReferralStorage.sol";
 import "src/externals/gmx-v2/libraries/Market.sol";
 import "src/externals/gmx-v2/libraries/MarketUtils.sol";
 import "src/externals/gmx-v2/libraries/ReaderPricingUtils.sol";
-import "src/externals/gmx-v2/libraries/ReaderUtils.sol";
+import "src/externals/gmx-v2/libraries/ReaderPositionUtils.sol";
 
 interface IReader {
     function getMarket(address dataStore, address key) external view returns (Market.Props memory);
@@ -31,7 +31,7 @@ interface IReader {
         uint256 sizeDeltaUsd,
         address uiFeeReceiver,
         bool usePositionSizeAsSizeDeltaUsd
-    ) external view returns (ReaderUtils.PositionInfo memory);
+    ) external view returns (ReaderPositionUtils.PositionInfo memory);
 
     function getExecutionPrice(
         IDataStore dataStore,

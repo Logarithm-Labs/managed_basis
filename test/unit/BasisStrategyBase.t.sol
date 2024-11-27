@@ -11,7 +11,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
 import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
-import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
+import {ReaderPositionUtils} from "src/externals/gmx-v2/libraries/ReaderPositionUtils.sol";
 
 import {IPositionManager} from "src/position/IPositionManager.sol";
 
@@ -64,7 +64,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     MockPriorityProvider priorityProvider;
 
     function setUp() public {
-        _forkArbitrum(237215502);
+        _forkArbitrum(0);
         vm.startPrank(owner);
         // deploy oracle
         oracle = DeployHelper.deployLogarithmOracle(owner);
