@@ -22,13 +22,17 @@ contract DeployScript is Script {
 
     function run() public {
         vm.startBroadcast();
+        oracle.upgradeToAndCall(address(new LogarithmOracle()), "");
         // configure oracle for GMX index token
         address gmxIndexToken = gmxManager.indexToken();
         require(gmxIndexToken != address(0));
-        address[] memory assets = new address[](3);
-        address[] memory feeds = new address[](3);
+        address[] memory assets = new address[](1);
+        address[] memory feeds = new address[](1);
+        uint8[] memory decimals = new uint8[](1);
         assets[0] = gmxIndexToken;
         feeds[0] = ArbiAddresses.CHL_DOGE_USD_PRICE_FEED;
+        decimals[0] = uint8(8);
         oracle.setPriceFeeds(assets, feeds);
+        oracle.setAssetDecimals(assets, decimals);
     }
 }
