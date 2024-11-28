@@ -21,6 +21,8 @@ contract LogarithmOracleTest is ForkTest {
     address constant assetPriceFeed = ArbiAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
     address constant productPriceFeed = ArbiAddresses.CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
 
+    address constant gmxDogeVirtualAsset = 0xC4da4c24fd591125c3F47b340b6f4f76111883d8;
+
     function setUp() public {
         _forkArbitrum(0);
         vm.startPrank(owner);
@@ -52,5 +54,18 @@ contract LogarithmOracleTest is ForkTest {
         uint256 assetAmount = 10_000 * 1e6;
         uint256 productAmount = oracle.convertTokenAmount(asset, product, assetAmount);
         console.log("productAmount: ", productAmount);
+    }
+
+    function test_setPriceFeeds_decimals() public {
+        address[] memory assets = new address[](1);
+        address[] memory feeds = new address[](1);
+        uint8[] memory decimals = new uint8[](1);
+        assets[0] = gmxDogeVirtualAsset;
+        feeds[0] = assetPriceFeed;
+        decimals[0] = uint8(8);
+        oracle.setPriceFeeds(assets, feeds);
+        assertEq(oracle.assetDecimals(gmxDogeVirtualAsset), 0);
+        oracle.setAssetDecimals(assets, decimals);
+        assertEq(oracle.assetDecimals(gmxDogeVirtualAsset), 8);
     }
 }
