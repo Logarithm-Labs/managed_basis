@@ -18,6 +18,7 @@ import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 
+/// @dev should validate if oracle is set for all tokens including the gmx virtual index tokens.
 contract DeployScript is Script {
     // access control addresses
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
