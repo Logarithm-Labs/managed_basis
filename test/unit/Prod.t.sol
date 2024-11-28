@@ -13,22 +13,22 @@ import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
 import {ArbSysMock} from "test/mock/ArbSysMock.sol";
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
+import {Arbitrum} from "script/utils/ProtocolAddresses.sol";
 
 contract ProdTest is Test {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
     address constant operator = 0xe7263f18e278ea0550FaD97DDF898d134483EfC6;
     address constant sender = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
-    LogarithmVault gmxVault = LogarithmVault(0x4B57c9c6B58a454Def3Ad5AD0C15cF4974c818DE);
-    LogarithmVault hlVault = LogarithmVault(0x6ef9500175c6ABC3952F3DFB86dE96ACD151813B);
-    BasisStrategy constant gmxStrategy = BasisStrategy(0x166350f9b64ED99B2Aa92413A773aDCEDa1E1438);
-    BasisStrategy constant hlStrategy = BasisStrategy(0x6f4C89Ab99Cf5f8EA938D8899a8B1bC99a8656e4);
-    DataProvider constant dataProvider = DataProvider(0x8B92925a63B580A9bBD9e0D8D185aDea850160A8);
-    GmxV2PositionManager constant gmxPositionManager = GmxV2PositionManager(0x5903078b87795b85388102E0881d545C0f36E231);
-    OffChainPositionManager constant hlPositionManager =
-        OffChainPositionManager(0x9901A001995230C20ba227bD006CFE9D4B3bee34);
+    LogarithmVault gmxVault = LogarithmVault(Arbitrum.VAULT_GMX_USDC_DOGE);
+    LogarithmVault hlVault = LogarithmVault(Arbitrum.VAULT_HL_USDC_DOGE);
+    BasisStrategy constant gmxStrategy = BasisStrategy(Arbitrum.STRATEGY_GMX_USDC_DOGE);
+    BasisStrategy constant hlStrategy = BasisStrategy(Arbitrum.STRATEGY_HL_USDC_DOGE);
+    DataProvider constant dataProvider = DataProvider(Arbitrum.DATA_PROVIDER);
+    GmxV2PositionManager constant gmxPositionManager = GmxV2PositionManager(Arbitrum.GMX_POSITION_MANAGER_USDC_DOGE);
+    OffChainPositionManager constant hlPositionManager = OffChainPositionManager(Arbitrum.HL_POSITION_MANAGER_USDC_DOGE);
 
-    UpgradeableBeacon strategyBeacon = UpgradeableBeacon(0xA610080Bf93CC031492a29D09DBC8b234F291ea7);
-    UpgradeableBeacon gmxBeacon = UpgradeableBeacon(0x91544E205446E673aeC904c53BdB7cA9b892CD5E);
+    UpgradeableBeacon strategyBeacon = UpgradeableBeacon(Arbitrum.BEACON_STRATEGY);
+    UpgradeableBeacon gmxBeacon = UpgradeableBeacon(Arbitrum.BEACON_GMX_POSITION_MANAGER);
     address constant asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
 
     string constant rpcUrl = "https://arb-mainnet.g.alchemy.com/v2/PeyMa7ljzBjqJxkH6AnLfVH8zRWOtE1n";
@@ -80,9 +80,9 @@ contract ProdTest is Test {
 
     function test_getState() public {
         vm.createSelectFork(rpcUrl);
-        DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(gmxStrategy));
+        DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(hlStrategy));
         _logState(state);
-        console.log("paused", gmxStrategy.paused());
+        DataProvider.GmxPositionInfo memory info = dataProvider.getGmxPositionInfo(gmxStrategy.hedgeManager());
     }
 
     function _logState(DataProvider.StrategyState memory state) internal view {
@@ -114,5 +114,7 @@ contract ProdTest is Test {
         console.log("rehedgeNeeded: ", state.rehedgeNeeded);
         console.log("hedgeManagerKeepNeeded: ", state.hedgeManagerKeepNeeded);
         console.log("processingRebalanceDown: ", state.processingRebalanceDown);
+        console.log("strategyPaused: ", state.strategyPaused);
+        console.log("vaultPaused: ", state.vaultPaused);
     }
 }
