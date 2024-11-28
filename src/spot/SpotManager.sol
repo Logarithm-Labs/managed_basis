@@ -9,6 +9,7 @@ import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.so
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
+import {ISwapper} from "src/spot/ISwapper.sol";
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
 
@@ -27,7 +28,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 /// spot exposure relative to the short hedge position.
 ///
 /// @dev SpotManager is an upgradeable smart contract, deployed through the beacon proxy pattern.
-contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
+contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwapper {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -141,8 +142,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
                 revert Errors.SwapFailed();
             }
         } else if (swapType == SwapType.MANUAL) {
-            SpotManagerStorage storage $ = _getSpotManagerStorage();
-            amountOut = ManualSwapLogic.swap(amount, $.assetToProductSwapPath);
+            amountOut = ManualSwapLogic.swap(amount, assetToProductSwapPath());
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
@@ -166,8 +166,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
                 revert Errors.SwapFailed();
             }
         } else if (swapType == SwapType.MANUAL) {
-            SpotManagerStorage storage $ = _getSpotManagerStorage();
-            amountOut = ManualSwapLogic.swap(amount, $.productToAssetSwapPath);
+            amountOut = ManualSwapLogic.swap(amount, productToAssetSwapPath());
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
@@ -207,8 +206,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
     }
 
     function _verifyCallback() internal view {
-        SpotManagerStorage storage $ = _getSpotManagerStorage();
-        if (!$.isSwapPool[_msgSender()]) {
+        if (!isSwapPool(_msgSender())) {
             revert Errors.InvalidCallback();
         }
     }
@@ -235,5 +233,17 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager {
     /// @notice The product address.
     function product() public view returns (address) {
         return _getSpotManagerStorage().product;
+    }
+
+    function assetToProductSwapPath() public view returns (address[] memory) {
+        return _getSpotManagerStorage().assetToProductSwapPath;
+    }
+
+    function productToAssetSwapPath() public view returns (address[] memory) {
+        return _getSpotManagerStorage().productToAssetSwapPath;
+    }
+
+    function isSwapPool(address pool) public view returns (bool) {
+        return _getSpotManagerStorage().isSwapPool[pool];
     }
 }

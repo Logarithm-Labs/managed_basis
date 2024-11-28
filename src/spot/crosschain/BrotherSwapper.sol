@@ -15,6 +15,7 @@ import {IStargate} from "src/externals/stargate/interfaces/IStargate.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
 import {ISpotManager} from "src/spot/ISpotManager.sol";
+import {ISwapper} from "src/spot/ISwapper.sol";
 import {IGasStation} from "src/gas-station/IGasStation.sol";
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
@@ -32,7 +33,8 @@ contract BrotherSwapper is
     AssetValueTransmitter,
     OwnableUpgradeable,
     IMessageRecipient,
-    ILayerZeroComposer
+    ILayerZeroComposer,
+    ISwapper
 {
     using SafeERC20 for IERC20;
     using OptionsBuilder for bytes;
