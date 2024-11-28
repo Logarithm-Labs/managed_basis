@@ -29,13 +29,7 @@ abstract contract ForkTest is Test {
     address constant CHL_ETH_USD_PRICE_FEED = ArbiAddresses.CHL_ETH_USD_PRICE_FEED;
 
     function _writeTokenBalance(address who, address token, uint256 amt) internal {
-        if (token == USDC) {
-            vm.startPrank(USDC_WHALE);
-            IERC20(token).transfer(who, amt);
-            vm.stopPrank();
-        } else {
-            stdstore.target(token).sig(IERC20(token).balanceOf.selector).with_key(who).checked_write(amt);
-        }
+        stdstore.target(token).sig(IERC20(token).balanceOf.selector).with_key(who).checked_write(amt);
         assertEq(IERC20(token).balanceOf(who), amt);
     }
 
