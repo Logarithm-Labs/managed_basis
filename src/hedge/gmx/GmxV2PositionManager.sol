@@ -649,7 +649,8 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
                     acceptablePrice: params.isLong == params.isIncrease ? type(uint256).max : 0, // acceptable index token price
                     executionFee: executionFee,
                     callbackGasLimit: params.callbackGasLimit,
-                    minOutputAmount: 0
+                    minOutputAmount: 0,
+                    validFromTime: 0 // for market orders, this should be 0
                 }),
                 orderType: params.isIncrease ? Order.OrderType.MarketIncrease : Order.OrderType.MarketDecrease,
                 decreasePositionSwapType: Order.DecreasePositionSwapType.NoSwap,

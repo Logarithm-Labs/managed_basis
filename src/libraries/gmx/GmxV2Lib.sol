@@ -18,7 +18,7 @@ import {Position} from "src/externals/gmx-v2/libraries/Position.sol";
 import {Price} from "src/externals/gmx-v2/libraries/Price.sol";
 import {Precision} from "src/externals/gmx-v2/libraries/Precision.sol";
 import {ReaderPricingUtils} from "src/externals/gmx-v2/libraries/ReaderPricingUtils.sol";
-import {ReaderUtils} from "src/externals/gmx-v2/libraries/ReaderUtils.sol";
+import {ReaderPositionUtils} from "src/externals/gmx-v2/libraries/ReaderPositionUtils.sol";
 import {Keys} from "src/externals/gmx-v2/libraries/Keys.sol";
 
 import {IOracle} from "src/oracle/IOracle.sol";
@@ -86,12 +86,12 @@ library GmxV2Lib {
     /// 2.2 if the realized positive pnl is the same as the target
     ///     simply decrease the size
     /// 2.3 if the realized positive pnl is smaller than the target
-    ///     decrease collateral substracted by the pnl
+    ///     decrease collateral subtracted by the pnl
     /// 2.3.1 if the delta collateral to decrease is bigger than 9/10 of init collateral or minimum requirement
     ///       decrease the position size to fill the remainint amount with realized pnl and increase the size back
     /// 2.3.2 if the delta collateral to decrease is same or smaller
     ///       simply decrease init callateral
-    /// 3. if negative pnl, check the delta collateral to decrease with the remaining collateral substracted by the realized negative pnl
+    /// 3. if negative pnl, check the delta collateral to decrease with the remaining collateral subtracted by the realized negative pnl
     /// 3.1 if the delta collateral is equal or smaller so that the remaining is bigger than minium requirement
     ///     decrease the delta collateral
     /// 3.2 if the delta collateral is bigger
@@ -260,7 +260,7 @@ library GmxV2Lib {
     function getPositionInfo(GmxParams calldata params, address oracle, address referralStorage)
         external
         view
-        returns (ReaderUtils.PositionInfo memory)
+        returns (ReaderPositionUtils.PositionInfo memory)
     {
         MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
         return _getPositionInfo(params, prices, referralStorage);
@@ -274,7 +274,7 @@ library GmxV2Lib {
     {
         uint256 collateralTokenPrice = IOracle(oracle).getAssetPrice(params.collateralToken);
         MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
-        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
+        ReaderPositionUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
         nextFundingFeeUsd = positionInfo.fees.funding.fundingFeeAmount * collateralTokenPrice;
         nextBorrowingFeeUsd = positionInfo.fees.borrowing.borrowingFeeUsd;
         return (nextFundingFeeUsd, nextBorrowingFeeUsd);
@@ -339,7 +339,7 @@ library GmxV2Lib {
         address referralStorage
     ) public view returns (uint256, uint256) {
         MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
-        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
+        ReaderPositionUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
 
         if (positionInfo.position.addresses.collateralToken == address(0)) {
             // no position opened
@@ -394,7 +394,7 @@ library GmxV2Lib {
         returns (uint256 claimableLongTokenAmount, uint256 claimableShortTokenAmount)
     {
         MarketUtils.MarketPrices memory prices = _getPrices(oracle, params.market);
-        ReaderUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
+        ReaderPositionUtils.PositionInfo memory positionInfo = _getPositionInfo(params, prices, referralStorage);
         claimableLongTokenAmount = positionInfo.fees.funding.claimableLongTokenAmount;
         claimableShortTokenAmount = positionInfo.fees.funding.claimableShortTokenAmount;
         return (claimableLongTokenAmount, claimableShortTokenAmount);
@@ -536,8 +536,8 @@ library GmxV2Lib {
         GmxParams calldata params,
         MarketUtils.MarketPrices memory prices,
         address referralStorage
-    ) private view returns (ReaderUtils.PositionInfo memory) {
-        ReaderUtils.PositionInfo memory positionInfo;
+    ) private view returns (ReaderPositionUtils.PositionInfo memory) {
+        ReaderPositionUtils.PositionInfo memory positionInfo;
 
         bytes32 positionKey =
             _getPositionKey(params.account, params.market.marketToken, params.collateralToken, params.isLong);
