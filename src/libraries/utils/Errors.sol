@@ -42,6 +42,8 @@ library Errors {
     error PriceFeedNotUpdated(address token, uint256 timestamp, uint256 heartbeatDuration);
     /// @notice price feed was not configured
     error PriceFeedNotConfigured();
+    /// @notice Asset decimal was not set
+    error DecimalNotConfigured(address asset);
 
     /*//////////////////////////////////////////////////////////////
                                 STRATEGY
