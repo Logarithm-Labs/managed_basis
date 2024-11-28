@@ -8,7 +8,6 @@ import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManage
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-import {DataProvider} from "src/DataProvider.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";

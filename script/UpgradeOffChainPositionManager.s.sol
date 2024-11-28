@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {DataProvider} from "src/DataProvider.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 
 contract UpgradeOffChainPositionManagerScript is Script {

@@ -98,7 +98,6 @@ library Order {
     // @param minOutputAmount the minimum output amount for decrease orders and swaps
     // note that for decrease orders, multiple tokens could be received, for this reason, the
     // minOutputAmount value is treated as a USD value for validation in decrease orders
-    // @param updatedAtBlock the block at which the order was last updated
     struct Numbers {
         OrderType orderType;
         DecreasePositionSwapType decreasePositionSwapType;
@@ -109,8 +108,8 @@ library Order {
         uint256 executionFee;
         uint256 callbackGasLimit;
         uint256 minOutputAmount;
-        uint256 updatedAtBlock;
         uint256 updatedAtTime;
+        uint256 validFromTime;
     }
 
     // @param isLong whether the order is for a long or short

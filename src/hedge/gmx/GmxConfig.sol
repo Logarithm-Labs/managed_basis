@@ -56,7 +56,7 @@ contract GmxConfig is UUPSUpgradeable, OwnableUpgradeable {
     function initialize(address owner_, address exchangeRouter_, address reader_) external initializer {
         __Ownable_init(owner_);
         _updateAddresses(exchangeRouter_, reader_);
-        _setCallbackGasLimit(3_000_000);
+        _setCallbackGasLimit(4_000_000);
         _setReferralCode(bytes32(0));
         _setMaxClaimableFundingShare(0.01 ether); // 1%
         _setRealizedPnlDiffFactor(0.1 ether); // 10%

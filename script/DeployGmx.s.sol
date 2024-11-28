@@ -9,7 +9,6 @@ import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {GasStation} from "src/gas-station/GasStation.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-import {DataProvider} from "src/DataProvider.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
