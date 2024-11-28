@@ -26,8 +26,10 @@ contract ProdTest is Test {
     GmxV2PositionManager constant gmxPositionManager = GmxV2PositionManager(0x5903078b87795b85388102E0881d545C0f36E231);
     OffChainPositionManager constant hlPositionManager =
         OffChainPositionManager(0x9901A001995230C20ba227bD006CFE9D4B3bee34);
+    GmxConfig gmxConfig = GmxConfig(0x611169E7e9C70F23E1F9C067Ee23A3B78F3c34BF);
 
     UpgradeableBeacon strategyBeacon = UpgradeableBeacon(0xA610080Bf93CC031492a29D09DBC8b234F291ea7);
+    UpgradeableBeacon gmxBeacon = UpgradeableBeacon(0x91544E205446E673aeC904c53BdB7cA9b892CD5E);
     address constant asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
 
     string constant rpcUrl = "https://arb-mainnet.g.alchemy.com/v2/PeyMa7ljzBjqJxkH6AnLfVH8zRWOtE1n";
