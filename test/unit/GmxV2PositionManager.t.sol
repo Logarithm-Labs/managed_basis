@@ -89,19 +89,19 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         // deploy positionMnager beacon proxy
         address gmxPositionManagerProxy = address(
             new BeaconProxy(
-                positionManagerBeacon,
+                hedgeManagerBeacon,
                 abi.encodeWithSelector(
-                    GmxV2PositionManager.reinitialize.selector,
+                    GmxV2PositionManager.initialize.selector,
                     address(strategy),
                     address(config),
-                    address(gmxGasStation),
+                    address(gasStation),
                     GMX_ETH_USDC_MARKET
                 )
             )
         );
         hedgeManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
         vm.label(address(hedgeManager), "hedgeManager");
-        gmxGasStation.registerManager(address(hedgeManager), true);
+        gasStation.registerManager(address(hedgeManager), true);
         vm.stopPrank();
     }
 
@@ -510,6 +510,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         uint256 strategyBalanceBefore = IERC20(USDC).balanceOf(address(strategy));
         assertTrue(positionInfoBefore.pnlAfterPriceImpactUsd < 0);
         vm.startPrank(address(strategy));
+        hedgeManager.adjustPosition(
+            IHedgeManager.AdjustPositionPayload({
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
@@ -1006,10 +1008,6 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
         assertEq(hedgeManager.positionNetBalance(), collateralDelta);
-    }
-
-    function test_getPosition() public afterHavingPosition {
-        console.log("sizeInUsd", _getPositionInfo(address(oracle)).position.numbers.sizeInUsd);
     }
 
     function test_getPosition() public afterHavingPosition {
