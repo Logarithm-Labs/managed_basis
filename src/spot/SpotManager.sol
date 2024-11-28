@@ -216,8 +216,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
     }
 
     function _verifyCallback() internal view {
-        SpotManagerStorage storage $ = _getSpotManagerStorage();
-        if (!$.isSwapPool[_msgSender()]) {
+        if (!isSwapPool(_msgSender())) {
             revert Errors.InvalidCallback();
         }
     }
@@ -255,6 +254,6 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
     }
 
     function isSwapPool(address pool) public view returns (bool) {
-        return _getSpotManagerStorage().isSwapPool[pool]
+        return _getSpotManagerStorage().isSwapPool[pool];
     }
 }
