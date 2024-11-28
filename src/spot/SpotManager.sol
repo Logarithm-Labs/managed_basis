@@ -152,8 +152,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
                 revert Errors.SwapFailed();
             }
         } else if (swapType == SwapType.MANUAL) {
-            SpotManagerStorage storage $ = _getSpotManagerStorage();
-            amountOut = ManualSwapLogic.swap(amount, $.assetToProductSwapPath);
+            amountOut = ManualSwapLogic.swap(amount, assetToProductSwapPath());
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
@@ -177,8 +176,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
                 revert Errors.SwapFailed();
             }
         } else if (swapType == SwapType.MANUAL) {
-            SpotManagerStorage storage $ = _getSpotManagerStorage();
-            amountOut = ManualSwapLogic.swap(amount, $.productToAssetSwapPath);
+            amountOut = ManualSwapLogic.swap(amount, productToAssetSwapPath());
         } else {
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
@@ -254,5 +252,9 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
 
     function productToAssetSwapPath() public view returns (address[] memory) {
         return _getSpotManagerStorage().productToAssetSwapPath;
+    }
+
+    function isSwapPool(address pool) public view returns (bool) {
+        return _getSpotManagerStorage().isSwapPool[pool]
     }
 }
