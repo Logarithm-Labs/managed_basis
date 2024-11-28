@@ -61,13 +61,14 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
         }
         for (uint256 i; i < len;) {
             address asset = assets[i];
-            _getLogarithmOracleStorage().priceFeeds[asset] = IPriceFeed(feeds[i]);
             // initiate asset decimals if it exists on this chain
-            try IERC20Metadata(asset).decimals() returns (uint8 decimal) {
-                _setAssetDecimal(asset, decimal);
-            } catch {
+            (bool result, bytes memory data) = asset.call(abi.encodeWithSelector(IERC20Metadata.decimals.selector));
+            if (result && data.length == 32) {
+                _setAssetDecimal(asset, abi.decode(data, (uint8)));
+            } else {
                 emit AssetDecimalNotInitiated(asset);
             }
+            _getLogarithmOracleStorage().priceFeeds[asset] = IPriceFeed(feeds[i]);
             emit PriceFeedUpdated(assets[i], feeds[i]);
             unchecked {
                 ++i;
