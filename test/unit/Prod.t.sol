@@ -80,7 +80,7 @@ contract ProdTest is Test {
 
     function test_getState() public {
         vm.createSelectFork(rpcUrl);
-        DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(hlStrategy));
+        DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(gmxStrategy));
         _logState(state);
         DataProvider.GmxPositionInfo memory info = dataProvider.getGmxPositionInfo(gmxStrategy.hedgeManager());
     }
