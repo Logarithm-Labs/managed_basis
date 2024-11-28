@@ -40,6 +40,7 @@ contract ManagedVaultTest is ForkTest {
     ManagedVaultSpec vault;
 
     function setUp() public {
+        _forkArbitrum(0);
         vm.startPrank(owner);
         vault = new ManagedVaultSpec();
         vault.initialize(owner, USDC, "tt", "tt");
@@ -49,8 +50,7 @@ contract ManagedVaultTest is ForkTest {
         vault.setFeeInfos(recipient, 0.05 ether, 0.2 ether, 0.07 ether);
 
         // top up user1
-        vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(user, 10_000_000 * 1e6);
+        _writeTokenBalance(user, USDC, 100_000 * 1e6);
     }
 
     function _mint(address _user, uint256 _shares) internal {
