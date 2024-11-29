@@ -42,7 +42,6 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
     event PriceFeedUpdated(address asset, address feed);
     event HeartBeatUpdated(address asset, uint256 heartbeatDuration);
     event AssetDecimalInitiated(address asset, uint8 decimals);
-    event AssetDecimalNotInitiated(address asset);
 
     function initialize(address owner_) external initializer {
         __Ownable_init(owner_);
@@ -60,15 +59,7 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
             revert Errors.IncosistentParamsLength();
         }
         for (uint256 i; i < len;) {
-            address asset = assets[i];
-            // initiate asset decimals if it exists on this chain
-            (bool result, bytes memory data) = asset.call(abi.encodeWithSelector(IERC20Metadata.decimals.selector));
-            if (result && data.length == 32) {
-                _setAssetDecimal(asset, abi.decode(data, (uint8)));
-            } else {
-                emit AssetDecimalNotInitiated(asset);
-            }
-            _getLogarithmOracleStorage().priceFeeds[asset] = IPriceFeed(feeds[i]);
+            _getLogarithmOracleStorage().priceFeeds[assets[i]] = IPriceFeed(feeds[i]);
             emit PriceFeedUpdated(assets[i], feeds[i]);
             unchecked {
                 ++i;
@@ -146,7 +137,13 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
         // btw, token decimal + feed decimal could be more than 30
         // so we use adjustedPrice = price * precision / 10^30
         // then precision = 10^(60 - token decimal - feed decimal)
-        uint256 _decimals = uint256(assetDecimals(asset));
+        uint256 _decimals;
+        (bool result, bytes memory data) = asset.staticcall(abi.encodeWithSelector(IERC20Metadata.decimals.selector));
+        if (result && data.length == 32) {
+            _decimals = uint256(abi.decode(data, (uint8)));
+        } else {
+            _decimals = assetDecimals(asset);
+        }
         if (_decimals == 0) {
             revert Errors.DecimalNotConfigured(asset);
         }

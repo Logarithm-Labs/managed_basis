@@ -29,17 +29,46 @@ contract LogarithmOracleTest is ForkTest {
         oracle = DeployHelper.deployLogarithmOracle(owner);
 
         // set oracle price feed
-        address[] memory assets = new address[](2);
-        address[] memory feeds = new address[](2);
-        uint256[] memory heartbeats = new uint256[](2);
+        address[] memory assets = new address[](3);
+        address[] memory feeds = new address[](3);
+        uint256[] memory heartbeats = new uint256[](3);
         assets[0] = asset;
         assets[1] = product;
+        assets[2] = gmxDogeVirtualAsset;
         feeds[0] = assetPriceFeed;
         feeds[1] = productPriceFeed;
+        feeds[2] = productPriceFeed;
         heartbeats[0] = 24 * 3600;
         heartbeats[1] = 24 * 3600;
+        heartbeats[2] = 24 * 3600;
         oracle.setPriceFeeds(assets, feeds);
         oracle.setHeartbeats(feeds, heartbeats);
+        _mockChainlinkPriceFeed(assetPriceFeed);
+        _mockChainlinkPriceFeed(productPriceFeed);
+        vm.stopPrank();
+    }
+
+    function _forkArbitrum() internal {
+        uint256 arbitrumFork = vm.createFork(vm.rpcUrl("arbitrum_one"));
+        vm.selectFork(arbitrumFork);
+        vm.rollFork(213168025);
+
+        // L2 contracts explicitly reference 0x64 for the ArbSys precompile
+        // and 0x6C for the ArbGasInfo precompile
+        // We'll replace it with the mock
+        address _arbsys = address(new ArbSysMock());
+        address _arbgasinfo = address(new ArbGasInfoMock());
+        vm.etch(address(100), _arbsys.code);
+        vm.etch(address(108), _arbgasinfo.code);
+    }
+
+    function _mockChainlinkPriceFeed(address priceFeed) internal {
+        (uint80 roundID, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound) =
+            IPriceFeed(priceFeed).latestRoundData();
+        uint8 decimals = IPriceFeed(priceFeed).decimals();
+        address mockPriceFeed = address(new MockPriceFeed());
+        vm.etch(priceFeed, mockPriceFeed.code);
+        MockPriceFeed(priceFeed).setOracleData(roundID, answer, startedAt, updatedAt, answeredInRound, decimals);
     }
 
     function test_getAssetPrice() public view {
@@ -56,16 +85,20 @@ contract LogarithmOracleTest is ForkTest {
         console.log("productAmount: ", productAmount);
     }
 
-    function test_setPriceFeeds_decimals() public {
+    function test_getAssetPrice_withEOA() public {
         address[] memory assets = new address[](1);
-        address[] memory feeds = new address[](1);
         uint8[] memory decimals = new uint8[](1);
         assets[0] = gmxDogeVirtualAsset;
-        feeds[0] = assetPriceFeed;
-        decimals[0] = uint8(8);
-        oracle.setPriceFeeds(assets, feeds);
-        assertEq(oracle.assetDecimals(gmxDogeVirtualAsset), 0);
+        decimals[0] = 8;
+        vm.startPrank(owner);
         oracle.setAssetDecimals(assets, decimals);
         assertEq(oracle.assetDecimals(gmxDogeVirtualAsset), 8);
+        uint256 productPrice = oracle.getAssetPrice(gmxDogeVirtualAsset);
+        console.log("productPrice: ", productPrice);
+    }
+
+    function test_getAssetPrice_revert() public {
+        vm.expectRevert();
+        oracle.getAssetPrice(gmxDogeVirtualAsset);
     }
 }
