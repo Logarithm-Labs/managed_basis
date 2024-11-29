@@ -31,19 +31,23 @@ contract LogarithmOracleTest is Test {
         oracle = LogarithmOracle(oracleProxy);
 
         // set oracle price feed
-        address[] memory assets = new address[](2);
-        address[] memory feeds = new address[](2);
-        uint256[] memory heartbeats = new uint256[](2);
+        address[] memory assets = new address[](3);
+        address[] memory feeds = new address[](3);
+        uint256[] memory heartbeats = new uint256[](3);
         assets[0] = asset;
         assets[1] = product;
+        assets[2] = gmxDogeVirtualAsset;
         feeds[0] = assetPriceFeed;
         feeds[1] = productPriceFeed;
+        feeds[2] = productPriceFeed;
         heartbeats[0] = 24 * 3600;
         heartbeats[1] = 24 * 3600;
+        heartbeats[2] = 24 * 3600;
         oracle.setPriceFeeds(assets, feeds);
         oracle.setHeartbeats(feeds, heartbeats);
         _mockChainlinkPriceFeed(assetPriceFeed);
         _mockChainlinkPriceFeed(productPriceFeed);
+        vm.stopPrank();
     }
 
     function _forkArbitrum() internal {
@@ -83,16 +87,20 @@ contract LogarithmOracleTest is Test {
         console.log("productAmount: ", productAmount);
     }
 
-    function test_setPriceFeeds_decimals() public {
+    function test_getAssetPrice_withEOA() public {
         address[] memory assets = new address[](1);
-        address[] memory feeds = new address[](1);
         uint8[] memory decimals = new uint8[](1);
         assets[0] = gmxDogeVirtualAsset;
-        feeds[0] = assetPriceFeed;
-        decimals[0] = uint8(8);
-        oracle.setPriceFeeds(assets, feeds);
-        assertEq(oracle.assetDecimals(gmxDogeVirtualAsset), 0);
+        decimals[0] = 8;
+        vm.startPrank(owner);
         oracle.setAssetDecimals(assets, decimals);
         assertEq(oracle.assetDecimals(gmxDogeVirtualAsset), 8);
+        uint256 productPrice = oracle.getAssetPrice(gmxDogeVirtualAsset);
+        console.log("productPrice: ", productPrice);
+    }
+
+    function test_getAssetPrice_revert() public {
+        vm.expectRevert();
+        oracle.getAssetPrice(gmxDogeVirtualAsset);
     }
 }
