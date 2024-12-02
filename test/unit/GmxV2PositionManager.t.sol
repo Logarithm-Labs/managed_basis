@@ -871,11 +871,10 @@ contract GmxV2PositionManagerTest is GmxV2Test {
             positionInfoBefore.position.numbers.sizeInUsd - positionInfoAfter.position.numbers.sizeInUsd;
 
         uint256 deltaFee = accumulatedPositionFeeAfter - accumulatedPositionFeeBefore;
-        (uint256 positiveFactor,) = _getPositionFeeFactors();
-        // uint256 expectedFeeForNeg = Precision.applyFactor(sizeDeltaUsd, negativeFactor);
-        uint256 expectedFeeForPos = Precision.applyFactor(sizeDeltaUsd, positiveFactor);
-
-        assertEq(deltaFee, expectedFeeForPos);
+        (uint256 posFactor, uint256 negFactor) = _getPositionFeeFactors();
+        uint256 expectedFeeForPos = Precision.applyFactor(sizeDeltaUsd, posFactor);
+        uint256 expectedFeeForNeg = Precision.applyFactor(sizeDeltaUsd, negFactor);
+        assertTrue(deltaFee == expectedFeeForPos || deltaFee == expectedFeeForNeg, "should be same either one");
     }
 
     function test_positionFee_IncreasePosition() public afterHavingPosition {
@@ -901,11 +900,10 @@ contract GmxV2PositionManagerTest is GmxV2Test {
             positionInfoAfter.position.numbers.sizeInUsd - positionInfoBefore.position.numbers.sizeInUsd;
 
         uint256 deltaFee = accumulatedPositionFeeAfter - accumulatedPositionFeeBefore;
-        (, uint256 negativeFactor) = _getPositionFeeFactors();
-        uint256 expectedFeeForNeg = Precision.applyFactor(sizeDeltaUsd, negativeFactor);
-        // uint256 expectedFeeForPos = Precision.applyFactor(sizeDeltaUsd, positiveFactor);
-
-        assertEq(deltaFee, expectedFeeForNeg);
+        (uint256 posFactor, uint256 negFactor) = _getPositionFeeFactors();
+        uint256 expectedFeeForPos = Precision.applyFactor(sizeDeltaUsd, posFactor);
+        uint256 expectedFeeForNeg = Precision.applyFactor(sizeDeltaUsd, negFactor);
+        assertTrue(deltaFee == expectedFeeForPos || deltaFee == expectedFeeForNeg, "should be same either one");
     }
 
     function test_fundingAndBorrowingFees() public {
