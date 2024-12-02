@@ -48,29 +48,6 @@ contract LogarithmOracleTest is ForkTest {
         vm.stopPrank();
     }
 
-    function _forkArbitrum() internal {
-        uint256 arbitrumFork = vm.createFork(vm.rpcUrl("arbitrum_one"));
-        vm.selectFork(arbitrumFork);
-        vm.rollFork(213168025);
-
-        // L2 contracts explicitly reference 0x64 for the ArbSys precompile
-        // and 0x6C for the ArbGasInfo precompile
-        // We'll replace it with the mock
-        address _arbsys = address(new ArbSysMock());
-        address _arbgasinfo = address(new ArbGasInfoMock());
-        vm.etch(address(100), _arbsys.code);
-        vm.etch(address(108), _arbgasinfo.code);
-    }
-
-    function _mockChainlinkPriceFeed(address priceFeed) internal {
-        (uint80 roundID, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound) =
-            IPriceFeed(priceFeed).latestRoundData();
-        uint8 decimals = IPriceFeed(priceFeed).decimals();
-        address mockPriceFeed = address(new MockPriceFeed());
-        vm.etch(priceFeed, mockPriceFeed.code);
-        MockPriceFeed(priceFeed).setOracleData(roundID, answer, startedAt, updatedAt, answeredInRound, decimals);
-    }
-
     function test_getAssetPrice() public view {
         uint256 assetPrice = oracle.getAssetPrice(asset);
         console.log("assetPrice: ", assetPrice);
