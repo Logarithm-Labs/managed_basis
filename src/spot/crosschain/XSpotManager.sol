@@ -140,10 +140,11 @@ contract XSpotManager is
         __AssetValueTransmitter_init(_product);
         __Ownable_init(_owner);
 
-        _setBuyReqGasLimit(300_000);
-        _setBuyResGasLimit(400_000);
-        _setSellReqGasLimit(300_000);
-        _setSellResGasLimit(400_000);
+        // set big enough initially
+        _setBuyReqGasLimit(4_000_000);
+        _setBuyResGasLimit(4_000_000);
+        _setSellReqGasLimit(4_000_000);
+        _setSellResGasLimit(4_000_000);
 
         // approve strategy to max amount
         IERC20(_asset).approve(_strategy, type(uint256).max);

@@ -131,6 +131,10 @@ library GmxV2Lib {
                 params, result.sizeDeltaUsdToDecrease, executionPriceResultForDecrease.priceImpactUsd
             );
             result.executionPrice = executionPriceResultForDecrease.executionPrice;
+            // subtract position fee from realized pnl
+            uint256 totalFee =
+                _getPositionFeeUsd(params, position.numbers.sizeInUsd, executionPriceResultForDecrease.priceImpactUsd);
+            totalPositionPnlUsd -= totalFee.toInt256();
             int256 realizedPnlUsd =
                 Precision.mulDiv(totalPositionPnlUsd, sizeDeltaInTokens, position.numbers.sizeInTokens);
             int256 realizedPnlAmount = realizedPnlUsd / collateralTokenPrice.toInt256();
