@@ -22,7 +22,7 @@ contract ManualSwapTest is ForkTest {
         _writeTokenBalance(address(this), asset, amount);
         address[] memory swapPath = new address[](3);
         swapPath[0] = asset;
-        swapPath[1] = UNISWAPV3_WETH_USDC;
+        swapPath[1] = UNI_V3_POOL_WETH_USDC;
         swapPath[2] = product;
         uint256 amountOut = ManualSwapLogic.swap(amount, swapPath);
         uint256 productBalance = IERC20(product).balanceOf(address(this));
@@ -34,7 +34,7 @@ contract ManualSwapTest is ForkTest {
         _writeTokenBalance(address(this), product, amount);
         address[] memory swapPath = new address[](3);
         swapPath[0] = product;
-        swapPath[1] = UNISWAPV3_WETH_USDC;
+        swapPath[1] = UNI_V3_POOL_WETH_USDC;
         swapPath[2] = asset;
         uint256 amountOut = ManualSwapLogic.swap(amount, swapPath);
         uint256 productBalance = IERC20(asset).balanceOf(address(this));

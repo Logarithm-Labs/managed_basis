@@ -142,10 +142,10 @@ contract BasisStrategy is
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Emitted when assets are utilized.
-    event Utilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
+    event Utilize(address indexed caller, uint256 assetDelta, uint256 productDelta, uint256 timestamp);
 
     /// @dev Emitted when assets are deutilized.
-    event Deutilize(address indexed caller, uint256 productDelta, uint256 assetDelta);
+    event Deutilize(address indexed caller, uint256 productDelta, uint256 assetDelta, uint256 timestamp);
 
     /// @dev Emitted when the hedge position gets adjusted.
     event PositionAdjusted(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease);
@@ -527,7 +527,10 @@ contract BasisStrategy is
 
     /// @dev Called after product is bought.
     /// Increases the hedge position size if the swap operation is for utilizing.
-    function spotBuyCallback(uint256 assetDelta, uint256 productDelta) external authCaller(spotManager()) {
+    function spotBuyCallback(uint256 assetDelta, uint256 productDelta, uint256 timestamp)
+        external
+        authCaller(spotManager())
+    {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         if (strategyStatus() == StrategyStatus.UTILIZING) {
             if (productDelta == 0) {
@@ -540,7 +543,7 @@ contract BasisStrategy is
                 if (!_adjustPosition(productDelta, collateralDeltaAmount, true)) {
                     ISpotManager(_msgSender()).sell(productDelta, ISpotManager.SwapType.MANUAL, "");
                 } else {
-                    emit Utilize(_msgSender(), assetDelta, productDelta);
+                    emit Utilize(_msgSender(), assetDelta, productDelta, timestamp);
                 }
             }
         } else {
@@ -551,7 +554,10 @@ contract BasisStrategy is
 
     /// @dev Called after product is sold.
     /// Decreases the hedge position if the swap operation is not for reverting.
-    function spotSellCallback(uint256 assetDelta, uint256 productDelta) external authCaller(spotManager()) {
+    function spotSellCallback(uint256 assetDelta, uint256 productDelta, uint256 timestamp)
+        external
+        authCaller(spotManager())
+    {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         StrategyStatus status = strategyStatus();
         if (status == StrategyStatus.UTILIZING || status == StrategyStatus.IDLE) {
@@ -612,7 +618,7 @@ contract BasisStrategy is
                 // because size checks are already done in calling deutilize
                 _adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false);
 
-                emit Deutilize(_msgSender(), productDelta, assetDelta);
+                emit Deutilize(_msgSender(), productDelta, assetDelta, timestamp);
             }
         }
     }

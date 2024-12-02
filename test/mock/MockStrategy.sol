@@ -14,6 +14,7 @@ contract MockStrategy {
     uint256 public buyProductDelta;
     uint256 public sellAssetDelta;
     uint256 public sellProductDelta;
+    uint256 public timestamp;
 
     address public spotManager;
 
@@ -41,14 +42,16 @@ contract MockStrategy {
         }
     }
 
-    function spotBuyCallback(uint256 assetDelta, uint256 productDelta) external {
+    function spotBuyCallback(uint256 assetDelta, uint256 productDelta, uint256 _timestamp) external {
         buyAssetDelta = assetDelta;
         buyProductDelta = productDelta;
+        timestamp = _timestamp;
     }
 
-    function spotSellCallback(uint256 assetDelta, uint256 productDelta) external {
+    function spotSellCallback(uint256 assetDelta, uint256 productDelta, uint256 _timestamp) external {
         sellAssetDelta = assetDelta;
         sellProductDelta = productDelta;
+        timestamp = _timestamp;
     }
 
     function setSpotManager(address _spotManager) external {

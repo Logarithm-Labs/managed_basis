@@ -205,7 +205,7 @@ contract BrotherSwapper is
             dstEid: dstEid(),
             value: 0,
             receiver: _dstSpotManager,
-            payload: abi.encode(productsSD),
+            payload: abi.encode(productsSD, block.timestamp),
             lzReceiveOption: options
         });
         address _messenger = messenger();
@@ -240,7 +240,7 @@ contract BrotherSwapper is
 
         address _stargate = stargate();
         IERC20(_asset).forceApprove(_stargate, assetsLD);
-        bytes memory _composeMsg = abi.encode(productsSD);
+        bytes memory _composeMsg = abi.encode(productsSD, block.timestamp);
         (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) = StargateUtils
             .prepareTakeTaxi(
             _stargate, dstEid(), assetsLD, AddressCast.bytes32ToAddress(_dstSpotManager), sellResGasLimit, _composeMsg

@@ -149,7 +149,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
         }
         emit SpotBuy(amount, amountOut);
 
-        IBasisStrategy(_msgSender()).spotBuyCallback(amount, amountOut);
+        IBasisStrategy(_msgSender()).spotBuyCallback(amount, amountOut, block.timestamp);
     }
 
     /// @dev Sells product in the spot market.
@@ -173,7 +173,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
         }
         emit SpotSell(amountOut, amount);
 
-        IBasisStrategy(_msgSender()).spotSellCallback(amountOut, amount);
+        IBasisStrategy(_msgSender()).spotSellCallback(amountOut, amount, block.timestamp);
     }
 
     /// @dev The spot exposure that is needed to be hedged by the perpetual positions.
