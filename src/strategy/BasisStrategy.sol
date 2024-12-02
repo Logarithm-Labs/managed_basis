@@ -154,10 +154,10 @@ contract BasisStrategy is
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Emitted when assets are utilized.
-    event Utilize(address indexed caller, uint256 assetDelta, uint256 productDelta);
+    event Utilize(address indexed caller, uint256 assetDelta, uint256 productDelta, uint256 timestamp);
 
     /// @dev Emitted when assets are deutilized.
-    event Deutilize(address indexed caller, uint256 productDelta, uint256 assetDelta);
+    event Deutilize(address indexed caller, uint256 productDelta, uint256 assetDelta, uint256 timestamp);
 
     /// @dev Emitted when the hedge position gets adjusted.
     event PositionAdjusted(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease);
@@ -638,7 +638,7 @@ contract BasisStrategy is
                 if (!_adjustPosition(productDelta, assetsToWithdraw(), true)) {
                     ISpotManager(_msgSender()).sell(productDelta, ISpotManager.SwapType.MANUAL, "");
                 } else {
-                    emit Utilize(_msgSender(), assetDelta, productDelta);
+                    emit Utilize(_msgSender(), assetDelta, productDelta, timestamp);
                 }
             }
         } else {

@@ -165,7 +165,7 @@ contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, IS
         _getSpotManagerStorage().exposure += amountOut;
         emit SpotBuy(amount, amountOut);
 
-        IBasisStrategy(_msgSender()).spotBuyCallback(amount, amountOut);
+        IBasisStrategy(_msgSender()).spotBuyCallback(amount, amountOut, block.timestamp);
     }
 
     /// @dev Sells product in the spot market.
@@ -190,7 +190,7 @@ contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, IS
         _getSpotManagerStorage().exposure -= amount;
         emit SpotSell(amountOut, amount);
 
-        IBasisStrategy(_msgSender()).spotSellCallback(amountOut, amount);
+        IBasisStrategy(_msgSender()).spotSellCallback(amountOut, amount, block.timestamp);
     }
 
     /// @dev Returns the product amount in asset.
