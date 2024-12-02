@@ -25,6 +25,8 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
     struct LogarithmOracleStorage {
         mapping(address asset => IPriceFeed) priceFeeds;
         mapping(address priceFeed => uint256) heartbeatDurations;
+        // store token decimals due to not being able to call on other chains.
+        mapping(address asset => uint8) decimals;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.LogarithmOracle")) - 1)) & ~bytes32(uint256(0xff))
@@ -39,6 +41,7 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
 
     event PriceFeedUpdated(address asset, address feed);
     event HeartBeatUpdated(address asset, uint256 heartbeatDuration);
+    event AssetDecimalInitiated(address asset, uint8 decimals);
 
     function initialize(address owner_) external initializer {
         __Ownable_init(owner_);
@@ -58,6 +61,20 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
         for (uint256 i; i < len;) {
             _getLogarithmOracleStorage().priceFeeds[assets[i]] = IPriceFeed(feeds[i]);
             emit PriceFeedUpdated(assets[i], feeds[i]);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /// @dev Sets decimals of non-existing assets on this chain.
+    function setAssetDecimals(address[] calldata assets, uint8[] calldata decimals) external onlyOwner {
+        uint256 len = assets.length;
+        if (len != decimals.length) {
+            revert Errors.IncosistentParamsLength();
+        }
+        for (uint256 i; i < len;) {
+            _setAssetDecimal(assets[i], decimals[i]);
             unchecked {
                 ++i;
             }
@@ -120,7 +137,17 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
         // btw, token decimal + feed decimal could be more than 30
         // so we use adjustedPrice = price * precision / 10^30
         // then precision = 10^(60 - token decimal - feed decimal)
-        uint256 precision = 10 ** (60 - uint256(IERC20Metadata(asset).decimals()) - uint256(priceFeed.decimals()));
+        uint256 _decimals;
+        (bool result, bytes memory data) = asset.staticcall(abi.encodeWithSelector(IERC20Metadata.decimals.selector));
+        if (result && data.length == 32) {
+            _decimals = uint256(abi.decode(data, (uint8)));
+        } else {
+            _decimals = assetDecimals(asset);
+        }
+        if (_decimals == 0) {
+            revert Errors.DecimalNotConfigured(asset);
+        }
+        uint256 precision = 10 ** (60 - _decimals - uint256(priceFeed.decimals()));
 
         if (precision == 0) {
             revert Errors.EmptyPriceFeedMultiplier(asset);
@@ -136,5 +163,17 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
         uint256 toPrice = getAssetPrice(to);
 
         return Math.mulDiv(amount, fromPrice, toPrice);
+    }
+
+    function assetDecimals(address asset) public view returns (uint8) {
+        return _getLogarithmOracleStorage().decimals[asset];
+    }
+
+    /// @dev Internal function to set asset decimals
+    function _setAssetDecimal(address asset, uint8 decimal) internal {
+        if (assetDecimals(asset) != decimal) {
+            _getLogarithmOracleStorage().decimals[asset] = decimal;
+            emit AssetDecimalInitiated(asset, decimal);
+        }
     }
 }
