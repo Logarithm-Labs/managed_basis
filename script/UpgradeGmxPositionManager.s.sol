@@ -17,7 +17,7 @@ contract UpgradeGmxPositionManagerScript is Script {
         vm.startBroadcast();
         address newImpl = address(new GmxV2PositionManager());
         beaconGmx.upgradeTo(newImpl);
-        gmxConfig.updateAddresses(ArbiAddresses.GMX_EXCHANGE_ROUTER, ArbiAddresses.GMX_READER);
+        // gmxConfig.updateAddresses(ArbiAddresses.GMX_EXCHANGE_ROUTER, ArbiAddresses.GMX_READER);
         vm.stopBroadcast();
     }
 }
