@@ -43,9 +43,6 @@ contract LogarithmOracleTest is ForkTest {
         heartbeats[2] = 24 * 3600;
         oracle.setPriceFeeds(assets, feeds);
         oracle.setHeartbeats(feeds, heartbeats);
-        _mockChainlinkPriceFeed(assetPriceFeed);
-        _mockChainlinkPriceFeed(productPriceFeed);
-        vm.stopPrank();
     }
 
     function test_getAssetPrice() public view {
