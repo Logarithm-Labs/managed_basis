@@ -286,14 +286,15 @@ contract XSpotManager is
     function receiveMessage(bytes32 _sender, bytes calldata _payload) external payable {
         require(_msgSender() == messenger());
         require(_sender == swapper());
-        uint64 productsSD = abi.decode(_payload, (uint64));
+        // abi.encode(uint64(productsSD), uint256(block.timestamp));
+        (uint64 productsSD, uint256 timestamp) = abi.decode(_payload, (uint64, uint256));
         uint256 productsLD = _toLD(productsSD);
         uint256 _pendingAssets = pendingAssets();
         delete _getXSpotManagerStorage().pendingAssets;
         _getXSpotManagerStorage().exposure += productsLD;
         emit SpotBuy(_pendingAssets, productsLD);
 
-        IBasisStrategy(strategy()).spotBuyCallback(_pendingAssets, productsLD);
+        IBasisStrategy(strategy()).spotBuyCallback(_pendingAssets, productsLD, timestamp);
     }
 
     /// @dev Called after selling.
@@ -310,14 +311,13 @@ contract XSpotManager is
         require(sender == swapper(), "!swapper");
         uint256 assetsLD = OFTComposeMsgCodec.amountLD(_message);
         bytes memory composeMsg = OFTComposeMsgCodec.composeMsg(_message);
-        require(composeMsg.length == 32, "wrong msg");
-        uint64 productsSD = abi.decode(composeMsg, (uint64));
+        (uint64 productsSD, uint256 timestamp) = abi.decode(composeMsg, (uint64, uint256));
         uint256 productsLD = _toLD(productsSD);
         (, uint256 newExposure) = exposure().trySub(productsLD);
         _getXSpotManagerStorage().exposure = newExposure;
         emit SpotSell(assetsLD, productsLD);
 
-        IBasisStrategy(strategy()).spotSellCallback(assetsLD, productsLD);
+        IBasisStrategy(strategy()).spotSellCallback(assetsLD, productsLD, timestamp);
     }
 
     /// @dev Refunds eth

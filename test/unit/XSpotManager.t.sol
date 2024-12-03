@@ -69,17 +69,18 @@ contract XSpotManagerTest is ForkTest {
         assertEq(spotManager.exposure(), 0, "exposure");
     }
 
-    function test_buy_response(uint256 amount) public {
+    function test_buy_response(uint256 amount, uint256 timestamp) public {
         amount = bound(amount, 10, TEN_THOUSAND_USDC);
         vm.startPrank(address(strategy));
         IERC20(USDC).transfer(address(spotManager), amount);
         spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
         vm.startPrank(address(messenger));
         uint64 productSD = uint64(USDC_PRECISION); // 6 decimals
-        spotManager.receiveMessage(swapper, abi.encode(productSD));
+        spotManager.receiveMessage(swapper, abi.encode(productSD, timestamp));
         uint256 productLD = productSD * 1e12; // 18 decimals
         assertEq(strategy.buyAssetDelta(), amount, "buyAssetDelta");
         assertEq(strategy.buyProductDelta(), productLD, "buyProductDelta");
+        assertEq(strategy.timestamp(), timestamp, "timestamp");
         assertEq(spotManager.pendingAssets(), 0, "pendingAssets");
         // convert rate between asset and product is 1:1
         assertEq(spotManager.getAssetValue(), productLD, "getAssetValue");
@@ -91,17 +92,18 @@ contract XSpotManagerTest is ForkTest {
         spotManager.sell(amount, ISpotManager.SwapType.MANUAL, "");
     }
 
-    function test_sell_response(uint256 amount) public {
+    function test_sell_response(uint256 amount, uint256 timestamp) public {
         vm.startPrank(address(strategy));
         spotManager.sell(amount, ISpotManager.SwapType.MANUAL, "");
         uint64 productSD = uint64(amount / spotManager.decimalConversionRate());
         uint256 assetLD = 100 * 1e16;
-        bytes memory composeMsg = abi.encodePacked(swapper, abi.encode(productSD));
+        bytes memory composeMsg = abi.encodePacked(swapper, abi.encode(productSD, timestamp));
         bytes memory message = OFTComposeMsgCodec.encode(0, 1, assetLD, composeMsg);
         vm.startPrank(ARBI_ENDPOINT);
         spotManager.lzCompose(ARBI_STARTGATE, bytes32(0), message, address(0), "");
         assertEq(strategy.sellAssetDelta(), assetLD, "asset delta");
         uint256 productsLD = productSD * spotManager.decimalConversionRate();
         assertEq(strategy.sellProductDelta(), productsLD, "product delta");
+        assertEq(strategy.timestamp(), timestamp, "timestamp");
     }
 }
