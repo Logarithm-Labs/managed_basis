@@ -61,7 +61,7 @@ contract DeployScript is Script {
     uint256 constant decreaseCollateralMax = type(uint256).max;
     uint256 constant limitDecreaseCollateral = 50 * 1e6;
 
-    uint32 constant DST_EID = uint32(30102);
+    uint256 constant BSC_CHAIN_ID = 56;
 
     function run() public {
         vm.startBroadcast();
@@ -148,11 +148,8 @@ contract DeployScript is Script {
             beacon: xSpotManagerBeacon,
             owner: owner,
             strategy: address(strategyGmx),
-            gasStation: address(gasStation),
-            endpoint: ArbiAddresses.LZ_V2_ENDPOINT,
-            stargate: ArbiAddresses.STARGATE_POOL_USDC,
             messenger: ArbiAddresses.LOGARITHM_MESSENGER,
-            dstEid: DST_EID
+            dstChainId: BSC_CHAIN_ID
         });
         XSpotManager gmxXSpotManager = DeployHelper.deployXSpotManager(xSpotDeployParams);
         console.log("XSpotManager(GMX)-USDC-DOGE: ", address(gmxXSpotManager));

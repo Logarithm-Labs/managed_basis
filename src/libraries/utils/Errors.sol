@@ -82,7 +82,8 @@ library Errors {
     error UnsupportedSwapType();
     error SwapFailed();
     error InvalidStargate();
-    error BrotherSwapperNotInit();
+    error InvalidSender();
+    error InvalidTokenSend();
 
     /*//////////////////////////////////////////////////////////////
                               AUTH CALLER

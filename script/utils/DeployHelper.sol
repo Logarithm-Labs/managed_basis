@@ -248,11 +248,8 @@ library DeployHelper {
         address beacon;
         address owner;
         address strategy;
-        address gasStation;
-        address endpoint;
-        address stargate;
         address messenger;
-        uint32 dstEid;
+        uint256 dstChainId;
     }
 
     function deployXSpotManager(DeployXSpotManagerParams memory params) internal returns (XSpotManager) {
@@ -260,20 +257,12 @@ library DeployHelper {
             new BeaconProxy(
                 params.beacon,
                 abi.encodeWithSelector(
-                    XSpotManager.initialize.selector,
-                    params.owner,
-                    params.strategy,
-                    params.gasStation,
-                    params.endpoint,
-                    params.stargate,
-                    params.messenger,
-                    params.dstEid
+                    XSpotManager.initialize.selector, params.owner, params.strategy, params.messenger, params.dstChainId
                 )
             )
         );
         XSpotManager spotManager = XSpotManager(payable(xSpotManagerProxy));
         BasisStrategy(params.strategy).setSpotManager(xSpotManagerProxy);
-        GasStation(payable(params.gasStation)).registerManager(xSpotManagerProxy, true);
         return spotManager;
     }
 
@@ -282,12 +271,9 @@ library DeployHelper {
         address owner;
         address asset;
         address product;
-        address endpoint;
-        address stargate;
-        address gasStation;
         address messenger;
-        bytes32 dstSpotManager;
-        uint32 dstEid;
+        bytes32 spotManager;
+        uint256 dstChainId;
         address[] assetToProductSwapPath;
     }
 
@@ -300,17 +286,13 @@ library DeployHelper {
                     params.owner,
                     params.asset,
                     params.product,
-                    params.endpoint,
-                    params.stargate,
                     params.messenger,
-                    params.gasStation,
-                    params.dstSpotManager,
-                    params.dstEid,
+                    params.spotManager,
+                    params.dstChainId,
                     params.assetToProductSwapPath
                 )
             )
         );
-        GasStation(payable(params.gasStation)).registerManager(swapperProxy, true);
         return BrotherSwapper(payable(swapperProxy));
     }
 }
