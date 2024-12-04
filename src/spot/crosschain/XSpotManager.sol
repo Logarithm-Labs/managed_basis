@@ -257,8 +257,8 @@ contract XSpotManager is
     /// Important: In case of 1Inch swapData, it must be derived on the dest chain.
     /// At this time, the amount decimals should be the one on the dest chain as well.
     function sell(uint256 amountLD, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
-        amountLD = _toSD(amountLD);
-        bytes memory payload = abi.encode(sellResGasLimit(), amountLD, swapType, swapData);
+        uint64 amountSD = _toSD(amountLD);
+        bytes memory payload = abi.encode(sellResGasLimit(), amountSD, swapType, swapData);
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(sellReqGasLimit(), 0);
         bytes32 receiver = swapper();
         SendParams memory params =
