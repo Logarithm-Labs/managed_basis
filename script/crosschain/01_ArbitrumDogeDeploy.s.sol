@@ -165,7 +165,7 @@ contract DeployScript is Script {
         BasisStrategy strategyHl = DeployHelper.deployBasisStrategy(strategyDeployParams);
         console.log("Strategy(HL)-USDC-DOGE: ", address(strategyHl));
 
-        // deploy Gmx spot manager
+        // deploy HL spot manager
         xSpotDeployParams.strategy = address(strategyHl);
         XSpotManager hlXSpotManager = DeployHelper.deployXSpotManager(xSpotDeployParams);
         console.log("XSpotManager(HL)-USDC-DOGE: ", address(hlXSpotManager));

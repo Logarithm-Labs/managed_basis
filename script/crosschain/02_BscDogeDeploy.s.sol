@@ -18,7 +18,7 @@ contract DeployScript is Script {
     address constant asset = BscAddresses.USDC; // USDC
     address constant product = BscAddresses.DOGE; // DOGE
 
-    uint256 constant BSC_CHAIN_ID = 56;
+    uint256 constant ARB_CHAIN_ID = 42161;
 
     // predeployed contracts
     bytes32 xSpotManagerGmx = AddressCast.addressToBytes32(Arbitrum.X_SPOT_MANAGER_GMX_USDC_DOGE);
@@ -50,7 +50,7 @@ contract DeployScript is Script {
             product: product,
             messenger: BscAddresses.LOGARITHM_MESSENGER,
             spotManager: xSpotManagerGmx,
-            dstChainId: BSC_CHAIN_ID,
+            dstChainId: ARB_CHAIN_ID,
             assetToProductSwapPath: path
         });
         BrotherSwapper swapperGmx = DeployHelper.deployBrotherSwapper(swapperDeployParams);
