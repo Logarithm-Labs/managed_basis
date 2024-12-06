@@ -6,24 +6,15 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
-import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
-import {OFTComposeMsgCodec} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTComposeMsgCodec.sol";
-import {MessagingFee, SendParam, OFTReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
-import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 
-import {IStargate} from "src/externals/stargate/interfaces/IStargate.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
-import {IGasStation} from "src/gas-station/IGasStation.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {StargateUtils} from "src/libraries/stargate/StargateUtils.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
-import {AddressCast} from "src/libraries/utils/AddressCast.sol";
+import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
+import {ILogarithmMessenger, SendParams} from "src/messenger/ILogarithmMessenger.sol";
 
-import {IMessageRecipient} from "./IMessageRecipient.sol";
-import {ILogarithmMessenger, SendParams} from "./ILogarithmMessenger.sol";
 import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
 
 /// @title XSpotManager
@@ -34,16 +25,8 @@ import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
 /// to/from BrotherSwapper in the destination blockchain and tracks the product exposure.
 ///
 /// @dev Deployed according to the upgradeable beacon proxy pattern.
-contract XSpotManager is
-    Initializable,
-    AssetValueTransmitter,
-    OwnableUpgradeable,
-    IMessageRecipient,
-    ILayerZeroComposer,
-    ISpotManager
-{
+contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeable, IMessageRecipient, ISpotManager {
     using SafeERC20 for IERC20;
-    using OptionsBuilder for bytes;
     using Math for uint256;
 
     /*//////////////////////////////////////////////////////////////
@@ -54,14 +37,10 @@ contract XSpotManager is
         address oracle;
         address asset;
         address product;
-        address stargate;
-        address gasStation;
-        address endpoint;
-        address messenger;
-        uint32 dstEid;
-        uint32 srcEid;
-        bytes32 swapper;
         uint256 exposure;
+        address messenger;
+        uint256 dstChainId;
+        bytes32 swapper;
         uint256 pendingAssets;
         uint128 buyReqGasLimit;
         uint128 buyResGasLimit;
@@ -87,8 +66,8 @@ contract XSpotManager is
     event BuyResGasLimitUpdated(address indexed account, uint128 indexed newBuyResGasLimit);
     event SellReqGasLimitUpdated(address indexed account, uint128 indexed newSellReqGasLimit);
     event SellResGasLimitUpdated(address indexed account, uint128 indexed newSellResGasLimit);
-    event BuyRequested(address indexed caller, SwapType indexed swapType, uint256 assetsSent, uint256 assetsReceived);
-    event SellRequested(address indexed caller, SwapType indexed swapType, uint256 indexed products);
+    event BuyRequested(address indexed caller, SwapType indexed swapType, uint256 assetsSent);
+    event SellRequested(address indexed caller, SwapType indexed swapType, uint256 products);
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -102,19 +81,21 @@ contract XSpotManager is
         _;
     }
 
+    modifier onlySwapper(bytes32 sender) {
+        if (sender != swapper()) {
+            revert Errors.InvalidSender();
+        }
+        _;
+    }
+
     /*//////////////////////////////////////////////////////////////
                              INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(
-        address _owner,
-        address _strategy,
-        address _gasStation,
-        address _endpoint,
-        address _stargate,
-        address _messenger,
-        uint32 _dstEid
-    ) external initializer {
+    function initialize(address _owner, address _strategy, address _messenger, uint256 _dstChainId)
+        external
+        initializer
+    {
         XSpotManagerStorage storage $ = _getXSpotManagerStorage();
         address _asset = IBasisStrategy(_strategy).asset();
         address _product = IBasisStrategy(_strategy).product();
@@ -123,19 +104,9 @@ contract XSpotManager is
         $.oracle = IBasisStrategy(_strategy).oracle();
         $.asset = _asset;
         $.product = _product;
-        $.gasStation = _gasStation;
-
-        // validate stargate
-        if (IStargate(_stargate).token() != _asset) {
-            revert Errors.InvalidStargate();
-        }
-
-        $.stargate = _stargate;
-        $.dstEid = _dstEid;
-        $.srcEid = ILayerZeroEndpointV2(_endpoint).eid();
 
         $.messenger = _messenger;
-        $.endpoint = _endpoint;
+        $.dstChainId = _dstChainId;
 
         __AssetValueTransmitter_init(_product);
         __Ownable_init(_owner);
@@ -207,13 +178,6 @@ contract XSpotManager is
         _setSellResGasLimit(newLimit);
     }
 
-    function withdraw(address payable _to, uint256 _amount) external onlyOwner {
-        (bool success,) = _to.call{value: _amount}("");
-        if (!success) {
-            revert();
-        }
-    }
-
     /*//////////////////////////////////////////////////////////////
                                MAIN LOGIC
     //////////////////////////////////////////////////////////////*/
@@ -226,27 +190,24 @@ contract XSpotManager is
     /// Important: In case of 1Inch swapData, it must be derived on the dest chain.
     /// At this time, the amount decimals should be the one on the dest chain as well.
     function buy(uint256 amountLD, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
-        address composer = _validateBrotherSwapper();
-        // build compose message
-        bytes memory _composeMsg = abi.encode(buyResGasLimit(), swapType, swapData);
-        address _stargate = stargate();
-        // prepare send
-        (uint256 valueToSend, SendParam memory sendParam, MessagingFee memory messagingFee) =
-            StargateUtils.prepareTakeTaxi(_stargate, dstEid(), amountLD, composer, buyReqGasLimit(), _composeMsg);
-        // withdraw fee
-        IGasStation(gasStation()).withdraw(valueToSend);
-        // send token
-        IERC20(asset()).forceApprove(_stargate, amountLD);
-        (, OFTReceipt memory receipt,) =
-            IStargate(_stargate).sendToken{value: valueToSend}(sendParam, messagingFee, address(this));
-        // always receipt.amountSentLD <= amountLD
-        uint256 dust = amountLD - receipt.amountSentLD;
-        if (dust > 0) {
-            // refund dust
-            IERC20(asset()).safeTransfer(_msgSender(), dust);
-        }
-        _getXSpotManagerStorage().pendingAssets = receipt.amountSentLD;
-        emit BuyRequested(_msgSender(), swapType, receipt.amountSentLD, receipt.amountReceivedLD);
+        _getXSpotManagerStorage().pendingAssets = amountLD;
+        // build message data
+        bytes memory messageData = abi.encode(buyResGasLimit(), swapType, swapData);
+        ILogarithmMessenger _messenger = ILogarithmMessenger(messenger());
+        // send
+        address _asset = asset();
+        IERC20(_asset).forceApprove(address(_messenger), amountLD);
+        _messenger.send(
+            SendParams({
+                dstChainId: dstChainId(),
+                receiver: swapper(),
+                token: _asset,
+                gasLimit: buyReqGasLimit(),
+                amount: amountLD,
+                data: messageData
+            })
+        );
+        emit BuyRequested(_msgSender(), swapType, amountLD);
     }
 
     /// @dev Requests Swapper to sell product.
@@ -257,16 +218,18 @@ contract XSpotManager is
     /// Important: In case of 1Inch swapData, it must be derived on the dest chain.
     /// At this time, the amount decimals should be the one on the dest chain as well.
     function sell(uint256 amountLD, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
-        uint64 amountSD = _toSD(amountLD);
-        bytes memory payload = abi.encode(sellResGasLimit(), amountSD, swapType, swapData);
-        bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(sellReqGasLimit(), 0);
-        bytes32 receiver = swapper();
-        SendParams memory params =
-            SendParams({dstEid: dstEid(), value: 0, receiver: receiver, payload: payload, lzReceiveOption: options});
-        address _messenger = messenger();
-        (uint256 nativeFee,) = ILogarithmMessenger(_messenger).quote(address(this), params);
-        IGasStation(gasStation()).withdraw(nativeFee);
-        ILogarithmMessenger(_messenger).sendMessage{value: nativeFee}(params);
+        uint256 amountSD = _toSD(amountLD);
+        bytes memory messageData = abi.encode(sellResGasLimit(), amountSD, swapType, swapData);
+        ILogarithmMessenger(messenger()).send(
+            SendParams({
+                dstChainId: dstChainId(),
+                receiver: swapper(),
+                token: address(0),
+                gasLimit: sellReqGasLimit(),
+                amount: 0, // 0 because none of token gets transferred
+                data: messageData
+            })
+        );
         emit SellRequested(_msgSender(), swapType, amountLD);
     }
 
@@ -283,11 +246,9 @@ contract XSpotManager is
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Called after buying.
-    function receiveMessage(bytes32 _sender, bytes calldata _payload) external payable {
-        require(_msgSender() == messenger());
-        require(_sender == swapper());
+    function receiveMessage(bytes32 sender, bytes calldata data) external authCaller(messenger()) onlySwapper(sender) {
         // abi.encode(uint64(productsSD), uint256(block.timestamp));
-        (uint64 productsSD, uint256 timestamp) = abi.decode(_payload, (uint64, uint256));
+        (uint64 productsSD, uint256 timestamp) = abi.decode(data, (uint64, uint256));
         uint256 productsLD = _toLD(productsSD);
         uint256 _pendingAssets = pendingAssets();
         delete _getXSpotManagerStorage().pendingAssets;
@@ -298,48 +259,21 @@ contract XSpotManager is
     }
 
     /// @dev Called after selling.
-    function lzCompose(
-        address _from,
-        bytes32, /*_guid*/
-        bytes calldata _message,
-        address, /*_executor*/
-        bytes calldata /*_extraData*/
-    ) external payable {
-        require(_from == stargate(), "!stargate");
-        require(_msgSender() == endpoint(), "!endpoint");
-        bytes32 sender = OFTComposeMsgCodec.composeFrom(_message);
-        require(sender == swapper(), "!swapper");
-        uint256 assetsLD = OFTComposeMsgCodec.amountLD(_message);
-        bytes memory composeMsg = OFTComposeMsgCodec.composeMsg(_message);
-        (uint64 productsSD, uint256 timestamp) = abi.decode(composeMsg, (uint64, uint256));
+    function receiveToken(bytes32 sender, address token, uint256 amountLD, bytes calldata data)
+        external
+        authCaller(messenger())
+        onlySwapper(sender)
+    {
+        if (token != asset()) {
+            revert Errors.InvalidTokenSend();
+        }
+        (uint64 productsSD, uint256 timestamp) = abi.decode(data, (uint64, uint256));
         uint256 productsLD = _toLD(productsSD);
         (, uint256 newExposure) = exposure().trySub(productsLD);
         _getXSpotManagerStorage().exposure = newExposure;
-        emit SpotSell(assetsLD, productsLD);
+        emit SpotSell(amountLD, productsLD);
 
-        IBasisStrategy(strategy()).spotSellCallback(assetsLD, productsLD, timestamp);
-    }
-
-    /// @dev Refunds eth
-    receive() external payable {
-        address _gasStation = gasStation();
-        if (_msgSender() != _gasStation) {
-            // if caller is not the gas station, refund eth to the gasStation
-            (bool success,) = _gasStation.call{value: msg.value}("");
-            assert(success);
-        }
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                              VALIDATIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function _validateBrotherSwapper() internal view returns (address) {
-        bytes32 _swapper = swapper();
-        if (_swapper == bytes32(0)) {
-            revert Errors.BrotherSwapperNotInit();
-        }
-        return AddressCast.bytes32ToAddress(_swapper);
+        IBasisStrategy(strategy()).spotSellCallback(amountLD, productsLD, timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -387,27 +321,11 @@ contract XSpotManager is
         return _getXSpotManagerStorage().product;
     }
 
-    function stargate() public view returns (address) {
-        return _getXSpotManagerStorage().stargate;
-    }
-
-    function gasStation() public view returns (address) {
-        return _getXSpotManagerStorage().gasStation;
-    }
-
-    function endpoint() public view returns (address) {
-        return _getXSpotManagerStorage().endpoint;
-    }
-
     function messenger() public view returns (address) {
         return _getXSpotManagerStorage().messenger;
     }
 
-    function dstEid() public view returns (uint32) {
-        return _getXSpotManagerStorage().dstEid;
-    }
-
-    function srcEid() public view returns (uint32) {
-        return _getXSpotManagerStorage().srcEid;
+    function dstChainId() public view returns (uint256) {
+        return _getXSpotManagerStorage().dstChainId;
     }
 }

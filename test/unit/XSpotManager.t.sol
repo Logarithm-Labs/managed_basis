@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-import {OFTComposeMsgCodec} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTComposeMsgCodec.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {ForkTest} from "test/base/ForkTest.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
+import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
 import {GasStation} from "src/gas-station/GasStation.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
@@ -20,19 +20,20 @@ import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
 contract XSpotManagerTest is ForkTest {
     address owner = makeAddr("owner");
 
-    bytes32 constant swapper = bytes32(abi.encodePacked("swapper"));
     address constant ARBI_ENDPOINT = ArbiAddresses.LZ_V2_ENDPOINT;
     address constant ARBI_STARTGATE = ArbiAddresses.STARGATE_POOL_USDC;
-    uint32 constant DST_EID = 30101;
+    uint256 constant chainId = 56;
 
     uint256 TEN_THOUSAND_USDC = 10_000 * USDC_PRECISION;
 
     MockStrategy strategy;
     GasStation gasStation;
     XSpotManager spotManager;
+    BrotherSwapper swapper;
     MockMessenger messenger;
     MockOracle oracle;
-    address beacon;
+    address asset;
+    address product;
 
     function setUp() public {
         _forkArbitrum(0);
@@ -41,69 +42,79 @@ contract XSpotManagerTest is ForkTest {
         strategy = new MockStrategy(address(oracle));
         gasStation = DeployHelper.deployGasStation(owner);
         messenger = new MockMessenger();
-        beacon = DeployHelper.deployBeacon(address(new XSpotManager()), owner);
+        address beaconSpot = DeployHelper.deployBeacon(address(new XSpotManager()), owner);
         spotManager = DeployHelper.deployXSpotManager(
             DeployHelper.DeployXSpotManagerParams({
-                beacon: beacon,
+                beacon: beaconSpot,
                 owner: owner,
                 strategy: address(strategy),
-                gasStation: address(gasStation),
-                endpoint: ARBI_ENDPOINT,
-                stargate: ARBI_STARTGATE,
                 messenger: address(messenger),
-                dstEid: DST_EID
+                dstChainId: chainId
             })
         );
-        spotManager.setSwapper(swapper);
-        vm.deal(address(gasStation), 10000 ether);
-        _writeTokenBalance(address(strategy), USDC, TEN_THOUSAND_USDC);
+
+        asset = strategy.asset();
+        product = strategy.product();
+
+        address[] memory pathWeth = new address[](3);
+        pathWeth[0] = asset;
+        pathWeth[1] = ArbiAddresses.UNI_V3_POOL_WETH_USDC;
+        pathWeth[2] = product;
+
+        address beaconSwapper = DeployHelper.deployBeacon(address(new BrotherSwapper()), owner);
+        swapper = DeployHelper.deployBrotherSwapper(
+            DeployHelper.DeployBrotherSwapperParams({
+                beacon: beaconSwapper,
+                owner: owner,
+                asset: asset,
+                product: product,
+                messenger: address(messenger),
+                spotManager: AddressCast.addressToBytes32(address(spotManager)),
+                dstChainId: chainId,
+                assetToProductSwapPath: pathWeth
+            })
+        );
+
+        spotManager.setSwapper(AddressCast.addressToBytes32(address(swapper)));
+
+        _writeTokenBalance(address(strategy), asset, TEN_THOUSAND_USDC);
     }
 
-    function test_buy_request(uint256 amount) public {
+    function test_buy(uint256 amount) public {
         amount = bound(amount, 10, TEN_THOUSAND_USDC);
         vm.startPrank(address(strategy));
-        IERC20(USDC).transfer(address(spotManager), amount);
+        IERC20(asset).transfer(address(spotManager), amount);
         spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
-        assertEq(spotManager.pendingAssets(), amount, "pendingAssets");
-        assertEq(spotManager.getAssetValue(), amount, "getAssetValue");
-        assertEq(spotManager.exposure(), 0, "exposure");
-    }
-
-    function test_buy_response(uint256 amount, uint256 timestamp) public {
-        amount = bound(amount, 10, TEN_THOUSAND_USDC);
-        vm.startPrank(address(strategy));
-        IERC20(USDC).transfer(address(spotManager), amount);
-        spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
-        vm.startPrank(address(messenger));
-        uint64 productSD = uint64(USDC_PRECISION); // 6 decimals
-        spotManager.receiveMessage(swapper, abi.encode(productSD, timestamp));
-        uint256 productLD = productSD * 1e12; // 18 decimals
+        uint256 productBalance = IERC20(product).balanceOf(address(swapper));
+        uint256 rate = spotManager.decimalConversionRate();
+        uint256 productsLD = productBalance / rate * rate;
+        assertGt(productBalance, 0, "productBalance");
         assertEq(strategy.buyAssetDelta(), amount, "buyAssetDelta");
-        assertEq(strategy.buyProductDelta(), productLD, "buyProductDelta");
-        assertEq(strategy.timestamp(), timestamp, "timestamp");
+        assertEq(strategy.buyProductDelta(), productsLD, "buyProductDelta");
+        assertEq(strategy.timestamp(), block.timestamp, "timestamp");
         assertEq(spotManager.pendingAssets(), 0, "pendingAssets");
         // convert rate between asset and product is 1:1
-        assertEq(spotManager.getAssetValue(), productLD, "getAssetValue");
-        assertEq(spotManager.exposure(), productLD, "exposure");
+        assertEq(spotManager.getAssetValue(), productsLD, "getAssetValue");
+        assertEq(spotManager.exposure(), productsLD, "exposure");
+        assertEq(IERC20(asset).balanceOf(address(spotManager)), 0, "manager asset balance");
+        assertEq(IERC20(asset).balanceOf(address(swapper)), 0, "swapper asset balance");
     }
 
-    function test_sell_request(uint256 amount) public {
+    function test_sell(uint256 amount) public {
+        amount = bound(amount, 0.000001 ether, 50 ether);
+        _writeTokenBalance(address(swapper), product, amount);
         vm.startPrank(address(strategy));
         spotManager.sell(amount, ISpotManager.SwapType.MANUAL, "");
-    }
+        uint256 rate = spotManager.decimalConversionRate();
+        uint256 productsLD = (amount / rate) * rate;
 
-    function test_sell_response(uint256 amount, uint256 timestamp) public {
-        vm.startPrank(address(strategy));
-        spotManager.sell(amount, ISpotManager.SwapType.MANUAL, "");
-        uint64 productSD = uint64(amount / spotManager.decimalConversionRate());
-        uint256 assetLD = 100 * 1e16;
-        bytes memory composeMsg = abi.encodePacked(swapper, abi.encode(productSD, timestamp));
-        bytes memory message = OFTComposeMsgCodec.encode(0, 1, assetLD, composeMsg);
-        vm.startPrank(ARBI_ENDPOINT);
-        spotManager.lzCompose(ARBI_STARTGATE, bytes32(0), message, address(0), "");
-        assertEq(strategy.sellAssetDelta(), assetLD, "asset delta");
-        uint256 productsLD = productSD * spotManager.decimalConversionRate();
+        uint256 assetBalance = IERC20(asset).balanceOf(address(spotManager));
+        assertGt(assetBalance, 0, "asset balance");
+        assertEq(strategy.sellAssetDelta(), assetBalance, "asset delta");
         assertEq(strategy.sellProductDelta(), productsLD, "product delta");
-        assertEq(strategy.timestamp(), timestamp, "timestamp");
+        assertEq(strategy.timestamp(), block.timestamp, "timestamp");
+        uint256 productBalance = IERC20(product).balanceOf(address(swapper));
+        assertEq(amount - productBalance, productsLD, "product balance");
+        assertEq(IERC20(asset).balanceOf(address(swapper)), 0, "swapper asset balance");
     }
 }

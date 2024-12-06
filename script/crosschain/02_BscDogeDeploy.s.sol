@@ -18,7 +18,7 @@ contract DeployScript is Script {
     address constant asset = BscAddresses.USDC; // USDC
     address constant product = BscAddresses.DOGE; // DOGE
 
-    uint32 constant DST_EID = uint32(30110);
+    uint256 constant BSC_CHAIN_ID = 56;
 
     // predeployed contracts
     bytes32 xSpotManagerGmx = AddressCast.addressToBytes32(Arbitrum.X_SPOT_MANAGER_GMX_USDC_DOGE);
@@ -48,19 +48,16 @@ contract DeployScript is Script {
             owner: owner,
             asset: asset,
             product: product,
-            endpoint: BscAddresses.LZ_V2_ENDPOINT,
-            stargate: BscAddresses.STARGATE_POOL_USDC,
-            gasStation: address(gasStation),
             messenger: BscAddresses.LOGARITHM_MESSENGER,
-            dstSpotManager: xSpotManagerGmx,
-            dstEid: DST_EID,
+            spotManager: xSpotManagerGmx,
+            dstChainId: BSC_CHAIN_ID,
             assetToProductSwapPath: path
         });
         BrotherSwapper swapperGmx = DeployHelper.deployBrotherSwapper(swapperDeployParams);
         console.log("BrotherSwapper(GMX): ", address(swapperGmx));
 
         // deploy BrotherSwapper of HL
-        swapperDeployParams.dstSpotManager = xSpotManagerHL;
+        swapperDeployParams.spotManager = xSpotManagerHL;
         BrotherSwapper swapperHL = DeployHelper.deployBrotherSwapper(swapperDeployParams);
         console.log("BrotherSwapper(HL): ", address(swapperHL));
     }
