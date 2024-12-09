@@ -11,5 +11,6 @@ struct SendParams {
 }
 
 interface ILogarithmMessenger {
+    /// @dev Assets should be sent before calling this function.
     function send(SendParams calldata params) external payable;
 }

@@ -48,12 +48,17 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         }
     }
 
+    /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+
     event BuyProcessed(
         ISpotManager.SwapType indexed swapType, uint256 indexed assetsReceived, uint256 indexed productsSwapped
     );
     event SellProcessed(
         ISpotManager.SwapType indexed swapType, uint256 indexed productsRequested, uint256 indexed assetsSwapped
     );
+    event MessengerUpdated(address indexed caller, address indexed newMessenger);
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -91,10 +96,10 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         $.asset = _asset;
         $.product = _product;
 
-        $.messenger = _messenger;
         $.dstChainId = _dstChainId;
         $.spotManager = _spotManager;
 
+        _setMessenger(_messenger);
         __AssetValueTransmitter_init(_product);
         __Ownable_init(_owner);
         _setManualSwapPath(_assetToProductSwapPath, _asset, _product);
@@ -129,6 +134,21 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         }
         $.assetToProductSwapPath = _assetToProductSwapPath;
         $.productToAssetSwapPath = _productToAssetSwapPath;
+    }
+
+    function _setMessenger(address newMessenger) internal {
+        if (messenger() != newMessenger) {
+            _getBrotherSwapperStorage().messenger = newMessenger;
+            emit MessengerUpdated(_msgSender(), newMessenger);
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            ADMIN FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function setMessenger(address newMessenger) external onlyOwner {
+        _setMessenger(newMessenger);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -203,7 +223,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         }
 
         ILogarithmMessenger _messenger = ILogarithmMessenger(messenger());
-        IERC20(_asset).forceApprove(address(_messenger), assetsLD);
+        IERC20(_asset).safeTransfer(address(_messenger), assetsLD);
         _messenger.send(
             SendParams({
                 dstChainId: dstChainId(),
