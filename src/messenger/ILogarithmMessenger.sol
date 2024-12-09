@@ -16,5 +16,6 @@ interface ILogarithmMessenger {
     function updateGasStation(address newGasStation) external;
     function registerDstMessenger(uint256 chainId, uint32 lzEid, bytes32 dstMessenger) external;
     function registerStargate(address token, address stargate) external;
+    /// @dev Assets should be sent before calling this function.
     function send(SendParams calldata params) external payable;
 }

@@ -68,6 +68,7 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
     event SellResGasLimitUpdated(address indexed account, uint128 indexed newSellResGasLimit);
     event BuyRequested(address indexed caller, SwapType indexed swapType, uint256 assetsSent);
     event SellRequested(address indexed caller, SwapType indexed swapType, uint256 products);
+    event MessengerUpdated(address indexed caller, address indexed newMessenger);
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -105,7 +106,6 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         $.asset = _asset;
         $.product = _product;
 
-        $.messenger = _messenger;
         $.dstChainId = _dstChainId;
 
         __AssetValueTransmitter_init(_product);
@@ -116,6 +116,7 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         _setBuyResGasLimit(4_000_000);
         _setSellReqGasLimit(4_000_000);
         _setSellResGasLimit(4_000_000);
+        _setMessenger(_messenger);
 
         // approve strategy to max amount
         IERC20(_asset).approve(_strategy, type(uint256).max);
@@ -149,6 +150,13 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         }
     }
 
+    function _setMessenger(address newMessenger) internal {
+        if (messenger() != newMessenger) {
+            _getXSpotManagerStorage().messenger = newMessenger;
+            emit MessengerUpdated(_msgSender(), newMessenger);
+        }
+    }
+
     /// @notice Sets the address of BrotherSwapper which is in the destination chain.
     ///
     /// @dev Should be set before running stratey.
@@ -178,6 +186,10 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         _setSellResGasLimit(newLimit);
     }
 
+    function setMessenger(address newMessenger) external onlyOwner {
+        _setMessenger(newMessenger);
+    }
+
     /*//////////////////////////////////////////////////////////////
                                MAIN LOGIC
     //////////////////////////////////////////////////////////////*/
@@ -196,7 +208,7 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         ILogarithmMessenger _messenger = ILogarithmMessenger(messenger());
         // send
         address _asset = asset();
-        IERC20(_asset).forceApprove(address(_messenger), amountLD);
+        IERC20(_asset).safeTransfer(address(_messenger), amountLD);
         _messenger.send(
             SendParams({
                 dstChainId: dstChainId(),

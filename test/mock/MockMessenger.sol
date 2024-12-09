@@ -10,7 +10,7 @@ contract MockMessenger is ILogarithmMessenger {
     function send(SendParams calldata params) external payable {
         address receiver = AddressCast.bytes32ToAddress(params.receiver);
         if (params.amount > 0) {
-            IERC20(params.token).transferFrom(msg.sender, receiver, params.amount);
+            IERC20(params.token).transfer(receiver, params.amount);
             IMessageRecipient(receiver).receiveToken(
                 AddressCast.addressToBytes32(msg.sender), params.token, params.amount, params.data
             );
