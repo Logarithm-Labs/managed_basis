@@ -17,7 +17,8 @@ import {Arbitrum} from "script/utils/ProtocolAddresses.sol";
 
 contract ProdTest is Test {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
-    address constant operator = 0xe7263f18e278ea0550FaD97DDF898d134483EfC6;
+    address constant hlOperator = 0xC3AcB9dF13095E7A27919D78aD8323CF7717Bb16;
+    address constant gmxOperator = 0x46eC45418cC71df561c676b89b982B1cF52C824C;
     address constant sender = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
     LogarithmVault gmxVault = LogarithmVault(Arbitrum.VAULT_GMX_USDC_DOGE);
     LogarithmVault hlVault = LogarithmVault(Arbitrum.VAULT_HL_USDC_DOGE);
@@ -34,7 +35,7 @@ contract ProdTest is Test {
     string constant rpcUrl = "https://arb-mainnet.g.alchemy.com/v2/PeyMa7ljzBjqJxkH6AnLfVH8zRWOtE1n";
 
     bytes call_data =
-        hex"0000000000000000000000000000000000000000000000000000000006594fa600000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000008883800a8e000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e58310000000000000000000000000000000000000000000000000000000006594fa60000000000000000000000000000000000000000000000000083c7f99605a2e42800000000000000000000006f38e884725a116c9c7fbf208e79fe8828a2595fcc51b9ac000000000000000000000000000000000000000000000000";
+        hex"000000000000000000000000000000000000000000000000000000000d693a40000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000";
     bytes32 request = 0x3c2a45c9fa3439fdc17b5bb4ac31bd9926877f3e44ae24741f232b87df204c6a;
 
     function test_replay_deutilize() public {
@@ -50,14 +51,14 @@ contract ProdTest is Test {
         (uint256 amount, ISpotManager.SwapType swapType, bytes memory swapData) =
             abi.decode(call_data, (uint256, ISpotManager.SwapType, bytes));
         console.log("amount", amount);
-        vm.startPrank(operator);
+        vm.startPrank(gmxOperator);
         gmxStrategy.deutilize(amount, swapType, swapData);
         DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(gmxStrategy));
         _logState(state);
     }
 
     function test_replay_utilize() public {
-        vm.createSelectFork(rpcUrl, 271867714);
+        vm.createSelectFork(rpcUrl);
 
         address _arbsys = address(new ArbSysMock());
         address _arbgasinfo = address(new ArbGasInfoMock());
@@ -69,8 +70,8 @@ contract ProdTest is Test {
         (uint256 amount, ISpotManager.SwapType swapType, bytes memory swapData) =
             abi.decode(call_data, (uint256, ISpotManager.SwapType, bytes));
         console.log("amount", amount);
-        vm.startPrank(operator);
-        gmxStrategy.utilize(amount, swapType, swapData);
+        vm.startPrank(hlOperator);
+        hlStrategy.utilize(amount, swapType, swapData);
 
         vm.startPrank(0xC539cB358a58aC67185BaAD4d5E3f7fCfc903700);
         address(0xB0Fc2a48b873da40e7bc25658e5E6137616AC2Ee).call(

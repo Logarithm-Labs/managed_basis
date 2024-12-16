@@ -18,4 +18,10 @@ contract MockMessenger is ILogarithmMessenger {
             IMessageRecipient(receiver).receiveMessage(AddressCast.addressToBytes32(msg.sender), params.data);
         }
     }
+
+    function authorize(address account) external {}
+    function unauthorize(address account) external {}
+    function updateGasStation(address newGasStation) external {}
+    function registerDstMessenger(uint256 chainId, uint32 lzEid, bytes32 dstMessenger) external {}
+    function registerStargate(address token, address stargate) external {}
 }

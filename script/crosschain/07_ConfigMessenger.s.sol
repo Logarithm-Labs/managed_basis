@@ -19,10 +19,12 @@ contract ArbConfigScript is Script {
     uint256 constant BSC_CHAIN_ID = 56;
     uint32 constant BSC_EID = uint32(30102);
     ILogarithmMessenger messenger = ILogarithmMessenger(ArbiAddresses.LOGARITHM_MESSENGER);
+    GasStation gasStation = GasStation(payable(Arbitrum.GAS_STATION));
 
     function run() public {
         vm.startBroadcast();
 
+        gasStation.registerManager(address(messenger), true);
         messenger.authorize(Arbitrum.X_SPOT_MANAGER_GMX_USDC_DOGE);
         messenger.authorize(Arbitrum.X_SPOT_MANAGER_HL_USDC_DOGE);
 
@@ -42,10 +44,12 @@ contract BscConfigScript is Script {
     uint256 constant ARB_CHAIN_ID = 42161;
     uint32 constant ARB_EID = uint32(30110);
     ILogarithmMessenger messenger = ILogarithmMessenger(BscAddresses.LOGARITHM_MESSENGER);
+    GasStation gasStation = GasStation(payable(Bsc.GAS_STATION));
 
     function run() public {
         vm.startBroadcast();
 
+        gasStation.registerManager(address(messenger), true);
         messenger.authorize(Bsc.BROTHER_SWAPPER_GMX);
         messenger.authorize(Bsc.BROTHER_SWAPPER_HL);
 
