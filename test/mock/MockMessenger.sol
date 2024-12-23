@@ -6,7 +6,7 @@ import {SendParams, ILogarithmMessenger} from "src/messenger/ILogarithmMessenger
 import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
 
-contract MockMessenger is ILogarithmMessenger {
+contract MockMessenger {
     function send(SendParams calldata params) external payable {
         address receiver = AddressCast.bytes32ToAddress(params.receiver);
         if (params.amount > 0) {
