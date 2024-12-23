@@ -17,12 +17,33 @@ contract ManualSwapTest is ForkTest {
         _forkArbitrum(0);
     }
 
+    function test_getSqrtTwapX96() public view {
+        uint160 sqrtPriceX96 = ManualSwapLogic.getSqrtTwapX96(UNI_V3_POOL_WETH_USDC, 30);
+        uint256 quote = ManualSwapLogic.getQuoteAmount(sqrtPriceX96, 1 ether, true);
+        console.log("weth quote in usdc", quote);
+    }
+
+    function test_revert_frontrunning() public {
+        uint256 assetsOfAttacker = 1_000_000_000_000;
+        uint256 assetsOfVictim = 300_000_000;
+        _writeTokenBalance(address(this), asset, assetsOfAttacker + assetsOfVictim);
+        address[] memory swapPath = new address[](3);
+        swapPath[0] = asset;
+        swapPath[1] = UNI_V3_POOL_WETH_USDC;
+        swapPath[2] = product;
+        // do front running with huge assets
+        ManualSwapLogic.swap(assetsOfAttacker, swapPath);
+        // the following swap will get failed due to slippage
+        vm.expectRevert();
+        ManualSwapLogic.swap(assetsOfVictim, swapPath);
+    }
+
     function test_swap_assetToProduct(uint256 amount) public {
         amount = bound(amount, 1 * 1e6, 10000 * 1e6);
         _writeTokenBalance(address(this), asset, amount);
         address[] memory swapPath = new address[](3);
         swapPath[0] = asset;
-        swapPath[1] = UNISWAPV3_WETH_USDC;
+        swapPath[1] = UNI_V3_POOL_WETH_USDC;
         swapPath[2] = product;
         uint256 amountOut = ManualSwapLogic.swap(amount, swapPath);
         uint256 productBalance = IERC20(product).balanceOf(address(this));
@@ -34,7 +55,7 @@ contract ManualSwapTest is ForkTest {
         _writeTokenBalance(address(this), product, amount);
         address[] memory swapPath = new address[](3);
         swapPath[0] = product;
-        swapPath[1] = UNISWAPV3_WETH_USDC;
+        swapPath[1] = UNI_V3_POOL_WETH_USDC;
         swapPath[2] = asset;
         uint256 amountOut = ManualSwapLogic.swap(amount, swapPath);
         uint256 productBalance = IERC20(asset).balanceOf(address(this));
