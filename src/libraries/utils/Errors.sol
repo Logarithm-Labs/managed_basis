@@ -31,6 +31,7 @@ library Errors {
                                  MANUAL
     //////////////////////////////////////////////////////////////*/
     error SwapAmountExceedsBalance(uint256 swapAmount, uint256 balance);
+    error SwapBelowMinimum(uint256 out, uint256 min);
 
     /*//////////////////////////////////////////////////////////////
                                  ORACLE
