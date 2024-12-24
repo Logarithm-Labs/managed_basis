@@ -22,7 +22,12 @@ contract DeployScript is Script {
 
     function run() public {
         vm.startBroadcast();
-        gmxXSpotManager.setSwapper(gmxSwapper);
-        hlXSpotManager.setSwapper(hlSwapper);
+        // gmxXSpotManager.setSwapper(gmxSwapper);
+        // hlXSpotManager.setSwapper(hlSwapper);
+
+        hlXSpotManager.setBuyReqGasLimit(1_000_000);
+        hlXSpotManager.setBuyResGasLimit(800_000);
+        hlXSpotManager.setSellReqGasLimit(1_000_000);
+        hlXSpotManager.setSellResGasLimit(800_000);
     }
 }
