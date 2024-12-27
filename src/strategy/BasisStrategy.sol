@@ -740,7 +740,7 @@ contract BasisStrategy is
             return false;
         }
 
-        if (sizeDeltaInTokens > 0) {
+        if (sizeDeltaInTokens > 0 && sizeDeltaInTokens != type(uint256).max) {
             uint256 min;
             uint256 max;
             if (isIncrease) (min, max) = $.hedgeManager.increaseSizeMinMax();
@@ -749,7 +749,7 @@ contract BasisStrategy is
             sizeDeltaInTokens = _clamp(min, sizeDeltaInTokens, max);
         }
 
-        if (collateralDeltaAmount > 0) {
+        if (collateralDeltaAmount > 0 && collateralDeltaAmount != type(uint256).max) {
             uint256 min;
             uint256 max;
             if (isIncrease) (min, max) = $.hedgeManager.increaseCollateralMinMax();
