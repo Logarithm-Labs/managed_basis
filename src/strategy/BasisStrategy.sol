@@ -976,7 +976,9 @@ contract BasisStrategy is
             (bool exceedsThreshold,) = _checkDeviation(
                 responseParams.collateralDeltaAmount, requestParams.collateralDeltaAmount, _responseDeviationThreshold
             );
-            shouldPause = exceedsThreshold;
+            if (exceedsThreshold) {
+                shouldPause = true;
+            }
         }
 
         if (responseParams.collateralDeltaAmount > 0) {
