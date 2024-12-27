@@ -1,5 +1,12 @@
 # 1. Unable to redeem all user shares or sell all products and close the hedge when the decreaseSizeMax config is different from type(uint256).max.
 
+## Status: Acknowledged
+
+## Remediation
+
+Used your remediation.
+Git commit: [`49b26fd63295a4f0f820331de8fe98f759e5a6cb`](https://github.com/Logarithm-Labs/managed_basis/commit/49b26fd63295a4f0f820331de8fe98f759e5a6cb)
+
 # 2. pendingDecreaseCollateral variable isn't excluded from the positionNetBalance() value in the leverage and rebalance calculations, which may lead to incorrect rebalance actions for the strategy.
 
 # 3. The strategy does not pause when the deviation of sizeDeltaInTokens exceeds the threshold.
