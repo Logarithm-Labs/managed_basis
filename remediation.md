@@ -1,6 +1,6 @@
 # 1. Unable to redeem all user shares or sell all products and close the hedge when the decreaseSizeMax config is different from type(uint256).max.
 
-## Status: Acknowledged
+## Status: Acknowledged and fixed
 
 ## Remediation
 
@@ -9,7 +9,7 @@ Git commit: [`49b26fd63295a4f0f820331de8fe98f759e5a6cb`](https://github.com/Loga
 
 # 2. pendingDecreaseCollateral variable isn't excluded from the positionNetBalance() value in the leverage and rebalance calculations, which may lead to incorrect rebalance actions for the strategy.
 
-## Status: Rejected
+## Status: No action required
 
 ## Description
 
@@ -162,7 +162,7 @@ Here are the arguments.
 
 # 3. The strategy does not pause when the deviation of sizeDeltaInTokens exceeds the threshold.
 
-## Status: Acknowledged
+## Status: Acknowledged and fixed
 
 ## Remediation
 
@@ -171,7 +171,7 @@ Git commit: [8e8b733e93dcb060237efc56f944dfb0afc1f5f5](https://github.com/Logari
 
 # 4. Last withdrawer could give next depositor 0 share.
 
-## Status: Acknowledged
+## Status: Acknowledged and fixed
 
 ## Remediation
 
@@ -182,7 +182,7 @@ Git commit: [8e8b733e93dcb060237efc56f944dfb0afc1f5f5](https://github.com/Logari
 
 # 5. Lack of slippage protection for manual swap in SpotManager.
 
-## Status: Acknowledged
+## Status: Acknowledged and fixed
 
 ## Remediation
 
