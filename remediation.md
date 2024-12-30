@@ -192,6 +192,13 @@ Git commit: [3cf11627b7ff5e0530ea68fafdb828b5fdb3b490](https://github.com/Logari
 
 # 6. $.pendingDecreaseCollateral variable will be updated incorrectly if the agent executes an insufficient response, leading to an imbalance in the strategy after unpausing.
 
+## Status: Acknowledged and fixed.
+
+## Remediation
+
+We have acknowledged the issue and implemented the recommended changes.
+Git commit: [22ab15bc7cbccde86033adbfdb00c3dd7247b0de](https://github.com/Logarithm-Labs/managed_basis/commit/22ab15bc7cbccde86033adbfdb00c3dd7247b0de)
+
 # 7. Not all pendingDecreaseCollateral is utilized due to the max limit.
 
 # 8. Loss of fees due to lack of updates before the \_lastHarvestedTimestamp is updated.
