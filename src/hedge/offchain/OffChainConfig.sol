@@ -67,6 +67,12 @@ contract OffChainConfig is UUPSUpgradeable, OwnableUpgradeable {
         uint256 decreaseCollateralMax
     ) external onlyOwner {
         require(increaseCollateralMin < increaseCollateralMax && decreaseCollateralMin < decreaseCollateralMax);
+        uint256 _limitDecreaseCollateral = limitDecreaseCollateral();
+        if (_limitDecreaseCollateral != 0) {
+            require(
+                _limitDecreaseCollateral > decreaseCollateralMin && _limitDecreaseCollateral < decreaseCollateralMax
+            );
+        }
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
         $.increaseCollateralMinMax = [increaseCollateralMin, increaseCollateralMax];
         $.decreaseCollateralMinMax = [decreaseCollateralMin, decreaseCollateralMax];
@@ -74,7 +80,7 @@ contract OffChainConfig is UUPSUpgradeable, OwnableUpgradeable {
 
     function setLimitDecreaseCollateral(uint256 limit) external onlyOwner {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
-        require(limit > $.decreaseCollateralMinMax[0]);
+        require(limit > $.decreaseCollateralMinMax[0] && limit < $.decreaseCollateralMinMax[1]);
         $.limitDecreaseCollateral = limit;
     }
 
