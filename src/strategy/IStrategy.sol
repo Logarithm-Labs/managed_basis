@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 interface IStrategy {
+    function processAssetsToWithdraw() external;
     function utilizedAssets() external view returns (uint256);
     function stop() external;
     function pause() external;

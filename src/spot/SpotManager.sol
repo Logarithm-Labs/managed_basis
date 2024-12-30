@@ -40,6 +40,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
         address oracle;
         address asset;
         address product;
+        uint256 exposure;
         // manual swap state
         mapping(address => bool) isSwapPool;
         address[] productToAssetSwapPath;
@@ -157,6 +158,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
+        _getSpotManagerStorage().exposure += amountOut;
         emit SpotBuy(amount, amountOut);
 
         IBasisStrategy(_msgSender()).spotBuyCallback(amount, amountOut);
@@ -181,14 +183,10 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
+        _getSpotManagerStorage().exposure -= amount;
         emit SpotSell(amountOut, amount);
 
         IBasisStrategy(_msgSender()).spotSellCallback(amountOut, amount);
-    }
-
-    /// @dev The spot exposure that is needed to be hedged by the perpetual positions.
-    function exposure() public view returns (uint256) {
-        return IERC20(product()).balanceOf(address(this));
     }
 
     /// @dev Returns the product amount in asset.
@@ -238,6 +236,11 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
     /// @notice The asset address.
     function asset() public view returns (address) {
         return _getSpotManagerStorage().asset;
+    }
+
+    /// @dev The spot exposure that is needed to be hedged by the perpetual positions.
+    function exposure() public view returns (uint256) {
+        return _getSpotManagerStorage().exposure;
     }
 
     /// @notice The product address.

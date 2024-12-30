@@ -476,8 +476,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         }
 
         bool isPrioritizedAccount = isPrioritized(withdrawRequest.owner);
-        (bool isExecuted, bool isLast) =
-            _isWithdrawRequestExecuted(isPrioritizedAccount, withdrawRequest.accRequestedWithdrawAssets);
+        bool isLast = _isLast(isPrioritizedAccount, withdrawRequest.accRequestedWithdrawAssets);
+        if (isLast) {
+            // call processAssetsToWithdraw() only when last to avoid normals being reverted.
+            IStrategy(strategy()).processAssetsToWithdraw();
+        }
+        bool isExecuted = _isExecuted(isLast, isPrioritizedAccount, withdrawRequest.accRequestedWithdrawAssets);
 
         if (!isExecuted) {
             revert Errors.RequestNotExecuted();
@@ -529,8 +533,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
-        (bool isExecuted,) =
-            _isWithdrawRequestExecuted(isPrioritized(withdrawRequest.owner), withdrawRequest.accRequestedWithdrawAssets);
+        bool isPrioritizedAccount = isPrioritized(withdrawRequest.owner);
+        bool isExecuted = _isExecuted(
+            _isLast(isPrioritizedAccount, withdrawRequest.accRequestedWithdrawAssets),
+            isPrioritizedAccount,
+            withdrawRequest.accRequestedWithdrawAssets
+        );
 
         return isExecuted && !withdrawRequest.isClaimed;
     }
@@ -720,43 +728,43 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return (remainingAssets, processedAssets);
     }
 
-    /// @dev Executable state of withdraw request
-    ///
-    /// @param isPrioritizedAccount Tells if account is prioritized for withdrawal
-    /// @param accRequestedWithdrawAssetsOfRequest The accRequestedWithdrawAssets storage value of withdraw request
-    ///
-    /// @return isExecuted Tells whether a request is executed or not
-    /// @return isLast Tells whether a request is last or not
-    function _isWithdrawRequestExecuted(bool isPrioritizedAccount, uint256 accRequestedWithdrawAssetsOfRequest)
+    /// @dev Tells if the given withdraw request is last or not.
+    function _isLast(bool isPrioritizedAccount, uint256 accRequestedWithdrawAssetsOfRequest)
         internal
         view
-        returns (bool isExecuted, bool isLast)
+        returns (bool isLast)
     {
         // return false if withdraw request was not issued (accRequestedWithdrawAssetsOfRequest is zero)
         if (accRequestedWithdrawAssetsOfRequest == 0) {
-            return (false, false);
+            return false;
         }
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-
-        // separate workflow for last withdraw
-        // check if current withdrawRequest is last withdraw
-        // possible only when totalSupply is 0
         if (totalSupply() == 0) {
             isLast = isPrioritizedAccount
-                ? accRequestedWithdrawAssetsOfRequest == $.prioritizedAccRequestedWithdrawAssets
-                : accRequestedWithdrawAssetsOfRequest == $.accRequestedWithdrawAssets;
+                ? accRequestedWithdrawAssetsOfRequest == prioritizedAccRequestedWithdrawAssets()
+                : accRequestedWithdrawAssetsOfRequest == accRequestedWithdrawAssets();
         }
+        return isLast;
+    }
 
+    /// @dev Tells if the given withdraw request is executed or not.
+    function _isExecuted(bool isLast, bool isPrioritizedAccount, uint256 accRequestedWithdrawAssetsOfRequest)
+        internal
+        view
+        returns (bool isExecuted)
+    {
+        // return false if withdraw request was not issued (accRequestedWithdrawAssetsOfRequest is zero)
+        if (accRequestedWithdrawAssetsOfRequest == 0) {
+            return false;
+        }
         if (isLast) {
             // last withdraw is claimable when utilized assets is 0
             isExecuted = IStrategy(strategy()).utilizedAssets() == 0;
         } else {
             isExecuted = isPrioritizedAccount
-                ? accRequestedWithdrawAssetsOfRequest <= $.prioritizedProcessedWithdrawAssets
-                : accRequestedWithdrawAssetsOfRequest <= $.processedWithdrawAssets;
+                ? accRequestedWithdrawAssetsOfRequest <= prioritizedProcessedWithdrawAssets()
+                : accRequestedWithdrawAssetsOfRequest <= processedWithdrawAssets();
         }
-
-        return (isExecuted, isLast);
+        return isExecuted;
     }
 
     /// @dev Uses nonce of the specified user and increase it

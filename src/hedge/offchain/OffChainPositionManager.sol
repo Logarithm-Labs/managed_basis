@@ -332,7 +332,7 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IHedgeMan
         uint256 _idleCollateralAmount = idleCollateralAmount();
         if (_idleCollateralAmount > 0) {
             address _strategy = $.strategy;
-            IERC20($.collateralToken).transfer(_strategy, idleCollateralAmount());
+            IERC20($.collateralToken).transfer(_strategy, _idleCollateralAmount);
             IBasisStrategy(_strategy).processAssetsToWithdraw();
         }
     }

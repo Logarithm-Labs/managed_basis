@@ -441,10 +441,16 @@ contract BasisStrategy is
                             KEEPER LOGIC   
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Processes assets in Strategy for the withdraw requests.
+    /// @notice Processes idle assets for the withdraw requests.
     ///
     /// @dev Callable by anyone and only when strategy is in the IDLE status.
     function processAssetsToWithdraw() public whenIdle {
+        address _asset = asset();
+        address _hedgeManager = hedgeManager();
+        uint256 idleCollateral = IERC20(_asset).balanceOf(_hedgeManager);
+        if (idleCollateral > 0) {
+            IERC20(_asset).safeTransferFrom(_hedgeManager, address(this), idleCollateral);
+        }
         _processAssetsToWithdraw(asset());
     }
 
