@@ -572,16 +572,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        if (totalSupply() == 0) {
-            return assets;
-        }
         // calculate the amount of assets that will be utilized
         (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            assets -= _costOnTotal(assetsToUtilize, $.entryCost);
+            assets -= _costOnTotal(assetsToUtilize, entryCost());
         }
 
         return _convertToShares(assets, Math.Rounding.Floor);
@@ -589,31 +585,25 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function previewMint(uint256 shares) public view virtual override returns (uint256) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        if (totalSupply() == 0) {
-            return shares;
-        }
         uint256 assets = _convertToAssets(shares, Math.Rounding.Ceil);
-
         // calculate the amount of assets that will be utilized
         (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            assets += _costOnRaw(assetsToUtilize, $.entryCost);
+            assets += _costOnRaw(assetsToUtilize, entryCost());
         }
         return assets;
     }
 
     /// @inheritdoc ERC4626Upgradeable
     function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         // calc the amount of assets that can not be withdrawn via idle
         (, uint256 assetsToDeutilize) = assets.trySub(idleAssets());
 
         // apply exit fee to assets that should be deutilized and add exit fee amount the asset amount
         if (assetsToDeutilize > 0) {
-            assets += _costOnRaw(assetsToDeutilize, $.exitCost);
+            assets += _costOnRaw(assetsToDeutilize, exitCost());
         }
 
         return _convertToShares(assets, Math.Rounding.Ceil);
@@ -621,7 +611,6 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function previewRedeem(uint256 shares) public view virtual override returns (uint256) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         uint256 assets = _convertToAssets(shares, Math.Rounding.Floor);
 
         // calculate the amount of assets that will be deutilized
@@ -629,7 +618,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
         // apply exit fee to the portion of assets that will be deutilized
         if (assetsToDeutilize > 0) {
-            assets -= _costOnTotal(assetsToDeutilize, $.exitCost);
+            assets -= _costOnTotal(assetsToDeutilize, exitCost());
         }
 
         return assets;

