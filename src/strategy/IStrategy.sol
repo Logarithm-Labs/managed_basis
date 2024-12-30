@@ -7,4 +7,7 @@ interface IStrategy {
     function stop() external;
     function pause() external;
     function unpause() external;
+    function asset() external view returns (address);
+    function product() external view returns (address);
+    function vault() external view returns (address);
 }

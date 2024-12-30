@@ -243,6 +243,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         }
 
         require(_strategy != address(0));
+        if (IStrategy(_strategy).asset() != address(_asset) || IStrategy(_strategy).vault() != address(this)) {
+            revert Errors.InvalidStrategy();
+        }
+        if (prevStrategy != address(0) && IStrategy(_strategy).product() != IStrategy(prevStrategy).product()) {
+            revert Errors.InvalidStrategy();
+        }
         $.strategy = _strategy;
         _asset.approve(_strategy, type(uint256).max);
 

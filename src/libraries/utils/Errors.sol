@@ -19,6 +19,8 @@ library Errors {
     error ManagementFeeTransfer(address feeRecipient);
     /// @notice Reverts minting with 0 shares
     error ZeroShares();
+    /// @notice Validation for strategy
+    error InvalidStrategy();
 
     /*//////////////////////////////////////////////////////////////
                                  1INCH
