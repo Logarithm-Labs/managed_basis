@@ -17,6 +17,8 @@ library Errors {
     error ExceededMaxRequestRedeem(address owner, uint256 shares, uint256 max);
     /// @notice Transferring of shares from/to the fee recipient is not allowed.
     error ManagementFeeTransfer(address feeRecipient);
+    /// @notice Reverts minting with 0 shares
+    error ZeroShares();
 
     /*//////////////////////////////////////////////////////////////
                                  1INCH

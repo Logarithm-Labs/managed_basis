@@ -239,11 +239,9 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.startPrank(from);
         IERC20(asset).approve(address(vault), assets);
         StrategyState memory state0 = helper.getStrategyState();
-        uint256 shares = vault.deposit(assets, from);
+        vault.deposit(assets, from);
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1);
-        console.log("Deposited assets: ", assets);
-        console.log("Received shares: ", shares);
     }
 
     function _mint(address from, uint256 shares) internal {
@@ -1252,23 +1250,27 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         IERC20(asset).transfer(address(vault), TEN_THOUSANDS_USDC);
         vm.stopPrank();
         console.log("user1 deposit after withdrawRequest.");
-        _deposit(user1, 1);
-        console.log("victim first deposit");
-        _deposit(user2, TEN_THOUSANDS_USDC / 10_000);
         vm.startPrank(user1);
-        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
-        vm.stopPrank();
-        vm.startPrank(user1);
-        vault.claim(user1RequestKey);
-        uint256 balAfter = IERC20(asset).balanceOf(user1);
-        console.log("balanceBefore", balBefore);
-        console.log("balanceAfter", balAfter);
-        // console.log("profit", balAfter - balBefore);
+        IERC20(asset).approve(address(vault), 1);
+        vm.expectRevert(Errors.ZeroShares.selector);
+        vault.deposit(1, user1);
+        // _deposit(user1, 1);
+        // console.log("victim first deposit");
+        // _deposit(user2, TEN_THOUSANDS_USDC / 10_000);
+        // vm.startPrank(user1);
+        // vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+        // vm.stopPrank();
+        // vm.startPrank(user1);
+        // vault.claim(user1RequestKey);
+        // uint256 balAfter = IERC20(asset).balanceOf(user1);
+        // console.log("balanceBefore", balBefore);
+        // console.log("balanceAfter", balAfter);
+        // // console.log("profit", balAfter - balBefore);
 
-        vm.startPrank(user2);
-        vault.requestRedeem(vault.balanceOf(user2), user2, user2);
-        vm.stopPrank();
-        console.log("victim balance", IERC20(asset).balanceOf(user2));
+        // vm.startPrank(user2);
+        // vault.requestRedeem(vault.balanceOf(user2), user2, user2);
+        // vm.stopPrank();
+        // console.log("victim balance", IERC20(asset).balanceOf(user2));
     }
 
     function test_idleAssetsShouldBeZero_whenSupplyZero() public {

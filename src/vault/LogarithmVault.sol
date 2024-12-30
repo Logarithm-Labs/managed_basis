@@ -671,6 +671,9 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     ///
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        if (shares == 0) {
+            revert Errors.ZeroShares();
+        }
         ERC4626Upgradeable._deposit(caller, receiver, assets, shares);
         processPendingWithdrawRequests();
     }
