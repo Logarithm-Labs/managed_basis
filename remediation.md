@@ -171,6 +171,15 @@ Git commit: [8e8b733e93dcb060237efc56f944dfb0afc1f5f5](https://github.com/Logari
 
 # 4. Last withdrawer could give next depositor 0 share.
 
+## Status: Acknowledged
+
+## Remediation
+
+1. Removed the logic that makes the first depositor avoiding the OZ's decimal offset calculation.
+   Git commit: [af468f1213cf35dc5942b9195e706ee4758d1633](https://github.com/Logarithm-Labs/managed_basis/commit/af468f1213cf35dc5942b9195e706ee4758d1633)
+2. Added the logic of reverting when minting with zero shares, as you recommended.
+   Git commit: [55fe528f7ec208c0db4dee1b9288790eee737eeb](https://github.com/Logarithm-Labs/managed_basis/commit/55fe528f7ec208c0db4dee1b9288790eee737eeb)
+
 # 5. Lack of slippage protection for manual swap in SpotManager.
 
 # 6. $.pendingDecreaseCollateral variable will be updated incorrectly if the agent executes an insufficient response, leading to an imbalance in the strategy after unpausing.
