@@ -255,6 +255,13 @@ Git commit: [ad85e6d24dd3e70750916ed8ffa29993bf70e2c3](https://github.com/Logari
 
 # 10. Redundant and ineffective staleness check implementation.
 
+## Status: Acknowledged and fixed.
+
+## Description
+
+We have removed the redundant check.
+Git commit: [5821580ea72a38b15bbc5bc4efd6ae388218bbd9](https://github.com/Logarithm-Labs/managed_basis/commit/5821580ea72a38b15bbc5bc4efd6ae388218bbd9)
+
 # 11. The change in priority after requestWithdraw may block the claiming of the withdrawal request.
 
 # 12. LogarithmVault.sol::maxMint is returning super.maxDeposit instead of super.maxMint.
