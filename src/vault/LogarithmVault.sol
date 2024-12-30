@@ -648,7 +648,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         if (paused() || isShutdown()) {
             return 0;
         } else {
-            return super.maxDeposit(receiver);
+            return super.maxMint(receiver);
         }
     }
 
