@@ -245,6 +245,14 @@ FYI, we decided to implement them separately because the management fee is alway
 
 # 9. Unable to execute the final withdrawal due to utilizedAssets() not being zero.
 
+## Status: Acknowledged partially and mitigated.
+
+## Description
+
+We had two decentralized functions `Strategy.processAssetsToWithdraw` and `HedgeManager.clearIdleCollateral` to clear the idle assets under the assumption that protocol is deployed on Arbitrum chain where front running is impossible.
+To make things more efficient, we added the logic as you mentioned.
+Git commit: [ad85e6d24dd3e70750916ed8ffa29993bf70e2c3](https://github.com/Logarithm-Labs/managed_basis/commit/ad85e6d24dd3e70750916ed8ffa29993bf70e2c3)
+
 # 10. Redundant and ineffective staleness check implementation.
 
 # 11. The change in priority after requestWithdraw may block the claiming of the withdrawal request.
