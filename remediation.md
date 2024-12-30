@@ -203,6 +203,46 @@ Git commit: [22ab15bc7cbccde86033adbfdb00c3dd7247b0de](https://github.com/Logari
 
 # 8. Loss of fees due to lack of updates before the \_lastHarvestedTimestamp is updated.
 
+## Status: No action required
+
+## Description
+
+The performance fee gets harvested based on `lastHarvestedTimestamp` while the management fee gets accrued based on `lastAccruedTimestamp`.
+And regarding to the management accruement, it is done before all actions where share balances get updated, as you can see below.
+
+```solidity
+    /// @dev Accrues the management fee when it is set.
+    ///
+    /// @inheritdoc ERC20Upgradeable
+    function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
+        address _feeRecipient = feeRecipient();
+        address _whitelistProvider = whitelistProvider();
+
+        if (
+            to != address(0) && to != _feeRecipient && _whitelistProvider != address(0)
+                && !IWhitelistProvider(_whitelistProvider).isWhitelisted(to)
+        ) {
+            revert Errors.NotWhitelisted(to);
+        }
+
+        if (_feeRecipient != address(0)) {
+            if ((from == _feeRecipient && to != address(0)) || (from != address(0) && to == _feeRecipient)) {
+                revert Errors.ManagementFeeTransfer(_feeRecipient);
+            }
+
+            if (from != address(0) || to != _feeRecipient) {
+                // called when minting to none of recipient
+                // to stop infinite loop
+                _accrueManagementFeeShares(_feeRecipient);
+            }
+        }
+
+        super._update(from, to, value);
+    }
+```
+
+FYI, we decided to implement them separately because the management fee is always accrued based on the elapsed timestamp while the performance fee is done mainly based on the high water mark.
+
 # 9. Unable to execute the final withdrawal due to utilizedAssets() not being zero.
 
 # 10. Redundant and ineffective staleness check implementation.
