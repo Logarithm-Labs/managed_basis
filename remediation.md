@@ -264,6 +264,13 @@ Git commit: [5821580ea72a38b15bbc5bc4efd6ae388218bbd9](https://github.com/Logari
 
 # 11. The change in priority after requestWithdraw may block the claiming of the withdrawal request.
 
+## Status: Acknowledged and fixed.
+
+## Description
+
+We have fixed as you recommended.
+Git commit: [eef32a16b38e017024a639d8942482ae6643f25d](https://github.com/Logarithm-Labs/managed_basis/commit/eef32a16b38e017024a639d8942482ae6643f25d)
+
 # 12. LogarithmVault.sol::maxMint is returning super.maxDeposit instead of super.maxMint.
 
 # 13. Missing Asset/Product Check When Setting New Strategy.
