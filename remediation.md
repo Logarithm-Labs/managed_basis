@@ -282,7 +282,7 @@ Git commit: [3ac9b0ee05697f1739a5ceadb6af3775ec6d27fb](https://github.com/Logari
 
 # 13. Missing Asset/Product Check When Setting New Strategy.
 
-## Status: Acknowledged partially and fixed.
+## Status: Acknowledged and fixed.
 
 ## Description
 
@@ -290,6 +290,13 @@ We have added the validation checks of asset, product and vault of strategy.
 Git commit: [b8d238d8796d37bd36c6b70f96acff64dc4ed255](https://github.com/Logarithm-Labs/managed_basis/commit/b8d238d8796d37bd36c6b70f96acff64dc4ed255)
 
 # 14. Invalidation of setLimitDecreaseCollateral Validation Logic when setting new setCollateralMinMax.
+
+## Status: Acknowledged and fixed.
+
+## Description
+
+We have add the validation.
+Git commit: [a223b2c1d71272a72d83a9df687247d26742dfae](https://github.com/Logarithm-Labs/managed_basis/commit/a223b2c1d71272a72d83a9df687247d26742dfae)
 
 # 15. Missing disableinitializers() to prevent uninitialized contract.
 
