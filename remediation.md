@@ -273,6 +273,13 @@ Git commit: [eef32a16b38e017024a639d8942482ae6643f25d](https://github.com/Logari
 
 # 12. LogarithmVault.sol::maxMint is returning super.maxDeposit instead of super.maxMint.
 
+## Status: Acknowledged and fixed.
+
+## Description
+
+We have fixed.
+Git commit: [3ac9b0ee05697f1739a5ceadb6af3775ec6d27fb](https://github.com/Logarithm-Labs/managed_basis/commit/3ac9b0ee05697f1739a5ceadb6af3775ec6d27fb)
+
 # 13. Missing Asset/Product Check When Setting New Strategy.
 
 # 14. Invalidation of setLimitDecreaseCollateral Validation Logic when setting new setCollateralMinMax.
