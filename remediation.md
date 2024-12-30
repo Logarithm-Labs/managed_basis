@@ -182,6 +182,13 @@ Git commit: [8e8b733e93dcb060237efc56f944dfb0afc1f5f5](https://github.com/Logari
 
 # 5. Lack of slippage protection for manual swap in SpotManager.
 
+## Status: Acknowledged
+
+## Remediation
+
+Validated the output amount by calculating the minimum amount based on TWAP and slippage.
+Git commit: [3cf11627b7ff5e0530ea68fafdb828b5fdb3b490](https://github.com/Logarithm-Labs/managed_basis/commit/3cf11627b7ff5e0530ea68fafdb828b5fdb3b490)
+
 # 6. $.pendingDecreaseCollateral variable will be updated incorrectly if the agent executes an insufficient response, leading to an imbalance in the strategy after unpausing.
 
 # 7. Not all pendingDecreaseCollateral is utilized due to the max limit.
