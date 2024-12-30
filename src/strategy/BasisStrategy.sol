@@ -586,7 +586,6 @@ contract BasisStrategy is
                         (uint256 min,) = $.hedgeManager.decreaseCollateralMinMax();
                         uint256 pendingWithdraw = assetsToDeutilize();
                         collateralDeltaAmount = min > pendingWithdraw ? min : pendingWithdraw;
-                        $.pendingDecreaseCollateral = 0;
                     } else {
                         // when partial deutilizing
                         IHedgeManager _hedgeManager = $.hedgeManager;
@@ -982,8 +981,18 @@ contract BasisStrategy is
         }
 
         if (responseParams.collateralDeltaAmount > 0) {
-            // the case when deutilizing for withdrawals and rebalancing Up
-            (, $.pendingDecreaseCollateral) = $.pendingDecreaseCollateral.trySub(responseParams.collateralDeltaAmount);
+            if (!shouldPause) {
+                $.pendingDecreaseCollateral = 0;
+            } else {
+                uint256 crrentCollateralDelta = (requestParams.collateralDeltaAmount - $.pendingDecreaseCollateral)
+                    .mulDiv(responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens);
+                if (crrentCollateralDelta > responseParams.collateralDeltaAmount) {
+                    $.pendingDecreaseCollateral += crrentCollateralDelta - responseParams.collateralDeltaAmount;
+                } else {
+                    (, $.pendingDecreaseCollateral) =
+                        $.pendingDecreaseCollateral.trySub(responseParams.collateralDeltaAmount - crrentCollateralDelta);
+                }
+            }
             _asset.safeTransferFrom(_msgSender(), address(this), responseParams.collateralDeltaAmount);
         }
         // process withdraw request
