@@ -125,7 +125,7 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
 
         // in case chainlink price feeds are not updated
         uint256 heartbeatDuration = _getLogarithmOracleStorage().heartbeatDurations[address(priceFeed)];
-        if (block.timestamp > timestamp && block.timestamp - timestamp > heartbeatDuration) {
+        if (block.timestamp - timestamp > heartbeatDuration) {
             revert Errors.PriceFeedNotUpdated(asset, timestamp, heartbeatDuration);
         }
 
