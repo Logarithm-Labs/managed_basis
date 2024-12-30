@@ -57,6 +57,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         address owner;
         /// @dev The account who is receiving the executed withdrawal assets.
         address receiver;
+        /// @dev Tells if a withdraw request is prioritized.
+        bool isPrioritized;
         /// @dev True means claimed.
         bool isClaimed;
     }
@@ -405,7 +407,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         uint256 _accRequestedWithdrawAssets;
-        if (isPrioritized(owner)) {
+        bool isPrioritizedAccount = isPrioritized(owner);
+        if (isPrioritizedAccount) {
             _accRequestedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets + assetsToRequest;
             $.prioritizedAccRequestedWithdrawAssets = _accRequestedWithdrawAssets;
         } else {
@@ -420,6 +423,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
             requestTimestamp: block.timestamp,
             owner: owner,
             receiver: receiver,
+            isPrioritized: isPrioritizedAccount,
             isClaimed: false
         });
         emit WithdrawRequested(caller, receiver, owner, withdrawKey, assetsToRequest, sharesToRequest);
@@ -475,13 +479,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
             revert Errors.RequestAlreadyClaimed();
         }
 
-        bool isPrioritizedAccount = isPrioritized(withdrawRequest.owner);
-        bool isLast = _isLast(isPrioritizedAccount, withdrawRequest.accRequestedWithdrawAssets);
+        bool isLast = _isLast(withdrawRequest.isPrioritized, withdrawRequest.accRequestedWithdrawAssets);
         if (isLast) {
             // call processAssetsToWithdraw() only when last to avoid normals being reverted.
             IStrategy(strategy()).processAssetsToWithdraw();
         }
-        bool isExecuted = _isExecuted(isLast, isPrioritizedAccount, withdrawRequest.accRequestedWithdrawAssets);
+        bool isExecuted = _isExecuted(isLast, withdrawRequest.isPrioritized, withdrawRequest.accRequestedWithdrawAssets);
 
         if (!isExecuted) {
             revert Errors.RequestNotExecuted();
@@ -496,7 +499,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         if (isLast) {
             uint256 _processedWithdrawAssets;
             uint256 _accRequestedWithdrawAssets;
-            if (isPrioritizedAccount) {
+            if (withdrawRequest.isPrioritized) {
                 _processedWithdrawAssets = $.prioritizedProcessedWithdrawAssets;
                 _accRequestedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets;
             } else {
@@ -507,7 +510,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
             if (shortfall > 0) {
                 (, executedAssets) = withdrawRequest.requestedAssets.trySub(shortfall);
-                isPrioritizedAccount
+                withdrawRequest.isPrioritized
                     ? $.prioritizedProcessedWithdrawAssets = _accRequestedWithdrawAssets
                     : $.processedWithdrawAssets = _accRequestedWithdrawAssets;
             } else {
@@ -533,10 +536,9 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
-        bool isPrioritizedAccount = isPrioritized(withdrawRequest.owner);
         bool isExecuted = _isExecuted(
-            _isLast(isPrioritizedAccount, withdrawRequest.accRequestedWithdrawAssets),
-            isPrioritizedAccount,
+            _isLast(withdrawRequest.isPrioritized, withdrawRequest.accRequestedWithdrawAssets),
+            withdrawRequest.isPrioritized,
             withdrawRequest.accRequestedWithdrawAssets
         );
 
