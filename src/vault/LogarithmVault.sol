@@ -96,6 +96,10 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         }
     }
 
+    constructor() {
+        _disableInitializers();
+    }
+
     /*//////////////////////////////////////////////////////////////
                             EVENTS
     //////////////////////////////////////////////////////////////*/

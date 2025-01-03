@@ -31,6 +31,10 @@ contract StrategyConfig is UUPSUpgradeable, OwnableUpgradeable {
         }
     }
 
+    constructor() {
+        _disableInitializers();
+    }
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/

@@ -57,6 +57,10 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
         }
     }
 
+    constructor() {
+        _disableInitializers();
+    }
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/

@@ -89,6 +89,10 @@ contract OffChainPositionManager is Initializable, OwnableUpgradeable, IHedgeMan
         }
     }
 
+    constructor() {
+        _disableInitializers();
+    }
+
     /*//////////////////////////////////////////////////////////////
                             EVENTS
     //////////////////////////////////////////////////////////////*/

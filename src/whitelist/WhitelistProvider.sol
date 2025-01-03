@@ -31,6 +31,10 @@ contract WhitelistProvider is UUPSUpgradeable, OwnableUpgradeable {
         }
     }
 
+    constructor() {
+        _disableInitializers();
+    }
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/

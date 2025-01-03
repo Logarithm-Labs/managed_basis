@@ -28,6 +28,10 @@ contract OffChainConfig is UUPSUpgradeable, OwnableUpgradeable {
         }
     }
 
+    constructor() {
+        _disableInitializers();
+    }
+
     /*//////////////////////////////////////////////////////////////
                         INITIALIZATION
     //////////////////////////////////////////////////////////////*/
@@ -88,27 +92,27 @@ contract OffChainConfig is UUPSUpgradeable, OwnableUpgradeable {
                         PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function increaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+    function increaseCollateralMinMax() public view returns (uint256 min, uint256 max) {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
         return ($.increaseCollateralMinMax[0], $.increaseCollateralMinMax[1]);
     }
 
-    function increaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+    function increaseSizeMinMax() public view returns (uint256 min, uint256 max) {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
         return ($.increaseSizeMinMax[0], $.increaseSizeMinMax[1]);
     }
 
-    function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+    function decreaseCollateralMinMax() public view returns (uint256 min, uint256 max) {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
         return ($.decreaseCollateralMinMax[0], $.decreaseCollateralMinMax[1]);
     }
 
-    function decreaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+    function decreaseSizeMinMax() public view returns (uint256 min, uint256 max) {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
         return ($.decreaseSizeMinMax[0], $.decreaseSizeMinMax[1]);
     }
 
-    function limitDecreaseCollateral() external view returns (uint256) {
+    function limitDecreaseCollateral() public view returns (uint256) {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
         return $.limitDecreaseCollateral;
     }

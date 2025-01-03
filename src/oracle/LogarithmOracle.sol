@@ -39,6 +39,10 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
         }
     }
 
+    constructor() {
+        _disableInitializers();
+    }
+
     event PriceFeedUpdated(address asset, address feed);
     event HeartBeatUpdated(address asset, uint256 heartbeatDuration);
     event AssetDecimalInitiated(address asset, uint8 decimals);
