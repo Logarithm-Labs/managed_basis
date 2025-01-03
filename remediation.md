@@ -295,10 +295,17 @@ Git commit: [b8d238d8796d37bd36c6b70f96acff64dc4ed255](https://github.com/Logari
 
 ## Description
 
-We have add the validation.
+We have added the validation.
 Git commit: [a223b2c1d71272a72d83a9df687247d26742dfae](https://github.com/Logarithm-Labs/managed_basis/commit/a223b2c1d71272a72d83a9df687247d26742dfae)
 
 # 15. Missing disableinitializers() to prevent uninitialized contract.
+
+## Status: Acknowledged and fixed
+
+## Description
+
+We have added the function to each of the upgradeable smart contracts.
+Git commit: [9153bb7d5ee6896f71c5b0c9a62eeb6fdd2a63df](https://github.com/Logarithm-Labs/managed_basis/commit/9153bb7d5ee6896f71c5b0c9a62eeb6fdd2a63df)
 
 # 16. BasisStrategy::\_afterIncreasePosition may send asset to vault without LogarithmVault.processingPendingWithdrawRequest.
 
