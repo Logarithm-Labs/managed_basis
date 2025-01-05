@@ -313,9 +313,17 @@ Git commit: [9153bb7d5ee6896f71c5b0c9a62eeb6fdd2a63df](https://github.com/Logari
 
 ## Description
 
-We have acknowledged and fixed. And, in addition to `BasisStrategy::_afterIncreasePosition`, we have added that logic to `BasisStrategy::spotBuyCallback` because the spot callbacks will be asynchronous for cross-chain modes in the future version.
+We have acknowledged and fixed. And, in addition to `BasisStrategy::_afterIncreasePosition`, we have added that logic to `BasisStrategy::spotBuyCallback` because the spot callbacks will be asynchronous for cross-chain modes in the future version. <br>
+Git commit: [4f6d1844b076ea46a8ff38647baeecbe8f28d89a](https://github.com/Logarithm-Labs/managed_basis/commit/4f6d1844b076ea46a8ff38647baeecbe8f28d89a)
 
 # 17. Use Custom Error.
+
+## Status: Acknowledged and fixed
+
+## Description
+
+We have used the custom errors only for the user interfaces.
+Git commit: [313c9c712fe1da45f1bf5aa9e70aa242949624b5](https://github.com/Logarithm-Labs/managed_basis/commit/313c9c712fe1da45f1bf5aa9e70aa242949624b5)
 
 # 18. Use Ownable2StepUpgradeable for all contract.
 
