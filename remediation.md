@@ -309,6 +309,12 @@ Git commit: [9153bb7d5ee6896f71c5b0c9a62eeb6fdd2a63df](https://github.com/Logari
 
 # 16. BasisStrategy::\_afterIncreasePosition may send asset to vault without LogarithmVault.processingPendingWithdrawRequest.
 
+## Status: Acknowledged and fixed
+
+## Description
+
+We have acknowledged and fixed. And, in addition to `BasisStrategy::_afterIncreasePosition`, we have added that logic to `BasisStrategy::spotBuyCallback` because the spot callbacks will be asynchronous for cross-chain modes in the future version.
+
 # 17. Use Custom Error.
 
 # 18. Use Ownable2StepUpgradeable for all contract.
