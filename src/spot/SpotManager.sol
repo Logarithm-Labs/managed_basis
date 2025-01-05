@@ -203,17 +203,21 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
     //////////////////////////////////////////////////////////////*/
 
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
-        require(amount0Delta > 0 || amount1Delta > 0); // swaps entirely within 0-liquidity regions are not supported
-        if (data.length != 96) {
-            revert Errors.InvalidCallback();
-        }
-        _verifyCallback();
-        (address tokenIn,, address payer) = abi.decode(data, (address, address, address));
-        uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
-        if (payer == address(this)) {
-            IERC20(tokenIn).safeTransfer(_msgSender(), amountToPay);
+        if (amount0Delta > 0 || amount1Delta > 0) {
+            if (data.length != 96) {
+                revert Errors.InvalidCallback();
+            }
+            _verifyCallback();
+            (address tokenIn,, address payer) = abi.decode(data, (address, address, address));
+            uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
+            if (payer == address(this)) {
+                IERC20(tokenIn).safeTransfer(_msgSender(), amountToPay);
+            } else {
+                IERC20(tokenIn).safeTransferFrom(payer, _msgSender(), amountToPay);
+            }
         } else {
-            IERC20(tokenIn).safeTransferFrom(payer, _msgSender(), amountToPay);
+            // swaps entirely within 0-liquidity regions are not supported
+            revert Errors.SwapWithZeroLiquidity();
         }
     }
 
