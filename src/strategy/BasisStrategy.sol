@@ -542,8 +542,10 @@ contract BasisStrategy is
         if (strategyStatus() == StrategyStatus.UTILIZING) {
             if (productDelta == 0) {
                 // fail to buy product
-                $.asset.safeTransferFrom(_msgSender(), vault(), assetDelta);
+                address _vault = vault();
+                $.asset.safeTransferFrom(_msgSender(), _vault, assetDelta);
                 _setStrategyStatus(StrategyStatus.IDLE);
+                ILogarithmVault(_vault).processPendingWithdrawRequests();
             } else {
                 uint256 collateralDeltaAmount =
                     assetDelta.mulDiv(Constants.FLOAT_PRECISION, targetLeverage(), Math.Rounding.Ceil);
@@ -921,7 +923,9 @@ contract BasisStrategy is
             if (exceedsThreshold) {
                 if (collateralDeviation < 0) {
                     shouldPause = true;
-                    $.asset.safeTransferFrom(hedgeManager(), vault(), uint256(-collateralDeviation));
+                    address _vault = vault();
+                    $.asset.safeTransferFrom(hedgeManager(), _vault, uint256(-collateralDeviation));
+                    ILogarithmVault(_vault).processPendingWithdrawRequests();
                 }
             }
 
