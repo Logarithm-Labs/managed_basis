@@ -327,4 +327,11 @@ Git commit: [313c9c712fe1da45f1bf5aa9e70aa242949624b5](https://github.com/Logari
 
 # 18. Use Ownable2StepUpgradeable for all contract.
 
+## Status: Acknowledged and fixed
+
+## Description
+
+We have used `Ownable2StepUpgradeable` in all smart contracts.
+Git commit: [5dd34a1957856404a3aaa2917e8d9d6b1b07d0c2](https://github.com/Logarithm-Labs/managed_basis/commit/5dd34a1957856404a3aaa2917e8d9d6b1b07d0c2)
+
 # 19. Constant variables should be marked as private
