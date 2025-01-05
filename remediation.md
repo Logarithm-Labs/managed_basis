@@ -335,3 +335,10 @@ We have used `Ownable2StepUpgradeable` in all smart contracts.
 Git commit: [5dd34a1957856404a3aaa2917e8d9d6b1b07d0c2](https://github.com/Logarithm-Labs/managed_basis/commit/5dd34a1957856404a3aaa2917e8d9d6b1b07d0c2)
 
 # 19. Constant variables should be marked as private
+
+## Status: Acknowledged and fixed
+
+## Description
+
+We have acknowledged and fixed.
+Git commit: [eb92369922a0015b22c25e28cdd85a02a8fd5eff](https://github.com/Logarithm-Labs/managed_basis/commit/eb92369922a0015b22c25e28cdd85a02a8fd5eff)
