@@ -25,9 +25,9 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
     using Math for uint256;
 
     /// @notice The maximum value of management fee that can be configured.
-    uint256 public constant MAX_MANAGEMENT_FEE = 5e16; // 5%
+    uint256 private constant MAX_MANAGEMENT_FEE = 5e16; // 5%
     /// @notice The maximum value of performance fee that can be configured.
-    uint256 public constant MAX_PERFORMANCE_FEE = 5e17; // 50%
+    uint256 private constant MAX_PERFORMANCE_FEE = 5e17; // 50%
 
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT

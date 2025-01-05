@@ -15,8 +15,6 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 
 contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
-    uint256 public constant FLOAT_PRECISION = 1e30;
-
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
