@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
@@ -29,7 +29,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 /// funding payments on off-chain perpetual markets.
 ///
 /// @dev OffChainPositionManager is an upgradeable smart contract, deployed through the beacon proxy pattern.
-contract OffChainPositionManager is Initializable, OwnableUpgradeable, IHedgeManager {
+contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHedgeManager {
     using SafeCast for uint256;
     using Math for uint256;
 

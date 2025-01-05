@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
@@ -28,7 +28,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 /// spot exposure relative to the short hedge position.
 ///
 /// @dev SpotManager is an upgradeable smart contract, deployed through the beacon proxy pattern.
-contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwapper {
+contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, ISwapper {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////

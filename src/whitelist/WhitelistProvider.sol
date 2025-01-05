@@ -2,14 +2,14 @@
 pragma solidity ^0.8.0;
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /// @title WhitelistProvider
 /// @author Logarithm Labs
 /// @notice Store whitelisted users who are allowed for basis vaults
-contract WhitelistProvider is UUPSUpgradeable, OwnableUpgradeable {
+contract WhitelistProvider is UUPSUpgradeable, Ownable2StepUpgradeable {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     /*//////////////////////////////////////////////////////////////
