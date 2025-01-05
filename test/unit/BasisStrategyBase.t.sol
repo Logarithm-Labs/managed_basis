@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {PositionMngerForkTest} from "test/base/PositionMngerForkTest.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
-
+import {stdStorage, StdStorage} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
@@ -27,6 +27,7 @@ import {console2 as console} from "forge-std/console2.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 
 abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
+    using stdStorage for StdStorage;
     using Math for uint256;
 
     address owner = makeAddr("owner");
@@ -956,8 +957,10 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _performKeep("emergencyRebalanceDown_whenNotIdle");
     }
 
-    function test_performUpkeep_emergencyRebalanceDown_whenIdleNotEnough() public afterMultipleWithdrawRequestCreated 
-    // validateFinalState
+    function test_performUpkeep_emergencyRebalanceDown_whenIdleNotEnough()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
     {
         vm.startPrank(USDC_WHALE);
         IERC20(asset).transfer(address(vault), 100 * 1e6);
@@ -1005,6 +1008,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     function test_performUpkeep_hedgeDeviation_down() public afterMultipleWithdrawRequestCreated validateFinalState {
         vm.startPrank(address(spotManager));
         IERC20(product).transfer(address(this), IERC20(product).balanceOf(address(spotManager)) / 10);
+        _syncSpotExposure();
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeDeviation_down");
         assertTrue(upkeepNeeded, "upkeepNeeded");
@@ -1029,6 +1033,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     function test_performUpkeep_hedgeDeviation_down_whenNoPosition() public afterDeposited validateFinalState {
         vm.startPrank(WETH_WHALE);
         IERC20(product).transfer(address(spotManager), 1 ether);
+        _syncSpotExposure();
 
         assertEq(spotManager.exposure(), 1 ether, "exposure");
 
@@ -1056,6 +1061,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     function test_performUpkeep_hedgeDeviation_up() public afterMultipleWithdrawRequestCreated validateFinalState {
         vm.startPrank(address(WETH_WHALE));
         IERC20(product).transfer(address(spotManager), IERC20(product).balanceOf(address(spotManager)) / 10);
+        _syncSpotExposure();
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeDeviation_up");
         assertTrue(upkeepNeeded, "upkeepNeeded");
@@ -1075,6 +1081,12 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
 
         _performKeep("hedgeDeviation_up");
+    }
+
+    function _syncSpotExposure() internal {
+        address manager = address(spotManager);
+        uint256 balance = IERC20(product).balanceOf(manager);
+        stdstore.target(manager).sig(SpotManager(manager).exposure.selector).checked_write(balance);
     }
 
     /*//////////////////////////////////////////////////////////////
