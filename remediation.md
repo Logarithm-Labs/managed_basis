@@ -10,156 +10,17 @@ Git commit: [`49b26fd63295a4f0f820331de8fe98f759e5a6cb`](https://github.com/Loga
 
 # 2. pendingDecreaseCollateral variable isn't excluded from the positionNetBalance() value in the leverage and rebalance calculations, which may lead to incorrect rebalance actions for the strategy.
 
-## Status: No action required
+## Status: Refactored
 
 ## Description
 
-We just don't want to mix `pendingDecreaseCollateral` with `positionNetBalance` and `currentLeverage` because it is only for the strategy itself.
-If we mix them, then we have to implement another additional logic to calculate the utilized assets of the strategy.
-The current implementation is as follows:
-
-```solidity
-// scr/strategy/BasisStrategy.sol#L707-L710
-
-function utilizedAssets() public view returns (uint256) {
-BasisStrategyStorage storage $ = \_getBasisStrategyStorage();
-return $.spotManager.getAssetValue() + $.hedgeManager.positionNetBalance() + assetsToWithdraw();
-}
-```
-
-Importantly, the incorrect rebalance actions what you are concerning doesn't happen.
-Here are the arguments.
-
-1. For rebalancing up
-   When decreasing collateral for rebalancing up, `pendingDecreaseCollateral` is reduced within the function `_afterDecreasePosition` by the decreased amount. So the concern of the incorrect leverage state what you mentioned in your scenario won't happen.
-
-   ```solidity
-    // scr/strategy/BasisStrategy.sol
-
-    function performUpkeep(bytes calldata /*performData*/ ) external whenIdle {
-        [...]
-        else if (result.deltaCollateralToDecrease > 0) {
-            if (!_adjustPosition(0, result.deltaCollateralToDecrease, false)) {
-                _setStrategyStatus(StrategyStatus.IDLE);
-            }
-        }
-        [...]
-    }
-   ```
-
-   ```solidity
-   // scr/strategy/BasisStrategy.sol
-
-   function _afterDecreasePosition(IHedgeManager.AdjustPositionPayload calldata responseParams)
-    private
-    returns (bool shouldPause)
-   {
-    [...]
-    if (responseParams.collateralDeltaAmount > 0) {
-        // the case when deutilizing for withdrawals and rebalancing Up
-        (, $.pendingDecreaseCollateral) = $.pendingDecreaseCollateral.trySub(responseParams.collateralDeltaAmount);
-        _asset.safeTransferFrom(_msgSender(), address(this), responseParams.collateralDeltaAmount);
-    }
-    [...]
-   }
-   ```
-
-2. For rebalancing down
-   In the case when the position leverage is bigger than the max limit, we break the logic of accounting for `pendingDecreaseCollateral` because it is for keeping the current safe leverage when executing the partial deutilization.
-   That's why we don't account for `pendingDecreaseCollateral` into the calculation of `pendingDeutilization` as well as into the `_checkUpkeep` logic, while setting it as 0 within the function `performUpkeep`.
-
-   ```solidity
-   // scr/strategy/BasisStrategy.sol
-
-   function _pendingDeutilization(InternalPendingDeutilization memory params) private view returns (uint256) {
-       [...]
-       if (params.processingRebalanceDown) {
-           // for rebalance
-           uint256 currentLeverage = params.hedgeManager.currentLeverage();
-           uint256 _targetLeverage = $.targetLeverage;
-           if (currentLeverage > _targetLeverage) {
-               // calculate deutilization product
-               // when totalPendingWithdraw is enough big to prevent increasing collateral
-               uint256 deltaLeverage = currentLeverage - _targetLeverage;
-               deutilization = positionSizeInTokens.mulDiv(deltaLeverage, currentLeverage);
-               uint256 deutilizationInAsset = $.oracle.convertTokenAmount(params.product, params.asset, deutilization);
-
-               // when totalPendingWithdraw is not enough big to prevent increasing collateral
-               if (totalPendingWithdraw < deutilizationInAsset) {
-                   uint256 num = deltaLeverage + _targetLeverage.mulDiv(totalPendingWithdraw, positionNetBalance);
-                   uint256 den = currentLeverage + _targetLeverage.mulDiv(positionSizeInAssets, positionNetBalance);
-                   deutilization = positionSizeInTokens.mulDiv(num, den);
-               }
-           }
-       }
-       [...]
-   }
-   ```
-
-   ```solidity
-   // scr/strategy/BasisStrategy.sol
-
-   function _checkUpkeep() private view returns (InternalCheckUpkeepResult memory result) {
-       [...]
-       if (rebalanceDownNeeded) {
-           uint256 idleAssets = _vault.idleAssets();
-           (uint256 minIncreaseCollateral,) = _hedgeManager.increaseCollateralMinMax();
-           result.deltaCollateralToIncrease = _calculateDeltaCollateralForRebalance(
-               _hedgeManager.positionNetBalance(), currentLeverage, _targetLeverage
-           );
-           if (result.deltaCollateralToIncrease < minIncreaseCollateral) {
-               result.deltaCollateralToIncrease = minIncreaseCollateral;
-           }
-
-           // deutilize when idle assets are not enough to increase collateral
-           // and when processingRebalanceDown is true
-           // and when deleverageNeeded is false
-           if (
-               !deleverageNeeded && _processingRebalanceDown && (idleAssets == 0 || idleAssets < minIncreaseCollateral)
-           ) {
-               result.deltaCollateralToIncrease = 0;
-               return result;
-           }
-
-           // emergency deutilize when idleAssets are not enough to increase collateral
-           // in case currentLeverage is bigger than safeMarginLeverage
-           if (deleverageNeeded && (result.deltaCollateralToIncrease > idleAssets)) {
-               (, uint256 deltaLeverage) = currentLeverage.trySub(_maxLeverage);
-               result.emergencyDeutilizationAmount =
-                   _hedgeManager.positionSizeInTokens().mulDiv(deltaLeverage, currentLeverage);
-               (uint256 min, uint256 max) = _hedgeManager.decreaseSizeMinMax();
-               // @issue amount can be 0 because of clamping that breaks emergency rebalance down
-               result.emergencyDeutilizationAmount = _clamp(min, result.emergencyDeutilizationAmount, max);
-           }
-           return result;
-       }
-       [...]
-   }
-   ```
-
-   ```solidity
-
-   function performUpkeep(bytes calldata /*performData*/ ) external whenIdle {
-       [...]
-       if (result.emergencyDeutilizationAmount > 0) {
-           $.pendingDecreaseCollateral = 0;
-           $.processingRebalanceDown = true;
-           $.spotManager.sell(result.emergencyDeutilizationAmount, ISpotManager.SwapType.MANUAL, "");
-       } else if (result.deltaCollateralToIncrease > 0) {
-           $.pendingDecreaseCollateral = 0;
-           $.processingRebalanceDown = true;
-           uint256 idleAssets = $.vault.idleAssets();
-           if (
-               !_adjustPosition(
-                   0,
-                   idleAssets < result.deltaCollateralToIncrease ? idleAssets : result.deltaCollateralToIncrease,
-                   true
-               )
-           ) _setStrategyStatus(StrategyStatus.IDLE);
-       }
-       [...]
-   }
-   ```
+`pendingDecreaseCollateral` was used only in the case of partial deutilization with small amounts, in order to keep the current leverage as long as possible while saving the execution cost.
+But the oracle price keeps changing, so there is no guarantee that the leverage is safe under the operation. Even it makes the strategy logic more complicated.
+As a result, we have removed the `pendingDecreaseCollateral` logic throughout the strategy.
+Then you may come with the question what happens with the partial deutilization with small amounts.
+In that case, we have agreed on decreasing only sizes of spot and hedge, that resulted in leveraging down.
+Leveraging down is acceptable for us and we have the rebalancing up logic on the other hand. <br>
+Git commit: [cac461f907029391efc403f4b10ba03a92caa57d](https://github.com/Logarithm-Labs/managed_basis/commit/cac461f907029391efc403f4b10ba03a92caa57d)
 
 # 3. The strategy does not pause when the deviation of sizeDeltaInTokens exceeds the threshold.
 
@@ -192,21 +53,19 @@ Git commit: [3cf11627b7ff5e0530ea68fafdb828b5fdb3b490](https://github.com/Logari
 
 # 6. $.pendingDecreaseCollateral variable will be updated incorrectly if the agent executes an insufficient response, leading to an imbalance in the strategy after unpausing.
 
-## Status: Acknowledged and fixed
+## Status: Refactored
 
 ## Description
 
-We have acknowledged the issue and implemented the recommended changes.
-Git commit: [22ab15bc7cbccde86033adbfdb00c3dd7247b0de](https://github.com/Logarithm-Labs/managed_basis/commit/22ab15bc7cbccde86033adbfdb00c3dd7247b0de)
+Please refer to the description to issue 2.
 
 # 7. Not all pendingDecreaseCollateral is utilized due to the max limit.
 
-## Status: No action required
+## Status: Refactored
 
 ## Description
 
-It is acceptable for us because it resulted in leveraging down, and we have leveraging up logic in the background.
-Furthermore, the oracle price keeps changing all the time. So loss of pendingDecreaseCollateral could have bring positive effects to system.
+Please refer to the description to issue 2.
 
 # 8. Loss of fees due to lack of updates before the \_lastHarvestedTimestamp is updated.
 
