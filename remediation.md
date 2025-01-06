@@ -2,7 +2,7 @@
 
 ## Status: Assessed as low risk
 
-## Remediation
+## Description
 
 We were supposed not to use the max value different from type(uint256).max.
 In quite rare cases, we may use it, so implemented your remediation. <br>
@@ -165,7 +165,7 @@ Here are the arguments.
 
 ## Status: Acknowledged and fixed
 
-## Remediation
+## Description
 
 Fixed in a similar way to your recommendation. <br>
 Git commit: [8e8b733e93dcb060237efc56f944dfb0afc1f5f5](https://github.com/Logarithm-Labs/managed_basis/commit/8e8b733e93dcb060237efc56f944dfb0afc1f5f5)
@@ -174,7 +174,7 @@ Git commit: [8e8b733e93dcb060237efc56f944dfb0afc1f5f5](https://github.com/Logari
 
 ## Status: Acknowledged and fixed
 
-## Remediation
+## Description
 
 1. Removed the logic that makes the first depositor avoiding the OZ's decimal offset calculation.
    Git commit: [af468f1213cf35dc5942b9195e706ee4758d1633](https://github.com/Logarithm-Labs/managed_basis/commit/af468f1213cf35dc5942b9195e706ee4758d1633)
@@ -185,21 +185,28 @@ Git commit: [8e8b733e93dcb060237efc56f944dfb0afc1f5f5](https://github.com/Logari
 
 ## Status: Acknowledged and fixed
 
-## Remediation
+## Description
 
 Validated the output amount by calculating the minimum amount based on TWAP and slippage.
 Git commit: [3cf11627b7ff5e0530ea68fafdb828b5fdb3b490](https://github.com/Logarithm-Labs/managed_basis/commit/3cf11627b7ff5e0530ea68fafdb828b5fdb3b490)
 
 # 6. $.pendingDecreaseCollateral variable will be updated incorrectly if the agent executes an insufficient response, leading to an imbalance in the strategy after unpausing.
 
-## Status: Acknowledged and fixed.
+## Status: Acknowledged and fixed
 
-## Remediation
+## Description
 
 We have acknowledged the issue and implemented the recommended changes.
 Git commit: [22ab15bc7cbccde86033adbfdb00c3dd7247b0de](https://github.com/Logarithm-Labs/managed_basis/commit/22ab15bc7cbccde86033adbfdb00c3dd7247b0de)
 
 # 7. Not all pendingDecreaseCollateral is utilized due to the max limit.
+
+## Status: No action required
+
+## Description
+
+It is acceptable for us because it resulted in leveraging down, and we have leveraging up logic in the background.
+Furthermore, the oracle price keeps changing all the time. So loss of pendingDecreaseCollateral could have bring positive effects to system.
 
 # 8. Loss of fees due to lack of updates before the \_lastHarvestedTimestamp is updated.
 
@@ -245,7 +252,7 @@ FYI, we decided to implement them separately because the management fee is alway
 
 # 9. Unable to execute the final withdrawal due to utilizedAssets() not being zero.
 
-## Status: Acknowledged partially and mitigated.
+## Status: Acknowledged partially and mitigated
 
 ## Description
 
@@ -255,7 +262,7 @@ Git commit: [ad85e6d24dd3e70750916ed8ffa29993bf70e2c3](https://github.com/Logari
 
 # 10. Redundant and ineffective staleness check implementation.
 
-## Status: Acknowledged and fixed.
+## Status: Acknowledged and fixed
 
 ## Description
 
@@ -264,7 +271,7 @@ Git commit: [5821580ea72a38b15bbc5bc4efd6ae388218bbd9](https://github.com/Logari
 
 # 11. The change in priority after requestWithdraw may block the claiming of the withdrawal request.
 
-## Status: Acknowledged and fixed.
+## Status: Acknowledged and fixed
 
 ## Description
 
@@ -273,7 +280,7 @@ Git commit: [eef32a16b38e017024a639d8942482ae6643f25d](https://github.com/Logari
 
 # 12. LogarithmVault.sol::maxMint is returning super.maxDeposit instead of super.maxMint.
 
-## Status: Acknowledged and fixed.
+## Status: Acknowledged and fixed
 
 ## Description
 
@@ -282,7 +289,7 @@ Git commit: [3ac9b0ee05697f1739a5ceadb6af3775ec6d27fb](https://github.com/Logari
 
 # 13. Missing Asset/Product Check When Setting New Strategy.
 
-## Status: Acknowledged and fixed.
+## Status: Acknowledged and fixed
 
 ## Description
 
@@ -291,7 +298,7 @@ Git commit: [b8d238d8796d37bd36c6b70f96acff64dc4ed255](https://github.com/Logari
 
 # 14. Invalidation of setLimitDecreaseCollateral Validation Logic when setting new setCollateralMinMax.
 
-## Status: Acknowledged and fixed.
+## Status: Acknowledged and fixed
 
 ## Description
 
