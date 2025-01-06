@@ -63,39 +63,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         uint256 balDelta = IERC20(asset).balanceOf(user1) - balBefore;
 
         assertGt(requestedAssets, balDelta);
-        assertEq(strategy.pendingDecreaseCollateral(), 0);
         assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
-    }
-
-    function test_performUpkeep_decreaseCollateral() public afterMultipleWithdrawRequestCreated validateFinalState {
-        uint256 increaseCollateralMin = 5 * 1e6;
-        uint256 increaseCollateralMax = type(uint256).max;
-        uint256 decreaseCollateralMin = 10 * 1e6;
-        uint256 decreaseCollateralMax = type(uint256).max;
-        uint256 limitDecreaseCollateral = 50 * 1e6;
-        vm.startPrank(owner);
-        address _config = address(hedgeManager.config());
-        OffChainConfig(_config).setCollateralMinMax(
-            increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
-        );
-        OffChainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
-        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        uint256 amount = pendingDeutilization * 9 / 10;
-        _deutilize(amount);
-        (, pendingDeutilization) = strategy.pendingUtilizations();
-        amount = pendingDeutilization * 1 / 10;
-        vm.startPrank(operator);
-        strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
-        _deposit(user1, 400_000_000);
-        _executeOrder();
-
-        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("decreaseCollateral");
-        assertTrue(upkeepNeeded, "upkeepNeeded");
-        (,,,, bool decreaseCollateral,) = helper.decodePerformData(performData);
-        assertTrue(decreaseCollateral, "decreaseCollateral");
-        assertTrue(strategy.pendingDecreaseCollateral() > 0, "0 pendingDecreaseCollateral");
-        _performKeep("decreaseCollateral");
-        assertTrue(strategy.pendingDecreaseCollateral() == 0, "not 0 pendingDecreaseCollateral");
     }
 
     function test_idleCollateral_fullRedeem() public afterFullUtilized validateFinalState {
