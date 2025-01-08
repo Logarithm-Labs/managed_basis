@@ -2,13 +2,13 @@
 pragma solidity ^0.8.0;
 
 interface IOffChainConfig {
-    function increaseCollateralMinMax() external view returns (uint256 min, uint256 max);
+    function increaseCollateralMin() external view returns (uint256 min);
 
-    function increaseSizeMinMax() external view returns (uint256 min, uint256 max);
+    function increaseSizeMin() external view returns (uint256 min);
 
-    function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max);
+    function decreaseCollateralMin() external view returns (uint256 min);
 
-    function decreaseSizeMinMax() external view returns (uint256 min, uint256 max);
+    function decreaseSizeMin() external view returns (uint256 min);
 
     function limitDecreaseCollateral() external view returns (uint256);
 }

@@ -415,8 +415,8 @@ contract BasisStrategy is
         }
 
         // check if amount is in the possible adjustment range
-        (uint256 min, uint256 max) = _hedgeManager.decreaseSizeMinMax();
-        amount = _clamp(min, amount, max);
+        uint256 min = _hedgeManager.decreaseSizeMin();
+        amount = _clamp(min, amount);
 
         // can only deutilize when amount is positive
         if (amount == 0) {
@@ -582,7 +582,7 @@ contract BasisStrategy is
                         sizeDeltaInTokens = type(uint256).max;
                         collateralDeltaAmount = type(uint256).max;
                     } else if (status == StrategyStatus.FULL_DEUTILIZING) {
-                        (uint256 min,) = $.hedgeManager.decreaseCollateralMinMax();
+                        uint256 min = $.hedgeManager.decreaseCollateralMin();
                         uint256 pendingWithdraw = assetsToDeutilize();
                         collateralDeltaAmount = min > pendingWithdraw ? min : pendingWithdraw;
                     } else {
@@ -683,12 +683,9 @@ contract BasisStrategy is
             })
         );
 
-        (uint256 increaseSizeMin,) = _hedgeManager.increaseSizeMinMax();
-        (uint256 decreaseSizeMin,) = _hedgeManager.decreaseSizeMinMax();
-
         uint256 pendingUtilizationInProduct = $.oracle.convertTokenAmount(_asset, _product, pendingUtilizationInAsset);
-        if (pendingUtilizationInProduct < increaseSizeMin) pendingUtilizationInAsset = 0;
-        if (pendingDeutilizationInProduct < decreaseSizeMin) pendingDeutilizationInProduct = 0;
+        if (pendingUtilizationInProduct < _hedgeManager.increaseSizeMin()) pendingUtilizationInAsset = 0;
+        if (pendingDeutilizationInProduct < _hedgeManager.decreaseSizeMin()) pendingDeutilizationInProduct = 0;
 
         return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
     }
@@ -732,21 +729,14 @@ contract BasisStrategy is
             return false;
         }
 
-        if (sizeDeltaInTokens > 0 && sizeDeltaInTokens != type(uint256).max) {
-            uint256 min;
-            uint256 max;
-            if (isIncrease) (min, max) = $.hedgeManager.increaseSizeMinMax();
-            else (min, max) = $.hedgeManager.decreaseSizeMinMax();
-
-            sizeDeltaInTokens = _clamp(min, sizeDeltaInTokens, max);
+        // we don't allow to adjust hedge with modified amount due to min.
+        if (sizeDeltaInTokens > 0) {
+            uint256 min = isIncrease ? $.hedgeManager.increaseSizeMin() : $.hedgeManager.decreaseSizeMin();
+            if (sizeDeltaInTokens < min) return false;
         }
-
-        if (collateralDeltaAmount > 0 && collateralDeltaAmount != type(uint256).max) {
-            uint256 min;
-            uint256 max;
-            if (isIncrease) (min, max) = $.hedgeManager.increaseCollateralMinMax();
-            else (min, max) = $.hedgeManager.decreaseCollateralMinMax();
-            collateralDeltaAmount = _clamp(min, collateralDeltaAmount, max);
+        if (collateralDeltaAmount > 0) {
+            uint256 min = isIncrease ? $.hedgeManager.increaseCollateralMin() : $.hedgeManager.decreaseCollateralMin();
+            if (collateralDeltaAmount < min) return false;
         }
 
         if (isIncrease && collateralDeltaAmount > 0) {
@@ -796,7 +786,7 @@ contract BasisStrategy is
 
         if (rebalanceDownNeeded) {
             uint256 idleAssets = _vault.idleAssets();
-            (uint256 minIncreaseCollateral,) = _hedgeManager.increaseCollateralMinMax();
+            uint256 minIncreaseCollateral = _hedgeManager.increaseCollateralMin();
             result.deltaCollateralToIncrease = _calculateDeltaCollateralForRebalance(
                 _hedgeManager.positionNetBalance(), currentLeverage, _targetLeverage
             );
@@ -820,9 +810,10 @@ contract BasisStrategy is
                 (, uint256 deltaLeverage) = currentLeverage.trySub(_maxLeverage);
                 result.emergencyDeutilizationAmount =
                     _hedgeManager.positionSizeInTokens().mulDiv(deltaLeverage, currentLeverage);
-                (uint256 min, uint256 max) = _hedgeManager.decreaseSizeMinMax();
-                // @issue amount can be 0 because of clamping that breaks emergency rebalance down
-                result.emergencyDeutilizationAmount = _clamp(min, result.emergencyDeutilizationAmount, max);
+                uint256 min = _hedgeManager.decreaseSizeMin();
+                if (result.emergencyDeutilizationAmount < min) {
+                    result.emergencyDeutilizationAmount = min;
+                }
             }
             return result;
         }
@@ -1033,8 +1024,8 @@ contract BasisStrategy is
         return deutilization;
     }
 
-    function _clamp(uint256 min, uint256 value, uint256 max) internal pure returns (uint256 result) {
-        result = value < min ? 0 : (value > max ? max : value);
+    function _clamp(uint256 min, uint256 value) internal pure returns (uint256 result) {
+        result = value < min ? 0 : value;
     }
 
     /// @dev Should be called under the condition that denominator != 0.
@@ -1104,11 +1095,11 @@ contract BasisStrategy is
             _checkDeviation(hedgeExposure, spotExposure, _hedgeDeviationThreshold);
         if (exceedsThreshold) {
             if (hedgeDeviationInTokens > 0) {
-                (uint256 min, uint256 max) = _hedgeManager.decreaseSizeMinMax();
-                return int256(_clamp(min, uint256(hedgeDeviationInTokens), max));
+                uint256 min = _hedgeManager.decreaseSizeMin();
+                return int256(_clamp(min, uint256(hedgeDeviationInTokens)));
             } else {
-                (uint256 min, uint256 max) = _hedgeManager.increaseSizeMinMax();
-                return -int256(_clamp(min, uint256(-hedgeDeviationInTokens), max));
+                uint256 min = _hedgeManager.increaseSizeMin();
+                return -int256(_clamp(min, uint256(-hedgeDeviationInTokens)));
             }
         }
         return 0;

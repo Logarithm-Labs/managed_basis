@@ -56,26 +56,22 @@ interface IHedgeManager {
     /// @notice Returns the minimum and maximum collateral limits for increasing the position.
     ///
     /// @return min The minimum allowable collateral increase amount.
-    /// @return max The maximum allowable collateral increase amount.
-    function increaseCollateralMinMax() external view returns (uint256 min, uint256 max);
+    function increaseCollateralMin() external view returns (uint256 min);
 
     /// @notice Returns the minimum and maximum limits for increasing the position size.
     ///
     /// @return min The minimum allowable increase in position size.
-    /// @return max The maximum allowable increase in position size.
-    function increaseSizeMinMax() external view returns (uint256 min, uint256 max);
+    function increaseSizeMin() external view returns (uint256 min);
 
     /// @notice Returns the minimum and maximum collateral limits for decreasing the position.
     ///
     /// @return min The minimum allowable collateral decrease amount.
-    /// @return max The maximum allowable collateral decrease amount.
-    function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max);
+    function decreaseCollateralMin() external view returns (uint256 min);
 
     /// @notice Returns the minimum and maximum limits for decreasing the position size.
     ///
     /// @return min The minimum allowable decrease in position size.
-    /// @return max The maximum allowable decrease in position size.
-    function decreaseSizeMinMax() external view returns (uint256 min, uint256 max);
+    function decreaseSizeMin() external view returns (uint256 min);
 
     /// @notice Retrieves the minimum decrease in collateral required for cost-efficient execution.
     ///

@@ -196,18 +196,13 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
             // include idle assets for increasing collateral
             params.collateralDeltaAmount = idleCollateralAmount();
             if (params.collateralDeltaAmount > 0) {
-                (uint256 minIncreaseCollateral, uint256 maxIncreaseCollateral) = config().increaseCollateralMinMax();
-                if (
-                    params.collateralDeltaAmount < minIncreaseCollateral
-                        || params.collateralDeltaAmount > maxIncreaseCollateral
-                ) {
+                if (params.collateralDeltaAmount < increaseCollateralMin()) {
                     revert Errors.InvalidCollateralRequest(params.collateralDeltaAmount, true);
                 }
                 _transferToAgent(params.collateralDeltaAmount);
             }
             if (params.sizeDeltaInTokens > 0) {
-                (uint256 minIncreaseSize, uint256 maxIncreaseSize) = increaseSizeMinMax();
-                if (params.sizeDeltaInTokens < minIncreaseSize || params.sizeDeltaInTokens > maxIncreaseSize) {
+                if (params.sizeDeltaInTokens < increaseSizeMin()) {
                     revert Errors.InvalidCollateralRequest(params.sizeDeltaInTokens, true);
                 }
             }
@@ -215,17 +210,12 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
             emit RequestIncreasePosition(params.collateralDeltaAmount, params.sizeDeltaInTokens, round);
         } else {
             if (params.collateralDeltaAmount > 0) {
-                (uint256 minDecreaseCollateral, uint256 maxDecreaseCollateral) = config().decreaseCollateralMinMax();
-                if (
-                    params.collateralDeltaAmount < minDecreaseCollateral
-                        || params.collateralDeltaAmount > maxDecreaseCollateral
-                ) {
+                if (params.collateralDeltaAmount < decreaseCollateralMin()) {
                     revert Errors.InvalidCollateralRequest(params.collateralDeltaAmount, false);
                 }
             }
             if (params.sizeDeltaInTokens > 0) {
-                (uint256 minDecreaseSize, uint256 maxDecreaseSize) = decreaseSizeMinMax();
-                if (params.sizeDeltaInTokens < minDecreaseSize || params.sizeDeltaInTokens > maxDecreaseSize) {
+                if (params.sizeDeltaInTokens < decreaseSizeMin()) {
                     revert Errors.InvalidCollateralRequest(params.sizeDeltaInTokens, false);
                 }
             }
@@ -483,48 +473,27 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
     function keep() public pure {}
 
     /// @inheritdoc IHedgeManager
-    function increaseCollateralMinMax() public view returns (uint256 min, uint256 max) {
-        return config().increaseCollateralMinMax();
+    function increaseCollateralMin() public view returns (uint256) {
+        return config().increaseCollateralMin();
     }
 
     /// @inheritdoc IHedgeManager
-    function increaseSizeMinMax() public view returns (uint256 min, uint256 max) {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        address asset = $.collateralToken;
-        address product = $.indexToken;
-        IOracle _oracle = IOracle($.oracle);
-
-        (min, max) = config().increaseSizeMinMax();
-
-        (min, max) = (
-            min == 0 ? 0 : _oracle.convertTokenAmount(asset, product, min),
-            max == type(uint256).max ? type(uint256).max : _oracle.convertTokenAmount(asset, product, max)
-        );
-
-        return (min, max);
+    function increaseSizeMin() public view returns (uint256) {
+        uint256 min = config().increaseSizeMin();
+        min = min == 0 ? 0 : IOracle(oracle()).convertTokenAmount(collateralToken(), indexToken(), min);
+        return min;
     }
 
     /// @inheritdoc IHedgeManager
-    function decreaseCollateralMinMax() public view returns (uint256 min, uint256 max) {
-        return config().decreaseCollateralMinMax();
+    function decreaseCollateralMin() public view returns (uint256) {
+        return config().decreaseCollateralMin();
     }
 
     /// @inheritdoc IHedgeManager
-    function decreaseSizeMinMax() public view returns (uint256 min, uint256 max) {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-
-        address asset = $.collateralToken;
-        address product = $.indexToken;
-        IOracle _oracle = IOracle($.oracle);
-
-        (min, max) = config().decreaseSizeMinMax();
-
-        (min, max) = (
-            min == 0 ? 0 : _oracle.convertTokenAmount(asset, product, min),
-            max == type(uint256).max ? type(uint256).max : _oracle.convertTokenAmount(asset, product, max)
-        );
-
-        return (min, max);
+    function decreaseSizeMin() public view returns (uint256) {
+        uint256 min = config().decreaseSizeMin();
+        min = min == 0 ? 0 : IOracle(oracle()).convertTokenAmount(collateralToken(), indexToken(), min);
+        return min;
     }
 
     /// @inheritdoc IHedgeManager
