@@ -1,12 +1,11 @@
 # 1. Unable to redeem all user shares or sell all products and close the hedge when the decreaseSizeMax config is different from type(uint256).max.
 
-## Status: Assessed as low risk
+## Status: Refactored
 
 ## Description
 
-We were supposed not to use the max value different from type(uint256).max.
-In quite rare cases, we may use it, so implemented your remediation. <br>
-Git commit: [`49b26fd63295a4f0f820331de8fe98f759e5a6cb`](https://github.com/Logarithm-Labs/managed_basis/commit/49b26fd63295a4f0f820331de8fe98f759e5a6cb)
+We have removed the max limit logic as it is supposed not to use it for the future versions.
+Git commit: [bd3d08648f9b32743b177c44580c598766916e7a](https://github.com/Logarithm-Labs/managed_basis/commit/bd3d08648f9b32743b177c44580c598766916e7a)
 
 # 2. pendingDecreaseCollateral variable isn't excluded from the positionNetBalance() value in the leverage and rebalance calculations, which may lead to incorrect rebalance actions for the strategy.
 
@@ -65,7 +64,7 @@ Please refer to the description to issue 2.
 
 ## Description
 
-Please refer to the description to issue 2.
+Please refer to the descriptions to issue 1 and 2.
 
 # 8. Loss of fees due to lack of updates before the \_lastHarvestedTimestamp is updated.
 
