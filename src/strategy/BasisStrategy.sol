@@ -318,7 +318,8 @@ contract BasisStrategy is
     }
 
     /// @notice Unpauses strategy.
-    function unpause() external onlyOwnerOrVault whenPaused {
+    function unpause() external whenPaused {
+        /// @TODO add onlyOwnerOrVault
         _unpause();
     }
 

@@ -4,10 +4,10 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {Arbitrum} from "script/utils/ProtocolAddresses.sol";
 
 contract UpgradeStrategyScript is Script {
-    UpgradeableBeacon constant beacon = UpgradeableBeacon(0xA610080Bf93CC031492a29D09DBC8b234F291ea7);
-    BasisStrategy strategy = BasisStrategy(0x166350f9b64ED99B2Aa92413A773aDCEDa1E1438);
+    UpgradeableBeacon constant beacon = UpgradeableBeacon(Arbitrum.BEACON_STRATEGY);
 
     function run() public {
         vm.startBroadcast();
