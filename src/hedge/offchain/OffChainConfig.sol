@@ -52,20 +52,20 @@ contract OffChainConfig is UUPSUpgradeable, Ownable2StepUpgradeable {
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function setSizeMin(uint256 increaseSizeMin, uint256 decreaseSizeMin) external onlyOwner {
+    function setSizeMin(uint256 _increaseSizeMin, uint256 _decreaseSizeMin) external onlyOwner {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
-        $.increaseSizeMin = increaseSizeMin;
-        $.decreaseSizeMin = decreaseSizeMin;
+        $.increaseSizeMin = _increaseSizeMin;
+        $.decreaseSizeMin = _decreaseSizeMin;
     }
 
-    function setCollateralMin(uint256 increaseCollateralMin, uint256 decreaseCollateralMin) external onlyOwner {
+    function setCollateralMin(uint256 _increaseCollateralMin, uint256 _decreaseCollateralMin) external onlyOwner {
         uint256 _limitDecreaseCollateral = limitDecreaseCollateral();
         if (_limitDecreaseCollateral != 0) {
-            require(_limitDecreaseCollateral > decreaseCollateralMin);
+            require(_limitDecreaseCollateral > _decreaseCollateralMin);
         }
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
-        $.increaseCollateralMin = increaseCollateralMin;
-        $.decreaseCollateralMin = decreaseCollateralMin;
+        $.increaseCollateralMin = _increaseCollateralMin;
+        $.decreaseCollateralMin = _decreaseCollateralMin;
     }
 
     function setLimitDecreaseCollateral(uint256 limit) external onlyOwner {
