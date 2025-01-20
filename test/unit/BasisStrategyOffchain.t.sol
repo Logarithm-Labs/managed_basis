@@ -95,15 +95,6 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         assertEq(hedgeManager.idleCollateralAmount(), 0);
     }
 
-    function test_clearCollateral() public {
-        vm.startPrank(USDC_WHALE);
-        IERC20(asset).transfer(address(hedgeManager), 10_000_000);
-
-        hedgeManager.clearIdleCollateral();
-        assertEq(IERC20(asset).balanceOf(address(strategy)), 0);
-        assertEq(IERC20(asset).balanceOf(address(vault)), 10_000_000);
-    }
-
     // function test_leverage_whenCollateralPriceFluctuated() public validateFinalState {
     //     uint256 assets = 67671611780306;
     //     vm.startPrank(USDC_WHALE);

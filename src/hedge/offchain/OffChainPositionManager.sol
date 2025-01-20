@@ -320,17 +320,6 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
         return $.requests[$.lastRequestRound];
     }
 
-    /// @notice Transfers idle assets to the vault to process withdraw requests.
-    function clearIdleCollateral() public {
-        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
-        uint256 _idleCollateralAmount = idleCollateralAmount();
-        if (_idleCollateralAmount > 0) {
-            address _strategy = $.strategy;
-            IERC20($.collateralToken).transfer(_strategy, _idleCollateralAmount);
-            IBasisStrategy(_strategy).processAssetsToWithdraw();
-        }
-    }
-
     /*//////////////////////////////////////////////////////////////
                             AGENT LOGIC
     //////////////////////////////////////////////////////////////*/
