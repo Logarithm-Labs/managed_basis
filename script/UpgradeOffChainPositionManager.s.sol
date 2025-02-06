@@ -14,6 +14,5 @@ contract UpgradeOffChainPositionManagerScript is Script {
         vm.startBroadcast();
         address impl = address(new OffChainPositionManager());
         beacon.upgradeTo(impl);
-        hedgeManager.clearIdleCollateral();
     }
 }

@@ -42,7 +42,7 @@ contract DeployHyperScript is Script {
 
     address constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
-    address constant UNISWAPV3_WETH_USDC = 0xC6962004f452bE9203591991D15f6b388e09E8D0;
+    address constant UNI_V3_POOL_WETH_USDC = 0xC6962004f452bE9203591991D15f6b388e09E8D0;
 
     uint256 constant increaseSizeMin = 15 * 1e6;
     uint256 constant increaseSizeMax = type(uint256).max;
@@ -77,7 +77,7 @@ contract DeployHyperScript is Script {
         // set manual swap path
         address[] memory pathWeth = new address[](3);
         pathWeth[0] = USDC;
-        pathWeth[1] = UNISWAPV3_WETH_USDC;
+        pathWeth[1] = UNI_V3_POOL_WETH_USDC;
         pathWeth[2] = WETH;
 
         // deploy strategy
@@ -142,12 +142,8 @@ contract DeployHyperScript is Script {
         LogarithmVault(vaultProxy).setStrategy(strategyProxy);
         BasisStrategy(strategyProxy).setHedgeManager(hedgeManagerProxy);
         // BasisStrategy(strategyProxy).setForwarder(forwarder);
-        OffChainConfig(offChainConfigProxy).setSizeMinMax(
-            increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax
-        );
-        OffChainConfig(offChainConfigProxy).setCollateralMinMax(
-            increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
-        );
+        OffChainConfig(offChainConfigProxy).setSizeMin(increaseSizeMin, decreaseSizeMin);
+        OffChainConfig(offChainConfigProxy).setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
         OffChainConfig(offChainConfigProxy).setLimitDecreaseCollateral(limitDecreaseCollateral);
     }
 }

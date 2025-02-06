@@ -1243,7 +1243,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     }
 
     function test_inflation_attack() public {
-        uint256 balBefore = IERC20(asset).balanceOf(user1);
+        // uint256 balBefore = IERC20(asset).balanceOf(user1);
         console.log("user1 original deposit");
         _deposit(user1, TEN_THOUSANDS_USDC);
         (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
@@ -1255,7 +1255,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
         console.log("vault.idleAssets()", vault.idleAssets());
-        bytes32 user1RequestKey = vault.getWithdrawKey(user1, 0);
+        // bytes32 user1RequestKey = vault.getWithdrawKey(user1, 0);
         // LogarithmVault.WithdrawRequest memory req = vault.withdrawRequests(user1RequestKey);
         vm.startPrank(user1);
         IERC20(asset).transfer(address(vault), TEN_THOUSANDS_USDC);

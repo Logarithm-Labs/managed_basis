@@ -102,7 +102,7 @@ contract DeployScript is Script {
         // deploy BasisStrategy Gmx
         address[] memory assetToProductSwapPath = new address[](3);
         assetToProductSwapPath[0] = ArbiAddresses.USDC;
-        assetToProductSwapPath[1] = ArbiAddresses.UNISWAPV3_WETH_USDC;
+        assetToProductSwapPath[1] = ArbiAddresses.UNI_V3_POOL_WETH_USDC;
         assetToProductSwapPath[2] = ArbiAddresses.WETH;
         DeployHelper.BasisStrategyDeployParams memory strategyDeployParams = DeployHelper.BasisStrategyDeployParams(
             owner,
@@ -162,10 +162,8 @@ contract DeployScript is Script {
 
         // deploy HL Config
         OffChainConfig hlConfig = DeployHelper.deployOffChainConfig(owner);
-        hlConfig.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
-        hlConfig.setCollateralMinMax(
-            increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
-        );
+        hlConfig.setSizeMin(increaseSizeMin, decreaseSizeMin);
+        hlConfig.setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
         hlConfig.setLimitDecreaseCollateral(limitDecreaseCollateral);
 
         // deploy OffChainPositionManagerBeacon

@@ -59,7 +59,7 @@ contract GmxInvariants is StdInvariant, ForkTest {
         vm.label(address(oracle), "oracle");
 
         // mock uniswap
-        _mockUniswapPool(UNISWAPV3_WETH_USDC, oracleProxy);
+        _mockUniswapPool(UNI_V3_POOL_WETH_USDC, oracleProxy);
 
         // set oracle price feed
         address[] memory assets = new address[](2);
@@ -90,7 +90,7 @@ contract GmxInvariants is StdInvariant, ForkTest {
 
         address[] memory pathWeth = new address[](3);
         pathWeth[0] = USDC;
-        pathWeth[1] = UNISWAPV3_WETH_USDC;
+        pathWeth[1] = UNI_V3_POOL_WETH_USDC;
         pathWeth[2] = WETH;
 
         address vaultImpl = address(new LogarithmVault());
@@ -105,8 +105,11 @@ contract GmxInvariants is StdInvariant, ForkTest {
         vault = LogarithmVault(vaultProxy);
         vm.label(address(vault), "vault");
 
-        StrategyConfig config = new StrategyConfig();
-        config.initialize(owner);
+        address strategyConfigImpl = address(new StrategyConfig());
+        address strategyConfigProxy = address(
+            new ERC1967Proxy(strategyConfigImpl, abi.encodeWithSelector(StrategyConfig.initialize.selector, owner))
+        );
+        StrategyConfig config = StrategyConfig(strategyConfigProxy);
 
         // deploy strategy
         address strategyImpl = address(new BasisStrategy());
