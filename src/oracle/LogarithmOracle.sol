@@ -15,8 +15,6 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 import {Constants} from "src/libraries/utils/Constants.sol";
 
 contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
-    uint256 public constant FLOAT_PRECISION = 1e30;
-
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -37,6 +35,10 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
         assembly {
             $.slot := LogarithmOracleStorageLocation
         }
+    }
+
+    constructor() {
+        _disableInitializers();
     }
 
     event PriceFeedUpdated(address asset, address feed);
@@ -125,7 +127,7 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
 
         // in case chainlink price feeds are not updated
         uint256 heartbeatDuration = _getLogarithmOracleStorage().heartbeatDurations[address(priceFeed)];
-        if (block.timestamp > timestamp && block.timestamp - timestamp > heartbeatDuration) {
+        if (block.timestamp - timestamp > heartbeatDuration) {
             revert Errors.PriceFeedNotUpdated(asset, timestamp, heartbeatDuration);
         }
 

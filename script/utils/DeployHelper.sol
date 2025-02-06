@@ -9,9 +9,6 @@ import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {SpotManager} from "src/spot/SpotManager.sol";
-import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
-import {GmxGasStation} from "src/hedge/gmx/GmxGasStation.sol";
-import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
@@ -125,62 +122,6 @@ library DeployHelper {
         SpotManager spotManager = SpotManager(spotManagerProxy);
         BasisStrategy(strategy).setSpotManager(spotManagerProxy);
         return spotManager;
-    }
-
-    function deployGmxConfig(address owner) internal returns (GmxConfig) {
-        address gmxConfigImpl = address(new GmxConfig());
-        address gmxConfigProxy = address(
-            new ERC1967Proxy(
-                gmxConfigImpl,
-                abi.encodeWithSelector(
-                    GmxConfig.initialize.selector, owner, ArbiAddresses.GMX_EXCHANGE_ROUTER, ArbiAddresses.GMX_READER
-                )
-            )
-        );
-        GmxConfig gmxConfig = GmxConfig(gmxConfigProxy);
-        require(gmxConfig.owner() == owner, "GmxConfig owner is not the expected owner");
-        return gmxConfig;
-    }
-
-    function deployGmxGasStation(address owner) internal returns (GmxGasStation) {
-        address gasStationImpl = address(new GmxGasStation());
-        address gasStationProxy =
-            address(new ERC1967Proxy(gasStationImpl, abi.encodeWithSelector(GmxGasStation.initialize.selector, owner)));
-        return GmxGasStation(payable(gasStationProxy));
-    }
-
-    struct GmxPositionManagerDeployParams {
-        address beacon;
-        address config;
-        address strategy;
-        address gasStation;
-        address marketKey;
-    }
-
-    function deployGmxPositionManager(GmxPositionManagerDeployParams memory params)
-        internal
-        returns (GmxV2PositionManager)
-    {
-        address gmxPositionManagerProxy = address(
-            new BeaconProxy(
-                params.beacon,
-                abi.encodeWithSelector(
-                    GmxV2PositionManager.initialize.selector,
-                    params.strategy,
-                    params.config,
-                    params.gasStation,
-                    params.marketKey
-                )
-            )
-        );
-        GmxV2PositionManager hedgeManager = GmxV2PositionManager(payable(gmxPositionManagerProxy));
-        BasisStrategy(params.strategy).setHedgeManager(address(hedgeManager));
-        require(
-            BasisStrategy(params.strategy).hedgeManager() == address(hedgeManager),
-            "Strategy hedgeManager is not the expected hedgeManager"
-        );
-        GmxGasStation(payable(params.gasStation)).registerPositionManager(address(hedgeManager), true);
-        return hedgeManager;
     }
 
     function deployOffChainConfig(address owner) internal returns (OffChainConfig) {

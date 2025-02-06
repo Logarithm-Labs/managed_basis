@@ -17,6 +17,10 @@ library Errors {
     error ExceededMaxRequestRedeem(address owner, uint256 shares, uint256 max);
     /// @notice Transferring of shares from/to the fee recipient is not allowed.
     error ManagementFeeTransfer(address feeRecipient);
+    /// @notice Reverts minting with 0 shares
+    error ZeroShares();
+    /// @notice Validation for strategy
+    error InvalidStrategy();
 
     /*//////////////////////////////////////////////////////////////
                                  1INCH
@@ -31,6 +35,8 @@ library Errors {
                                  MANUAL
     //////////////////////////////////////////////////////////////*/
     error SwapAmountExceedsBalance(uint256 swapAmount, uint256 balance);
+    error SwapBelowMinimum(uint256 out, uint256 min);
+    error SwapWithZeroLiquidity();
 
     /*//////////////////////////////////////////////////////////////
                                  ORACLE

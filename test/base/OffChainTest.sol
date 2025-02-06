@@ -49,10 +49,8 @@ contract OffChainTest is PositionMngerForkTest {
         vm.startPrank(owner);
         // deploy config
         OffChainConfig config = DeployHelper.deployOffChainConfig(owner);
-        config.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
-        config.setCollateralMinMax(
-            increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
-        );
+        config.setSizeMin(increaseSizeMin, decreaseSizeMin);
+        config.setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
         config.setLimitDecreaseCollateral(limitDecreaseCollateral);
         vm.label(address(config), "config");
 

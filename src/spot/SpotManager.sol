@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
 import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
 import {IOracle} from "src/oracle/IOracle.sol";
@@ -28,7 +28,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 /// spot exposure relative to the short hedge position.
 ///
 /// @dev SpotManager is an upgradeable smart contract, deployed through the beacon proxy pattern.
-contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwapper {
+contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, ISwapper {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -40,6 +40,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
         address oracle;
         address asset;
         address product;
+        uint256 exposure;
         // manual swap state
         mapping(address => bool) isSwapPool;
         address[] productToAssetSwapPath;
@@ -54,6 +55,10 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
         assembly {
             $.slot := SpotManagerStorageLocation
         }
+    }
+
+    constructor() {
+        _disableInitializers();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -157,6 +162,7 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
+        _getSpotManagerStorage().exposure += amountOut;
         emit SpotBuy(amount, amountOut);
 
         IBasisStrategy(_msgSender()).spotBuyCallback(amount, amountOut);
@@ -181,14 +187,10 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
             // TODO: fallback swap
             revert Errors.UnsupportedSwapType();
         }
+        _getSpotManagerStorage().exposure -= amount;
         emit SpotSell(amountOut, amount);
 
         IBasisStrategy(_msgSender()).spotSellCallback(amountOut, amount);
-    }
-
-    /// @dev The spot exposure that is needed to be hedged by the perpetual positions.
-    function exposure() public view returns (uint256) {
-        return IERC20(product()).balanceOf(address(this));
     }
 
     /// @dev Returns the product amount in asset.
@@ -201,17 +203,21 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
     //////////////////////////////////////////////////////////////*/
 
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
-        require(amount0Delta > 0 || amount1Delta > 0); // swaps entirely within 0-liquidity regions are not supported
-        if (data.length != 96) {
-            revert Errors.InvalidCallback();
-        }
-        _verifyCallback();
-        (address tokenIn,, address payer) = abi.decode(data, (address, address, address));
-        uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
-        if (payer == address(this)) {
-            IERC20(tokenIn).safeTransfer(_msgSender(), amountToPay);
+        if (amount0Delta > 0 || amount1Delta > 0) {
+            if (data.length != 96) {
+                revert Errors.InvalidCallback();
+            }
+            _verifyCallback();
+            (address tokenIn,, address payer) = abi.decode(data, (address, address, address));
+            uint256 amountToPay = amount0Delta > 0 ? uint256(amount0Delta) : uint256(amount1Delta);
+            if (payer == address(this)) {
+                IERC20(tokenIn).safeTransfer(_msgSender(), amountToPay);
+            } else {
+                IERC20(tokenIn).safeTransferFrom(payer, _msgSender(), amountToPay);
+            }
         } else {
-            IERC20(tokenIn).safeTransferFrom(payer, _msgSender(), amountToPay);
+            // swaps entirely within 0-liquidity regions are not supported
+            revert Errors.SwapWithZeroLiquidity();
         }
     }
 
@@ -238,6 +244,11 @@ contract SpotManager is Initializable, OwnableUpgradeable, ISpotManager, ISwappe
     /// @notice The asset address.
     function asset() public view returns (address) {
         return _getSpotManagerStorage().asset;
+    }
+
+    /// @dev The spot exposure that is needed to be hedged by the perpetual positions.
+    function exposure() public view returns (uint256) {
+        return _getSpotManagerStorage().exposure;
     }
 
     /// @notice The product address.

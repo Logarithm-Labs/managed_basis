@@ -24,18 +24,12 @@ abstract contract ForkTest is Test {
     address constant USDC_WHALE = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
     address constant WETH_WHALE = 0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8;
 
-    address constant UNISWAPV3_WETH_USDC = ArbiAddresses.UNISWAPV3_WETH_USDC;
+    address constant UNI_V3_POOL_WETH_USDC = ArbiAddresses.UNI_V3_POOL_WETH_USDC;
     address constant CHL_USDC_USD_PRICE_FEED = ArbiAddresses.CHL_USDC_USD_PRICE_FEED;
     address constant CHL_ETH_USD_PRICE_FEED = ArbiAddresses.CHL_ETH_USD_PRICE_FEED;
 
     function _writeTokenBalance(address who, address token, uint256 amt) internal {
-        if (token == USDC) {
-            vm.startPrank(USDC_WHALE);
-            IERC20(token).transfer(who, amt);
-            vm.stopPrank();
-        } else {
-            stdstore.target(token).sig(IERC20(token).balanceOf.selector).with_key(who).checked_write(amt);
-        }
+        stdstore.target(token).sig(IERC20(token).balanceOf.selector).with_key(who).checked_write(amt);
         assertEq(IERC20(token).balanceOf(who), amt);
     }
 
@@ -82,7 +76,8 @@ abstract contract ForkTest is Test {
     function _mockUniswapPool(address pool, address oracle) internal {
         address token0 = IUniswapV3Pool(pool).token0();
         address token1 = IUniswapV3Pool(pool).token1();
-        address mockPool = address(new UniswapV3MockPool(token0, token1, oracle));
+        (, int24 tick,,,,,) = IUniswapV3Pool(pool).slot0();
+        address mockPool = address(new UniswapV3MockPool(token0, token1, oracle, tick));
         vm.etch(pool, mockPool.code);
     }
 }

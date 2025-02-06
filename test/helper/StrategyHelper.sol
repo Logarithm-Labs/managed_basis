@@ -23,7 +23,6 @@ struct StrategyState {
     uint256 assetsToWithdraw;
     uint256 assetsToClaim;
     uint256 totalPendingWithdraw;
-    uint256 pendingDecreaseCollateral;
     uint256 pendingUtilization;
     uint256 pendingDeutilization;
     uint256 accRequestedWithdrawAssets;
@@ -55,18 +54,11 @@ contract StrategyHelper {
         bool rebalanceUpNeeded;
         bool rebalanceDownNeeded;
         bool deleverageNeeded;
-        bool decreaseCollateral;
         int256 hedgeDeviationInTokens;
         bool hedgeManagerNeedKeep;
         if (performData.length > 0) {
-            (
-                rebalanceDownNeeded,
-                deleverageNeeded,
-                hedgeDeviationInTokens,
-                hedgeManagerNeedKeep,
-                decreaseCollateral,
-                rebalanceUpNeeded
-            ) = decodePerformData(performData);
+            (rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, hedgeManagerNeedKeep, rebalanceUpNeeded) =
+                decodePerformData(performData);
         }
 
         address asset = strategy.asset();
@@ -85,7 +77,6 @@ contract StrategyHelper {
         state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
         state.assetsToClaim = vault.assetsToClaim();
         state.totalPendingWithdraw = vault.totalPendingWithdraw();
-        state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
         state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
         state.processedWithdrawAssets = vault.processedWithdrawAssets();
@@ -118,7 +109,6 @@ contract StrategyHelper {
         console.log("assetsToWithdraw", state.assetsToWithdraw);
         console.log("assetsToClaim", state.assetsToClaim);
         console.log("totalPendingWithdraw", state.totalPendingWithdraw);
-        console.log("pendingDecreaseCollateral", state.pendingDecreaseCollateral);
         console.log("pendingUtilization", state.pendingUtilization);
         console.log("pendingDeutilization", state.pendingDeutilization);
         console.log("accRequestedWithdrawAssets", state.accRequestedWithdrawAssets);
@@ -145,7 +135,6 @@ contract StrategyHelper {
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
             bool hedgeManagerNeedKeep,
-            bool decreaseCollateral,
             bool rebalanceUpNeeded
         )
     {
@@ -160,9 +149,8 @@ contract StrategyHelper {
             clearProcessingRebalanceDown,
             hedgeDeviationInTokens,
             hedgeManagerNeedKeep,
-            decreaseCollateral,
             deltaCollateralToDecrease
-        ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, bool, uint256));
+        ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, uint256));
 
         rebalanceDownNeeded = emergencyDeutilizationAmount > 0 || deltaCollateralToIncrease > 0;
         deleverageNeeded = emergencyDeutilizationAmount > 0;
