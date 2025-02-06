@@ -162,10 +162,8 @@ contract DeployScript is Script {
 
         // deploy HL Config
         OffChainConfig hlConfig = DeployHelper.deployOffChainConfig(owner);
-        hlConfig.setSizeMinMax(increaseSizeMin, increaseSizeMax, decreaseSizeMin, decreaseSizeMax);
-        hlConfig.setCollateralMinMax(
-            increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
-        );
+        hlConfig.setSizeMin(increaseSizeMin, decreaseSizeMin);
+        hlConfig.setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
         hlConfig.setLimitDecreaseCollateral(limitDecreaseCollateral);
 
         // deploy OffChainPositionManagerBeacon

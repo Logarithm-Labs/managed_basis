@@ -865,23 +865,23 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
     }
 
     /// @inheritdoc IHedgeManager
-    function increaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
-        return (0, type(uint256).max);
+    function increaseCollateralMin() external pure returns (uint256 min) {
+        return 0;
     }
 
     /// @inheritdoc IHedgeManager
-    function increaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
-        return (0, type(uint256).max);
+    function increaseSizeMin() external pure returns (uint256 min) {
+        return 0;
     }
 
     /// @inheritdoc IHedgeManager
-    function decreaseCollateralMinMax() external pure returns (uint256 min, uint256 max) {
-        return (0, type(uint256).max);
+    function decreaseCollateralMin() external pure returns (uint256 min) {
+        return 0;
     }
 
     /// @inheritdoc IHedgeManager
-    function decreaseSizeMinMax() external pure returns (uint256 min, uint256 max) {
-        return (0, type(uint256).max);
+    function decreaseSizeMin() external pure returns (uint256 min) {
+        return 0;
     }
 
     /// @inheritdoc IHedgeManager

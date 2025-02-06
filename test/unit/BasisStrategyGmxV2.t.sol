@@ -79,7 +79,6 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         uint256 balDelta = IERC20(asset).balanceOf(user1) - balBefore;
 
         assertGt(requestedAssets, balDelta);
-        assertEq(strategy.pendingDecreaseCollateral(), 0);
         assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
     }
 
@@ -94,7 +93,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeManagerKeep");
         // assertTrue(upkeepNeeded, "upkeepNeeded");
-        (,,, bool hedgeManagerNeedKeep,,) = helper.decodePerformData(performData);
+        (,,, bool hedgeManagerNeedKeep,) = helper.decodePerformData(performData);
 
         assertTrue(upkeepNeeded, "upkeepNeeded");
         assertTrue(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
@@ -113,7 +112,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         (bool upkeepNeeded, bytes memory performData) =
             _checkUpkeep("rebalanceDown_whenNoIdle_whenOracleFluctuateBeforeExecuting");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep,, bool rebalanceUpNeeded) =
+        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
             helper.decodePerformData(performData);
         assertFalse(rebalanceUpNeeded);
         assertTrue(rebalanceDownNeeded);
