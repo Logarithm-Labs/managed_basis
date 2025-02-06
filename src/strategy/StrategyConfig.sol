@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /// @title StrategyConfig
 /// @author Logarithm Labs
 /// @notice A config smart contract that is used throughout all logarithm strategies.
 /// @dev Deployed according to the UUPS upgradable pattern.
-contract StrategyConfig is UUPSUpgradeable, OwnableUpgradeable {
+contract StrategyConfig is UUPSUpgradeable, Ownable2StepUpgradeable {
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -29,6 +29,10 @@ contract StrategyConfig is UUPSUpgradeable, OwnableUpgradeable {
         assembly {
             $.slot := StrategyConfigStorageLocation
         }
+    }
+
+    constructor() {
+        _disableInitializers();
     }
 
     /*//////////////////////////////////////////////////////////////

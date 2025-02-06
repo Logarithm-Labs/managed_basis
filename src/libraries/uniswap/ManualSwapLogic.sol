@@ -64,8 +64,12 @@ library ManualSwapLogic {
             secondsAgos[1] = 0; // to (now)
 
             (int56[] memory tickCumulatives,) = IUniswapV3Pool(uniswapV3Pool).observe(secondsAgos);
-            int256 twapTick = int256(tickCumulatives[1] - tickCumulatives[0]) / int256(uint256(twapInterval));
-            sqrtPriceX96 = TickMath.getSqrtRatioAtTick(SafeCast.toInt24(twapTick));
+            int256 tickCumulativesDelta = int256(tickCumulatives[1] - tickCumulatives[0]);
+            int256 twapIntervalInt256 = int256(uint256(twapInterval));
+            int256 arithmeticMeanTick = tickCumulativesDelta / twapIntervalInt256;
+            // Always round to negative infinity
+            if (tickCumulativesDelta < 0 && (tickCumulativesDelta % twapIntervalInt256 != 0)) arithmeticMeanTick--;
+            sqrtPriceX96 = TickMath.getSqrtRatioAtTick(SafeCast.toInt24(arithmeticMeanTick));
         }
     }
 

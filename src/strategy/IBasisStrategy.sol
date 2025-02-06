@@ -6,9 +6,6 @@ import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
 interface IBasisStrategy is IStrategy {
     function oracle() external view returns (address);
-    function vault() external view returns (address);
-    function asset() external view returns (address);
-    function product() external view returns (address);
     function spotManager() external view returns (address);
     function hedgeManager() external view returns (address);
     function assetsToWithdraw() external view returns (uint256);

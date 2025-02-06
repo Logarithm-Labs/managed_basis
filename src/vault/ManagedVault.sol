@@ -6,7 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -21,13 +21,13 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 ///
 /// @dev An abstract ERC4626 compliant vault with functions
 /// to collect AUM fees including the management fee and performance fee.
-abstract contract ManagedVault is Initializable, ERC4626Upgradeable, OwnableUpgradeable {
+abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2StepUpgradeable {
     using Math for uint256;
 
     /// @notice The maximum value of management fee that can be configured.
-    uint256 public constant MAX_MANAGEMENT_FEE = 5e16; // 5%
+    uint256 private constant MAX_MANAGEMENT_FEE = 5e16; // 5%
     /// @notice The maximum value of performance fee that can be configured.
-    uint256 public constant MAX_PERFORMANCE_FEE = 5e17; // 50%
+    uint256 private constant MAX_PERFORMANCE_FEE = 5e17; // 50%
 
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT

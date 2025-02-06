@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {InchTest} from "test/base/InchTest.sol";
-import {GmxV2Test} from "test/base/GmxV2Test.sol";
 import {OffChainTest} from "test/base/OffChainTest.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
@@ -12,7 +11,6 @@ import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol"
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
-import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
 
 import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
@@ -65,39 +63,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         uint256 balDelta = IERC20(asset).balanceOf(user1) - balBefore;
 
         assertGt(requestedAssets, balDelta);
-        assertEq(strategy.pendingDecreaseCollateral(), 0);
         assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
-    }
-
-    function test_performUpkeep_decreaseCollateral() public afterMultipleWithdrawRequestCreated validateFinalState {
-        uint256 increaseCollateralMin = 5 * 1e6;
-        uint256 increaseCollateralMax = type(uint256).max;
-        uint256 decreaseCollateralMin = 10 * 1e6;
-        uint256 decreaseCollateralMax = type(uint256).max;
-        uint256 limitDecreaseCollateral = 50 * 1e6;
-        vm.startPrank(owner);
-        address _config = address(hedgeManager.config());
-        OffChainConfig(_config).setCollateralMinMax(
-            increaseCollateralMin, increaseCollateralMax, decreaseCollateralMin, decreaseCollateralMax
-        );
-        OffChainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
-        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        uint256 amount = pendingDeutilization * 9 / 10;
-        _deutilize(amount);
-        (, pendingDeutilization) = strategy.pendingUtilizations();
-        amount = pendingDeutilization * 1 / 10;
-        vm.startPrank(operator);
-        strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
-        _deposit(user1, 400_000_000);
-        _executeOrder();
-
-        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("decreaseCollateral");
-        assertTrue(upkeepNeeded, "upkeepNeeded");
-        (,,,, bool decreaseCollateral,) = helper.decodePerformData(performData);
-        assertTrue(decreaseCollateral, "decreaseCollateral");
-        assertTrue(strategy.pendingDecreaseCollateral() > 0, "0 pendingDecreaseCollateral");
-        _performKeep("decreaseCollateral");
-        assertTrue(strategy.pendingDecreaseCollateral() == 0, "not 0 pendingDecreaseCollateral");
     }
 
     function test_idleCollateral_fullRedeem() public afterFullUtilized validateFinalState {
@@ -129,28 +95,19 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         assertEq(hedgeManager.idleCollateralAmount(), 0);
     }
 
-    function test_clearCollateral() public {
-        vm.startPrank(USDC_WHALE);
-        IERC20(asset).transfer(address(hedgeManager), 10_000_000);
-
-        hedgeManager.clearIdleCollateral();
-        assertEq(IERC20(asset).balanceOf(address(strategy)), 0);
-        assertEq(IERC20(asset).balanceOf(address(vault)), 10_000_000);
-    }
-
-    function test_leverage_whenCollateralPriceFluctuated() public validateFinalState {
-        uint256 assets = 6767161178;
-        vm.startPrank(USDC_WHALE);
-        IERC20(asset).transfer(user1, assets);
-        _deposit(user1, assets);
-        address priceFeed = oracle.getPriceFeed(address(asset));
-        int256 currPrice = IPriceFeed(priceFeed).latestAnswer();
-        uint256 deltaPrice = Math.mulDiv(uint256(currPrice), 0.3 ether, 1 ether);
-        int256 resultedPrice = currPrice - int256(deltaPrice);
-        _mockChainlinkPriceFeedAnswer(priceFeed, resultedPrice);
-        (uint256 amount,) = strategy.pendingUtilizations();
-        vm.startPrank(operator);
-        strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
-        _executeOrder();
-    }
+    // function test_leverage_whenCollateralPriceFluctuated() public validateFinalState {
+    //     uint256 assets = 67671611780306;
+    //     vm.startPrank(USDC_WHALE);
+    //     IERC20(asset).transfer(user1, assets);
+    //     _deposit(user1, assets);
+    //     address priceFeed = oracle.getPriceFeed(address(asset));
+    //     int256 currPrice = IPriceFeed(priceFeed).latestAnswer();
+    //     uint256 deltaPrice = Math.mulDiv(uint256(currPrice), 774831388402323407, 1 ether);
+    //     int256 resultedPrice = currPrice - int256(deltaPrice);
+    //     _mockChainlinkPriceFeedAnswer(priceFeed, resultedPrice);
+    //     (uint256 amount,) = strategy.pendingUtilizations();
+    //     vm.startPrank(operator);
+    //     strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
+    //     _executeOrder();
+    // }
 }

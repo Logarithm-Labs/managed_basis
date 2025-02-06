@@ -76,7 +76,8 @@ abstract contract ForkTest is Test {
     function _mockUniswapPool(address pool, address oracle) internal {
         address token0 = IUniswapV3Pool(pool).token0();
         address token1 = IUniswapV3Pool(pool).token1();
-        address mockPool = address(new UniswapV3MockPool(token0, token1, oracle));
+        (, int24 tick,,,,,) = IUniswapV3Pool(pool).slot0();
+        address mockPool = address(new UniswapV3MockPool(token0, token1, oracle, tick));
         vm.etch(pool, mockPool.code);
     }
 }

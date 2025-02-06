@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test, console} from "forge-std/Test.sol";
-
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {WhitelistProvider} from "src/whitelist/WhitelistProvider.sol";
 
 contract WhitelistProviderTest is Test {
@@ -12,8 +12,11 @@ contract WhitelistProviderTest is Test {
     address user2 = makeAddr("user2");
 
     function setUp() public {
-        provider = new WhitelistProvider();
-        provider.initialize(owner);
+        address providerImpl = address(new WhitelistProvider());
+        address providerProxy = address(
+            new ERC1967Proxy(providerImpl, abi.encodeWithSelector(WhitelistProvider.initialize.selector, owner))
+        );
+        provider = WhitelistProvider(providerProxy);
     }
 
     function test_whitelist() public {

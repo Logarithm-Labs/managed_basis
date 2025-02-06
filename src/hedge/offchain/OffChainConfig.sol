@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-contract OffChainConfig is UUPSUpgradeable, OwnableUpgradeable {
+contract OffChainConfig is UUPSUpgradeable, Ownable2StepUpgradeable {
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
 
     /// @custom:storage-location erc7201:logarithm.storage.OffChainConfig
     struct OffChainConfigStorage {
-        uint256[2] increaseSizeMinMax;
-        uint256[2] increaseCollateralMinMax;
-        uint256[2] decreaseSizeMinMax;
-        uint256[2] decreaseCollateralMinMax;
+        uint256 increaseSizeMin;
+        uint256 increaseCollateralMin;
+        uint256 decreaseSizeMin;
+        uint256 decreaseCollateralMin;
         uint256 limitDecreaseCollateral;
     }
 
@@ -28,6 +28,10 @@ contract OffChainConfig is UUPSUpgradeable, OwnableUpgradeable {
         }
     }
 
+    constructor() {
+        _disableInitializers();
+    }
+
     /*//////////////////////////////////////////////////////////////
                         INITIALIZATION
     //////////////////////////////////////////////////////////////*/
@@ -36,10 +40,10 @@ contract OffChainConfig is UUPSUpgradeable, OwnableUpgradeable {
         __Ownable_init(owner_);
 
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
-        $.increaseSizeMinMax = [0, type(uint256).max];
-        $.increaseCollateralMinMax = [0, type(uint256).max];
-        $.decreaseSizeMinMax = [0, type(uint256).max];
-        $.decreaseCollateralMinMax = [0, type(uint256).max];
+        $.increaseSizeMin = 0;
+        $.increaseCollateralMin = 0;
+        $.decreaseSizeMin = 0;
+        $.decreaseCollateralMin = 0;
     }
 
     function _authorizeUpgrade(address /*newImplementation*/ ) internal virtual override onlyOwner {}
@@ -48,33 +52,25 @@ contract OffChainConfig is UUPSUpgradeable, OwnableUpgradeable {
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function setSizeMinMax(
-        uint256 increaseSizeMin,
-        uint256 increaseSizeMax,
-        uint256 decreaseSizeMin,
-        uint256 decreaseSizeMax
-    ) external onlyOwner {
-        require(increaseSizeMin < increaseSizeMax && decreaseSizeMin < decreaseSizeMax);
+    function setSizeMin(uint256 _increaseSizeMin, uint256 _decreaseSizeMin) external onlyOwner {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
-        $.increaseSizeMinMax = [increaseSizeMin, increaseSizeMax];
-        $.decreaseSizeMinMax = [decreaseSizeMin, decreaseSizeMax];
+        $.increaseSizeMin = _increaseSizeMin;
+        $.decreaseSizeMin = _decreaseSizeMin;
     }
 
-    function setCollateralMinMax(
-        uint256 increaseCollateralMin,
-        uint256 increaseCollateralMax,
-        uint256 decreaseCollateralMin,
-        uint256 decreaseCollateralMax
-    ) external onlyOwner {
-        require(increaseCollateralMin < increaseCollateralMax && decreaseCollateralMin < decreaseCollateralMax);
+    function setCollateralMin(uint256 _increaseCollateralMin, uint256 _decreaseCollateralMin) external onlyOwner {
+        uint256 _limitDecreaseCollateral = limitDecreaseCollateral();
+        if (_limitDecreaseCollateral != 0) {
+            require(_limitDecreaseCollateral > _decreaseCollateralMin);
+        }
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
-        $.increaseCollateralMinMax = [increaseCollateralMin, increaseCollateralMax];
-        $.decreaseCollateralMinMax = [decreaseCollateralMin, decreaseCollateralMax];
+        $.increaseCollateralMin = _increaseCollateralMin;
+        $.decreaseCollateralMin = _decreaseCollateralMin;
     }
 
     function setLimitDecreaseCollateral(uint256 limit) external onlyOwner {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
-        require(limit > $.decreaseCollateralMinMax[0]);
+        require(limit > $.decreaseCollateralMin);
         $.limitDecreaseCollateral = limit;
     }
 
@@ -82,27 +78,27 @@ contract OffChainConfig is UUPSUpgradeable, OwnableUpgradeable {
                         PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function increaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+    function increaseCollateralMin() public view returns (uint256) {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
-        return ($.increaseCollateralMinMax[0], $.increaseCollateralMinMax[1]);
+        return $.increaseCollateralMin;
     }
 
-    function increaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+    function increaseSizeMin() public view returns (uint256) {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
-        return ($.increaseSizeMinMax[0], $.increaseSizeMinMax[1]);
+        return $.increaseSizeMin;
     }
 
-    function decreaseCollateralMinMax() external view returns (uint256 min, uint256 max) {
+    function decreaseCollateralMin() public view returns (uint256) {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
-        return ($.decreaseCollateralMinMax[0], $.decreaseCollateralMinMax[1]);
+        return $.decreaseCollateralMin;
     }
 
-    function decreaseSizeMinMax() external view returns (uint256 min, uint256 max) {
+    function decreaseSizeMin() public view returns (uint256) {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
-        return ($.decreaseSizeMinMax[0], $.decreaseSizeMinMax[1]);
+        return $.decreaseSizeMin;
     }
 
-    function limitDecreaseCollateral() external view returns (uint256) {
+    function limitDecreaseCollateral() public view returns (uint256) {
         OffChainConfigStorage storage $ = _getOffChainConfigStorage();
         return $.limitDecreaseCollateral;
     }

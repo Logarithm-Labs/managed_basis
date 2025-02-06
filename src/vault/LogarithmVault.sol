@@ -57,6 +57,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         address owner;
         /// @dev The account who is receiving the executed withdrawal assets.
         address receiver;
+        /// @dev Tells if a withdraw request is prioritized.
+        bool isPrioritized;
         /// @dev True means claimed.
         bool isClaimed;
     }
@@ -94,6 +96,10 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         assembly {
             $.slot := LogarithmVaultStorageLocation
         }
+    }
+
+    constructor() {
+        _disableInitializers();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -243,6 +249,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         }
 
         require(_strategy != address(0));
+        if (IStrategy(_strategy).asset() != address(_asset) || IStrategy(_strategy).vault() != address(this)) {
+            revert Errors.InvalidStrategy();
+        }
+        if (prevStrategy != address(0) && IStrategy(_strategy).product() != IStrategy(prevStrategy).product()) {
+            revert Errors.InvalidStrategy();
+        }
         $.strategy = _strategy;
         _asset.approve(_strategy, type(uint256).max);
 
@@ -407,7 +419,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         uint256 _accRequestedWithdrawAssets;
-        if (isPrioritized(owner)) {
+        bool isPrioritizedAccount = isPrioritized(owner);
+        if (isPrioritizedAccount) {
             _accRequestedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets + assetsToRequest;
             $.prioritizedAccRequestedWithdrawAssets = _accRequestedWithdrawAssets;
         } else {
@@ -422,6 +435,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
             requestTimestamp: block.timestamp,
             owner: owner,
             receiver: receiver,
+            isPrioritized: isPrioritizedAccount,
             isClaimed: false
         });
         emit WithdrawRequested(caller, receiver, owner, withdrawKey, assetsToRequest, sharesToRequest);
@@ -477,9 +491,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
             revert Errors.RequestAlreadyClaimed();
         }
 
-        bool isPrioritizedAccount = isPrioritized(withdrawRequest.owner);
-        (bool isExecuted, bool isLast) =
-            _isWithdrawRequestExecuted(isPrioritizedAccount, withdrawRequest.accRequestedWithdrawAssets);
+        bool isLast = _isLast(withdrawRequest.isPrioritized, withdrawRequest.accRequestedWithdrawAssets);
+        if (isLast) {
+            // call processAssetsToWithdraw() only when last to avoid normals being reverted.
+            IStrategy(strategy()).processAssetsToWithdraw();
+        }
+        bool isExecuted = _isExecuted(isLast, withdrawRequest.isPrioritized, withdrawRequest.accRequestedWithdrawAssets);
 
         if (!isExecuted) {
             revert Errors.RequestNotExecuted();
@@ -494,7 +511,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         if (isLast) {
             uint256 _processedWithdrawAssets;
             uint256 _accRequestedWithdrawAssets;
-            if (isPrioritizedAccount) {
+            if (withdrawRequest.isPrioritized) {
                 _processedWithdrawAssets = $.prioritizedProcessedWithdrawAssets;
                 _accRequestedWithdrawAssets = $.prioritizedAccRequestedWithdrawAssets;
             } else {
@@ -505,7 +522,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
             if (shortfall > 0) {
                 (, executedAssets) = withdrawRequest.requestedAssets.trySub(shortfall);
-                isPrioritizedAccount
+                withdrawRequest.isPrioritized
                     ? $.prioritizedProcessedWithdrawAssets = _accRequestedWithdrawAssets
                     : $.processedWithdrawAssets = _accRequestedWithdrawAssets;
             } else {
@@ -531,8 +548,11 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     function isClaimable(bytes32 withdrawRequestKey) external view returns (bool) {
         LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         WithdrawRequest memory withdrawRequest = $.withdrawRequests[withdrawRequestKey];
-        (bool isExecuted,) =
-            _isWithdrawRequestExecuted(isPrioritized(withdrawRequest.owner), withdrawRequest.accRequestedWithdrawAssets);
+        bool isExecuted = _isExecuted(
+            _isLast(withdrawRequest.isPrioritized, withdrawRequest.accRequestedWithdrawAssets),
+            withdrawRequest.isPrioritized,
+            withdrawRequest.accRequestedWithdrawAssets
+        );
 
         return isExecuted && !withdrawRequest.isClaimed;
     }
@@ -574,16 +594,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        if (totalSupply() == 0) {
-            return assets;
-        }
         // calculate the amount of assets that will be utilized
         (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            assets -= _costOnTotal(assetsToUtilize, $.entryCost);
+            assets -= _costOnTotal(assetsToUtilize, entryCost());
         }
 
         return _convertToShares(assets, Math.Rounding.Floor);
@@ -591,31 +607,25 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function previewMint(uint256 shares) public view virtual override returns (uint256) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-        if (totalSupply() == 0) {
-            return shares;
-        }
         uint256 assets = _convertToAssets(shares, Math.Rounding.Ceil);
-
         // calculate the amount of assets that will be utilized
         (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            assets += _costOnRaw(assetsToUtilize, $.entryCost);
+            assets += _costOnRaw(assetsToUtilize, entryCost());
         }
         return assets;
     }
 
     /// @inheritdoc ERC4626Upgradeable
     function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         // calc the amount of assets that can not be withdrawn via idle
         (, uint256 assetsToDeutilize) = assets.trySub(idleAssets());
 
         // apply exit fee to assets that should be deutilized and add exit fee amount the asset amount
         if (assetsToDeutilize > 0) {
-            assets += _costOnRaw(assetsToDeutilize, $.exitCost);
+            assets += _costOnRaw(assetsToDeutilize, exitCost());
         }
 
         return _convertToShares(assets, Math.Rounding.Ceil);
@@ -623,7 +633,6 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function previewRedeem(uint256 shares) public view virtual override returns (uint256) {
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
         uint256 assets = _convertToAssets(shares, Math.Rounding.Floor);
 
         // calculate the amount of assets that will be deutilized
@@ -631,7 +640,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
         // apply exit fee to the portion of assets that will be deutilized
         if (assetsToDeutilize > 0) {
-            assets -= _costOnTotal(assetsToDeutilize, $.exitCost);
+            assets -= _costOnTotal(assetsToDeutilize, exitCost());
         }
 
         return assets;
@@ -651,7 +660,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         if (paused() || isShutdown()) {
             return 0;
         } else {
-            return super.maxDeposit(receiver);
+            return super.maxMint(receiver);
         }
     }
 
@@ -684,6 +693,9 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     ///
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
+        if (shares == 0) {
+            revert Errors.ZeroShares();
+        }
         ERC4626Upgradeable._deposit(caller, receiver, assets, shares);
         processPendingWithdrawRequests();
     }
@@ -730,43 +742,43 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return (remainingAssets, processedAssets);
     }
 
-    /// @dev Executable state of withdraw request
-    ///
-    /// @param isPrioritizedAccount Tells if account is prioritized for withdrawal
-    /// @param accRequestedWithdrawAssetsOfRequest The accRequestedWithdrawAssets storage value of withdraw request
-    ///
-    /// @return isExecuted Tells whether a request is executed or not
-    /// @return isLast Tells whether a request is last or not
-    function _isWithdrawRequestExecuted(bool isPrioritizedAccount, uint256 accRequestedWithdrawAssetsOfRequest)
+    /// @dev Tells if the given withdraw request is last or not.
+    function _isLast(bool isPrioritizedAccount, uint256 accRequestedWithdrawAssetsOfRequest)
         internal
         view
-        returns (bool isExecuted, bool isLast)
+        returns (bool isLast)
     {
         // return false if withdraw request was not issued (accRequestedWithdrawAssetsOfRequest is zero)
         if (accRequestedWithdrawAssetsOfRequest == 0) {
-            return (false, false);
+            return false;
         }
-        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
-
-        // separate workflow for last withdraw
-        // check if current withdrawRequest is last withdraw
-        // possible only when totalSupply is 0
         if (totalSupply() == 0) {
             isLast = isPrioritizedAccount
-                ? accRequestedWithdrawAssetsOfRequest == $.prioritizedAccRequestedWithdrawAssets
-                : accRequestedWithdrawAssetsOfRequest == $.accRequestedWithdrawAssets;
+                ? accRequestedWithdrawAssetsOfRequest == prioritizedAccRequestedWithdrawAssets()
+                : accRequestedWithdrawAssetsOfRequest == accRequestedWithdrawAssets();
         }
+        return isLast;
+    }
 
+    /// @dev Tells if the given withdraw request is executed or not.
+    function _isExecuted(bool isLast, bool isPrioritizedAccount, uint256 accRequestedWithdrawAssetsOfRequest)
+        internal
+        view
+        returns (bool isExecuted)
+    {
+        // return false if withdraw request was not issued (accRequestedWithdrawAssetsOfRequest is zero)
+        if (accRequestedWithdrawAssetsOfRequest == 0) {
+            return false;
+        }
         if (isLast) {
             // last withdraw is claimable when utilized assets is 0
             isExecuted = IStrategy(strategy()).utilizedAssets() == 0;
         } else {
             isExecuted = isPrioritizedAccount
-                ? accRequestedWithdrawAssetsOfRequest <= $.prioritizedProcessedWithdrawAssets
-                : accRequestedWithdrawAssetsOfRequest <= $.processedWithdrawAssets;
+                ? accRequestedWithdrawAssetsOfRequest <= prioritizedProcessedWithdrawAssets()
+                : accRequestedWithdrawAssetsOfRequest <= processedWithdrawAssets();
         }
-
-        return (isExecuted, isLast);
+        return isExecuted;
     }
 
     /// @dev Uses nonce of the specified user and increase it
