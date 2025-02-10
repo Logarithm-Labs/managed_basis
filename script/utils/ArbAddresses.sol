@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-library ArbiAddresses {
+library ArbAddresses {
     address constant GMX_DATA_STORE = 0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8;
     address constant GMX_EXCHANGE_ROUTER = 0x900173A66dbD345006C51fA35fA3aB760FcD843b;
     address constant GMX_ORDER_HANDLER = 0xe68CAAACdf6439628DFD2fe624847602991A31eB;

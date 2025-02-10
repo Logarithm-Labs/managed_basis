@@ -20,7 +20,7 @@ import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManage
 
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 
-import {ArbiAddresses} from "./ArbiAddresses.sol";
+import {ArbAddresses} from "./ArbAddresses.sol";
 
 library DeployHelper {
     function deployBeacon(address implementation, address owner) internal returns (address) {
@@ -135,7 +135,7 @@ library DeployHelper {
             new ERC1967Proxy(
                 gmxConfigImpl,
                 abi.encodeWithSelector(
-                    GmxConfig.initialize.selector, owner, ArbiAddresses.GMX_EXCHANGE_ROUTER, ArbiAddresses.GMX_READER
+                    GmxConfig.initialize.selector, owner, ArbAddresses.GMX_EXCHANGE_ROUTER, ArbAddresses.GMX_READER
                 )
             )
         );

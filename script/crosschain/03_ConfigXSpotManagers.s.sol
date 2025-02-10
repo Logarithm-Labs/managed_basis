@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 import {GasStation} from "src/gas-station/GasStation.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";

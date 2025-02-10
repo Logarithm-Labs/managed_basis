@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 import {GasStation} from "src/gas-station/GasStation.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
@@ -24,10 +24,10 @@ contract DeployScript is Script {
         vm.startBroadcast();
         address[] memory assets = new address[](2);
         address[] memory feeds = new address[](2);
-        assets[0] = ArbiAddresses.USDC;
-        assets[1] = ArbiAddresses.WETH;
-        feeds[0] = ArbiAddresses.CHL_USDC_USD_PRICE_FEED;
-        feeds[1] = ArbiAddresses.CHL_ETH_USD_PRICE_FEED;
+        assets[0] = ArbAddresses.USDC;
+        assets[1] = ArbAddresses.WETH;
+        feeds[0] = ArbAddresses.CHL_USDC_USD_PRICE_FEED;
+        feeds[1] = ArbAddresses.CHL_ETH_USD_PRICE_FEED;
         oracle.setPriceFeeds(assets, feeds);
     }
 }

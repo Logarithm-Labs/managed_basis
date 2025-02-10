@@ -14,7 +14,7 @@ import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {DataProvider} from "src/DataProvider.sol";
 
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 
@@ -28,10 +28,10 @@ contract DeployScript is Script {
     address constant agent = 0xA2a7e3a770c38aAe24F175a38281f74731Fe477E;
 
     // Strategy Addresses
-    address constant asset = ArbiAddresses.USDC; // USDC
-    address constant product = ArbiAddresses.DOGE; // DOGE
-    address constant assetPriceFeed = ArbiAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
-    address constant productPriceFeed = ArbiAddresses.CHL_DOGE_USD_PRICE_FEED; // Chainlink DOGE-USD price feed
+    address constant asset = ArbAddresses.USDC; // USDC
+    address constant product = ArbAddresses.DOGE; // DOGE
+    address constant assetPriceFeed = ArbAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
+    address constant productPriceFeed = ArbAddresses.CHL_DOGE_USD_PRICE_FEED; // Chainlink DOGE-USD price feed
     bool constant isLong = false;
 
     // vault params
@@ -73,12 +73,12 @@ contract DeployScript is Script {
         address[] memory assets = new address[](3);
         address[] memory feeds = new address[](3);
         uint256[] memory heartbeats = new uint256[](3);
-        assets[0] = ArbiAddresses.USDC;
-        assets[1] = ArbiAddresses.WETH;
-        assets[2] = ArbiAddresses.DOGE;
-        feeds[0] = ArbiAddresses.CHL_USDC_USD_PRICE_FEED;
-        feeds[1] = ArbiAddresses.CHL_ETH_USD_PRICE_FEED;
-        feeds[2] = ArbiAddresses.CHL_DOGE_USD_PRICE_FEED;
+        assets[0] = ArbAddresses.USDC;
+        assets[1] = ArbAddresses.WETH;
+        assets[2] = ArbAddresses.DOGE;
+        feeds[0] = ArbAddresses.CHL_USDC_USD_PRICE_FEED;
+        feeds[1] = ArbAddresses.CHL_ETH_USD_PRICE_FEED;
+        feeds[2] = ArbAddresses.CHL_DOGE_USD_PRICE_FEED;
         heartbeats[0] = 24 * 3600;
         heartbeats[1] = 24 * 3600;
         heartbeats[2] = 24 * 3600;
@@ -149,7 +149,7 @@ contract DeployScript is Script {
             beacon: xSpotManagerBeacon,
             owner: owner,
             strategy: address(strategyGmx),
-            messenger: ArbiAddresses.LOGARITHM_MESSENGER,
+            messenger: ArbAddresses.LOGARITHM_MESSENGER,
             dstChainId: BSC_CHAIN_ID
         });
         XSpotManager gmxXSpotManager = DeployHelper.deployXSpotManager(xSpotDeployParams);
@@ -185,7 +185,7 @@ contract DeployScript is Script {
                 address(gmxConfig),
                 address(strategyGmx),
                 address(gasStation),
-                ArbiAddresses.GMX_DOGE_USDC_MARKET
+                ArbAddresses.GMX_DOGE_USDC_MARKET
             )
         );
         console.log("GmxPositionManager-USDC-DOGE: ", address(gmxPositionManager));

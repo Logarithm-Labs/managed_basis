@@ -7,11 +7,11 @@ import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {ForkTest} from "test/base/ForkTest.sol";
 
 import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 
 contract ManualSwapTest is ForkTest {
-    address public asset = ArbiAddresses.USDC; // USDC
-    address public product = ArbiAddresses.WETH; // WETH
+    address public asset = ArbAddresses.USDC; // USDC
+    address public product = ArbAddresses.WETH; // WETH
 
     function setUp() public {
         _forkArbitrum(0);

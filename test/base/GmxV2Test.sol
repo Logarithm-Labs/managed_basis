@@ -18,17 +18,17 @@ import {GasStation} from "src/gas-station/GasStation.sol";
 import {GmxConfig} from "src/hedge/gmx/GmxConfig.sol";
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 
 contract GmxV2Test is PositionMngerForkTest {
-    address constant GMX_DATA_STORE = ArbiAddresses.GMX_DATA_STORE;
-    address constant GMX_EXCHANGE_ROUTER = ArbiAddresses.GMX_EXCHANGE_ROUTER;
-    address constant GMX_ORDER_HANDLER = ArbiAddresses.GMX_ORDER_HANDLER;
-    address constant GMX_ORDER_VAULT = ArbiAddresses.GMX_ORDER_VAULT;
-    address constant GMX_READER = ArbiAddresses.GMX_READER;
-    address constant GMX_ETH_USDC_MARKET = ArbiAddresses.GMX_ETH_USDC_MARKET;
-    address constant GMX_KEEPER = ArbiAddresses.GMX_KEEPER;
+    address constant GMX_DATA_STORE = ArbAddresses.GMX_DATA_STORE;
+    address constant GMX_EXCHANGE_ROUTER = ArbAddresses.GMX_EXCHANGE_ROUTER;
+    address constant GMX_ORDER_HANDLER = ArbAddresses.GMX_ORDER_HANDLER;
+    address constant GMX_ORDER_VAULT = ArbAddresses.GMX_ORDER_VAULT;
+    address constant GMX_READER = ArbAddresses.GMX_READER;
+    address constant GMX_ETH_USDC_MARKET = ArbAddresses.GMX_ETH_USDC_MARKET;
+    address constant GMX_KEEPER = ArbAddresses.GMX_KEEPER;
 
     address constant CHAINLINK_PRICE_FEED_PROVIDER = 0x527FB0bCfF63C47761039bB386cFE181A92a4701;
 

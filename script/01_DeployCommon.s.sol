@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
 
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 
@@ -31,6 +32,15 @@ contract ArbDeploy is Script {
         vm.startBroadcast();
 
         LogarithmOracle oracle = DeployHelper.deployLogarithmOracle(owner);
+        // configure oracle for DOGE
+        address[] memory assets = new address[](1);
+        address[] memory feeds = new address[](1);
+        uint256[] memory heartbeats = new uint256[](1);
+        assets[0] = ArbAddresses.USDC;
+        feeds[0] = ArbAddresses.CHL_USDC_USD_PRICE_FEED;
+        heartbeats[0] = 24 * 3600;
+        oracle.setPriceFeeds(assets, feeds);
+        oracle.setHeartbeats(feeds, heartbeats);
         console.log("Oracle: ", address(oracle));
 
         // use the current deployed gas station

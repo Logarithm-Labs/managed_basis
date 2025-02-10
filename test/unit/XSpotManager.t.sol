@@ -15,13 +15,13 @@ import {MockOracle} from "test/mock/MockOracle.sol";
 import {MockMessenger} from "test/mock/MockMessenger.sol";
 import {MockStrategy} from "test/mock/MockStrategy.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 
 contract XSpotManagerTest is ForkTest {
     address owner = makeAddr("owner");
 
-    address constant ARBI_ENDPOINT = ArbiAddresses.LZ_V2_ENDPOINT;
-    address constant ARBI_STARTGATE = ArbiAddresses.STARGATE_POOL_USDC;
+    address constant ARBI_ENDPOINT = ArbAddresses.LZ_V2_ENDPOINT;
+    address constant ARBI_STARTGATE = ArbAddresses.STARGATE_POOL_USDC;
     uint256 constant chainId = 56;
 
     uint256 TEN_THOUSAND_USDC = 10_000 * USDC_PRECISION;
@@ -58,7 +58,7 @@ contract XSpotManagerTest is ForkTest {
 
         address[] memory pathWeth = new address[](3);
         pathWeth[0] = asset;
-        pathWeth[1] = ArbiAddresses.UNI_V3_POOL_WETH_USDC;
+        pathWeth[1] = ArbAddresses.UNI_V3_POOL_WETH_USDC;
         pathWeth[2] = product;
 
         address beaconSwapper = DeployHelper.deployBeacon(address(new BrotherSwapper()), owner);

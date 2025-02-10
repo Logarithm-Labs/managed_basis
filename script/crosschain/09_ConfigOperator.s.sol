@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
 import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 import {BscAddresses} from "script/utils/BscAddresses.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";

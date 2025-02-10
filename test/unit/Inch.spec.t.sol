@@ -7,15 +7,15 @@ import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {InchTest} from "test/base/InchTest.sol";
 
 import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 
 contract InchSpecTest is InchTest {
     using stdStorage for StdStorage;
 
     address public usdcWhale = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
 
-    address public asset = ArbiAddresses.USDC; // USDC
-    address public product = ArbiAddresses.WETH; // WETH
+    address public asset = ArbAddresses.USDC; // USDC
+    address public product = ArbAddresses.WETH; // WETH
 
     function setUp() public {
         _forkArbitrum(0);

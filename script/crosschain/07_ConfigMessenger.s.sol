@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
 import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 import {BscAddresses} from "script/utils/BscAddresses.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
@@ -18,7 +18,7 @@ contract ArbConfigScript is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
     uint256 constant BSC_CHAIN_ID = 56;
     uint32 constant BSC_EID = uint32(30102);
-    ILogarithmMessenger messenger = ILogarithmMessenger(ArbiAddresses.LOGARITHM_MESSENGER);
+    ILogarithmMessenger messenger = ILogarithmMessenger(ArbAddresses.LOGARITHM_MESSENGER);
     GasStation gasStation = GasStation(payable(Arb.GAS_STATION));
 
     function run() public {
@@ -34,7 +34,7 @@ contract ArbConfigScript is Script {
             BSC_CHAIN_ID, BSC_EID, AddressCast.addressToBytes32(BscAddresses.LOGARITHM_MESSENGER)
         );
 
-        messenger.registerStargate(ArbiAddresses.USDC, ArbiAddresses.STARGATE_POOL_USDC);
+        messenger.registerStargate(ArbAddresses.USDC, ArbAddresses.STARGATE_POOL_USDC);
     }
 }
 
@@ -56,7 +56,7 @@ contract BscConfigScript is Script {
         messenger.updateGasStation(Bsc.GAS_STATION);
 
         messenger.registerDstMessenger(
-            ARB_CHAIN_ID, ARB_EID, AddressCast.addressToBytes32(ArbiAddresses.LOGARITHM_MESSENGER)
+            ARB_CHAIN_ID, ARB_EID, AddressCast.addressToBytes32(ArbAddresses.LOGARITHM_MESSENGER)
         );
 
         messenger.registerStargate(BscAddresses.USDC, BscAddresses.STARGATE_POOL_USDC);

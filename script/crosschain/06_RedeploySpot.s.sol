@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
 import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 import {BscAddresses} from "script/utils/BscAddresses.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
@@ -26,7 +26,7 @@ contract ArbDeployScript is Script {
             beacon: Arb.BEACON_X_SPOT_MANAGER,
             owner: owner,
             strategy: Arb.STRATEGY_GMX_USDC_DOGE,
-            messenger: ArbiAddresses.LOGARITHM_MESSENGER,
+            messenger: ArbAddresses.LOGARITHM_MESSENGER,
             dstChainId: BSC_CHAIN_ID
         });
         XSpotManager gmxXSpotManager = DeployHelper.deployXSpotManager(xSpotDeployParams);
@@ -38,7 +38,7 @@ contract ArbDeployScript is Script {
         console.log("XSpotManager(HL)-USDC-DOGE: ", address(hlXSpotManager));
 
         // register messenger to gas station
-        GasStation(payable(Arb.GAS_STATION)).registerManager(ArbiAddresses.LOGARITHM_MESSENGER, true);
+        GasStation(payable(Arb.GAS_STATION)).registerManager(ArbAddresses.LOGARITHM_MESSENGER, true);
     }
 }
 
