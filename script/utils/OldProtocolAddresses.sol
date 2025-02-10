@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-library Arb {
+library Arbitrum {
     address constant ORACLE = 0x6Ca91687F8Cf8fD2a43e631A91323616eB1c6429;
     address constant BEACON_VAULT = 0x701dfa01e7A063963504ee1b351ACE47152Cb980;
     address constant VAULT_GMX_USDC_DOGE = 0x9Fe9d756D929B38F9e1729574Dc0FFeC11492CdD;

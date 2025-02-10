@@ -8,7 +8,7 @@ import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
-import {Arbitrum, Bsc} from "script/utils/ProtocolAddresses.sol";
+import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {GmxV2PositionManager} from "src/hedge/gmx/GmxV2PositionManager.sol";
 
@@ -17,8 +17,8 @@ contract DeployScript is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
     // predeployed contracts
-    LogarithmOracle oracle = LogarithmOracle(Arbitrum.ORACLE);
-    GmxV2PositionManager gmxManager = GmxV2PositionManager(Arbitrum.GMX_POSITION_MANAGER_USDC_DOGE);
+    LogarithmOracle oracle = LogarithmOracle(Arb.ORACLE);
+    GmxV2PositionManager gmxManager = GmxV2PositionManager(Arb.GMX_POSITION_MANAGER_USDC_DOGE);
 
     function run() public {
         vm.startBroadcast();

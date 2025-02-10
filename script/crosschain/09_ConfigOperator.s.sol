@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
-import {Arbitrum, Bsc} from "script/utils/ProtocolAddresses.sol";
+import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
 import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
 import {BscAddresses} from "script/utils/BscAddresses.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
@@ -23,9 +23,9 @@ contract ConfigOperatorScript is Script {
     address constant hlOperator = 0xC3AcB9dF13095E7A27919D78aD8323CF7717Bb16;
     address constant agent = 0xA184231aAE8DE21E7FcD962746Ef350CbB650FbD;
 
-    BasisStrategy gmxStrategy = BasisStrategy(Arbitrum.STRATEGY_GMX_USDC_DOGE);
-    BasisStrategy hlStrategy = BasisStrategy(Arbitrum.STRATEGY_HL_USDC_DOGE);
-    OffChainPositionManager hlManager = OffChainPositionManager(Arbitrum.HL_POSITION_MANAGER_USDC_DOGE);
+    BasisStrategy gmxStrategy = BasisStrategy(Arb.STRATEGY_GMX_USDC_DOGE);
+    BasisStrategy hlStrategy = BasisStrategy(Arb.STRATEGY_HL_USDC_DOGE);
+    OffChainPositionManager hlManager = OffChainPositionManager(Arb.HL_POSITION_MANAGER_USDC_DOGE);
 
     function run() public {
         vm.startBroadcast();

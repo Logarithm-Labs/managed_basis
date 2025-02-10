@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
-import {Arbitrum, Bsc} from "script/utils/ProtocolAddresses.sol";
+import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
 import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
 import {BscAddresses} from "script/utils/BscAddresses.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
@@ -19,16 +19,16 @@ contract ArbConfigScript is Script {
     uint256 constant BSC_CHAIN_ID = 56;
     uint32 constant BSC_EID = uint32(30102);
     ILogarithmMessenger messenger = ILogarithmMessenger(ArbiAddresses.LOGARITHM_MESSENGER);
-    GasStation gasStation = GasStation(payable(Arbitrum.GAS_STATION));
+    GasStation gasStation = GasStation(payable(Arb.GAS_STATION));
 
     function run() public {
         vm.startBroadcast();
 
         gasStation.registerManager(address(messenger), true);
-        messenger.authorize(Arbitrum.X_SPOT_MANAGER_GMX_USDC_DOGE);
-        messenger.authorize(Arbitrum.X_SPOT_MANAGER_HL_USDC_DOGE);
+        messenger.authorize(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE);
+        messenger.authorize(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
 
-        messenger.updateGasStation(Arbitrum.GAS_STATION);
+        messenger.updateGasStation(Arb.GAS_STATION);
 
         messenger.registerDstMessenger(
             BSC_CHAIN_ID, BSC_EID, AddressCast.addressToBytes32(BscAddresses.LOGARITHM_MESSENGER)

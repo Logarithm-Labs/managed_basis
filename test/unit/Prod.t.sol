@@ -13,23 +13,23 @@ import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
 import {ArbSysMock} from "test/mock/ArbSysMock.sol";
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {Arbitrum} from "script/utils/ProtocolAddresses.sol";
+import {Arb} from "script/utils/ProtocolAddresses.sol";
 
 contract ProdTest is Test {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
     address constant hlOperator = 0xC3AcB9dF13095E7A27919D78aD8323CF7717Bb16;
     address constant gmxOperator = 0x46eC45418cC71df561c676b89b982B1cF52C824C;
     address constant sender = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
-    LogarithmVault gmxVault = LogarithmVault(Arbitrum.VAULT_GMX_USDC_DOGE);
-    LogarithmVault hlVault = LogarithmVault(Arbitrum.VAULT_HL_USDC_DOGE);
-    BasisStrategy constant gmxStrategy = BasisStrategy(Arbitrum.STRATEGY_GMX_USDC_DOGE);
-    BasisStrategy constant hlStrategy = BasisStrategy(Arbitrum.STRATEGY_HL_USDC_DOGE);
-    DataProvider constant dataProvider = DataProvider(Arbitrum.DATA_PROVIDER);
-    GmxV2PositionManager constant gmxPositionManager = GmxV2PositionManager(Arbitrum.GMX_POSITION_MANAGER_USDC_DOGE);
-    OffChainPositionManager constant hlPositionManager = OffChainPositionManager(Arbitrum.HL_POSITION_MANAGER_USDC_DOGE);
+    LogarithmVault gmxVault = LogarithmVault(Arb.VAULT_GMX_USDC_DOGE);
+    LogarithmVault hlVault = LogarithmVault(Arb.VAULT_HL_USDC_DOGE);
+    BasisStrategy constant gmxStrategy = BasisStrategy(Arb.STRATEGY_GMX_USDC_DOGE);
+    BasisStrategy constant hlStrategy = BasisStrategy(Arb.STRATEGY_HL_USDC_DOGE);
+    DataProvider constant dataProvider = DataProvider(Arb.DATA_PROVIDER);
+    GmxV2PositionManager constant gmxPositionManager = GmxV2PositionManager(Arb.GMX_POSITION_MANAGER_USDC_DOGE);
+    OffChainPositionManager constant hlPositionManager = OffChainPositionManager(Arb.HL_POSITION_MANAGER_USDC_DOGE);
 
-    UpgradeableBeacon strategyBeacon = UpgradeableBeacon(Arbitrum.BEACON_STRATEGY);
-    UpgradeableBeacon gmxBeacon = UpgradeableBeacon(Arbitrum.BEACON_GMX_POSITION_MANAGER);
+    UpgradeableBeacon strategyBeacon = UpgradeableBeacon(Arb.BEACON_STRATEGY);
+    UpgradeableBeacon gmxBeacon = UpgradeableBeacon(Arb.BEACON_GMX_POSITION_MANAGER);
     address constant asset = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
 
     string constant rpcUrl = "https://arb-mainnet.g.alchemy.com/v2/PeyMa7ljzBjqJxkH6AnLfVH8zRWOtE1n";
@@ -106,11 +106,11 @@ contract ProdTest is Test {
         console.log("positionNetBalance: ", state.positionNetBalance);
         console.log("positionLeverage: ", state.positionLeverage);
         console.log("positionSizeInTokens: ", state.positionSizeInTokens);
+        console.log("positionSizeInAsset: ", state.positionSizeInAsset);
         console.log("upkeepNeeded: ", state.upkeepNeeded);
         console.log("rebalanceUpNeeded: ", state.rebalanceUpNeeded);
         console.log("rebalanceDownNeeded: ", state.rebalanceDownNeeded);
         console.log("deleverageNeeded: ", state.deleverageNeeded);
-        console.log("decreaseCollateral: ", state.decreaseCollateral);
         console.log("rehedgeNeeded: ", state.rehedgeNeeded);
         console.log("hedgeManagerKeepNeeded: ", state.hedgeManagerKeepNeeded);
         console.log("processingRebalanceDown: ", state.processingRebalanceDown);

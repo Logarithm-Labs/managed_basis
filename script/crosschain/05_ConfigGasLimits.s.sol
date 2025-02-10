@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
-import {Arbitrum} from "script/utils/ProtocolAddresses.sol";
+import {Arb} from "script/utils/ProtocolAddresses.sol";
 
 contract DeployScript is Script {
     // access control addresses
@@ -20,7 +20,7 @@ contract DeployScript is Script {
     uint128 constant sellResGasLimit = 2_000_000;
 
     // predeployed contracts
-    XSpotManager xSpotManager = XSpotManager(payable(Arbitrum.X_SPOT_MANAGER_GMX_USDC_DOGE));
+    XSpotManager xSpotManager = XSpotManager(payable(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE));
 
     function run() public {
         vm.startBroadcast();

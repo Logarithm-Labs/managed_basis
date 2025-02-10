@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
-import {Arbitrum, Bsc} from "script/utils/ProtocolAddresses.sol";
+import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
 import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
 import {BscAddresses} from "script/utils/BscAddresses.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
@@ -19,13 +19,13 @@ contract ArbDeployScript is Script {
 
     function run() public {
         vm.startBroadcast();
-        UpgradeableBeacon(Arbitrum.BEACON_X_SPOT_MANAGER).upgradeTo(address(new XSpotManager()));
+        UpgradeableBeacon(Arb.BEACON_X_SPOT_MANAGER).upgradeTo(address(new XSpotManager()));
 
         // deploy Gmx spot manager
         DeployHelper.DeployXSpotManagerParams memory xSpotDeployParams = DeployHelper.DeployXSpotManagerParams({
-            beacon: Arbitrum.BEACON_X_SPOT_MANAGER,
+            beacon: Arb.BEACON_X_SPOT_MANAGER,
             owner: owner,
-            strategy: Arbitrum.STRATEGY_GMX_USDC_DOGE,
+            strategy: Arb.STRATEGY_GMX_USDC_DOGE,
             messenger: ArbiAddresses.LOGARITHM_MESSENGER,
             dstChainId: BSC_CHAIN_ID
         });
@@ -33,12 +33,12 @@ contract ArbDeployScript is Script {
         console.log("XSpotManager(GMX)-USDC-DOGE: ", address(gmxXSpotManager));
 
         // deploy HL spot manager
-        xSpotDeployParams.strategy = Arbitrum.STRATEGY_HL_USDC_DOGE;
+        xSpotDeployParams.strategy = Arb.STRATEGY_HL_USDC_DOGE;
         XSpotManager hlXSpotManager = DeployHelper.deployXSpotManager(xSpotDeployParams);
         console.log("XSpotManager(HL)-USDC-DOGE: ", address(hlXSpotManager));
 
         // register messenger to gas station
-        GasStation(payable(Arbitrum.GAS_STATION)).registerManager(ArbiAddresses.LOGARITHM_MESSENGER, true);
+        GasStation(payable(Arb.GAS_STATION)).registerManager(ArbiAddresses.LOGARITHM_MESSENGER, true);
     }
 }
 
@@ -51,8 +51,8 @@ contract BscDeployScript is Script {
     address constant product = BscAddresses.DOGE; // DOGE
 
     // predeployed contracts
-    bytes32 xSpotManagerGmx = AddressCast.addressToBytes32(Arbitrum.X_SPOT_MANAGER_GMX_USDC_DOGE);
-    bytes32 xSpotManagerHL = AddressCast.addressToBytes32(Arbitrum.X_SPOT_MANAGER_HL_USDC_DOGE);
+    bytes32 xSpotManagerGmx = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE);
+    bytes32 xSpotManagerHL = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
 
     function run() public {
         vm.startBroadcast();

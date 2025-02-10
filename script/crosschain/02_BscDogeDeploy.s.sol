@@ -8,7 +8,7 @@ import {BscAddresses} from "script/utils/BscAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
-import {Arbitrum} from "script/utils/ProtocolAddresses.sol";
+import {Arb} from "script/utils/ProtocolAddresses.sol";
 
 contract DeployScript is Script {
     // access control addresses
@@ -21,8 +21,8 @@ contract DeployScript is Script {
     uint256 constant ARB_CHAIN_ID = 42161;
 
     // predeployed contracts
-    bytes32 xSpotManagerGmx = AddressCast.addressToBytes32(Arbitrum.X_SPOT_MANAGER_GMX_USDC_DOGE);
-    bytes32 xSpotManagerHL = AddressCast.addressToBytes32(Arbitrum.X_SPOT_MANAGER_HL_USDC_DOGE);
+    bytes32 xSpotManagerGmx = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE);
+    bytes32 xSpotManagerHL = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
 
     function run() public {
         vm.startBroadcast();
