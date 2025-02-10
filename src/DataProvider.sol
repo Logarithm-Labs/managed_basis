@@ -45,11 +45,11 @@ contract DataProvider {
         uint256 positionNetBalance;
         uint256 positionLeverage;
         uint256 positionSizeInTokens;
+        uint256 positionSizeInAsset;
         bool upkeepNeeded;
         bool rebalanceUpNeeded;
         bool rebalanceDownNeeded;
         bool deleverageNeeded;
-        bool decreaseCollateral;
         bool rehedgeNeeded;
         bool hedgeManagerKeepNeeded;
         bool processingRebalanceDown;
@@ -77,18 +77,11 @@ contract DataProvider {
         bool deleverageNeeded;
         int256 hedgeDeviationInTokens;
         bool hedgeManagerNeedKeep;
-        bool decreaseCollateral;
         bool rebalanceUpNeeded;
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
         if (performData.length > 0) {
-            (
-                rebalanceDownNeeded,
-                deleverageNeeded,
-                hedgeDeviationInTokens,
-                hedgeManagerNeedKeep,
-                decreaseCollateral,
-                rebalanceUpNeeded
-            ) = _decodePerformData(performData);
+            (rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, hedgeManagerNeedKeep, rebalanceUpNeeded) =
+                _decodePerformData(performData);
         }
 
         state.strategyStatus = uint8(strategy.strategyStatus());
@@ -108,11 +101,11 @@ contract DataProvider {
         state.positionNetBalance = hedgeManager.positionNetBalance();
         state.positionLeverage = hedgeManager.currentLeverage();
         state.positionSizeInTokens = hedgeManager.positionSizeInTokens();
+        state.positionSizeInAsset = oracle.convertTokenAmount(product, asset, state.positionSizeInTokens);
         state.upkeepNeeded = upkeepNeeded;
         state.rebalanceUpNeeded = rebalanceUpNeeded;
         state.rebalanceDownNeeded = rebalanceDownNeeded;
         state.deleverageNeeded = deleverageNeeded;
-        state.decreaseCollateral = decreaseCollateral;
         state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
         state.hedgeManagerKeepNeeded = hedgeManagerNeedKeep;
         state.processingRebalanceDown = strategy.processingRebalanceDown();
@@ -223,7 +216,6 @@ contract DataProvider {
             bool deleverageNeeded,
             int256 hedgeDeviationInTokens,
             bool hedgeManagerNeedKeep,
-            bool decreaseCollateral,
             bool rebalanceUpNeeded
         )
     {
@@ -238,9 +230,8 @@ contract DataProvider {
             clearProcessingRebalanceDown,
             hedgeDeviationInTokens,
             hedgeManagerNeedKeep,
-            decreaseCollateral,
             deltaCollateralToDecrease
-        ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, bool, uint256));
+        ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, uint256));
 
         rebalanceDownNeeded = emergencyDeutilizationAmount > 0 || deltaCollateralToIncrease > 0;
         deleverageNeeded = emergencyDeutilizationAmount > 0;
