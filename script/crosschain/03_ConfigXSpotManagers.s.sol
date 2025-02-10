@@ -18,7 +18,7 @@ contract DeployScript is Script {
     XSpotManager gmxXSpotManager = XSpotManager(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE);
     XSpotManager hlXSpotManager = XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
     bytes32 gmxSwapper = AddressCast.addressToBytes32(Bsc.BROTHER_SWAPPER_GMX);
-    bytes32 hlSwapper = AddressCast.addressToBytes32(Bsc.BROTHER_SWAPPER_HL);
+    bytes32 hlSwapper = AddressCast.addressToBytes32(Bsc.BROTHER_SWAPPER_HL_USDC_DOGE);
 
     function run() public {
         vm.startBroadcast();

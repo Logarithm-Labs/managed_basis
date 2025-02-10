@@ -32,7 +32,7 @@ contract BscUpdateMessengerScript is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
     BrotherSwapper gmxSwapper = BrotherSwapper(Bsc.BROTHER_SWAPPER_GMX);
-    BrotherSwapper hlSwapper = BrotherSwapper(Bsc.BROTHER_SWAPPER_HL);
+    BrotherSwapper hlSwapper = BrotherSwapper(Bsc.BROTHER_SWAPPER_HL_USDC_DOGE);
 
     function run() public {
         vm.startBroadcast();

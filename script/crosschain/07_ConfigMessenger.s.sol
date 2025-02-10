@@ -51,7 +51,7 @@ contract BscConfigScript is Script {
 
         gasStation.registerManager(address(messenger), true);
         messenger.authorize(Bsc.BROTHER_SWAPPER_GMX);
-        messenger.authorize(Bsc.BROTHER_SWAPPER_HL);
+        messenger.authorize(Bsc.BROTHER_SWAPPER_HL_USDC_DOGE);
 
         messenger.updateGasStation(Bsc.GAS_STATION);
 

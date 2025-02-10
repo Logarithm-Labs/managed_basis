@@ -47,7 +47,6 @@ contract ArbDeploy is Script {
 
         // configure oracle
         LogarithmOracle oracle = LogarithmOracle(Arb.ORACLE);
-        // configure oracle for WETH
         address[] memory assets = new address[](1);
         address[] memory feeds = new address[](1);
         uint256[] memory heartbeats = new uint256[](1);
