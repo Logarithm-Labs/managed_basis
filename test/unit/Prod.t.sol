@@ -99,7 +99,6 @@ contract ProdTest is Test {
         console.log("assetsToWithdraw: ", state.assetsToWithdraw);
         console.log("assetsToClaim: ", state.assetsToClaim);
         console.log("totalPendingWithdraw: ", vm.toString(state.totalPendingWithdraw));
-        console.log("pendingDecreaseCollateral: ", state.pendingDecreaseCollateral);
         console.log("pendingUtilization: ", state.pendingUtilization);
         console.log("pendingDeutilization: ", state.pendingDeutilization);
         console.log("accRequestedWithdrawAssets: ", state.accRequestedWithdrawAssets);

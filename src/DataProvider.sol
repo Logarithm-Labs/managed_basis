@@ -38,7 +38,6 @@ contract DataProvider {
         uint256 assetsToWithdraw;
         uint256 assetsToClaim;
         uint256 totalPendingWithdraw;
-        uint256 pendingDecreaseCollateral;
         uint256 pendingUtilization;
         uint256 pendingDeutilization;
         uint256 accRequestedWithdrawAssets;
@@ -103,7 +102,6 @@ contract DataProvider {
         state.assetsToWithdraw = IERC20(asset).balanceOf(address(strategy));
         state.assetsToClaim = vault.assetsToClaim();
         state.totalPendingWithdraw = vault.totalPendingWithdraw();
-        state.pendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
         (state.pendingUtilization, state.pendingDeutilization) = strategy.pendingUtilizations();
         state.accRequestedWithdrawAssets = vault.accRequestedWithdrawAssets();
         state.processedWithdrawAssets = vault.processedWithdrawAssets();

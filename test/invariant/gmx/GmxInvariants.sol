@@ -105,8 +105,11 @@ contract GmxInvariants is StdInvariant, ForkTest {
         vault = LogarithmVault(vaultProxy);
         vm.label(address(vault), "vault");
 
-        StrategyConfig config = new StrategyConfig();
-        config.initialize(owner);
+        address strategyConfigImpl = address(new StrategyConfig());
+        address strategyConfigProxy = address(
+            new ERC1967Proxy(strategyConfigImpl, abi.encodeWithSelector(StrategyConfig.initialize.selector, owner))
+        );
+        StrategyConfig config = StrategyConfig(strategyConfigProxy);
 
         // deploy strategy
         address strategyImpl = address(new BasisStrategy());
