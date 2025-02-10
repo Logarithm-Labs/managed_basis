@@ -32,7 +32,7 @@ contract ArbDeploy is Script {
         vm.startBroadcast();
 
         LogarithmOracle oracle = DeployHelper.deployLogarithmOracle(owner);
-        // configure oracle for DOGE
+        // configure oracle for USDC
         address[] memory assets = new address[](1);
         address[] memory feeds = new address[](1);
         uint256[] memory heartbeats = new uint256[](1);
