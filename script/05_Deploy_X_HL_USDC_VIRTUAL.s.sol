@@ -86,8 +86,13 @@ contract ArbDeploy is Script {
 contract BaseDeploy is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
-    address[] assetToProductSwapPath =
-        [BaseAddresses.USDC, BaseAddresses.UNI_V3_POOL_VIRTUAL_USDC, BaseAddresses.VIRTUAL];
+    address[] assetToProductSwapPath = [
+        BaseAddresses.USDC,
+        BaseAddresses.UNI_V3_POOL_WETH_USDC,
+        BaseAddresses.WETH,
+        BaseAddresses.UNI_V3_POOL_VIRTUAL_WETH,
+        BaseAddresses.VIRTUAL
+    ];
 
     uint256 constant ARB_CHAIN_ID = 42161;
 

@@ -151,6 +151,10 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         _setMessenger(newMessenger);
     }
 
+    function setManualSwapPath(address[] calldata _assetToProductSwapPath) external onlyOwner {
+        _setManualSwapPath(_assetToProductSwapPath, asset(), product());
+    }
+
     /*//////////////////////////////////////////////////////////////
                             CROSSCHAIN LOGIC
     //////////////////////////////////////////////////////////////*/
