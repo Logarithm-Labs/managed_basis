@@ -20,7 +20,10 @@ import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManage
 
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 
+import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
 import {ArbAddresses} from "./ArbAddresses.sol";
+
+import {console} from "forge-std/console.sol";
 
 library DeployHelper {
     function deployBeacon(address implementation, address owner) internal returns (address) {
@@ -294,5 +297,182 @@ library DeployHelper {
             )
         );
         return BrotherSwapper(payable(swapperProxy));
+    }
+
+    struct DeployHLVaultParams {
+        address owner;
+        string name;
+        string symbol;
+        address asset;
+        address product;
+        address productPriceFeed;
+        uint256 productPriceFeedHeartbeats;
+        uint256 entryCost;
+        uint256 exitCost;
+        address operator;
+        address agent;
+        uint256 targetLeverage;
+        uint256 minLeverage;
+        uint256 maxLeverage;
+        uint256 safeMarginLeverage;
+        address[] assetToProductSwapPath;
+    }
+
+    function deployHLVault(DeployHLVaultParams memory params) internal {
+        // configure oracle
+        LogarithmOracle oracle = LogarithmOracle(Arb.ORACLE);
+        address[] memory assets = new address[](1);
+        address[] memory feeds = new address[](1);
+        uint256[] memory heartbeats = new uint256[](1);
+        assets[0] = params.product;
+        feeds[0] = params.productPriceFeed;
+        heartbeats[0] = params.productPriceFeedHeartbeats;
+        oracle.setPriceFeeds(assets, feeds);
+        oracle.setHeartbeats(feeds, heartbeats);
+        console.log("Product oracle configured!");
+
+        // deploy LogarithmVault
+        LogarithmVaultDeployParams memory vaultDeployParams = LogarithmVaultDeployParams({
+            beacon: Arb.BEACON_VAULT,
+            owner: params.owner,
+            asset: params.asset,
+            priorityProvider: address(0),
+            entryCost: params.entryCost,
+            exitCost: params.exitCost,
+            name: params.name,
+            symbol: params.symbol
+        });
+        LogarithmVault vault = deployLogarithmVault(vaultDeployParams);
+        console.log("Vault: ", address(vault));
+
+        // deploy BasisStrategy
+        BasisStrategyDeployParams memory strategyDeployParams = BasisStrategyDeployParams({
+            owner: params.owner,
+            beacon: Arb.BEACON_STRATEGY,
+            config: Arb.CONFIG_STRATEGY,
+            product: params.product,
+            vault: address(vault),
+            oracle: Arb.ORACLE,
+            operator: params.operator,
+            targetLeverage: params.targetLeverage,
+            minLeverage: params.minLeverage,
+            maxLeverage: params.maxLeverage,
+            safeMarginLeverage: params.safeMarginLeverage
+        });
+        BasisStrategy strategy = deployBasisStrategy(strategyDeployParams);
+        console.log("Strategy: ", address(strategy));
+
+        // deploy SpotManager
+        SpotManager spotManager =
+            deploySpotManager(Arb.BEACON_SPOT_MANAGER, params.owner, address(strategy), params.assetToProductSwapPath);
+        console.log("SpotManager: ", address(spotManager));
+
+        // deploy OffChainPositionManager
+        OffChainPositionManager positionManager = deployOffChainPositionManager(
+            OffChainPositionManagerDeployParams({
+                owner: params.owner,
+                config: Arb.CONFIG_HL,
+                beacon: Arb.BEACON_OFF_CHAIN_POSITION_MANAGER,
+                strategy: address(strategy),
+                agent: params.agent,
+                oracle: Arb.ORACLE,
+                product: params.product,
+                asset: params.asset,
+                isLong: false
+            })
+        );
+        console.log("OffChainPositionManager: ", address(positionManager));
+    }
+
+    struct DeployHLVaultXParams {
+        address owner;
+        string name;
+        string symbol;
+        address asset;
+        address product;
+        address productPriceFeed;
+        uint256 productPriceFeedHeartbeats;
+        uint256 entryCost;
+        uint256 exitCost;
+        address operator;
+        address agent;
+        uint256 targetLeverage;
+        uint256 minLeverage;
+        uint256 maxLeverage;
+        uint256 safeMarginLeverage;
+        uint256 dstChainId;
+    }
+
+    function deployHLVaultX(DeployHLVaultXParams memory params) internal {
+        // configure oracle
+        LogarithmOracle oracle = LogarithmOracle(Arb.ORACLE);
+        address[] memory assets = new address[](1);
+        address[] memory feeds = new address[](1);
+        uint256[] memory heartbeats = new uint256[](1);
+        assets[0] = params.product;
+        feeds[0] = params.productPriceFeed;
+        heartbeats[0] = params.productPriceFeedHeartbeats;
+        oracle.setPriceFeeds(assets, feeds);
+        oracle.setHeartbeats(feeds, heartbeats);
+        console.log("Product oracle configured!");
+
+        // deploy LogarithmVault
+        DeployHelper.LogarithmVaultDeployParams memory vaultDeployParams = DeployHelper.LogarithmVaultDeployParams({
+            beacon: Arb.BEACON_VAULT,
+            owner: params.owner,
+            asset: params.asset,
+            priorityProvider: address(0),
+            entryCost: params.entryCost,
+            exitCost: params.exitCost,
+            name: params.name,
+            symbol: params.symbol
+        });
+        LogarithmVault vault = DeployHelper.deployLogarithmVault(vaultDeployParams);
+        console.log("Vault: ", address(vault));
+
+        // deploy BasisStrategy
+        DeployHelper.BasisStrategyDeployParams memory strategyDeployParams = DeployHelper.BasisStrategyDeployParams({
+            owner: params.owner,
+            beacon: Arb.BEACON_STRATEGY,
+            config: Arb.CONFIG_STRATEGY,
+            product: params.product,
+            vault: address(vault),
+            oracle: Arb.ORACLE,
+            operator: params.operator,
+            targetLeverage: params.targetLeverage,
+            minLeverage: params.minLeverage,
+            maxLeverage: params.maxLeverage,
+            safeMarginLeverage: params.safeMarginLeverage
+        });
+        BasisStrategy strategy = DeployHelper.deployBasisStrategy(strategyDeployParams);
+        console.log("Strategy: ", address(strategy));
+
+        // deploy XSpotManager
+        // deploy Gmx spot manager
+        DeployHelper.DeployXSpotManagerParams memory xSpotDeployParams = DeployHelper.DeployXSpotManagerParams({
+            beacon: Arb.BEACON_X_SPOT_MANAGER,
+            owner: params.owner,
+            strategy: address(strategy),
+            messenger: ArbAddresses.LOGARITHM_MESSENGER,
+            dstChainId: params.dstChainId
+        });
+        XSpotManager xSpotManager = DeployHelper.deployXSpotManager(xSpotDeployParams);
+        console.log("XSpotManager: ", address(xSpotManager));
+
+        // deploy OffChainPositionManager
+        OffChainPositionManager positionManager = DeployHelper.deployOffChainPositionManager(
+            DeployHelper.OffChainPositionManagerDeployParams({
+                owner: params.owner,
+                config: Arb.CONFIG_HL,
+                beacon: Arb.BEACON_OFF_CHAIN_POSITION_MANAGER,
+                strategy: address(strategy),
+                agent: params.agent,
+                oracle: Arb.ORACLE,
+                product: params.product,
+                asset: params.asset,
+                isLong: false
+            })
+        );
+        console.log("OffChainPositionManager: ", address(positionManager));
     }
 }

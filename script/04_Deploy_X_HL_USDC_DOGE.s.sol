@@ -35,7 +35,6 @@ contract ArbDeploy is Script {
     address constant assetPriceFeed = ArbAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
     address constant productPriceFeed = ArbAddresses.CHL_DOGE_USD_PRICE_FEED; // Chainlink DOGE-USD price feed
     uint256 constant feedHeartbeat = 24 * 3600;
-    bool constant isLong = false;
     // strategy params
     uint256 constant targetLeverage = 6 ether; // 6x leverage
     uint256 constant minLeverage = 2 ether; // 2x leverage
@@ -47,76 +46,26 @@ contract ArbDeploy is Script {
     function run() public {
         vm.startBroadcast();
 
-        // configure oracle
-        LogarithmOracle oracle = LogarithmOracle(Arb.ORACLE);
-        address[] memory assets = new address[](1);
-        address[] memory feeds = new address[](1);
-        uint256[] memory heartbeats = new uint256[](1);
-        assets[0] = product;
-        feeds[0] = productPriceFeed;
-        heartbeats[0] = feedHeartbeat;
-        oracle.setPriceFeeds(assets, feeds);
-        oracle.setHeartbeats(feeds, heartbeats);
-        console.log("Product oracle configured!");
-
-        // deploy LogarithmVault
-        DeployHelper.LogarithmVaultDeployParams memory vaultDeployParams = DeployHelper.LogarithmVaultDeployParams({
-            beacon: Arb.BEACON_VAULT,
-            owner: owner,
-            asset: asset,
-            priorityProvider: address(0),
-            entryCost: entryCost,
-            exitCost: exitCost,
-            name: vaultName,
-            symbol: vaultSymbol
-        });
-        LogarithmVault vault = DeployHelper.deployLogarithmVault(vaultDeployParams);
-        console.log("Vault: ", address(vault));
-
-        // deploy BasisStrategy
-        DeployHelper.BasisStrategyDeployParams memory strategyDeployParams = DeployHelper.BasisStrategyDeployParams({
-            owner: owner,
-            beacon: Arb.BEACON_STRATEGY,
-            config: Arb.CONFIG_STRATEGY,
-            product: product,
-            vault: address(vault),
-            oracle: Arb.ORACLE,
-            operator: operator,
-            targetLeverage: targetLeverage,
-            minLeverage: minLeverage,
-            maxLeverage: maxLeverage,
-            safeMarginLeverage: safeMarginLeverage
-        });
-        BasisStrategy strategy = DeployHelper.deployBasisStrategy(strategyDeployParams);
-        console.log("Strategy: ", address(strategy));
-
-        // deploy XSpotManager
-        // deploy Gmx spot manager
-        DeployHelper.DeployXSpotManagerParams memory xSpotDeployParams = DeployHelper.DeployXSpotManagerParams({
-            beacon: Arb.BEACON_X_SPOT_MANAGER,
-            owner: owner,
-            strategy: address(strategy),
-            messenger: ArbAddresses.LOGARITHM_MESSENGER,
-            dstChainId: BSC_CHAIN_ID
-        });
-        XSpotManager xSpotManager = DeployHelper.deployXSpotManager(xSpotDeployParams);
-        console.log("XSpotManager: ", address(xSpotManager));
-
-        // deploy OffChainPositionManager
-        OffChainPositionManager positionManager = DeployHelper.deployOffChainPositionManager(
-            DeployHelper.OffChainPositionManagerDeployParams({
+        DeployHelper.deployHLVaultX(
+            DeployHelper.DeployHLVaultXParams({
                 owner: owner,
-                config: Arb.CONFIG_HL,
-                beacon: Arb.BEACON_OFF_CHAIN_POSITION_MANAGER,
-                strategy: address(strategy),
-                agent: agent,
-                oracle: Arb.ORACLE,
-                product: product,
+                name: vaultName,
+                symbol: vaultSymbol,
                 asset: asset,
-                isLong: isLong
+                product: product,
+                productPriceFeed: productPriceFeed,
+                productPriceFeedHeartbeats: feedHeartbeat,
+                entryCost: entryCost,
+                exitCost: exitCost,
+                operator: operator,
+                agent: agent,
+                targetLeverage: targetLeverage,
+                minLeverage: targetLeverage,
+                maxLeverage: maxLeverage,
+                safeMarginLeverage: safeMarginLeverage,
+                dstChainId: BSC_CHAIN_ID
             })
         );
-        console.log("OffChainPositionManager: ", address(positionManager));
 
         vm.stopBroadcast();
     }
