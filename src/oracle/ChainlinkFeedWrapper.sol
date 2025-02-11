@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.0;
 
 interface ICustomPriceFeed {
     struct RoundData {
@@ -15,17 +15,17 @@ interface ICustomPriceFeed {
     function latestRound() external view returns (uint80);
     function latestAnswer() external view returns (uint256);
     function getRoundData(uint256 round) external view returns (RoundData memory);
+    function decimals() external view returns (uint8);
 }
 
 contract ChainlinkFeedWrapper {
     ICustomPriceFeed immutable customPriceFeed;
     uint8 public immutable decimals;
 
-    constructor(address _customPriceFeed, uint8 _decimals) {
+    constructor(address _customPriceFeed) {
         require(_customPriceFeed != address(0));
-        require(_decimals != 0);
         customPriceFeed = ICustomPriceFeed(_customPriceFeed);
-        decimals = _decimals;
+        decimals = customPriceFeed.decimals();
     }
 
     function latestRoundData()

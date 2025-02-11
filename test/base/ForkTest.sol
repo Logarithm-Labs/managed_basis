@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+pragma solidity 0.8.28;
 
 import {Test, stdStorage, StdStorage} from "forge-std/Test.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
@@ -34,8 +34,7 @@ abstract contract ForkTest is Test {
     }
 
     function _forkArbitrum(uint256 blockNumber) internal {
-        uint256 arbitrumFork = vm.createFork(vm.rpcUrl("arbitrum_one"));
-        vm.selectFork(arbitrumFork);
+        vm.createSelectFork("arbitrum_one");
         if (blockNumber > 0) vm.rollFork(blockNumber); //213168025
         // L2 contracts explicitly reference 0x64 for the ArbSys precompile
         // and 0x6C for the ArbGasInfo precompile

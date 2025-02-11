@@ -9,7 +9,7 @@ ffi = true
 yul = true
 via_ir = true
 fs_permissions = [{ access = "read-write", path = "./" }]
-evm_version = 'shanghai'
+evm_version = 'cancun'
 gas_reports = ["GmxV2PositionManager", "BasisStrategy", "XSpotManager", "BrotherSwapper"]
 show_progress = true
 # threads = 1

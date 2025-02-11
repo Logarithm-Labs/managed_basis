@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+pragma solidity 0.8.28;
 
 import "forge-std/Test.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
@@ -54,10 +54,19 @@ contract LogarithmOracleTest is ForkTest {
         console.log("productPrice: ", productPrice);
     }
 
-    function test_getPriceFromCustom() public view {
-        ICustomPriceFeed.RoundData memory data =
-            ICustomPriceFeed(ArbAddresses.CUSTOM_VIRTUAL_USD_PRICE_FEED).latestRoundData();
-        console.logInt(data.price);
+    function test_wrapper() public {
+        ChainlinkFeedWrapper wrapper = new ChainlinkFeedWrapper(0x3a84cff0574a016F2F735842353845917b2168a7);
+        address[] memory assets = new address[](1);
+        address[] memory feeds = new address[](1);
+        uint256[] memory heartbeats = new uint256[](1);
+        assets[0] = asset;
+        feeds[0] = address(wrapper);
+        heartbeats[0] = 24 * 3600;
+        oracle.setPriceFeeds(assets, feeds);
+        oracle.setHeartbeats(feeds, heartbeats);
+
+        uint256 assetPrice = oracle.getAssetPrice(asset);
+        console.log("assetPrice: ", assetPrice);
     }
 
     function test_convertTokenAmount() public view {
