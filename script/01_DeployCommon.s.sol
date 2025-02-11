@@ -10,6 +10,7 @@ import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {GasStation} from "src/gas-station/GasStation.sol";
 import {SpotManager} from "src/spot/SpotManager.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
 import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
@@ -90,6 +91,9 @@ contract XDeploy is Script {
 
     function run() public {
         vm.startBroadcast();
+        // deploy GasStation
+        GasStation gasStation = DeployHelper.deployGasStation(owner);
+        console.log("GasStation:", address(gasStation));
         // deploy BrotherSwapper beacon
         address swapperBeacon = DeployHelper.deployBeacon(address(new BrotherSwapper()), owner);
         console.log("Beacon(BrotherSwapper): ", swapperBeacon);
