@@ -25,7 +25,7 @@ contract ArbConfigScript is Script {
         vm.startBroadcast();
 
         gasStation.registerManager(address(messenger), true);
-        messenger.authorize(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE);
+        // messenger.authorize(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE);
         messenger.authorize(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
 
         messenger.updateGasStation(Arb.GAS_STATION);
@@ -50,7 +50,7 @@ contract BscConfigScript is Script {
         vm.startBroadcast();
 
         gasStation.registerManager(address(messenger), true);
-        messenger.authorize(Bsc.BROTHER_SWAPPER_GMX);
+        // messenger.authorize(Bsc.BROTHER_SWAPPER_GMX);
         messenger.authorize(Bsc.BROTHER_SWAPPER_HL_USDC_DOGE);
 
         messenger.updateGasStation(Bsc.GAS_STATION);

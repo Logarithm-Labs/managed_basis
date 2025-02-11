@@ -21,7 +21,6 @@ contract DeployScript is Script {
     uint256 constant ARB_CHAIN_ID = 42161;
 
     // predeployed contracts
-    bytes32 xSpotManagerGmx = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE);
     bytes32 xSpotManagerHL = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
 
     function run() public {
@@ -49,15 +48,14 @@ contract DeployScript is Script {
             asset: asset,
             product: product,
             messenger: BscAddresses.LOGARITHM_MESSENGER,
-            spotManager: xSpotManagerGmx,
+            spotManager: xSpotManagerHL,
             dstChainId: ARB_CHAIN_ID,
             assetToProductSwapPath: path
         });
-        BrotherSwapper swapperGmx = DeployHelper.deployBrotherSwapper(swapperDeployParams);
-        console.log("BrotherSwapper(GMX): ", address(swapperGmx));
+        // BrotherSwapper swapperGmx = DeployHelper.deployBrotherSwapper(swapperDeployParams);
+        // console.log("BrotherSwapper(GMX): ", address(swapperGmx));
 
         // deploy BrotherSwapper of HL
-        swapperDeployParams.spotManager = xSpotManagerHL;
         BrotherSwapper swapperHL = DeployHelper.deployBrotherSwapper(swapperDeployParams);
         console.log("BrotherSwapper(HL): ", address(swapperHL));
     }

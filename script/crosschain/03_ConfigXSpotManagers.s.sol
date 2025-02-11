@@ -15,9 +15,9 @@ contract DeployScript is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
     // predeployed contracts
-    XSpotManager gmxXSpotManager = XSpotManager(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE);
+    // XSpotManager gmxXSpotManager = XSpotManager(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE);
     XSpotManager hlXSpotManager = XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
-    bytes32 gmxSwapper = AddressCast.addressToBytes32(Bsc.BROTHER_SWAPPER_GMX);
+    // bytes32 gmxSwapper = AddressCast.addressToBytes32(Bsc.BROTHER_SWAPPER_GMX);
     bytes32 hlSwapper = AddressCast.addressToBytes32(Bsc.BROTHER_SWAPPER_HL_USDC_DOGE);
 
     function run() public {

@@ -18,7 +18,6 @@ library ArbAddresses {
     address constant VIRTUAL = CUSTOM_VIRTUAL_USD_PRICE_FEED; // does not exist on arbitrum
 
     address constant STARGATE_POOL_USDC = 0xe8CDF27AcD73a434D661C84887215F7598e7d0d3;
-    address constant LZ_V2_ENDPOINT = 0x1a44076050125825900e736c501f859c50fE728c;
 
     address constant UNI_V3_POOL_WETH_USDC = 0xC6962004f452bE9203591991D15f6b388e09E8D0;
     address constant UNI_V3_POOL_WBTC_WETH = 0x2f5e87C9312fa29aed5c179E456625D79015299c;

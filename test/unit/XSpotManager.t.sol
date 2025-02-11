@@ -20,7 +20,6 @@ import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 contract XSpotManagerTest is ForkTest {
     address owner = makeAddr("owner");
 
-    address constant ARBI_ENDPOINT = ArbAddresses.LZ_V2_ENDPOINT;
     address constant ARBI_STARTGATE = ArbAddresses.STARGATE_POOL_USDC;
     uint256 constant chainId = 56;
 

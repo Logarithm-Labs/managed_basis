@@ -18,7 +18,7 @@ contract DeployScript is Script {
 
     // predeployed contracts
     LogarithmOracle oracle = LogarithmOracle(Arb.ORACLE);
-    GmxV2PositionManager gmxManager = GmxV2PositionManager(Arb.GMX_POSITION_MANAGER_USDC_DOGE);
+    // GmxV2PositionManager gmxManager = GmxV2PositionManager(Arb.GMX_POSITION_MANAGER_USDC_DOGE);
 
     function run() public {
         vm.startBroadcast();

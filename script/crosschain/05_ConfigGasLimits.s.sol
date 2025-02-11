@@ -20,7 +20,7 @@ contract DeployScript is Script {
     uint128 constant sellResGasLimit = 2_000_000;
 
     // predeployed contracts
-    XSpotManager xSpotManager = XSpotManager(payable(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE));
+    XSpotManager xSpotManager = XSpotManager(payable(Arb.X_SPOT_MANAGER_HL_USDC_DOGE));
 
     function run() public {
         vm.startBroadcast();

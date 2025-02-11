@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 
 import {ArbAddresses} from "script/utils/ArbAddresses.sol";
-import {BscAddresses} from "script/utils/BscAddresses.sol";
-import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
+import {BaseAddresses} from "script/utils/BaseAddresses.sol";
+import {Arb, Base} from "script/utils/ProtocolAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
 
@@ -74,33 +74,28 @@ contract ArbDeploy is Script {
 contract BaseDeploy is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
-    address[] assetToProductSwapPath = [
-        BscAddresses.USDC,
-        BscAddresses.PCS_V3_POOL_WBNB_USDC,
-        BscAddresses.WBNB,
-        BscAddresses.PCS_V3_POOL_DOGE_WBNB,
-        BscAddresses.DOGE
-    ];
+    address[] assetToProductSwapPath =
+        [BaseAddresses.USDC, BaseAddresses.UNI_V3_POOL_VIRTUAL_USDC, BaseAddresses.VIRTUAL];
 
     uint256 constant ARB_CHAIN_ID = 42161;
 
     // Strategy Addresses
-    address constant asset = BscAddresses.USDC; // USDC
-    address constant product = BscAddresses.DOGE; // DOGE
+    address constant asset = BaseAddresses.USDC; // USDC
+    address constant product = BaseAddresses.VIRTUAL; // VIRTUAL
 
     // predeployed contracts
-    bytes32 xSpotManager = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
+    bytes32 xSpotManager = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL);
 
     function run() public {
         vm.startBroadcast();
 
         // deploy BrotherSwapper
         DeployHelper.DeployBrotherSwapperParams memory swapperDeployParams = DeployHelper.DeployBrotherSwapperParams({
-            beacon: Bsc.BEACON_BROTHER_SWAPPER,
+            beacon: Base.BEACON_BROTHER_SWAPPER,
             owner: owner,
             asset: asset,
             product: product,
-            messenger: BscAddresses.LOGARITHM_MESSENGER,
+            messenger: BaseAddresses.LOGARITHM_MESSENGER,
             spotManager: xSpotManager,
             dstChainId: ARB_CHAIN_ID,
             assetToProductSwapPath: assetToProductSwapPath
@@ -117,12 +112,12 @@ contract ConfigXSpot is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
     // predeployed contracts
-    XSpotManager xSpotManager = XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
-    bytes32 swapper = AddressCast.addressToBytes32(Bsc.BROTHER_SWAPPER_HL_USDC_DOGE);
+    XSpotManager xSpotManager = XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL);
+    bytes32 swapper = AddressCast.addressToBytes32(Base.BROTHER_SWAPPER_HL_USDC_VIRTUAL);
 
     function run() public {
         vm.startBroadcast();
-        XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_DOGE).setSwapper(swapper);
+        XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL).setSwapper(swapper);
 
         // hlXSpotManager.setBuyReqGasLimit(1_000_000);
         // hlXSpotManager.setBuyResGasLimit(800_000);
