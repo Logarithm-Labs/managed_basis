@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
+import {ChainlinkFeedWrapper, ICustomPriceFeed} from "src/oracle/ChainlinkFeedWrapper.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ArbSysMock} from "test/mock/ArbSysMock.sol";
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
@@ -51,6 +52,12 @@ contract LogarithmOracleTest is ForkTest {
 
         uint256 productPrice = oracle.getAssetPrice(product);
         console.log("productPrice: ", productPrice);
+    }
+
+    function test_getPriceFromCustom() public view {
+        ICustomPriceFeed.RoundData memory data =
+            ICustomPriceFeed(ArbAddresses.CUSTOM_VIRTUAL_USD_PRICE_FEED).latestRoundData();
+        console.logInt(data.price);
     }
 
     function test_convertTokenAmount() public view {

@@ -24,7 +24,7 @@ contract ArbConfigScript is Script {
     function run() public {
         vm.startBroadcast();
 
-        gasStation.registerManager(address(messenger), true);
+        // gasStation.registerManager(address(messenger), true);
         // messenger.authorize(Arb.X_SPOT_MANAGER_GMX_USDC_DOGE);
         messenger.authorize(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
 
