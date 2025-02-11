@@ -31,7 +31,7 @@ contract ArbDeploy is Script {
     string constant vaultSymbol = "log-b-usdc-doge-hl-a";
     // Strategy Addresses
     address constant asset = ArbAddresses.USDC; // USDC
-    address constant product = ArbAddresses.DOGE; // WBTC
+    address constant product = ArbAddresses.DOGE; // DOGE
     address constant assetPriceFeed = ArbAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
     address constant productPriceFeed = ArbAddresses.CHL_DOGE_USD_PRICE_FEED; // Chainlink DOGE-USD price feed
     uint256 constant feedHeartbeat = 24 * 3600;
