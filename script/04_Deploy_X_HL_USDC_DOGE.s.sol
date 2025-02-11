@@ -39,7 +39,7 @@ contract ArbDeploy is Script {
     uint256 constant targetLeverage = 6 ether; // 6x leverage
     uint256 constant minLeverage = 2 ether; // 2x leverage
     uint256 constant maxLeverage = 12 ether; // 12x leverage
-    uint256 constant safeMarginLeverage = 18 ether; // 20x leverage
+    uint256 constant safeMarginLeverage = 18 ether; // 18x leverage
 
     uint256 constant BSC_CHAIN_ID = 56;
 
@@ -60,7 +60,7 @@ contract ArbDeploy is Script {
                 operator: operator,
                 agent: agent,
                 targetLeverage: targetLeverage,
-                minLeverage: targetLeverage,
+                minLeverage: minLeverage,
                 maxLeverage: maxLeverage,
                 safeMarginLeverage: safeMarginLeverage,
                 dstChainId: BSC_CHAIN_ID

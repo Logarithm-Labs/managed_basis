@@ -37,7 +37,7 @@ contract ArbDeploy is Script {
     uint256 constant targetLeverage = 6 ether; // 6x leverage
     uint256 constant minLeverage = 3 ether; // 3x leverage
     uint256 constant maxLeverage = 9 ether; // 9x leverage
-    uint256 constant safeMarginLeverage = 15 ether; // 20x leverage
+    uint256 constant safeMarginLeverage = 20 ether; // 20x leverage
 
     address[] assetToProductSwapPath =
         [asset, ArbAddresses.UNI_V3_POOL_WETH_USDC, ArbAddresses.WETH, ArbAddresses.UNI_V3_POOL_WBTC_WETH, product];
@@ -59,7 +59,7 @@ contract ArbDeploy is Script {
                 operator: operator,
                 agent: agent,
                 targetLeverage: targetLeverage,
-                minLeverage: targetLeverage,
+                minLeverage: minLeverage,
                 maxLeverage: maxLeverage,
                 safeMarginLeverage: safeMarginLeverage,
                 assetToProductSwapPath: assetToProductSwapPath

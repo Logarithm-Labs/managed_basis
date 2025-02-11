@@ -57,7 +57,7 @@ contract ArbDeploy is Script {
                 operator: operator,
                 agent: agent,
                 targetLeverage: targetLeverage,
-                minLeverage: targetLeverage,
+                minLeverage: minLeverage,
                 maxLeverage: maxLeverage,
                 safeMarginLeverage: safeMarginLeverage,
                 assetToProductSwapPath: assetToProductSwapPath
