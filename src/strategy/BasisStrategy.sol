@@ -668,14 +668,13 @@ contract BasisStrategy is
             revert Errors.InvalidCallback();
         }
 
-        bool shouldPause;
         if (params.isIncrease) {
-            shouldPause = _afterIncreasePosition(params);
+            _afterIncreasePosition(params);
             // utilize is sync one, and position adjustment is final
             // hence, set status as idle
             _setStrategyStatus(StrategyStatus.IDLE);
         } else {
-            shouldPause = _afterDecreasePosition(params);
+            _afterDecreasePosition(params);
             if (status == StrategyStatus.AWAITING_FINAL_DEUTILIZATION) {
                 _setStrategyStatus(StrategyStatus.IDLE);
                 _processAssetsToWithdraw(asset());
@@ -688,10 +687,6 @@ contract BasisStrategy is
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         delete $.requestParams;
-
-        if (shouldPause && !paused()) {
-            _pause();
-        }
 
         emit PositionAdjusted(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
@@ -907,10 +902,7 @@ contract BasisStrategy is
     }
 
     /// @dev Called after the hedge position is increased.
-    function _afterIncreasePosition(IHedgeManager.AdjustPositionPayload calldata responseParams)
-        private
-        returns (bool shouldPause)
-    {
+    function _afterIncreasePosition(IHedgeManager.AdjustPositionPayload calldata responseParams) private {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IHedgeManager.AdjustPositionPayload memory requestParams = $.requestParams;
         uint256 _responseDeviationThreshold = config().responseDeviationThreshold();
@@ -920,11 +912,7 @@ contract BasisStrategy is
                 responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
-                shouldPause = true;
-                if (sizeDeviation < 0) {
-                    // revert spot to make hedge size the same as spot
-                    $.spotManager.sell(uint256(-sizeDeviation), ISpotManager.SwapType.MANUAL, "");
-                }
+                revert Errors.HedgeInvalidSizeResponse();
             }
         }
 
@@ -933,12 +921,7 @@ contract BasisStrategy is
                 responseParams.collateralDeltaAmount, requestParams.collateralDeltaAmount, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
-                if (collateralDeviation < 0) {
-                    shouldPause = true;
-                    address _vault = vault();
-                    $.asset.safeTransferFrom(hedgeManager(), _vault, uint256(-collateralDeviation));
-                    ILogarithmVault(_vault).processPendingWithdrawRequests();
-                }
+                revert Errors.HedgeInvalidCollateralResponse();
             }
 
             (, bool rebalanceDownNeeded) = _checkNeedRebalance(
@@ -950,10 +933,7 @@ contract BasisStrategy is
     }
 
     /// @dev Called after the hedge position is decreased.
-    function _afterDecreasePosition(IHedgeManager.AdjustPositionPayload calldata responseParams)
-        private
-        returns (bool shouldPause)
-    {
+    function _afterDecreasePosition(IHedgeManager.AdjustPositionPayload calldata responseParams) private {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IHedgeManager.AdjustPositionPayload memory requestParams = $.requestParams;
 
@@ -970,7 +950,7 @@ contract BasisStrategy is
                 responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
-                shouldPause = true;
+                revert Errors.HedgeInvalidSizeResponse();
             }
 
             (, bool rebalanceDownNeeded) = _checkNeedRebalance(
@@ -985,7 +965,7 @@ contract BasisStrategy is
                 responseParams.collateralDeltaAmount, requestParams.collateralDeltaAmount, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
-                shouldPause = true;
+                revert Errors.HedgeInvalidCollateralResponse();
             }
         }
 

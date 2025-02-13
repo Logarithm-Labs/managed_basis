@@ -61,6 +61,8 @@ library Errors {
     error ZeroPendingUtilization();
     error ZeroAmountUtilization();
     error InvalidStrategyStatus(uint8 currentStatus, uint8 targetStatus);
+    error HedgeInvalidSizeResponse();
+    error HedgeInvalidCollateralResponse();
 
     /*//////////////////////////////////////////////////////////////
                             POSITION MANAGER
