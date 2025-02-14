@@ -243,6 +243,12 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         uint256 round = $.currentRound + 1;
 
+        // check if there is pending request from position manager
+        uint256 _lastedRequestRound = $.lastRequestRound;
+        if (_lastedRequestRound != 0 && !$.requests[_lastedRequestRound].isReported) {
+            revert Errors.ProcessingRequest();
+        }
+
         PositionState memory state;
         state.sizeInTokens = sizeInTokens;
         state.netBalance = netBalance;

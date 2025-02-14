@@ -44,8 +44,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         vm.startPrank(address(this));
         IERC20(asset).transfer(USDC_WHALE, marginDecrease);
         positionNetBalance -= marginDecrease;
-        vm.startPrank(agent);
-        _reportState();
+        // _reportState();
 
         _executeOrder();
 
@@ -93,6 +92,26 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         // collateral should be around 100000 / 4 + 10
         assertApproxEqRel(hedgeManager.positionNetBalance(), TEN_THOUSANDS_USDC / 4 + 10_000_000, 0.0001 ether);
         assertEq(hedgeManager.idleCollateralAmount(), 0);
+    }
+
+    function test_revertReportState() public afterFullUtilized validateFinalState {
+        // make 10 USDC idle assets for the position manager
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(hedgeManager), 10_000_000);
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+
+        (, uint256 deutilization) = strategy.pendingUtilizations();
+        _deutilizeWithoutExecution(deutilization);
+
+        uint256 markPrice = _getMarkPrice();
+        vm.startPrank(agent);
+        vm.expectRevert(Errors.ProcessingRequest.selector);
+        hedgeManager.reportState(positionSizeInTokens, positionNetBalance, markPrice);
+
+        // finally can report after processing request
+        _executeOrder();
+        _reportState();
     }
 
     // function test_leverage_whenCollateralPriceFluctuated() public validateFinalState {

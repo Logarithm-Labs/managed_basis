@@ -83,6 +83,7 @@ library Errors {
     error NoActiveRequests();
     error InvalidAdjustmentParams();
     error InvalidCollateralRequest(uint256 collateralDeltaAmount, bool isIncrease);
+    error ProcessingRequest();
 
     /*//////////////////////////////////////////////////////////////
                               SPOT MANAGER
