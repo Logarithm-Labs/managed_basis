@@ -1099,6 +1099,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         strategy.deutilize(pendingDeutilization, ISpotManager.SwapType.MANUAL, "");
 
         vm.startPrank(address(_hedgeManager()));
+        vm.expectRevert(Errors.HedgeInvalidSizeResponse.selector);
         strategy.afterAdjustPosition(
             IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: false})
         );
@@ -1109,8 +1110,6 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 productAfter = IERC20(product).balanceOf(address(strategy));
 
         assertApproxEqRel(productAfter, productBefore, 0.9999 ether);
-
-        assertTrue(strategy.paused());
     }
 
     /*//////////////////////////////////////////////////////////////
