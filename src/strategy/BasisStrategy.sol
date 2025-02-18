@@ -98,6 +98,8 @@ contract BasisStrategy is
         bool hedgeManagerNeedKeep;
         // rebalance up by decreasing collateral
         uint256 deltaCollateralToDecrease;
+        // eliminate pending exection cost
+        bool clearPendingExecutionCost;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -126,6 +128,8 @@ contract BasisStrategy is
         bool processingRebalanceDown;
         // adjust position request to be used to check response
         IHedgeManager.AdjustPositionPayload requestParams;
+        // entry/exit fees accrued by the vault that will be spend during utilization/deutilization
+        uint256 pendingExecutionCost;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisStrategy")) - 1)) & ~bytes32(uint256(0xff))
@@ -370,6 +374,13 @@ contract BasisStrategy is
         );
 
         amount = amount > pendingUtilization ? pendingUtilization : amount;
+        if (amount == pendingUtilization) {
+            $.pendingExecutionCost = 0;
+        } else {
+            uint256 _pendingExecutionCost = $.pendingExecutionCost;
+            _pendingExecutionCost -= _pendingExecutionCost.mulDiv(amount, pendingUtilization);
+            $.pendingExecutionCost = _pendingExecutionCost;
+        }
 
         // can only utilize when amount is positive
         if (amount == 0) {
@@ -448,6 +459,14 @@ contract BasisStrategy is
             isFullDeutilization = false;
         }
 
+        if (isFullDeutilization) {
+            $.pendingExecutionCost = 0;
+        } else {
+            uint256 _pendingExecutionCost = $.pendingExecutionCost;
+            _pendingExecutionCost -= _pendingExecutionCost.mulDiv(amount, pendingDeutilization_);
+            $.pendingExecutionCost = _pendingExecutionCost;
+        }
+
         // deutilize spot
         _spotManager.sell(amount, swapType, swapData);
 
@@ -495,6 +514,11 @@ contract BasisStrategy is
         _adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false);
     }
 
+    function processExecutionCost(uint256 amount) external authCaller(vault()) {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        $.pendingExecutionCost += amount;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             KEEPER LOGIC   
     //////////////////////////////////////////////////////////////*/
@@ -518,7 +542,7 @@ contract BasisStrategy is
 
         upkeepNeeded = result.emergencyDeutilizationAmount > 0 || result.deltaCollateralToIncrease > 0
             || result.clearProcessingRebalanceDown || result.hedgeDeviationInTokens != 0 || result.hedgeManagerNeedKeep
-            || result.deltaCollateralToDecrease > 0;
+            || result.deltaCollateralToDecrease > 0 || result.clearPendingExecutionCost;
 
         performData = abi.encode(
             result.emergencyDeutilizationAmount,
@@ -526,7 +550,8 @@ contract BasisStrategy is
             result.clearProcessingRebalanceDown,
             result.hedgeDeviationInTokens,
             result.hedgeManagerNeedKeep,
-            result.deltaCollateralToDecrease
+            result.deltaCollateralToDecrease,
+            result.clearPendingExecutionCost
         );
 
         return (upkeepNeeded, performData);
@@ -539,6 +564,9 @@ contract BasisStrategy is
         _setStrategyStatus(StrategyStatus.KEEPING);
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        if (result.clearPendingExecutionCost) {
+            $.pendingExecutionCost = 0;
+        }
         if (result.emergencyDeutilizationAmount > 0) {
             $.processingRebalanceDown = true;
             _setStrategyStatus(StrategyStatus.DEUTILIZING);
@@ -875,6 +903,14 @@ contract BasisStrategy is
                     result.emergencyDeutilizationAmount = min;
                 }
             }
+
+            (uint256 pendingUtilization, uint256 pendingDeutilization) = pendingUtilizations();
+
+            // clear pendingExecutionCost when there is no pendingUtilization and pendingDeutilization
+            if ((pendingUtilization == 0 && pendingDeutilization == 0) && $.pendingExecutionCost > 0) {
+                result.clearPendingExecutionCost = true;
+            }
+
             return result;
         }
 
@@ -1252,5 +1288,10 @@ contract BasisStrategy is
     /// @notice Tells if strategy is in rebalancing down.
     function processingRebalanceDown() public view returns (bool) {
         return _getBasisStrategyStorage().processingRebalanceDown;
+    }
+
+    /// @notice execution cost to be processed in the next utiliztaion / deutilization.
+    function pendingExecutionCost() public view returns (uint256) {
+        return _getBasisStrategyStorage().pendingExecutionCost;
     }
 }

@@ -588,7 +588,10 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
-        (, assets) = (idleAssets() + IStrategy(strategy()).utilizedAssets()).trySub(totalPendingWithdraw());
+        address _strategy = strategy();
+        (, assets) = (idleAssets() + IStrategy(_strategy).utilizedAssets()).trySub(
+            totalPendingWithdraw() + IStrategy(_strategy).pendingExecutionCost()
+        );
         return assets;
     }
 
@@ -696,6 +699,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         if (shares == 0) {
             revert Errors.ZeroShares();
         }
+        IStrategy(strategy()).processExecutionCost(_costOnRaw(assets, entryCost()));
         ERC4626Upgradeable._deposit(caller, receiver, assets, shares);
         processPendingWithdrawRequests();
     }
@@ -707,6 +711,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         internal
         override
     {
+        IStrategy(strategy()).processExecutionCost(_costOnRaw(assets, exitCost()));
         ERC4626Upgradeable._withdraw(caller, receiver, owner, assets, shares);
     }
 
