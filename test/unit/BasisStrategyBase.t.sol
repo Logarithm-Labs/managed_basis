@@ -1373,4 +1373,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
         assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
     }
+
+    function test_idleNotAvailable_whenUtilizing() public afterDeposited {
+        vm.startPrank(operator);
+        (uint256 pendingUtilization,) = strategy.pendingUtilizations();
+        strategy.utilize(pendingUtilization, ISpotManager.SwapType.MANUAL, "");
+        assertEq(vault.idleAssets(), 0, "idle should be 0");
+    }
 }

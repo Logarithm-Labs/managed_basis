@@ -817,7 +817,7 @@ contract BasisStrategy is
         }
 
         if (isIncrease && collateralDeltaAmount > 0) {
-            $.asset.safeTransferFrom(address(this), address(_hedgeManager), collateralDeltaAmount);
+            $.asset.safeTransfer(address(_hedgeManager), collateralDeltaAmount);
         }
 
         if (collateralDeltaAmount > 0 || sizeDeltaInTokens > 0) {
