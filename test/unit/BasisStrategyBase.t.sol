@@ -166,10 +166,10 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertFalse(state.upkeepNeeded, "upkeep");
     }
 
-    function _validateStateTransition(StrategyState memory state0, StrategyState memory state1) internal pure {
+    function _validateStateTransition(StrategyState memory state0, StrategyState memory state1) internal view {
         if (state0.totalSupply != 0 && state1.totalSupply != 0) {
-            uint256 sharePrice0 = state0.totalAssets.mulDiv(1 ether, state0.totalSupply);
-            uint256 sharePrice1 = state1.totalAssets.mulDiv(1 ether, state1.totalSupply);
+            uint256 sharePrice0 = state0.totalAssets.mulDiv(10 ** vault.decimals(), state0.totalSupply);
+            uint256 sharePrice1 = state1.totalAssets.mulDiv(10 ** vault.decimals(), state1.totalSupply);
             assertApproxEqRel(sharePrice0, sharePrice1, 0.01 ether, "share price");
         }
 
@@ -1296,19 +1296,26 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _deutilize(pendingDeutilization);
     }
 
-    function test_executionCost_deposit_woWithdrawRequest() public afterFullUtilized {
-        uint256 user1AssetsBefore = vault.previewRedeem(vault.balanceOf(user1));
+    function test_executionCost_deposit_woWithdrawRequest_withIdle() public afterDeposited {
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
         _deposit(user2, TEN_THOUSANDS_USDC);
-        uint256 user1AssetsAfter = vault.previewRedeem(vault.balanceOf(user1));
-        assertEq(user1AssetsBefore, user1AssetsAfter, "share price shouldn't be affected");
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_deposit_woWithdrawRequest_woIdle() public afterFullUtilized {
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
     }
 
     function test_executionCost_deposit_withdrawRequest() public afterWithdrawRequestCreated {
-        uint256 user1AssetsBefore = vault.previewRedeem(vault.balanceOf(user1));
-        assertNotEq(user1AssetsBefore, 0, "user1 has assets");
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertNotEq(vault.balanceOf(user1), 0, "user1 has shares");
         _deposit(user2, TEN_THOUSANDS_USDC);
-        uint256 user1AssetsAfter = vault.previewRedeem(vault.balanceOf(user1));
-        assertEq(user1AssetsBefore, user1AssetsAfter, "share price shouldn't be affected");
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
     }
 
     function test_executionCost_redeem_woIdleAssets() public afterFullUtilized {
@@ -1318,11 +1325,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _utilize(pendingUtilizationInAsset);
 
         // user1 request redeem
-        uint256 user2AssetsBefore = vault.previewRedeem(vault.balanceOf(user2));
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
         vm.startPrank(user1);
         vault.requestRedeem(vault.balanceOf(user1), user1, user1);
-        uint256 user2AssetsAfter = vault.previewRedeem(vault.balanceOf(user2));
-        assertEq(user2AssetsBefore, user2AssetsAfter, "share price shouldn't be affected");
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
     }
 
     function test_executionCost_redeem_idleAssets() public afterFullUtilized {
@@ -1332,10 +1339,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _utilize(pendingUtilizationInAsset / 2);
 
         // user1 request redeem
-        uint256 user2AssetsBefore = vault.previewRedeem(vault.balanceOf(user2));
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertNotEq(vault.balanceOf(user1), 0, "user1 has shares");
         vm.startPrank(user1);
         vault.requestRedeem(vault.balanceOf(user1), user1, user1);
-        uint256 user2AssetsAfter = vault.previewRedeem(vault.balanceOf(user2));
-        assertEq(user2AssetsBefore, user2AssetsAfter, "share price shouldn't be affected");
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
     }
 }

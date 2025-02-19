@@ -173,10 +173,10 @@ contract XBasisStrategyTest is OffChainTest {
         assertFalse(state.upkeepNeeded, "upkeep");
     }
 
-    function _validateStateTransition(StrategyState memory state0, StrategyState memory state1) internal pure {
+    function _validateStateTransition(StrategyState memory state0, StrategyState memory state1) internal view {
         if (state0.totalSupply != 0 && state1.totalSupply != 0) {
-            uint256 sharePrice0 = state0.totalAssets.mulDiv(1 ether, state0.totalSupply);
-            uint256 sharePrice1 = state1.totalAssets.mulDiv(1 ether, state1.totalSupply);
+            uint256 sharePrice0 = state0.totalAssets.mulDiv(vault.decimals(), state0.totalSupply);
+            uint256 sharePrice1 = state1.totalAssets.mulDiv(vault.decimals(), state1.totalSupply);
             assertApproxEqRel(sharePrice0, sharePrice1, 0.01 ether, "share price");
         }
 
