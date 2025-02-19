@@ -787,12 +787,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 5 / 10);
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceUp");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertTrue(rebalanceUpNeeded);
-        assertFalse(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertTrue(decodedPerformData.rebalanceUpNeeded);
+        assertFalse(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
 
         // position.sizeInUsd is changed due to realization of positive pnl
         // so need to execute performUpKeep several times
@@ -809,12 +808,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
 
         _performKeep("rebalanceDown_whenIdleEnough");
 
@@ -829,12 +827,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
 
         _performKeep("rebalanceDown_whenIdleNotEnough");
 
@@ -852,12 +849,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
         uint256 leverageBefore = _hedgeManager().currentLeverage();
         _performKeep("rebalanceDown_whenIdleNotEnough");
         uint256 leverageAfter = _hedgeManager().currentLeverage();
@@ -880,12 +876,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (bool upkeepNeeded, bytes memory performData) =
             _checkUpkeep("rebalanceDown_deutilize_withLessPendingWithdrawals");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
         uint256 leverageBefore = _hedgeManager().currentLeverage();
         _performKeep("rebalanceDown_deutilize_withLessPendingWithdrawals");
         uint256 leverageAfter = _hedgeManager().currentLeverage();
@@ -922,12 +917,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (bool upkeepNeeded, bytes memory performData) =
             _checkUpkeep("rebalanceDown_deutilize_withGreaterPendingWithdrawal");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
         uint256 leverageBefore = _hedgeManager().currentLeverage();
         _performKeep("rebalanceDown_deutilize_withGreaterPendingWithdrawal");
         uint256 leverageAfter = _hedgeManager().currentLeverage();
@@ -949,12 +943,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenNotIdle");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
-        assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertTrue(decodedPerformData.rebalanceDownNeeded, "rebalanceDownNeeded");
         // assertTrue(deleverageNeeded, "deleverageNeeded");
-        assertFalse(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
 
         _performKeep("emergencyRebalanceDown_whenNotIdle");
     }
@@ -971,12 +964,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertTrue(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
         _performKeep("emergencyRebalanceDown_whenIdleNotEnough");
         assertTrue(IERC20(asset).balanceOf(address(vault)) > 0);
     }
@@ -994,12 +986,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE), "not idle");
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
-        assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertTrue(decodedPerformData.rebalanceDownNeeded, "rebalanceDownNeeded");
         // assertTrue(deleverageNeeded, "deleverageNeeded");
-        assertFalse(hedgeManagerNeedKeep, "rebalanceUpNeeded");
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep, "rebalanceUpNeeded");
         vm.startPrank(forwarder);
         strategy.performUpkeep(performData);
         _executeOrder();
@@ -1014,19 +1005,13 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeDeviation_down");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool hedgeManagerNeedKeep,
-            bool rebalanceUpNeeded
-        ) = helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
-        assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
-        assertFalse(deleverageNeeded, "deleverageNeeded");
-        assertFalse(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertFalse(decodedPerformData.rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertFalse(decodedPerformData.deleverageNeeded, "deleverageNeeded");
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
 
-        assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
+        assertTrue(decodedPerformData.hedgeDeviationInTokens != 0, "hedge deviation");
 
         _performKeep("hedgeDeviation_down");
     }
@@ -1040,19 +1025,13 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeDeviation_down");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool hedgeManagerNeedKeep,
-            bool rebalanceUpNeeded
-        ) = helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
-        assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
-        assertFalse(deleverageNeeded, "deleverageNeeded");
-        assertFalse(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertFalse(decodedPerformData.rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertFalse(decodedPerformData.deleverageNeeded, "deleverageNeeded");
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
 
-        assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
+        assertTrue(decodedPerformData.hedgeDeviationInTokens != 0, "hedge deviation");
 
         _performKeep("hedgeDeviation_down");
         assertEq(spotManager.exposure(), 0, "exposure");
@@ -1065,19 +1044,13 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeDeviation_up");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool hedgeManagerNeedKeep,
-            bool rebalanceUpNeeded
-        ) = helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
-        assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
-        assertFalse(deleverageNeeded, "deleverageNeeded");
-        assertFalse(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertFalse(decodedPerformData.rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertFalse(decodedPerformData.deleverageNeeded, "deleverageNeeded");
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
 
-        assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
+        assertTrue(decodedPerformData.hedgeDeviationInTokens != 0, "hedge deviation");
 
         _performKeep("hedgeDeviation_up");
     }
