@@ -374,13 +374,8 @@ contract BasisStrategy is
         );
 
         amount = amount > pendingUtilization ? pendingUtilization : amount;
-        if (amount == pendingUtilization) {
-            $.reservedExecutionCost = 0;
-        } else {
-            uint256 _reservedExecutionCost = $.reservedExecutionCost;
-            _reservedExecutionCost -= _reservedExecutionCost.mulDiv(amount, pendingUtilization);
-            $.reservedExecutionCost = _reservedExecutionCost;
-        }
+
+        _utilizeReservedExecutionCost(amount, pendingUtilization);
 
         // can only utilize when amount is positive
         if (amount == 0) {
@@ -460,11 +455,9 @@ contract BasisStrategy is
         }
 
         if (isFullDeutilization) {
-            $.reservedExecutionCost = 0;
+            _utilizeReservedExecutionCost(amount, amount);
         } else {
-            uint256 _reservedExecutionCost = $.reservedExecutionCost;
-            _reservedExecutionCost -= _reservedExecutionCost.mulDiv(amount, pendingDeutilization_);
-            $.reservedExecutionCost = _reservedExecutionCost;
+            _utilizeReservedExecutionCost(amount, pendingDeutilization_);
         }
 
         // deutilize spot
@@ -1213,6 +1206,18 @@ contract BasisStrategy is
     /// @dev Sets the strategy status.
     function _setStrategyStatus(StrategyStatus newStatus) private {
         _getBasisStrategyStorage().strategyStatus = newStatus;
+    }
+
+    function _utilizeReservedExecutionCost(uint256 numerator, uint256 denominator) private {
+        if (numerator > denominator || denominator == 0) {
+            revert Errors.OverUtilizingReservedExecutionCost();
+        }
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        if (numerator == denominator) {
+            $.reservedExecutionCost = 0;
+        } else if (numerator != 0) {
+            $.reservedExecutionCost = $.reservedExecutionCost.mulDiv(denominator - numerator, denominator);
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
