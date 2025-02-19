@@ -1294,6 +1294,48 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.stopPrank();
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
-        console.log("vault.idleAssets()", vault.idleAssets());
+    }
+
+    function test_executionCost_deposit_woWithdrawRequest() public afterFullUtilized {
+        uint256 user1AssetsBefore = vault.previewRedeem(vault.balanceOf(user1));
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        uint256 user1AssetsAfter = vault.previewRedeem(vault.balanceOf(user1));
+        assertEq(user1AssetsBefore, user1AssetsAfter, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_deposit_withdrawRequest() public afterWithdrawRequestCreated {
+        uint256 user1AssetsBefore = vault.previewRedeem(vault.balanceOf(user1));
+        assertNotEq(user1AssetsBefore, 0, "user1 has assets");
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        uint256 user1AssetsAfter = vault.previewRedeem(vault.balanceOf(user1));
+        assertEq(user1AssetsBefore, user1AssetsAfter, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_redeem_woIdleAssets() public afterFullUtilized {
+        // user2 deposit and it is utilized fully
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+
+        // user1 request redeem
+        uint256 user2AssetsBefore = vault.previewRedeem(vault.balanceOf(user2));
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+        uint256 user2AssetsAfter = vault.previewRedeem(vault.balanceOf(user2));
+        assertEq(user2AssetsBefore, user2AssetsAfter, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_redeem_idleAssets() public afterFullUtilized {
+        // user2 deposit and it is utilized partially to make idle
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset / 2);
+
+        // user1 request redeem
+        uint256 user2AssetsBefore = vault.previewRedeem(vault.balanceOf(user2));
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+        uint256 user2AssetsAfter = vault.previewRedeem(vault.balanceOf(user2));
+        assertEq(user2AssetsBefore, user2AssetsAfter, "share price shouldn't be affected");
     }
 }
