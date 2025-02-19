@@ -353,13 +353,13 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         // always assetsToWithdraw <= assets
         uint256 assetsToRequest = assets - assetsToWithdraw;
 
-        uint256 shares = previewWithdraw(assets);
-        uint256 sharesToRedeem = previewWithdraw(assetsToWithdraw);
+        (uint256 shares, uint256 cost) = _previewWithdrawWithCost(assets);
+        uint256 sharesToRedeem = _convertToShares(assetsToWithdraw, Math.Rounding.Ceil);
         uint256 sharesToRequest = shares - sharesToRedeem;
 
-        if (assetsToWithdraw > 0) {
-            _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
-        }
+        if (cost > 0) IStrategy(strategy()).processExecutionCost(cost);
+
+        if (assetsToWithdraw > 0) _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
 
         if (assetsToRequest > 0) {
             return _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
@@ -390,13 +390,13 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         // always sharesToRedeem <= shares
         uint256 sharesToRequest = shares - sharesToRedeem;
 
-        uint256 assets = previewRedeem(shares);
-        uint256 assetsToWithdraw = previewRedeem(sharesToRedeem);
+        (uint256 assets, uint256 cost) = _previewRedeemWithCost(shares);
+        uint256 assetsToWithdraw = _convertToAssets(sharesToRedeem, Math.Rounding.Floor);
         uint256 assetsToRequest = assets - assetsToWithdraw;
 
-        if (sharesToRedeem > 0) {
-            _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
-        }
+        if (cost > 0) IStrategy(strategy()).processExecutionCost(cost);
+
+        if (sharesToRedeem > 0) _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
 
         if (sharesToRequest > 0) {
             return _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
@@ -586,6 +586,34 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
                              ERC4626 LOGIC
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Reserve the execution cost not to affect other's share price.
+    function deposit(uint256 assets, address receiver) public override returns (uint256) {
+        uint256 maxAssets = maxDeposit(receiver);
+        if (assets > maxAssets) {
+            revert ERC4626ExceededMaxDeposit(receiver, assets, maxAssets);
+        }
+
+        (uint256 shares, uint256 cost) = _previewDepositWithCost(assets);
+        if (cost > 0) IStrategy(strategy()).processExecutionCost(cost);
+        _deposit(_msgSender(), receiver, assets, shares);
+
+        return shares;
+    }
+
+    /// @dev Reserve the execution cost not to affect other's share price.
+    function mint(uint256 shares, address receiver) public override returns (uint256) {
+        uint256 maxShares = maxMint(receiver);
+        if (shares > maxShares) {
+            revert ERC4626ExceededMaxMint(receiver, shares, maxShares);
+        }
+
+        (uint256 assets, uint256 cost) = _previewMintWithCost(shares);
+        if (cost > 0) IStrategy(strategy()).processExecutionCost(cost);
+        _deposit(_msgSender(), receiver, assets, shares);
+
+        return assets;
+    }
+
     /// @inheritdoc ERC4626Upgradeable
     function totalAssets() public view virtual override returns (uint256 assets) {
         address _strategy = strategy();
@@ -597,56 +625,82 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
 
     /// @inheritdoc ERC4626Upgradeable
     function previewDeposit(uint256 assets) public view virtual override returns (uint256) {
+        (uint256 shares,) = _previewDepositWithCost(assets);
+        return shares;
+    }
+
+    function _previewDepositWithCost(uint256 assets) private view returns (uint256 shares, uint256 cost) {
         // calculate the amount of assets that will be utilized
-        (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
+        uint256 assetsToUtilize = _assetsToUtilize(assets);
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            assets -= _costOnTotal(assetsToUtilize, entryCost());
+            cost = _costOnTotal(assetsToUtilize, entryCost());
+            assets -= cost;
         }
 
-        return _convertToShares(assets, Math.Rounding.Floor);
+        shares = _convertToShares(assets, Math.Rounding.Floor);
+        return (shares, cost);
     }
 
     /// @inheritdoc ERC4626Upgradeable
     function previewMint(uint256 shares) public view virtual override returns (uint256) {
-        uint256 assets = _convertToAssets(shares, Math.Rounding.Ceil);
+        (uint256 assets,) = _previewMintWithCost(shares);
+        return assets;
+    }
+
+    function _previewMintWithCost(uint256 shares) private view returns (uint256 assets, uint256 cost) {
+        assets = _convertToAssets(shares, Math.Rounding.Ceil);
         // calculate the amount of assets that will be utilized
-        (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
+        uint256 assetsToUtilize = _assetsToUtilize(assets);
 
         // apply entry fee only to the portion of assets that will be utilized
         if (assetsToUtilize > 0) {
-            assets += _costOnRaw(assetsToUtilize, entryCost());
+            cost = _costOnRaw(assetsToUtilize, entryCost());
+            assets += cost;
         }
-        return assets;
+        return (assets, cost);
     }
 
     /// @inheritdoc ERC4626Upgradeable
     function previewWithdraw(uint256 assets) public view virtual override returns (uint256) {
+        (uint256 shares,) = _previewWithdrawWithCost(assets);
+        return shares;
+    }
+
+    function _previewWithdrawWithCost(uint256 assets) private view returns (uint256 shares, uint256 cost) {
         // calc the amount of assets that can not be withdrawn via idle
-        (, uint256 assetsToDeutilize) = assets.trySub(idleAssets());
+        uint256 assetsToDeutilize = _assetsToDeutilize(assets);
 
         // apply exit fee to assets that should be deutilized and add exit fee amount the asset amount
         if (assetsToDeutilize > 0) {
-            assets += _costOnRaw(assetsToDeutilize, exitCost());
+            cost = _costOnRaw(assetsToDeutilize, exitCost());
+            assets += cost;
         }
 
-        return _convertToShares(assets, Math.Rounding.Ceil);
+        shares = _convertToShares(assets, Math.Rounding.Ceil);
+        return (shares, cost);
     }
 
     /// @inheritdoc ERC4626Upgradeable
     function previewRedeem(uint256 shares) public view virtual override returns (uint256) {
-        uint256 assets = _convertToAssets(shares, Math.Rounding.Floor);
+        (uint256 assets,) = _previewRedeemWithCost(shares);
+        return assets;
+    }
+
+    function _previewRedeemWithCost(uint256 shares) private view returns (uint256 assets, uint256 cost) {
+        assets = _convertToAssets(shares, Math.Rounding.Floor);
 
         // calculate the amount of assets that will be deutilized
-        (, uint256 assetsToDeutilize) = assets.trySub(idleAssets());
+        uint256 assetsToDeutilize = _assetsToDeutilize(assets);
 
         // apply exit fee to the portion of assets that will be deutilized
         if (assetsToDeutilize > 0) {
-            assets -= _costOnTotal(assetsToDeutilize, exitCost());
+            cost = _costOnTotal(assetsToDeutilize, exitCost());
+            assets -= cost;
         }
 
-        return assets;
+        return (assets, cost);
     }
 
     /// @inheritdoc ERC4626Upgradeable
@@ -699,7 +753,6 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         if (shares == 0) {
             revert Errors.ZeroShares();
         }
-        IStrategy(strategy()).processExecutionCost(_costOnRaw(assets, entryCost()));
         ERC4626Upgradeable._deposit(caller, receiver, assets, shares);
         processPendingWithdrawRequests();
     }
@@ -711,7 +764,6 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         internal
         override
     {
-        IStrategy(strategy()).processExecutionCost(_costOnRaw(assets, exitCost()));
         ERC4626Upgradeable._withdraw(caller, receiver, owner, assets, shares);
     }
 
@@ -807,6 +859,16 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     /// Used in {IERC4626-deposit} and {IERC4626-redeem} operations.
     function _costOnTotal(uint256 assets, uint256 costRate) private pure returns (uint256) {
         return assets.mulDiv(costRate, costRate + Constants.FLOAT_PRECISION, Math.Rounding.Ceil);
+    }
+
+    function _assetsToUtilize(uint256 assets) private view returns (uint256) {
+        (, uint256 assetsToUtilize) = assets.trySub(totalPendingWithdraw());
+        return assetsToUtilize;
+    }
+
+    function _assetsToDeutilize(uint256 assets) private view returns (uint256) {
+        (, uint256 assetsToDeutilize) = assets.trySub(idleAssets());
+        return assetsToDeutilize;
     }
 
     /*//////////////////////////////////////////////////////////////
