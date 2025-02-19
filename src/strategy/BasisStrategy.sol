@@ -369,8 +369,9 @@ contract BasisStrategy is
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         ILogarithmVault _vault = $.vault;
+        uint256 _targetLeverage = targetLeverage();
         uint256 pendingUtilization = _pendingUtilization(
-            _vault.totalSupply(), _vault.idleAssets(), targetLeverage(), processingRebalanceDown(), paused()
+            _vault.totalSupply(), _vault.idleAssets(), _targetLeverage, processingRebalanceDown(), paused()
         );
 
         amount = amount > pendingUtilization ? pendingUtilization : amount;
@@ -383,7 +384,12 @@ contract BasisStrategy is
         }
 
         ISpotManager _spotManager = $.spotManager;
-        IERC20(asset()).safeTransferFrom(address(_vault), address(_spotManager), amount);
+        uint256 collateralDeltaAmount = amount.mulDiv(Constants.FLOAT_PRECISION, _targetLeverage, Math.Rounding.Ceil);
+        IERC20 _asset = $.asset;
+        // reserve asset for increase collateral of adjust position
+        _asset.safeTransferFrom(address(_vault), address(this), collateralDeltaAmount);
+        // buy spot
+        _asset.safeTransferFrom(address(_vault), address(_spotManager), amount);
         _spotManager.buy(amount, swapType, swapData);
     }
 
@@ -559,14 +565,19 @@ contract BasisStrategy is
             _adjustPosition(result.emergencyDeutilizationAmount, 0, false);
         } else if (result.deltaCollateralToIncrease > 0) {
             $.processingRebalanceDown = true;
-            uint256 idleAssets = $.vault.idleAssets();
-            if (
-                !_adjustPosition(
-                    0,
-                    idleAssets < result.deltaCollateralToIncrease ? idleAssets : result.deltaCollateralToIncrease,
-                    true
-                )
-            ) _setStrategyStatus(StrategyStatus.IDLE);
+            ILogarithmVault _vault = $.vault;
+            uint256 idleAssets = _vault.idleAssets();
+            result.deltaCollateralToIncrease =
+                idleAssets < result.deltaCollateralToIncrease ? idleAssets : result.deltaCollateralToIncrease;
+            if (result.deltaCollateralToIncrease > 0) {
+                $.asset.safeTransferFrom(address(_vault), address(this), result.deltaCollateralToIncrease);
+            }
+            if (!_adjustPosition(0, result.deltaCollateralToIncrease, true)) {
+                _setStrategyStatus(StrategyStatus.IDLE);
+                if (result.deltaCollateralToIncrease > 0) {
+                    $.asset.safeTransfer(address(_vault), result.deltaCollateralToIncrease);
+                }
+            }
         } else if (result.clearProcessingRebalanceDown) {
             $.processingRebalanceDown = false;
             _setStrategyStatus(StrategyStatus.IDLE);
@@ -612,14 +623,12 @@ contract BasisStrategy is
         if (status == StrategyStatus.UTILIZING) {
             if (productDelta == 0) {
                 // fail to buy product
-                address _vault = vault();
-                $.asset.safeTransferFrom(_msgSender(), _vault, assetDelta);
+                IERC20 _asset = $.asset;
+                _asset.safeTransferFrom(_msgSender(), address(this), assetDelta);
                 _setStrategyStatus(StrategyStatus.IDLE);
-                ILogarithmVault(_vault).processPendingWithdrawRequests();
+                _processAssetsToWithdraw(address(_asset));
             } else {
-                uint256 collateralDeltaAmount =
-                    assetDelta.mulDiv(Constants.FLOAT_PRECISION, targetLeverage(), Math.Rounding.Ceil);
-                if (!_adjustPosition(productDelta, collateralDeltaAmount, true)) {
+                if (!_adjustPosition(productDelta, assetsToWithdraw(), true)) {
                     ISpotManager(_msgSender()).sell(productDelta, ISpotManager.SwapType.MANUAL, "");
                 } else {
                     emit Utilize(_msgSender(), assetDelta, productDelta, timestamp);
@@ -648,10 +657,9 @@ contract BasisStrategy is
         // modify strategy status
         if (status == StrategyStatus.UTILIZING) {
             // revert utilizing
-            ILogarithmVault _vault = $.vault;
-            _asset.safeTransferFrom(_msgSender(), address(_vault), assetDelta);
+            _asset.safeTransferFrom(_msgSender(), address(this), assetDelta);
             _setStrategyStatus(StrategyStatus.IDLE);
-            _vault.processPendingWithdrawRequests();
+            _processAssetsToWithdraw(address(_asset));
         } else {
             if (assetDelta == 0) {
                 // fail to sell product
@@ -797,23 +805,25 @@ contract BasisStrategy is
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
+        IHedgeManager _hedgeManager = $.hedgeManager;
+
         // check leverage
-        if (isIncrease && collateralDeltaAmount == 0 && $.hedgeManager.positionNetBalance() == 0) {
+        if (isIncrease && collateralDeltaAmount == 0 && _hedgeManager.positionNetBalance() == 0) {
             return false;
         }
 
         // we don't allow to adjust hedge with modified amount due to min.
         if (sizeDeltaInTokens > 0) {
-            uint256 min = isIncrease ? $.hedgeManager.increaseSizeMin() : $.hedgeManager.decreaseSizeMin();
+            uint256 min = isIncrease ? _hedgeManager.increaseSizeMin() : _hedgeManager.decreaseSizeMin();
             if (sizeDeltaInTokens < min) return false;
         }
         if (collateralDeltaAmount > 0) {
-            uint256 min = isIncrease ? $.hedgeManager.increaseCollateralMin() : $.hedgeManager.decreaseCollateralMin();
+            uint256 min = isIncrease ? _hedgeManager.increaseCollateralMin() : _hedgeManager.decreaseCollateralMin();
             if (collateralDeltaAmount < min) return false;
         }
 
         if (isIncrease && collateralDeltaAmount > 0) {
-            $.asset.safeTransferFrom(address($.vault), address($.hedgeManager), collateralDeltaAmount);
+            $.asset.safeTransferFrom(address(this), address(_hedgeManager), collateralDeltaAmount);
         }
 
         if (collateralDeltaAmount > 0 || sizeDeltaInTokens > 0) {
@@ -823,7 +833,7 @@ contract BasisStrategy is
                 isIncrease: isIncrease
             });
             $.requestParams = requestParams;
-            $.hedgeManager.adjustPosition(requestParams);
+            _hedgeManager.adjustPosition(requestParams);
             return true;
         } else {
             return false;
