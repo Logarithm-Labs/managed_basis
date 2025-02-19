@@ -10,6 +10,6 @@ interface IStrategy {
     function asset() external view returns (address);
     function product() external view returns (address);
     function vault() external view returns (address);
-    function pendingExecutionCost() external view returns (uint256);
-    function processExecutionCost(uint256 amount) external;
+    function reservedExecutionCost() external view returns (uint256);
+    function reserveExecutionCost(uint256 amount) external;
 }

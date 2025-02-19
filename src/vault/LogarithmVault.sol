@@ -357,7 +357,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 sharesToRedeem = _convertToShares(assetsToWithdraw, Math.Rounding.Ceil);
         uint256 sharesToRequest = shares - sharesToRedeem;
 
-        if (cost > 0) IStrategy(strategy()).processExecutionCost(cost);
+        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
 
         if (assetsToWithdraw > 0) _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
 
@@ -394,7 +394,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 assetsToWithdraw = _convertToAssets(sharesToRedeem, Math.Rounding.Floor);
         uint256 assetsToRequest = assets - assetsToWithdraw;
 
-        if (cost > 0) IStrategy(strategy()).processExecutionCost(cost);
+        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
 
         if (sharesToRedeem > 0) _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
 
@@ -594,7 +594,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         }
 
         (uint256 shares, uint256 cost) = _previewDepositWithCost(assets);
-        if (cost > 0) IStrategy(strategy()).processExecutionCost(cost);
+        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
         _deposit(_msgSender(), receiver, assets, shares);
 
         return shares;
@@ -608,7 +608,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         }
 
         (uint256 assets, uint256 cost) = _previewMintWithCost(shares);
-        if (cost > 0) IStrategy(strategy()).processExecutionCost(cost);
+        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
         _deposit(_msgSender(), receiver, assets, shares);
 
         return assets;
@@ -618,7 +618,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     function totalAssets() public view virtual override returns (uint256 assets) {
         address _strategy = strategy();
         (, assets) = (idleAssets() + IStrategy(_strategy).utilizedAssets()).trySub(
-            totalPendingWithdraw() + IStrategy(_strategy).pendingExecutionCost()
+            totalPendingWithdraw() + IStrategy(_strategy).reservedExecutionCost()
         );
         return assets;
     }
