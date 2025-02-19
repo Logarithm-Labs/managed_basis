@@ -27,6 +27,7 @@ import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 
 import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
 import {StrategyHelper, StrategyState} from "test/helper/StrategyHelper.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 
 contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
     function test_afterAdjustPosition_revert_whenUtilizing() public afterDeposited {
@@ -41,13 +42,10 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         vm.startPrank(GMX_ORDER_VAULT);
         IERC20(asset).transfer(address(_hedgeManager()), pendingUtilization / 6);
         vm.startPrank(address(_hedgeManager()));
+        vm.expectRevert(Errors.HedgeInvalidSizeResponse.selector);
         strategy.afterAdjustPosition(
             IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 0, isIncrease: true})
         );
-
-        assertEq(IERC20(asset).balanceOf(address(_hedgeManager())), 0);
-        assertEq(IERC20(product).balanceOf(address(strategy)), 0);
-        assertApproxEqRel(IERC20(asset).balanceOf(address(vault)), TEN_THOUSANDS_USDC, 0.9999 ether);
     }
 
     function test_deutilize_lastRedeemBelowRequestedAssets() public afterFullUtilized validateFinalState {

@@ -762,10 +762,10 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _deutilize(pendingDeutilization);
 
         bytes32 requestKey1 = vault.getWithdrawKey(user1, 0);
-        assertTrue(vault.isClaimable(requestKey1));
+        assertTrue(vault.isClaimable(requestKey1), "user1 claimable");
 
         bytes32 requestKey2 = vault.getWithdrawKey(user2, 0);
-        assertTrue(vault.isClaimable(requestKey2));
+        assertTrue(vault.isClaimable(requestKey2), "user2 claimable");
 
         LogarithmVault.WithdrawRequest memory withdrawRequest1 = vault.withdrawRequests(requestKey1);
         uint256 balanceBefore1 = IERC20(asset).balanceOf(user1);
@@ -1379,5 +1379,43 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (uint256 pendingUtilization,) = strategy.pendingUtilizations();
         strategy.utilize(pendingUtilization, ISpotManager.SwapType.MANUAL, "");
         assertEq(vault.idleAssets(), 0, "idle should be 0");
+    }
+
+    function test_clearReservedExecutionCost_entryCost() public afterFullUtilized afterDeposited validateFinalState {
+        uint256 reservedExecutionCost0 = strategy.reservedExecutionCost();
+        assertEq(
+            reservedExecutionCost0,
+            TEN_THOUSANDS_USDC.mulDiv(entryCost, 1 ether + entryCost, Math.Rounding.Ceil),
+            "reserved cost not 0"
+        );
+        (bool upkeepNeeded,) = strategy.checkUpkeep("");
+        assertFalse(upkeepNeeded, "upkeed no need");
+        vm.startPrank(user1);
+        vault.requestWithdraw(TEN_THOUSANDS_USDC, user1, user1);
+        bytes memory performData;
+        (upkeepNeeded, performData) = strategy.checkUpkeep("");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertTrue(upkeepNeeded, "upkeep needed");
+        assertTrue(decodedPerformData.clearReservedExecutionCost, "clear");
+        strategy.performUpkeep(performData);
+        uint256 reservedExecutionCost1 = strategy.reservedExecutionCost();
+        assertEq(reservedExecutionCost1, 0, "cleared");
+    }
+
+    function test_clearReservedExecutionCost_exitCost() public afterMultipleWithdrawRequestCreated validateFinalState {
+        uint256 reservedExecutionCost0 = strategy.reservedExecutionCost();
+        assertTrue(reservedExecutionCost0 > 0, "reserved cost not 0");
+        (bool upkeepNeeded,) = strategy.checkUpkeep("");
+        assertFalse(upkeepNeeded, "upkeed no need");
+        uint256 pendingWithdraw = vault.totalPendingWithdraw();
+        _deposit(user1, pendingWithdraw);
+        bytes memory performData;
+        (upkeepNeeded, performData) = strategy.checkUpkeep("");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertTrue(upkeepNeeded, "upkeep needed");
+        assertTrue(decodedPerformData.clearReservedExecutionCost, "clear");
+        strategy.performUpkeep(performData);
+        uint256 reservedExecutionCost1 = strategy.reservedExecutionCost();
+        assertEq(reservedExecutionCost1, 0, "cleared");
     }
 }
