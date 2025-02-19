@@ -537,15 +537,7 @@ contract BasisStrategy is
             || result.clearProcessingRebalanceDown || result.hedgeDeviationInTokens != 0 || result.hedgeManagerNeedKeep
             || result.deltaCollateralToDecrease > 0 || result.clearReservedExecutionCost;
 
-        performData = abi.encode(
-            result.emergencyDeutilizationAmount,
-            result.deltaCollateralToIncrease,
-            result.clearProcessingRebalanceDown,
-            result.hedgeDeviationInTokens,
-            result.hedgeManagerNeedKeep,
-            result.deltaCollateralToDecrease,
-            result.clearReservedExecutionCost
-        );
+        performData = abi.encode(result);
 
         return (upkeepNeeded, performData);
     }

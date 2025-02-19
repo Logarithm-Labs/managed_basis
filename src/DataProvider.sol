@@ -50,9 +50,11 @@ contract DataProvider {
         bool rebalanceUpNeeded;
         bool rebalanceDownNeeded;
         bool deleverageNeeded;
+        bool clearProcessingRebalanceDown;
         bool rehedgeNeeded;
         bool hedgeManagerKeepNeeded;
         bool processingRebalanceDown;
+        bool clearReservedExecutionCost;
         bool strategyPaused;
         bool vaultPaused;
     }
@@ -73,15 +75,11 @@ contract DataProvider {
         IOracle oracle = IOracle(strategy.oracle());
         address asset = strategy.asset();
         address product = strategy.product();
-        bool rebalanceDownNeeded;
-        bool deleverageNeeded;
-        int256 hedgeDeviationInTokens;
-        bool hedgeManagerNeedKeep;
-        bool rebalanceUpNeeded;
+
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
+        BasisStrategy.InternalCheckUpkeepResult memory result;
         if (performData.length > 0) {
-            (rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, hedgeManagerNeedKeep, rebalanceUpNeeded) =
-                _decodePerformData(performData);
+            result = abi.decode(performData, (BasisStrategy.InternalCheckUpkeepResult));
         }
 
         state.strategyStatus = uint8(strategy.strategyStatus());
@@ -103,12 +101,14 @@ contract DataProvider {
         state.positionSizeInTokens = hedgeManager.positionSizeInTokens();
         state.positionSizeInAsset = oracle.convertTokenAmount(product, asset, state.positionSizeInTokens);
         state.upkeepNeeded = upkeepNeeded;
-        state.rebalanceUpNeeded = rebalanceUpNeeded;
-        state.rebalanceDownNeeded = rebalanceDownNeeded;
-        state.deleverageNeeded = deleverageNeeded;
-        state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
-        state.hedgeManagerKeepNeeded = hedgeManagerNeedKeep;
+        state.rebalanceUpNeeded = result.deltaCollateralToDecrease > 0;
+        state.rebalanceDownNeeded = result.emergencyDeutilizationAmount > 0 || result.deltaCollateralToIncrease > 0;
+        state.deleverageNeeded = result.emergencyDeutilizationAmount > 0;
+        state.rehedgeNeeded = result.hedgeDeviationInTokens == 0 ? false : true;
+        state.hedgeManagerKeepNeeded = result.hedgeManagerNeedKeep;
         state.processingRebalanceDown = strategy.processingRebalanceDown();
+        state.clearProcessingRebalanceDown = result.clearProcessingRebalanceDown;
+        state.clearReservedExecutionCost = result.clearReservedExecutionCost;
         state.strategyPaused = strategy.paused();
         state.vaultPaused = vault.paused();
     }
@@ -206,35 +206,5 @@ contract DataProvider {
         prices.indexTokenPrice = Price.Props(indexTokenPrice, indexTokenPrice);
         prices.longTokenPrice = Price.Props(longTokenPrice, longTokenPrice);
         prices.shortTokenPrice = Price.Props(shortTokenPrice, shortTokenPrice);
-    }
-
-    function _decodePerformData(bytes memory performData)
-        internal
-        pure
-        returns (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool hedgeManagerNeedKeep,
-            bool rebalanceUpNeeded
-        )
-    {
-        uint256 emergencyDeutilizationAmount;
-        uint256 deltaCollateralToIncrease;
-        bool clearProcessingRebalanceDown;
-        uint256 deltaCollateralToDecrease;
-
-        (
-            emergencyDeutilizationAmount,
-            deltaCollateralToIncrease,
-            clearProcessingRebalanceDown,
-            hedgeDeviationInTokens,
-            hedgeManagerNeedKeep,
-            deltaCollateralToDecrease
-        ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, uint256));
-
-        rebalanceDownNeeded = emergencyDeutilizationAmount > 0 || deltaCollateralToIncrease > 0;
-        deleverageNeeded = emergencyDeutilizationAmount > 0;
-        rebalanceUpNeeded = deltaCollateralToDecrease > 0;
     }
 }
