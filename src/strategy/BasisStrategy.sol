@@ -727,7 +727,7 @@ contract BasisStrategy is
     /// @return pendingDeutilizationInProduct The available pending deutilzation amount in product.
     /// The calculation of this amount depends on the goal of deutilizing whether it is for processing withdraw requests or for rebalancing down.
     function pendingUtilizations()
-        public
+        external
         view
         returns (uint256 pendingUtilizationInAsset, uint256 pendingDeutilizationInProduct)
     {
@@ -865,8 +865,9 @@ contract BasisStrategy is
                 _checkNeedRebalance(currentLeverage, _targetLeverage, config().rebalanceDeviationThreshold());
         }
 
+        uint256 idleAssets = _vault.idleAssets();
+
         if (rebalanceDownNeeded) {
-            uint256 idleAssets = _vault.idleAssets();
             uint256 minIncreaseCollateral = _hedgeManager.increaseCollateralMin();
             result.deltaCollateralToIncrease = _calculateDeltaCollateralForRebalance(
                 _hedgeManager.positionNetBalance(), currentLeverage, _targetLeverage
@@ -897,13 +898,6 @@ contract BasisStrategy is
                 }
             }
 
-            (uint256 pendingUtilization, uint256 pendingDeutilization) = pendingUtilizations();
-
-            // clear reservedExecutionCost when there is no pendingUtilization and pendingDeutilization
-            if ((pendingUtilization == 0 && pendingDeutilization == 0) && $.reservedExecutionCost > 0) {
-                result.clearReservedExecutionCost = true;
-            }
-
             return result;
         }
 
@@ -930,6 +924,13 @@ contract BasisStrategy is
             if (result.deltaCollateralToDecrease < limitDecreaseCollateral) {
                 result.deltaCollateralToDecrease = 0;
             }
+        }
+
+        // clear reserved execution cost when there is no idle to utilize in vault
+        // and when there is no pending withdraw request
+        // if it is none-zero
+        if (idleAssets == 0 && assetsToDeutilize() == 0 && $.reservedExecutionCost > 0) {
+            result.clearReservedExecutionCost = true;
         }
 
         return result;
