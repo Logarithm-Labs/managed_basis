@@ -92,7 +92,8 @@ contract BaseDeploy is Script {
     bytes32 xSpotManager = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL);
 
     function run() public {
-        vm.startBroadcast();
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.startBroadcast(privateKey);
 
         // deploy BrotherSwapper
         DeployHelper.DeployBrotherSwapperParams memory swapperDeployParams = DeployHelper.DeployBrotherSwapperParams({
