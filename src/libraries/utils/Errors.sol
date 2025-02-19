@@ -61,6 +61,8 @@ library Errors {
     error ZeroPendingUtilization();
     error ZeroAmountUtilization();
     error InvalidStrategyStatus(uint8 currentStatus, uint8 targetStatus);
+    error HedgeInvalidSizeResponse();
+    error HedgeInvalidCollateralResponse();
     error OverUtilizingReservedExecutionCost();
 
     /*//////////////////////////////////////////////////////////////
@@ -82,6 +84,7 @@ library Errors {
     error NoActiveRequests();
     error InvalidAdjustmentParams();
     error InvalidCollateralRequest(uint256 collateralDeltaAmount, bool isIncrease);
+    error ProcessingRequest();
 
     /*//////////////////////////////////////////////////////////////
                               SPOT MANAGER

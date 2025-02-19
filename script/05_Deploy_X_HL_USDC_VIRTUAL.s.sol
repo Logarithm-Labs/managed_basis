@@ -18,18 +18,6 @@ import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
 import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
-import {ChainlinkFeedWrapper} from "src/oracle/ChainlinkFeedWrapper.sol";
-
-contract DeployCLWrapper is Script {
-    address customPriceFeedVirtual = 0x3a84cff0574a016F2F735842353845917b2168a7;
-
-    function run() public {
-        vm.startBroadcast();
-        ChainlinkFeedWrapper wrapper = new ChainlinkFeedWrapper(customPriceFeedVirtual);
-        console.log("CustomFeed(VIRTUAL)", address(wrapper));
-        vm.stopBroadcast();
-    }
-}
 
 contract ArbDeploy is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;

@@ -20,7 +20,7 @@ contract ProdTest is Test {
     address constant hlOperator = 0xC3AcB9dF13095E7A27919D78aD8323CF7717Bb16;
     address constant sender = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
     LogarithmVault hlVault = LogarithmVault(Arb.VAULT_HL_USDC_DOGE);
-    BasisStrategy constant hlStrategy = BasisStrategy(Arb.STRATEGY_HL_USDC_DOGE);
+    BasisStrategy constant strategy = BasisStrategy(Arb.STRATEGY_HL_USDC_VIRTUAL);
     DataProvider constant dataProvider = DataProvider(Arb.DATA_PROVIDER);
     OffChainPositionManager constant hlPositionManager = OffChainPositionManager(Arb.HEDGE_MANAGER_HL_USDC_DOGE);
 
@@ -41,14 +41,14 @@ contract ProdTest is Test {
         vm.etch(address(100), _arbsys.code);
         vm.etch(address(108), _arbgasinfo.code);
 
-        (, uint256 deutilization) = hlStrategy.pendingUtilizations();
+        (, uint256 deutilization) = strategy.pendingUtilizations();
         console.log("deutilization", deutilization);
         (uint256 amount, ISpotManager.SwapType swapType, bytes memory swapData) =
             abi.decode(call_data, (uint256, ISpotManager.SwapType, bytes));
         console.log("amount", amount);
         vm.startPrank(hlOperator);
-        hlStrategy.deutilize(amount, swapType, swapData);
-        DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(hlStrategy));
+        strategy.deutilize(amount, swapType, swapData);
+        DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(strategy));
         _logState(state);
     }
 
@@ -60,13 +60,13 @@ contract ProdTest is Test {
         vm.etch(address(100), _arbsys.code);
         vm.etch(address(108), _arbgasinfo.code);
 
-        (uint256 utilization,) = hlStrategy.pendingUtilizations();
+        (uint256 utilization,) = strategy.pendingUtilizations();
         console.log("utilization", utilization);
         (uint256 amount, ISpotManager.SwapType swapType, bytes memory swapData) =
             abi.decode(call_data, (uint256, ISpotManager.SwapType, bytes));
         console.log("amount", amount);
         vm.startPrank(hlOperator);
-        hlStrategy.utilize(amount, swapType, swapData);
+        strategy.utilize(amount, swapType, swapData);
 
         vm.startPrank(0xC539cB358a58aC67185BaAD4d5E3f7fCfc903700);
         address(0xB0Fc2a48b873da40e7bc25658e5E6137616AC2Ee).call(
@@ -76,9 +76,9 @@ contract ProdTest is Test {
 
     function test_getState() public {
         vm.createSelectFork(rpcUrl);
-        DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(hlStrategy));
+        DataProvider.StrategyState memory state = dataProvider.getStrategyState(address(strategy));
         _logState(state);
-        // DataProvider.GmxPositionInfo memory info = dataProvider.getGmxPositionInfo(hlStrategy.hedgeManager());
+        // DataProvider.GmxPositionInfo memory info = dataProvider.getGmxPositionInfo(strategy.hedgeManager());
     }
 
     function _logState(DataProvider.StrategyState memory state) internal view {

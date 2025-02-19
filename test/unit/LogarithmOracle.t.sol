@@ -3,7 +3,6 @@ pragma solidity 0.8.28;
 
 import "forge-std/Test.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
-import {ChainlinkFeedWrapper, ICustomPriceFeed} from "src/oracle/ChainlinkFeedWrapper.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ArbSysMock} from "test/mock/ArbSysMock.sol";
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
@@ -52,21 +51,6 @@ contract LogarithmOracleTest is ForkTest {
 
         uint256 productPrice = oracle.getAssetPrice(product);
         console.log("productPrice: ", productPrice);
-    }
-
-    function test_wrapper() public {
-        ChainlinkFeedWrapper wrapper = new ChainlinkFeedWrapper(0x3a84cff0574a016F2F735842353845917b2168a7);
-        address[] memory assets = new address[](1);
-        address[] memory feeds = new address[](1);
-        uint256[] memory heartbeats = new uint256[](1);
-        assets[0] = asset;
-        feeds[0] = address(wrapper);
-        heartbeats[0] = 24 * 3600;
-        oracle.setPriceFeeds(assets, feeds);
-        oracle.setHeartbeats(feeds, heartbeats);
-
-        uint256 assetPrice = oracle.getAssetPrice(asset);
-        console.log("assetPrice: ", assetPrice);
     }
 
     function test_convertTokenAmount() public view {
