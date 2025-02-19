@@ -1318,6 +1318,30 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
     }
 
+    function test_executionCost_mint_woWithdrawRequest_withIdle() public afterDeposited {
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC);
+        _mint(user2, shares);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_mint_woWithdrawRequest_woIdle() public afterFullUtilized {
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC);
+        _mint(user2, shares);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_mint_withdrawRequest() public afterWithdrawRequestCreated {
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertNotEq(vault.balanceOf(user1), 0, "user1 has shares");
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
     function test_executionCost_redeem_woIdleAssets() public afterFullUtilized {
         // user2 deposit and it is utilized fully
         _deposit(user2, TEN_THOUSANDS_USDC);
@@ -1343,6 +1367,37 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertNotEq(vault.balanceOf(user1), 0, "user1 has shares");
         vm.startPrank(user1);
         vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_withdraw_woIdleAssets() public afterFullUtilized {
+        // user2 deposit and it is utilized fully
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+
+        // user1 request redeem
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        vm.startPrank(user1);
+        uint256 assets = vault.previewRedeem(vault.balanceOf(user1));
+        vault.requestWithdraw(assets, user1, user1);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_withdraw_idleAssets() public afterFullUtilized {
+        // user2 deposit and it is utilized partially to make idle
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset / 2);
+
+        // user1 request redeem
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertNotEq(vault.balanceOf(user1), 0, "user1 has shares");
+        vm.startPrank(user1);
+        uint256 assets = vault.previewRedeem(vault.balanceOf(user1));
+        vault.requestWithdraw(assets, user1, user1);
         uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
         assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
     }
