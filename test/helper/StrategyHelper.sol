@@ -38,11 +38,22 @@ struct StrategyState {
     bool deleverageNeeded;
     bool rehedgeNeeded;
     bool hedgeManagerKeepNeeded;
+    bool clearReservedExecutionCost;
 }
 
 contract StrategyHelper {
     BasisStrategy strategy;
     LogarithmVault vault;
+
+    struct DecodedPerformData {
+        bool rebalanceDownNeeded;
+        bool deleverageNeeded;
+        bool clearProcessingRebalanceDown;
+        int256 hedgeDeviationInTokens;
+        bool hedgeManagerNeedKeep;
+        bool rebalanceUpNeeded;
+        bool clearReservedExecutionCost;
+    }
 
     constructor(address _strategy) {
         strategy = BasisStrategy(_strategy);
@@ -51,14 +62,9 @@ contract StrategyHelper {
 
     function getStrategyState() public view returns (StrategyState memory state) {
         (bool upkeepNeeded, bytes memory performData) = strategy.checkUpkeep("");
-        bool rebalanceUpNeeded;
-        bool rebalanceDownNeeded;
-        bool deleverageNeeded;
-        int256 hedgeDeviationInTokens;
-        bool hedgeManagerNeedKeep;
+        DecodedPerformData memory decodedPerformData;
         if (performData.length > 0) {
-            (rebalanceDownNeeded, deleverageNeeded, hedgeDeviationInTokens, hedgeManagerNeedKeep, rebalanceUpNeeded) =
-                decodePerformData(performData);
+            decodedPerformData = decodePerformData(performData);
         }
 
         address asset = strategy.asset();
@@ -87,11 +93,12 @@ contract StrategyHelper {
         state.processingRebalance = strategy.processingRebalanceDown();
 
         state.upkeepNeeded = upkeepNeeded;
-        state.rebalanceUpNeeded = rebalanceUpNeeded;
-        state.rebalanceDownNeeded = rebalanceDownNeeded;
-        state.deleverageNeeded = deleverageNeeded;
-        state.rehedgeNeeded = hedgeDeviationInTokens == 0 ? false : true;
-        state.hedgeManagerKeepNeeded = hedgeManagerNeedKeep;
+        state.rebalanceUpNeeded = decodedPerformData.rebalanceUpNeeded;
+        state.rebalanceDownNeeded = decodedPerformData.rebalanceDownNeeded;
+        state.deleverageNeeded = decodedPerformData.deleverageNeeded;
+        state.rehedgeNeeded = decodedPerformData.hedgeDeviationInTokens == 0 ? false : true;
+        state.hedgeManagerKeepNeeded = decodedPerformData.hedgeManagerNeedKeep;
+        state.clearReservedExecutionCost = decodedPerformData.clearReservedExecutionCost;
     }
 
     function logStrategyState(string memory stateName, StrategyState memory state) public pure {
@@ -124,36 +131,26 @@ contract StrategyHelper {
         console.log("rehedgeNeeded", state.rehedgeNeeded);
         console.log("hedgeManagerNeedKeep", state.hedgeManagerKeepNeeded);
         console.log("processingRebalance", state.processingRebalance);
+        console.log("clearReservedExecutionCost", state.clearReservedExecutionCost);
         console.log("");
     }
 
     function decodePerformData(bytes memory performData)
         public
         pure
-        returns (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool hedgeManagerNeedKeep,
-            bool rebalanceUpNeeded
-        )
+        returns (DecodedPerformData memory decodedPerformData)
     {
-        uint256 emergencyDeutilizationAmount;
-        uint256 deltaCollateralToIncrease;
-        bool clearProcessingRebalanceDown;
-        uint256 deltaCollateralToDecrease;
+        BasisStrategy.InternalCheckUpkeepResult memory result =
+            abi.decode(performData, (BasisStrategy.InternalCheckUpkeepResult));
 
-        (
-            emergencyDeutilizationAmount,
-            deltaCollateralToIncrease,
-            clearProcessingRebalanceDown,
-            hedgeDeviationInTokens,
-            hedgeManagerNeedKeep,
-            deltaCollateralToDecrease
-        ) = abi.decode(performData, (uint256, uint256, bool, int256, bool, uint256));
+        decodedPerformData.clearProcessingRebalanceDown = result.clearProcessingRebalanceDown;
+        decodedPerformData.hedgeDeviationInTokens = result.hedgeDeviationInTokens;
+        decodedPerformData.hedgeManagerNeedKeep = result.hedgeManagerNeedKeep;
+        decodedPerformData.clearReservedExecutionCost = result.clearReservedExecutionCost;
 
-        rebalanceDownNeeded = emergencyDeutilizationAmount > 0 || deltaCollateralToIncrease > 0;
-        deleverageNeeded = emergencyDeutilizationAmount > 0;
-        rebalanceUpNeeded = deltaCollateralToDecrease > 0;
+        decodedPerformData.rebalanceDownNeeded =
+            result.emergencyDeutilizationAmount > 0 || result.deltaCollateralToIncrease > 0;
+        decodedPerformData.deleverageNeeded = result.emergencyDeutilizationAmount > 0;
+        decodedPerformData.rebalanceUpNeeded = result.deltaCollateralToDecrease > 0;
     }
 }
