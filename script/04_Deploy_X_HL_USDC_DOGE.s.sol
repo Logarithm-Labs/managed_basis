@@ -25,8 +25,8 @@ contract ArbDeploy is Script {
     address constant agent = 0xA184231aAE8DE21E7FcD962746Ef350CbB650FbD;
 
     // vault params
-    uint256 constant entryCost = 0.005 ether; // 0.5% entry fee
-    uint256 constant exitCost = 0.005 ether; // 0.5% exit fee
+    uint256 constant entryCost = 0.004 ether; // 0.4% entry fee
+    uint256 constant exitCost = 0.004 ether; // 0.4% exit fee
     string constant vaultName = "Logarithm Basis USDC-DOGE Hyperliquid (Alpha)";
     string constant vaultSymbol = "log-b-usdc-doge-hl-a";
     // Strategy Addresses
@@ -36,15 +36,17 @@ contract ArbDeploy is Script {
     address constant productPriceFeed = ArbAddresses.CHL_DOGE_USD_PRICE_FEED; // Chainlink DOGE-USD price feed
     uint256 constant feedHeartbeat = 24 * 3600;
     // strategy params
-    uint256 constant targetLeverage = 6 ether; // 6x leverage
-    uint256 constant minLeverage = 2 ether; // 2x leverage
-    uint256 constant maxLeverage = 12 ether; // 12x leverage
-    uint256 constant safeMarginLeverage = 18 ether; // 18x leverage
+    uint256 constant targetLeverage = 4 ether;
+    uint256 constant minLeverage = 1 ether;
+    uint256 constant maxLeverage = 7 ether;
+    uint256 constant safeMarginLeverage = 15 ether;
 
     uint256 constant BSC_CHAIN_ID = 56;
 
     function run() public {
-        vm.startBroadcast();
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
 
         DeployHelper.deployHLVaultX(
             DeployHelper.DeployHLVaultXParams({

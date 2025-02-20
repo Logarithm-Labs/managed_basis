@@ -25,8 +25,8 @@ contract ArbDeploy is Script {
     address constant agent = 0x0473174dA33598Aad43357644bFDf79f9d3167bA;
 
     // vault params
-    uint256 constant entryCost = 0.005 ether; // 0.5% entry fee
-    uint256 constant exitCost = 0.005 ether; // 0.5% exit fee
+    uint256 constant entryCost = 0.004 ether; // 0.4% entry fee
+    uint256 constant exitCost = 0.004 ether; // 0.4% exit fee
     string constant vaultName = "Logarithm Basis USDC-VIRTUAL Hyperliquid (Alpha)";
     string constant vaultSymbol = "log-b-usdc-virtual-hl-a";
     // Strategy Addresses
@@ -36,15 +36,17 @@ contract ArbDeploy is Script {
     address constant productPriceFeed = ArbAddresses.CUSTOM_VIRTUAL_USD_PRICE_FEED; // Custom VIRTUAL-USD price feed
     uint256 constant feedHeartbeat = 24 * 3600;
     // strategy params
-    uint256 constant targetLeverage = 4 ether; // 4x leverage
-    uint256 constant minLeverage = 2 ether; // 2x leverage
-    uint256 constant maxLeverage = 6 ether; // 6x leverage
-    uint256 constant safeMarginLeverage = 7 ether; // 6x leverage
+    uint256 constant targetLeverage = 3 ether;
+    uint256 constant minLeverage = 1 ether;
+    uint256 constant maxLeverage = 5 ether;
+    uint256 constant safeMarginLeverage = 6 ether;
 
     uint256 constant BASE_CHAIN_ID = 8453;
 
     function run() public {
-        vm.startBroadcast();
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
 
         DeployHelper.deployHLVaultX(
             DeployHelper.DeployHLVaultXParams({

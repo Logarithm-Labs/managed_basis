@@ -23,8 +23,8 @@ contract ArbDeploy is Script {
     address constant agent = 0xA2a7e3a770c38aAe24F175a38281f74731Fe477E;
 
     // vault params
-    uint256 constant entryCost = 0.005 ether; // 0.5% entry fee
-    uint256 constant exitCost = 0.005 ether; // 0.5% exit fee
+    uint256 constant entryCost = 0.002 ether; // 0.2% entry fee
+    uint256 constant exitCost = 0.002 ether; // 0.2% exit fee
     string constant vaultName = "Logarithm Basis USDC-WETH Hyperliquid (Alpha)";
     string constant vaultSymbol = "log-b-usdc-weth-hl-a";
     // Strategy Addresses
@@ -34,15 +34,17 @@ contract ArbDeploy is Script {
     address constant productPriceFeed = ArbAddresses.CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
     uint256 constant feedHeartbeat = 24 * 3600;
     // strategy params
-    uint256 constant targetLeverage = 6 ether; // 6x leverage
-    uint256 constant minLeverage = 2 ether; // 2x leverage
-    uint256 constant maxLeverage = 12 ether; // 12x leverage
+    uint256 constant targetLeverage = 5 ether;
+    uint256 constant minLeverage = 1 ether;
+    uint256 constant maxLeverage = 9 ether;
     uint256 constant safeMarginLeverage = 20 ether; // 20x leverage
 
     address[] assetToProductSwapPath = [asset, ArbAddresses.UNI_V3_POOL_WETH_USDC, product];
 
     function run() public {
-        vm.startBroadcast();
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
         DeployHelper.deployHLVault(
             DeployHelper.DeployHLVaultParams({
                 owner: owner,

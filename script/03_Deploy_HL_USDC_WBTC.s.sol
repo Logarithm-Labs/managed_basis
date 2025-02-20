@@ -23,8 +23,8 @@ contract ArbDeploy is Script {
     address constant agent = 0x195fa26fb43D15567C3a99049f57B8Db992643d6;
 
     // vault params
-    uint256 constant entryCost = 0.005 ether; // 0.5% entry fee
-    uint256 constant exitCost = 0.005 ether; // 0.5% exit fee
+    uint256 constant entryCost = 0.002 ether; // 0.2% entry fee
+    uint256 constant exitCost = 0.002 ether; // 0.2% exit fee
     string constant vaultName = "Logarithm Basis USDC-WBTC Hyperliquid (Alpha)";
     string constant vaultSymbol = "log-b-usdc-wbtc-hl-a";
     // Strategy Addresses
@@ -34,16 +34,18 @@ contract ArbDeploy is Script {
     address constant productPriceFeed = ArbAddresses.CHL_BTC_USD_PRICE_FEED; // Chainlink BTC-USD price feed
     uint256 constant feedHeartbeat = 24 * 3600;
     // strategy params
-    uint256 constant targetLeverage = 6 ether; // 6x leverage
-    uint256 constant minLeverage = 3 ether; // 3x leverage
-    uint256 constant maxLeverage = 9 ether; // 9x leverage
-    uint256 constant safeMarginLeverage = 20 ether; // 20x leverage
+    uint256 constant targetLeverage = 6 ether;
+    uint256 constant minLeverage = 1 ether;
+    uint256 constant maxLeverage = 11 ether;
+    uint256 constant safeMarginLeverage = 20 ether;
 
     address[] assetToProductSwapPath =
         [asset, ArbAddresses.UNI_V3_POOL_WETH_USDC, ArbAddresses.WETH, ArbAddresses.UNI_V3_POOL_WBTC_WETH, product];
 
     function run() public {
-        vm.startBroadcast();
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
 
         DeployHelper.deployHLVault(
             DeployHelper.DeployHLVaultParams({
