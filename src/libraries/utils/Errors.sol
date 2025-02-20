@@ -63,7 +63,6 @@ library Errors {
     error InvalidStrategyStatus(uint8 currentStatus, uint8 targetStatus);
     error HedgeInvalidSizeResponse();
     error HedgeInvalidCollateralResponse();
-    error OverUtilizingReservedExecutionCost();
 
     /*//////////////////////////////////////////////////////////////
                             POSITION MANAGER

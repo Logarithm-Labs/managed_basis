@@ -130,6 +130,9 @@ contract BasisStrategy is
         IHedgeManager.AdjustPositionPayload requestParams;
         // entry/exit fees accrued by the vault that will be spend during utilization/deutilization
         uint256 reservedExecutionCost;
+        // entry/exit fees that will be deducted from the reservedExecution cost
+        // after completion of utilization/deutilization
+        uint256 utilizingExecutionCost;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisStrategy")) - 1)) & ~bytes32(uint256(0xff))
@@ -375,7 +378,11 @@ contract BasisStrategy is
 
         amount = amount > pendingUtilization ? pendingUtilization : amount;
 
-        _utilizeReservedExecutionCost(amount, pendingUtilization);
+        if (amount == pendingUtilization) {
+            $.utilizingExecutionCost = reservedExecutionCost();
+        } else {
+            $.utilizingExecutionCost = reservedExecutionCost().mulDiv(amount, pendingUtilization);
+        }
 
         // can only utilize when amount is positive
         if (amount == 0) {
@@ -459,12 +466,6 @@ contract BasisStrategy is
             isFullDeutilization = false;
         }
 
-        if (isFullDeutilization) {
-            _utilizeReservedExecutionCost(amount, amount);
-        } else {
-            _utilizeReservedExecutionCost(amount, pendingDeutilization_);
-        }
-
         // deutilize spot
         _spotManager.sell(amount, swapType, swapData);
 
@@ -475,6 +476,13 @@ contract BasisStrategy is
         // that means deutilizing for withdraw requests, then decreases
         // the collateral of hedge position as well.
         if (!_processingRebalanceDown) {
+            // waste the reserved execution cost
+            if (isFullDeutilization) {
+                $.utilizingExecutionCost = reservedExecutionCost();
+            } else {
+                $.utilizingExecutionCost = reservedExecutionCost().mulDiv(amount, pendingDeutilization_);
+            }
+
             if (_totalSupply == 0 || _exposure == amount) {
                 // in case of redeeming all by users,
                 // or selling out all product
@@ -669,6 +677,7 @@ contract BasisStrategy is
                 if (status == StrategyStatus.AWAITING_FINAL_DEUTILIZATION) {
                     // if hedge already adjusted
                     _setStrategyStatus(StrategyStatus.IDLE);
+                    _processUtilizingExecutionCost();
                     _processAssetsToWithdraw(address(_asset));
                 } else {
                     _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
@@ -693,10 +702,12 @@ contract BasisStrategy is
             // utilize is sync one, and position adjustment is final
             // hence, set status as idle
             _setStrategyStatus(StrategyStatus.IDLE);
+            _processUtilizingExecutionCost();
         } else {
             _afterDecreasePosition(params);
             if (status == StrategyStatus.AWAITING_FINAL_DEUTILIZATION) {
                 _setStrategyStatus(StrategyStatus.IDLE);
+                _processUtilizingExecutionCost();
                 _processAssetsToWithdraw(asset());
             } else if (status == StrategyStatus.DEUTILIZING) {
                 _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
@@ -1190,16 +1201,11 @@ contract BasisStrategy is
         _getBasisStrategyStorage().strategyStatus = newStatus;
     }
 
-    function _utilizeReservedExecutionCost(uint256 numerator, uint256 denominator) private {
-        if (numerator > denominator || denominator == 0) {
-            revert Errors.OverUtilizingReservedExecutionCost();
-        }
+    function _processUtilizingExecutionCost() private {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        if (numerator == denominator) {
-            $.reservedExecutionCost = 0;
-        } else if (numerator != 0) {
-            $.reservedExecutionCost = $.reservedExecutionCost.mulDiv(denominator - numerator, denominator);
-        }
+        uint256 _utilizingExecutionCost = $.utilizingExecutionCost;
+        delete $.utilizingExecutionCost;
+        $.reservedExecutionCost -= _utilizingExecutionCost;
     }
 
     /*//////////////////////////////////////////////////////////////
