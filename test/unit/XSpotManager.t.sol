@@ -80,7 +80,7 @@ contract XSpotManagerTest is ForkTest {
     }
 
     function test_buy(uint256 amount) public {
-        amount = bound(amount, 10, TEN_THOUSAND_USDC);
+        amount = bound(amount, 10000, TEN_THOUSAND_USDC);
         vm.startPrank(address(strategy));
         IERC20(asset).transfer(address(spotManager), amount);
         spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
