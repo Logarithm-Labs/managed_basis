@@ -173,11 +173,22 @@ contract XBasisStrategyTest is OffChainTest {
         assertFalse(state.upkeepNeeded, "upkeep");
     }
 
-    function _validateStateTransition(StrategyState memory state0, StrategyState memory state1) internal view {
+    function _validateStateTransition(StrategyState memory state0, StrategyState memory state1, bool profit)
+        internal
+        view
+    {
         if (state0.totalSupply != 0 && state1.totalSupply != 0) {
-            uint256 sharePrice0 = state0.totalAssets.mulDiv(vault.decimals(), state0.totalSupply);
-            uint256 sharePrice1 = state1.totalAssets.mulDiv(vault.decimals(), state1.totalSupply);
-            assertApproxEqRel(sharePrice0, sharePrice1, 0.01 ether, "share price");
+            uint256 sharePrice0 = state0.totalAssets.mulDiv(10 ** vault.decimals(), state0.totalSupply);
+            uint256 sharePrice1 = state1.totalAssets.mulDiv(10 ** vault.decimals(), state1.totalSupply);
+            if (profit && !state0.processingRebalance) {
+                assertGe(sharePrice1, sharePrice0, "share price shouldn't be decreased");
+            } else {
+                if (!state0.processingRebalance && state0.strategyStatus != 1 /*keeping status*/ ) {
+                    assertApproxEqAbs(sharePrice0, sharePrice1, 1, "share price should be invariant");
+                } else {
+                    assertApproxEqRel(sharePrice0, sharePrice1, 0.001 ether, "share price should be similar");
+                }
+            }
         }
 
         assertTrue(state0.pendingUtilization == 0 || state0.pendingDeutilization == 0, "utilizations");
@@ -251,7 +262,7 @@ contract XBasisStrategyTest is OffChainTest {
         StrategyState memory state0 = helper.getStrategyState();
         vault.deposit(assets, from);
         StrategyState memory state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, false);
     }
 
     function _mint(address from, uint256 shares) internal {
@@ -261,7 +272,7 @@ contract XBasisStrategyTest is OffChainTest {
         StrategyState memory state0 = helper.getStrategyState();
         vault.mint(shares, from);
         StrategyState memory state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, false);
     }
 
     function _utilize(uint256 amount) internal {
@@ -271,7 +282,7 @@ contract XBasisStrategyTest is OffChainTest {
         strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
         spotManager.executeCallback();
         StrategyState memory state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, false);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.UTILIZING));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
@@ -279,7 +290,7 @@ contract XBasisStrategyTest is OffChainTest {
         state0 = state1;
         _executeOrder();
         state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, true);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
     }
 
@@ -290,7 +301,7 @@ contract XBasisStrategyTest is OffChainTest {
         strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
         _executeOrder();
         StrategyState memory state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, false);
         // assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.DEUTILIZING));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
@@ -298,7 +309,7 @@ contract XBasisStrategyTest is OffChainTest {
         state0 = state1;
         spotManager.executeCallback();
         state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, true);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
     }
 
@@ -326,13 +337,13 @@ contract XBasisStrategyTest is OffChainTest {
             step++;
             console.log(string(abi.encodePacked(operation, ":performUpkeep - ", step, ": ")), gasWasted);
             StrategyState memory state1 = helper.getStrategyState();
-            _validateStateTransition(state0, state1);
+            _validateStateTransition(state0, state1, true);
             helper.logStrategyState("perform", state1);
             state0 = state1;
             spotManager.executeCallback();
             state1 = helper.getStrategyState();
             helper.logStrategyState("execute", state1);
-            _validateStateTransition(state0, state1);
+            _validateStateTransition(state0, state1, false);
             (upkeepNeeded, performData) = strategy.checkUpkeep("");
         }
     }
@@ -553,7 +564,7 @@ contract XBasisStrategyTest is OffChainTest {
         vm.stopPrank();
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        _deutilize(pendingDeutilization / 2);
+        _deutilize(pendingDeutilization * 2 / 3);
 
         bytes32 userRequestKey = vault.getWithdrawKey(user1, 0);
         bytes32 metaVaultRequestKey = vault.getWithdrawKey(metaVault, 0);
@@ -894,12 +905,7 @@ contract XBasisStrategyTest is OffChainTest {
         _deutilize(pendingDeutilization);
         (upkeepNeeded, performData) = _checkUpkeep("rebalanceDown_deutilize_withLessPendingWithdrawals");
         assertTrue(upkeepNeeded, "upkeep is needed");
-        if (upkeepNeeded) {
-            vm.startPrank(forwarder);
-            strategy.performUpkeep(performData);
-            _executeOrder();
-            spotManager.executeCallback();
-        }
+        _performKeep("");
     }
 
     function test_performUpkeep_rebalanceDown_deutilize_withGreaterPendingWithdrawals()
