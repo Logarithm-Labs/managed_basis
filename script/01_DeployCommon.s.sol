@@ -30,7 +30,9 @@ contract ArbDeploy is Script {
     uint256 constant limitDecreaseCollateral = 50 * 1e6;
 
     function run() public {
-        vm.startBroadcast();
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
 
         LogarithmOracle oracle = DeployHelper.deployLogarithmOracle(owner);
         // configure oracle for USDC
