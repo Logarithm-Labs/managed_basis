@@ -98,6 +98,8 @@ contract BasisStrategy is
         bool hedgeManagerNeedKeep;
         // rebalance up by decreasing collateral
         uint256 deltaCollateralToDecrease;
+        // eliminate pending exection cost
+        bool clearReservedExecutionCost;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -126,6 +128,11 @@ contract BasisStrategy is
         bool processingRebalanceDown;
         // adjust position request to be used to check response
         IHedgeManager.AdjustPositionPayload requestParams;
+        // entry/exit fees accrued by the vault that will be spend during utilization/deutilization
+        uint256 reservedExecutionCost;
+        // entry/exit fees that will be deducted from the reservedExecution cost
+        // after completion of utilization/deutilization
+        uint256 utilizingExecutionCost;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisStrategy")) - 1)) & ~bytes32(uint256(0xff))
@@ -364,11 +371,18 @@ contract BasisStrategy is
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         ILogarithmVault _vault = $.vault;
+        uint256 _targetLeverage = targetLeverage();
         uint256 pendingUtilization = _pendingUtilization(
-            _vault.totalSupply(), _vault.idleAssets(), targetLeverage(), processingRebalanceDown(), paused()
+            _vault.totalSupply(), _vault.idleAssets(), _targetLeverage, processingRebalanceDown(), paused()
         );
 
         amount = amount > pendingUtilization ? pendingUtilization : amount;
+
+        if (amount == pendingUtilization) {
+            $.utilizingExecutionCost = reservedExecutionCost();
+        } else {
+            $.utilizingExecutionCost = reservedExecutionCost().mulDiv(amount, pendingUtilization);
+        }
 
         // can only utilize when amount is positive
         if (amount == 0) {
@@ -457,6 +471,13 @@ contract BasisStrategy is
         // that means deutilizing for withdraw requests, then decreases
         // the collateral of hedge position as well.
         if (!_processingRebalanceDown) {
+            // waste the reserved execution cost
+            if (isFullDeutilization) {
+                $.utilizingExecutionCost = reservedExecutionCost();
+            } else {
+                $.utilizingExecutionCost = reservedExecutionCost().mulDiv(amount, pendingDeutilization_);
+            }
+
             if (_totalSupply == 0 || _exposure == amount) {
                 // in case of redeeming all by users,
                 // or selling out all product
@@ -494,6 +515,11 @@ contract BasisStrategy is
         _adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false);
     }
 
+    function reserveExecutionCost(uint256 amount) external authCaller(vault()) {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        $.reservedExecutionCost += amount;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             KEEPER LOGIC   
     //////////////////////////////////////////////////////////////*/
@@ -517,16 +543,9 @@ contract BasisStrategy is
 
         upkeepNeeded = result.emergencyDeutilizationAmount > 0 || result.deltaCollateralToIncrease > 0
             || result.clearProcessingRebalanceDown || result.hedgeDeviationInTokens != 0 || result.hedgeManagerNeedKeep
-            || result.deltaCollateralToDecrease > 0;
+            || result.deltaCollateralToDecrease > 0 || result.clearReservedExecutionCost;
 
-        performData = abi.encode(
-            result.emergencyDeutilizationAmount,
-            result.deltaCollateralToIncrease,
-            result.clearProcessingRebalanceDown,
-            result.hedgeDeviationInTokens,
-            result.hedgeManagerNeedKeep,
-            result.deltaCollateralToDecrease
-        );
+        performData = abi.encode(result);
 
         return (upkeepNeeded, performData);
     }
@@ -538,6 +557,9 @@ contract BasisStrategy is
         _setStrategyStatus(StrategyStatus.KEEPING);
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        if (result.clearReservedExecutionCost) {
+            $.reservedExecutionCost = 0;
+        }
         if (result.emergencyDeutilizationAmount > 0) {
             $.processingRebalanceDown = true;
             _setStrategyStatus(StrategyStatus.DEUTILIZING);
@@ -648,6 +670,7 @@ contract BasisStrategy is
                 if (status == StrategyStatus.AWAITING_FINAL_DEUTILIZATION) {
                     // if hedge already adjusted
                     _setStrategyStatus(StrategyStatus.IDLE);
+                    _processUtilizingExecutionCost();
                     _processAssetsToWithdraw(address(_asset));
                 } else {
                     _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
@@ -672,10 +695,12 @@ contract BasisStrategy is
             // utilize is sync one, and position adjustment is final
             // hence, set status as idle
             _setStrategyStatus(StrategyStatus.IDLE);
+            _processUtilizingExecutionCost();
         } else {
             _afterDecreasePosition(params);
             if (status == StrategyStatus.AWAITING_FINAL_DEUTILIZATION) {
                 _setStrategyStatus(StrategyStatus.IDLE);
+                _processUtilizingExecutionCost();
                 _processAssetsToWithdraw(asset());
             } else if (status == StrategyStatus.DEUTILIZING) {
                 _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
@@ -700,7 +725,7 @@ contract BasisStrategy is
     /// @return pendingDeutilizationInProduct The available pending deutilzation amount in product.
     /// The calculation of this amount depends on the goal of deutilizing whether it is for processing withdraw requests or for rebalancing down.
     function pendingUtilizations()
-        public
+        external
         view
         returns (uint256 pendingUtilizationInAsset, uint256 pendingDeutilizationInProduct)
     {
@@ -804,7 +829,7 @@ contract BasisStrategy is
                 isIncrease: isIncrease
             });
             $.requestParams = requestParams;
-            $.hedgeManager.adjustPosition(requestParams);
+            _hedgeManager.adjustPosition(requestParams);
             return true;
         } else {
             return false;
@@ -838,8 +863,9 @@ contract BasisStrategy is
                 _checkNeedRebalance(currentLeverage, _targetLeverage, config().rebalanceDeviationThreshold());
         }
 
+        uint256 idleAssets = _vault.idleAssets();
+
         if (rebalanceDownNeeded) {
-            uint256 idleAssets = _vault.idleAssets();
             uint256 minIncreaseCollateral = _hedgeManager.increaseCollateralMin();
             result.deltaCollateralToIncrease = _calculateDeltaCollateralForRebalance(
                 _hedgeManager.positionNetBalance(), currentLeverage, _targetLeverage
@@ -869,6 +895,7 @@ contract BasisStrategy is
                     result.emergencyDeutilizationAmount = min;
                 }
             }
+
             return result;
         }
 
@@ -895,6 +922,13 @@ contract BasisStrategy is
             if (result.deltaCollateralToDecrease < limitDecreaseCollateral) {
                 result.deltaCollateralToDecrease = 0;
             }
+        }
+
+        // clear reserved execution cost when there is no idle to utilize in vault
+        // and when there is no pending withdraw request
+        // if it is none-zero
+        if (idleAssets == 0 && assetsToDeutilize() == 0 && $.reservedExecutionCost > 0) {
+            result.clearReservedExecutionCost = true;
         }
 
         return result;
@@ -1158,6 +1192,13 @@ contract BasisStrategy is
         _getBasisStrategyStorage().strategyStatus = newStatus;
     }
 
+    function _processUtilizingExecutionCost() private {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        uint256 _utilizingExecutionCost = $.utilizingExecutionCost;
+        delete $.utilizingExecutionCost;
+        $.reservedExecutionCost -= _utilizingExecutionCost;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         STORAGE GETTERS
     //////////////////////////////////////////////////////////////*/
@@ -1231,5 +1272,10 @@ contract BasisStrategy is
     /// @notice Tells if strategy is in rebalancing down.
     function processingRebalanceDown() public view returns (bool) {
         return _getBasisStrategyStorage().processingRebalanceDown;
+    }
+
+    /// @notice execution cost to be processed in the next utiliztaion / deutilization.
+    function reservedExecutionCost() public view returns (uint256) {
+        return _getBasisStrategyStorage().reservedExecutionCost;
     }
 }

@@ -164,11 +164,22 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertFalse(state.upkeepNeeded, "upkeep");
     }
 
-    function _validateStateTransition(StrategyState memory state0, StrategyState memory state1) internal pure {
+    function _validateStateTransition(StrategyState memory state0, StrategyState memory state1, bool profit)
+        internal
+        view
+    {
         if (state0.totalSupply != 0 && state1.totalSupply != 0) {
-            uint256 sharePrice0 = state0.totalAssets.mulDiv(1 ether, state0.totalSupply);
-            uint256 sharePrice1 = state1.totalAssets.mulDiv(1 ether, state1.totalSupply);
-            assertApproxEqRel(sharePrice0, sharePrice1, 0.01 ether, "share price");
+            uint256 sharePrice0 = state0.totalAssets.mulDiv(10 ** vault.decimals(), state0.totalSupply);
+            uint256 sharePrice1 = state1.totalAssets.mulDiv(10 ** vault.decimals(), state1.totalSupply);
+            if (profit && !state0.processingRebalance) {
+                assertGe(sharePrice1, sharePrice0, "share price shouldn't be decreased");
+            } else {
+                if (!state0.processingRebalance && state0.strategyStatus != 1 /*keeping status*/ ) {
+                    assertApproxEqAbs(sharePrice0, sharePrice1, 1, "share price should be invariant");
+                } else {
+                    assertApproxEqRel(sharePrice0, sharePrice1, 0.001 ether, "share price should be similar");
+                }
+            }
         }
 
         assertTrue(state0.pendingUtilization == 0 || state0.pendingDeutilization == 0, "utilizations");
@@ -242,7 +253,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         StrategyState memory state0 = helper.getStrategyState();
         vault.deposit(assets, from);
         StrategyState memory state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, false);
     }
 
     function _mint(address from, uint256 shares) internal {
@@ -252,7 +263,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         StrategyState memory state0 = helper.getStrategyState();
         vault.mint(shares, from);
         StrategyState memory state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, false);
     }
 
     function _utilize(uint256 amount) internal {
@@ -261,7 +272,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         StrategyState memory state0 = helper.getStrategyState();
         strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
         StrategyState memory state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, false);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.UTILIZING));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
@@ -269,7 +280,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         state0 = state1;
         _executeOrder();
         state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, true);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
     }
 
@@ -279,7 +290,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.startPrank(operator);
         strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
         StrategyState memory state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, false);
         // assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.DEUTILIZING));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
@@ -287,7 +298,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         state0 = state1;
         _executeOrder();
         state1 = helper.getStrategyState();
-        _validateStateTransition(state0, state1);
+        _validateStateTransition(state0, state1, true);
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
     }
 
@@ -321,13 +332,12 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
             step++;
             console.log(string(abi.encodePacked(operation, ":performUpkeep - ", step, ": ")), gasWasted);
             StrategyState memory state1 = helper.getStrategyState();
-            _validateStateTransition(state0, state1);
+            _validateStateTransition(state0, state1, true);
             helper.logStrategyState("perform", state1);
             state0 = state1;
             _executeOrder();
             state1 = helper.getStrategyState();
-            helper.logStrategyState("execute", state1);
-            _validateStateTransition(state0, state1);
+            _validateStateTransition(state0, state1, false);
             (upkeepNeeded, performData) = strategy.checkUpkeep("");
         }
     }
@@ -548,7 +558,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.stopPrank();
 
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
-        _deutilize(pendingDeutilization / 2);
+        _deutilize(pendingDeutilization * 2 / 3);
 
         bytes32 userRequestKey = vault.getWithdrawKey(user1, 0);
         bytes32 metaVaultRequestKey = vault.getWithdrawKey(metaVault, 0);
@@ -760,10 +770,10 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _deutilize(pendingDeutilization);
 
         bytes32 requestKey1 = vault.getWithdrawKey(user1, 0);
-        assertTrue(vault.isClaimable(requestKey1));
+        assertTrue(vault.isClaimable(requestKey1), "user1 claimable");
 
         bytes32 requestKey2 = vault.getWithdrawKey(user2, 0);
-        assertTrue(vault.isClaimable(requestKey2));
+        assertTrue(vault.isClaimable(requestKey2), "user2 claimable");
 
         LogarithmVault.WithdrawRequest memory withdrawRequest1 = vault.withdrawRequests(requestKey1);
         uint256 balanceBefore1 = IERC20(asset).balanceOf(user1);
@@ -785,12 +795,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 5 / 10);
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceUp");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertTrue(rebalanceUpNeeded);
-        assertFalse(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertTrue(decodedPerformData.rebalanceUpNeeded);
+        assertFalse(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
 
         // position.sizeInUsd is changed due to realization of positive pnl
         // so need to execute performUpKeep several times
@@ -807,12 +816,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
 
         _performKeep("rebalanceDown_whenIdleEnough");
 
@@ -827,12 +835,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
 
         _performKeep("rebalanceDown_whenIdleNotEnough");
 
@@ -850,12 +857,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
         uint256 leverageBefore = _hedgeManager().currentLeverage();
         _performKeep("rebalanceDown_whenIdleNotEnough");
         uint256 leverageAfter = _hedgeManager().currentLeverage();
@@ -878,12 +884,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (bool upkeepNeeded, bytes memory performData) =
             _checkUpkeep("rebalanceDown_deutilize_withLessPendingWithdrawals");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
         uint256 leverageBefore = _hedgeManager().currentLeverage();
         _performKeep("rebalanceDown_deutilize_withLessPendingWithdrawals");
         uint256 leverageAfter = _hedgeManager().currentLeverage();
@@ -894,11 +899,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _deutilize(pendingDeutilization);
         (upkeepNeeded, performData) = _checkUpkeep("rebalanceDown_deutilize_withLessPendingWithdrawals");
         assertTrue(upkeepNeeded, "upkeep is needed");
-        if (upkeepNeeded) {
-            vm.startPrank(forwarder);
-            strategy.performUpkeep(performData);
-            _executeOrder();
-        }
+        _performKeep("");
     }
 
     function test_performUpkeep_rebalanceDown_deutilize_withGreaterPendingWithdrawals()
@@ -920,12 +921,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (bool upkeepNeeded, bytes memory performData) =
             _checkUpkeep("rebalanceDown_deutilize_withGreaterPendingWithdrawal");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertFalse(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
         uint256 leverageBefore = _hedgeManager().currentLeverage();
         _performKeep("rebalanceDown_deutilize_withGreaterPendingWithdrawal");
         uint256 leverageAfter = _hedgeManager().currentLeverage();
@@ -947,12 +947,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenNotIdle");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
-        assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertTrue(decodedPerformData.rebalanceDownNeeded, "rebalanceDownNeeded");
         // assertTrue(deleverageNeeded, "deleverageNeeded");
-        assertFalse(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
 
         _performKeep("emergencyRebalanceDown_whenNotIdle");
     }
@@ -969,12 +968,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded);
-        assertTrue(rebalanceDownNeeded);
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
         // assertTrue(deleverageNeeded);
-        assertFalse(hedgeManagerNeedKeep);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
         _performKeep("emergencyRebalanceDown_whenIdleNotEnough");
         assertTrue(IERC20(asset).balanceOf(address(vault)) > 0);
     }
@@ -992,12 +990,11 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE), "not idle");
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (bool rebalanceDownNeeded,,, bool hedgeManagerNeedKeep, bool rebalanceUpNeeded) =
-            helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
-        assertTrue(rebalanceDownNeeded, "rebalanceDownNeeded");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertTrue(decodedPerformData.rebalanceDownNeeded, "rebalanceDownNeeded");
         // assertTrue(deleverageNeeded, "deleverageNeeded");
-        assertFalse(hedgeManagerNeedKeep, "rebalanceUpNeeded");
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep, "rebalanceUpNeeded");
         vm.startPrank(forwarder);
         strategy.performUpkeep(performData);
         _executeOrder();
@@ -1012,19 +1009,13 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeDeviation_down");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool hedgeManagerNeedKeep,
-            bool rebalanceUpNeeded
-        ) = helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
-        assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
-        assertFalse(deleverageNeeded, "deleverageNeeded");
-        assertFalse(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertFalse(decodedPerformData.rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertFalse(decodedPerformData.deleverageNeeded, "deleverageNeeded");
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
 
-        assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
+        assertTrue(decodedPerformData.hedgeDeviationInTokens != 0, "hedge deviation");
 
         _performKeep("hedgeDeviation_down");
     }
@@ -1038,19 +1029,13 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeDeviation_down");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool hedgeManagerNeedKeep,
-            bool rebalanceUpNeeded
-        ) = helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
-        assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
-        assertFalse(deleverageNeeded, "deleverageNeeded");
-        assertFalse(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertFalse(decodedPerformData.rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertFalse(decodedPerformData.deleverageNeeded, "deleverageNeeded");
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
 
-        assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
+        assertTrue(decodedPerformData.hedgeDeviationInTokens != 0, "hedge deviation");
 
         _performKeep("hedgeDeviation_down");
         assertEq(spotManager.exposure(), 0, "exposure");
@@ -1063,19 +1048,13 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeDeviation_up");
         assertTrue(upkeepNeeded, "upkeepNeeded");
-        (
-            bool rebalanceDownNeeded,
-            bool deleverageNeeded,
-            int256 hedgeDeviationInTokens,
-            bool hedgeManagerNeedKeep,
-            bool rebalanceUpNeeded
-        ) = helper.decodePerformData(performData);
-        assertFalse(rebalanceUpNeeded, "rebalanceUpNeeded");
-        assertFalse(rebalanceDownNeeded, "rebalanceDownNeeded");
-        assertFalse(deleverageNeeded, "deleverageNeeded");
-        assertFalse(hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded, "rebalanceUpNeeded");
+        assertFalse(decodedPerformData.rebalanceDownNeeded, "rebalanceDownNeeded");
+        assertFalse(decodedPerformData.deleverageNeeded, "deleverageNeeded");
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep, "hedgeManagerNeedKeep");
 
-        assertTrue(hedgeDeviationInTokens != 0, "hedge deviation");
+        assertTrue(decodedPerformData.hedgeDeviationInTokens != 0, "hedge deviation");
 
         _performKeep("hedgeDeviation_up");
     }
@@ -1291,6 +1270,156 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.stopPrank();
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
-        console.log("vault.idleAssets()", vault.idleAssets());
+    }
+
+    function test_executionCost_deposit_woWithdrawRequest_withIdle() public afterDeposited {
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_deposit_woWithdrawRequest_woIdle() public afterFullUtilized {
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_deposit_withdrawRequest() public afterWithdrawRequestCreated {
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertNotEq(vault.balanceOf(user1), 0, "user1 has shares");
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_mint_woWithdrawRequest_withIdle() public afterDeposited {
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC);
+        _mint(user2, shares);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_mint_woWithdrawRequest_woIdle() public afterFullUtilized {
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        uint256 shares = vault.previewDeposit(TEN_THOUSANDS_USDC);
+        _mint(user2, shares);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_mint_withdrawRequest() public afterWithdrawRequestCreated {
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertNotEq(vault.balanceOf(user1), 0, "user1 has shares");
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_redeem_woIdleAssets() public afterFullUtilized {
+        // user2 deposit and it is utilized fully
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+
+        // user1 request redeem
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_redeem_idleAssets() public afterFullUtilized {
+        // user2 deposit and it is utilized partially to make idle
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset / 2);
+
+        // user1 request redeem
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertNotEq(vault.balanceOf(user1), 0, "user1 has shares");
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_withdraw_woIdleAssets() public afterFullUtilized {
+        // user2 deposit and it is utilized fully
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+
+        // user1 request redeem
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        vm.startPrank(user1);
+        uint256 assets = vault.previewRedeem(vault.balanceOf(user1));
+        vault.requestWithdraw(assets, user1, user1);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_executionCost_withdraw_idleAssets() public afterFullUtilized {
+        // user2 deposit and it is utilized partially to make idle
+        _deposit(user2, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset / 2);
+
+        // user1 request redeem
+        uint256 sharePrice0 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertNotEq(vault.balanceOf(user1), 0, "user1 has shares");
+        vm.startPrank(user1);
+        uint256 assets = vault.previewRedeem(vault.balanceOf(user1));
+        vault.requestWithdraw(assets, user1, user1);
+        uint256 sharePrice1 = vault.totalAssets().mulDiv(10 ** vault.decimals(), vault.totalSupply());
+        assertEq(sharePrice0, sharePrice1, "share price shouldn't be affected");
+    }
+
+    function test_idleNotAvailable_whenUtilizing() public afterDeposited {
+        vm.startPrank(operator);
+        (uint256 pendingUtilization,) = strategy.pendingUtilizations();
+        strategy.utilize(pendingUtilization, ISpotManager.SwapType.MANUAL, "");
+        assertEq(vault.idleAssets(), 0, "idle should be 0");
+    }
+
+    function test_clearReservedExecutionCost_entryCost() public afterFullUtilized afterDeposited validateFinalState {
+        uint256 reservedExecutionCost0 = strategy.reservedExecutionCost();
+        assertEq(
+            reservedExecutionCost0,
+            TEN_THOUSANDS_USDC.mulDiv(entryCost, 1 ether + entryCost, Math.Rounding.Ceil),
+            "reserved cost not 0"
+        );
+        (bool upkeepNeeded,) = strategy.checkUpkeep("");
+        assertFalse(upkeepNeeded, "upkeed no need");
+        vm.startPrank(user1);
+        vault.requestWithdraw(TEN_THOUSANDS_USDC, user1, user1);
+        bytes memory performData;
+        (upkeepNeeded, performData) = strategy.checkUpkeep("");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertTrue(upkeepNeeded, "upkeep needed");
+        assertTrue(decodedPerformData.clearReservedExecutionCost, "clear");
+        strategy.performUpkeep(performData);
+        uint256 reservedExecutionCost1 = strategy.reservedExecutionCost();
+        assertEq(reservedExecutionCost1, 0, "cleared");
+    }
+
+    function test_clearReservedExecutionCost_exitCost() public afterMultipleWithdrawRequestCreated validateFinalState {
+        uint256 reservedExecutionCost0 = strategy.reservedExecutionCost();
+        assertTrue(reservedExecutionCost0 > 0, "reserved cost not 0");
+        (bool upkeepNeeded,) = strategy.checkUpkeep("");
+        assertFalse(upkeepNeeded, "upkeed no need");
+        uint256 pendingWithdraw = vault.totalPendingWithdraw();
+        _deposit(user1, pendingWithdraw);
+        bytes memory performData;
+        (upkeepNeeded, performData) = strategy.checkUpkeep("");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertTrue(upkeepNeeded, "upkeep needed");
+        assertTrue(decodedPerformData.clearReservedExecutionCost, "clear");
+        strategy.performUpkeep(performData);
+        uint256 reservedExecutionCost1 = strategy.reservedExecutionCost();
+        assertEq(reservedExecutionCost1, 0, "cleared");
     }
 }
