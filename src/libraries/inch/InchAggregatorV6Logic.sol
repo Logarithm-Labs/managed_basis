@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import "src/externals/1inch/interfaces/IAggregationRouterV6.sol";
 import "src/externals/uniswap/interfaces/IUniswapPool.sol";
 import "src/libraries/utils/Errors.sol";
@@ -13,6 +13,7 @@ import "./ProtocolLib.sol";
 library InchAggregatorV6Logic {
     using AddressLib for Address;
     using ProtocolLib for Address;
+    using Math for uint256;
 
     address private constant _AGGREGATOR_V6_ADDRESS = 0x111111125421cA6dc452d289314280a0f8842A65;
     uint256 private constant _UNISWAP_ZERO_FOR_ONE_OFFSET = 247;
@@ -67,10 +68,6 @@ library InchAggregatorV6Logic {
         // unpack swap data
         (address srcToken, address dstToken, uint256 amountIn, address receiver) = _unpackSwapData(data);
 
-        // validate swap data and approve ERC20
-        if (amount != amountIn) {
-            revert Errors.InchInvalidAmount(amount, amountIn);
-        }
         if (isUtilize) {
             if (srcToken != asset) {
                 revert Errors.InchInvalidSourceToken(srcToken, asset);
@@ -94,15 +91,22 @@ library InchAggregatorV6Logic {
             sourceBalance = address(this).balance;
         } else {
             sourceBalance = IERC20(srcToken).balanceOf(address(this));
-            IERC20(srcToken).approve(_AGGREGATOR_V6_ADDRESS, amountIn);
+            IERC20(srcToken).approve(_AGGREGATOR_V6_ADDRESS, amount);
         }
-        if (sourceBalance < amountIn) {
-            revert Errors.InchInsufficientSourceBalance(amountIn, sourceBalance);
+        if (sourceBalance < amount) {
+            revert Errors.InchInsufficientSourceBalance(amount, sourceBalance);
         }
 
         // perform swap
         bytes memory result;
-        (success, result) = _AGGREGATOR_V6_ADDRESS.call{value: msg.value}(data);
+        if (amount != amountIn) {
+            // the only case when this happens is to swap across chains
+            // amount is the actual value by subtracting fees from amountIn.
+            (success, result) = _AGGREGATOR_V6_ADDRESS.call{value: msg.value}(_repackSwapDataWith(data, amount));
+        } else {
+            (success, result) = _AGGREGATOR_V6_ADDRESS.call{value: msg.value}(data);
+        }
+
         if (success) {
             amountOut = abi.decode(result, (uint256));
         } else {
@@ -217,5 +221,67 @@ library InchAggregatorV6Logic {
             }
             dstToken = _getTokenOut(finalDex);
         }
+    }
+
+    function _repackSwapDataWith(bytes calldata data, uint256 modifiedAmount)
+        internal
+        pure
+        returns (bytes memory modifiedData)
+    {
+        bytes4 selector = bytes4(data[:4]);
+        if (selector == IAggregationRouterV6.swap.selector) {
+            (address executor, IAggregationRouterV6.SwapDescription memory desc, bytes memory swapData) =
+                abi.decode(data[4:], (address, IAggregationRouterV6.SwapDescription, bytes));
+            desc.minReturnAmount = desc.minReturnAmount.mulDiv(modifiedAmount, desc.amount);
+            desc.amount = modifiedAmount;
+            modifiedData = abi.encodePacked(selector, abi.encode(executor, desc, swapData));
+        } else {
+            if (selector == IAggregationRouterV6.unoswap.selector) {
+                (Address token, uint256 amount, uint256 minReturn, Address dex) =
+                    abi.decode(data[4:], (Address, uint256, uint256, Address));
+                minReturn = minReturn.mulDiv(modifiedAmount, amount);
+                modifiedData = abi.encodePacked(selector, abi.encode(token, modifiedAmount, minReturn, dex));
+            } else if (selector == IAggregationRouterV6.unoswapTo.selector) {
+                (Address to, Address token, uint256 amount, uint256 minReturn, Address dex) =
+                    abi.decode(data[4:], (Address, Address, uint256, uint256, Address));
+                minReturn = minReturn.mulDiv(modifiedAmount, amount);
+                modifiedData = abi.encodePacked(selector, abi.encode(to, token, modifiedAmount, minReturn, dex));
+            } else if (selector == IAggregationRouterV6.unoswap2.selector) {
+                (Address token, uint256 amount, uint256 minReturn, Address dex, Address dex2) =
+                    abi.decode(data[4:], (Address, uint256, uint256, Address, Address));
+                minReturn = minReturn.mulDiv(modifiedAmount, amount);
+                modifiedData = abi.encodePacked(selector, abi.encode(token, modifiedAmount, minReturn, dex, dex2));
+            } else if (selector == IAggregationRouterV6.unoswapTo2.selector) {
+                (Address to, Address token, uint256 amount, uint256 minReturn, Address dex, Address dex2) =
+                    abi.decode(data[4:], (Address, Address, uint256, uint256, Address, Address));
+                minReturn = minReturn.mulDiv(modifiedAmount, amount);
+                modifiedData = abi.encodePacked(selector, abi.encode(to, token, modifiedAmount, minReturn, dex, dex2));
+            } else if (selector == IAggregationRouterV6.unoswap3.selector) {
+                (Address token, uint256 amount, uint256 minReturn, Address dex, Address dex2, Address dex3) =
+                    abi.decode(data[4:], (Address, uint256, uint256, Address, Address, Address));
+                minReturn = minReturn.mulDiv(modifiedAmount, amount);
+                modifiedData = abi.encodePacked(selector, abi.encode(token, modifiedAmount, minReturn, dex, dex2, dex3));
+            } else if (selector == IAggregationRouterV6.unoswapTo3.selector) {
+                (Address to, Address token, uint256 amount, uint256 minReturn, Address dex, Address dex2, Address dex3)
+                = abi.decode(data[4:], (Address, Address, uint256, uint256, Address, Address, Address));
+                minReturn = minReturn.mulDiv(modifiedAmount, amount);
+                modifiedData =
+                    abi.encodePacked(selector, abi.encode(to, token, modifiedAmount, minReturn, dex, dex2, dex3));
+            } else if (selector == IAggregationRouterV6.ethUnoswap.selector) {
+                modifiedData = data;
+            } else if (selector == IAggregationRouterV6.ethUnoswapTo.selector) {
+                modifiedData = data;
+            } else if (selector == IAggregationRouterV6.ethUnoswap2.selector) {
+                modifiedData = data;
+            } else if (selector == IAggregationRouterV6.ethUnoswapTo2.selector) {
+                modifiedData = data;
+            } else if (selector == IAggregationRouterV6.ethUnoswap3.selector) {
+                modifiedData = data;
+            } else if (selector == IAggregationRouterV6.ethUnoswapTo3.selector) {
+                modifiedData = data;
+            }
+        }
+
+        return modifiedData;
     }
 }

@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.0;
+
+library BscAddresses {
+    address constant USDC = 0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d;
+    address constant DOGE = 0xbA2aE424d960c26247Dd6c32edC70B295c744C43;
+    address constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
+    address constant USDT = 0x55d398326f99059fF775485246999027B3197955;
+    address constant STARGATE_POOL_USDC = 0x962Bd449E630b0d928f308Ce63f1A21F02576057;
+
+    address constant PCS_V3_POOL_DOGE_WBNB = 0xce6160bB594fC055c943F59De92ceE30b8c6B32c;
+    address constant PCS_V3_POOL_WBNB_USDC = 0xf2688Fb5B81049DFB7703aDa5e770543770612C4;
+
+    address constant LOGARITHM_MESSENGER = 0x9Ca2d751B68B325aC0d2820c2E765b1089cDD915;
+}

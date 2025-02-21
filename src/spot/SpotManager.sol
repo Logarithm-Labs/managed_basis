@@ -62,16 +62,6 @@ contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, IS
     }
 
     /*//////////////////////////////////////////////////////////////
-                                 EVENTS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @dev Emitted when product is bought in spot markets.
-    event SpotBuy(uint256 assetDelta, uint256 productDelta);
-
-    /// @dev Emitted when product is sold in spot markets.
-    event SpotSell(uint256 assetDelta, uint256 productDelta);
-
-    /*//////////////////////////////////////////////////////////////
                                MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
@@ -105,7 +95,7 @@ contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, IS
         _setManualSwapPath(_assetToProductSwapPath, _asset, _product);
 
         // approve strategy to max amount
-        IERC20(_asset).approve($.strategy, type(uint256).max);
+        IERC20(_asset).approve(_strategy, type(uint256).max);
     }
 
     function _setManualSwapPath(address[] calldata _assetToProductSwapPath, address _asset, address _product) private {
