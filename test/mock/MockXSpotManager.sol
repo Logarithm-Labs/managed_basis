@@ -174,7 +174,6 @@ contract MockXSpotManager is ISpotManager, ISwapper {
     function executeCallback() external {
         if (pendingBuyParams.isPending) {
             _getSpotManagerStorage().exposure += pendingBuyParams.products;
-            emit SpotBuy(pendingSellParams.assets, pendingBuyParams.products);
             delete pendingAssets;
             IBasisStrategy(strategy()).spotBuyCallback(
                 pendingBuyParams.assets, pendingBuyParams.products, block.timestamp
@@ -182,7 +181,6 @@ contract MockXSpotManager is ISpotManager, ISwapper {
             delete pendingBuyParams;
         } else if (pendingSellParams.isPending) {
             _getSpotManagerStorage().exposure -= pendingSellParams.products;
-            emit SpotSell(pendingSellParams.assets, pendingSellParams.products);
             IBasisStrategy(strategy()).spotSellCallback(
                 pendingSellParams.assets, pendingSellParams.products, block.timestamp
             );
