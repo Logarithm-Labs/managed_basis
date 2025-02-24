@@ -1439,4 +1439,61 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 reservedExecutionCost1 = strategy.reservedExecutionCost();
         assertEq(reservedExecutionCost1, 0, "cleared");
     }
+
+    function test_sweepVault_afterClaim() public afterFullUtilized {
+        vm.startPrank(user1);
+        bytes32 key = vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+
+        vm.startPrank(owner);
+        vm.expectRevert();
+        vault.sweep(owner);
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilizeWithoutExecution(pendingDeutilization);
+
+        vm.startPrank(owner);
+        vm.expectRevert();
+        vault.sweep(owner);
+
+        _executeOrder();
+
+        uint256 idleAssets = vault.idleAssets();
+        assertNotEq(idleAssets, 0, "not zero idle");
+
+        vm.startPrank(owner);
+        vm.expectRevert();
+        vault.sweep(owner);
+
+        vm.startPrank(user1);
+        vault.claim(key);
+
+        address receiver = makeAddr("receiver");
+        vm.startPrank(owner);
+        vault.sweep(receiver);
+
+        assertEq(IERC20(asset).balanceOf(receiver), 0);
+    }
+
+    function test_sweepVault_woClaim() public {
+        _deposit(user1, TEN_THOUSANDS_USDC);
+
+        vm.startPrank(owner);
+        vm.expectRevert();
+        vault.sweep(owner);
+
+        vm.startPrank(user1);
+        bytes32 key = vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+        assertEq(key, bytes32(0), "no request");
+
+        uint256 idleAssets = vault.idleAssets();
+        assertNotEq(idleAssets, 0, "not zero idle");
+
+        address receiver = makeAddr("receiver");
+        vm.startPrank(owner);
+        vault.sweep(receiver);
+
+        assertEq(vault.idleAssets(), 0, "zero idle");
+
+        assertEq(IERC20(asset).balanceOf(receiver), idleAssets);
+    }
 }
