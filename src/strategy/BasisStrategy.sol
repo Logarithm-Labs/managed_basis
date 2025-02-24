@@ -372,16 +372,19 @@ contract BasisStrategy is
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         ILogarithmVault _vault = $.vault;
         uint256 _targetLeverage = targetLeverage();
-        uint256 pendingUtilization = _pendingUtilization(
-            _vault.totalSupply(), _vault.idleAssets(), _targetLeverage, processingRebalanceDown(), paused()
-        );
+        uint256 _idleAssets = _vault.idleAssets();
+        uint256 pendingUtilization =
+            _pendingUtilization(_vault.totalSupply(), _idleAssets, _targetLeverage, processingRebalanceDown(), paused());
 
         amount = amount > pendingUtilization ? pendingUtilization : amount;
 
+        uint256 collateralDeltaAmount;
         if (amount == pendingUtilization) {
             $.utilizingExecutionCost = reservedExecutionCost();
+            collateralDeltaAmount = _idleAssets - amount;
         } else {
             $.utilizingExecutionCost = reservedExecutionCost().mulDiv(amount, pendingUtilization);
+            collateralDeltaAmount = amount.mulDiv(Constants.FLOAT_PRECISION, _targetLeverage);
         }
 
         // can only utilize when amount is positive
@@ -390,7 +393,6 @@ contract BasisStrategy is
         }
 
         ISpotManager _spotManager = $.spotManager;
-        uint256 collateralDeltaAmount = amount.mulDiv(Constants.FLOAT_PRECISION, _targetLeverage, Math.Rounding.Ceil);
         IERC20 _asset = $.asset;
         // reserve asset for increase collateral of adjust position
         _asset.safeTransferFrom(address(_vault), address(this), collateralDeltaAmount);
