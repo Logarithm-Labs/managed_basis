@@ -402,20 +402,21 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
             revert Errors.ExceededMaxRequestRedeem(owner, shares, maxRequestShares);
         }
 
-        uint256 maxShares = maxRedeem(owner);
-        uint256 sharesToRedeem = shares > maxShares ? maxShares : shares;
-        // always sharesToRedeem <= shares
-        uint256 sharesToRequest = shares - sharesToRedeem;
-
         (uint256 assets, uint256 cost) = _previewRedeemWithCost(shares);
-        uint256 assetsToWithdraw = _convertToAssets(sharesToRedeem, Math.Rounding.Floor);
+        uint256 maxAssets = maxWithdraw(owner);
+
+        uint256 assetsToWithdraw = assets > maxAssets ? maxAssets : assets;
+        // always assetsToWithdraw <= assets
         uint256 assetsToRequest = assets - assetsToWithdraw;
+
+        uint256 sharesToRedeem = _convertToShares(assetsToWithdraw, Math.Rounding.Ceil);
+        uint256 sharesToRequest = shares - sharesToRedeem;
 
         if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
 
-        if (sharesToRedeem > 0) _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
+        if (assetsToWithdraw > 0) _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
 
-        if (sharesToRequest > 0) {
+        if (assetsToRequest > 0) {
             return _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
         }
         return bytes32(0);
@@ -758,7 +759,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
             return 0;
         }
         uint256 shares = super.maxRedeem(owner);
-        uint256 redeemableShares = _convertToShares(idleAssets(), Math.Rounding.Ceil);
+        // should be rounded floor so that the derived assets can't exceed idle
+        uint256 redeemableShares = _convertToShares(idleAssets(), Math.Rounding.Floor);
         return shares > redeemableShares ? redeemableShares : shares;
     }
 
