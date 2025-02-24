@@ -153,9 +153,10 @@ contract OffChainTest is PositionMngerForkTest {
     }
 
     function _decreasePositionSize(uint256 sizeDeltaInTokens) internal returns (uint256) {
-        if (sizeDeltaInTokens > positionSizeInTokens) {
+        uint256 _positionSizeInTokens = positionSizeInTokens;
+        if (sizeDeltaInTokens > _positionSizeInTokens) {
             positionSizeInTokens = 0;
-            return positionSizeInTokens;
+            return _positionSizeInTokens;
         } else {
             positionSizeInTokens -= sizeDeltaInTokens;
             return sizeDeltaInTokens;

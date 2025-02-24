@@ -306,6 +306,25 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         _unpause();
     }
 
+    /// @notice Sweep vault when nothing is happening.
+    ///
+    /// @param receiver The address who will receive idle assets.
+    function sweep(address receiver) external onlyOwner {
+        // 1. all shares should be redeemed.
+        // 2. utilized assets should be zero that means all requests have been processed.
+        // 3. assetsToClaim should be zero that means all requests have been claimed.
+        require(totalSupply() == 0 && IStrategy(strategy()).utilizedAssets() == 0 && assetsToClaim() == 0);
+
+        LogarithmVaultStorage storage $ = _getLogarithmVaultStorage();
+        // sweep pending states
+        delete $.accRequestedWithdrawAssets;
+        delete $.processedWithdrawAssets;
+        delete $.prioritizedAccRequestedWithdrawAssets;
+        delete $.prioritizedProcessedWithdrawAssets;
+        // sweep idle assets
+        IERC20(asset()).safeTransfer(receiver, idleAssets());
+    }
+
     /*//////////////////////////////////////////////////////////////
                           ASYNC WITHDRAW LOGIC
     //////////////////////////////////////////////////////////////*/
