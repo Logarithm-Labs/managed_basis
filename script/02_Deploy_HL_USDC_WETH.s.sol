@@ -19,7 +19,7 @@ import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 
 contract ArbDeploy is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
-    address constant operator = 0xe7263f18e278ea0550FaD97DDF898d134483EfC6;
+    address constant operator = 0x78057a43dDc57792340BC19E50e1011F8DAdEd01;
     address constant agent = 0xA2a7e3a770c38aAe24F175a38281f74731Fe477E;
 
     // vault params
