@@ -983,6 +983,10 @@ contract BasisStrategy is
 
         if (requestParams.sizeDeltaInTokens == type(uint256).max) {
             // when closing hedge
+            // size delta and collateral delta should be none zero
+            if (responseParams.sizeDeltaInTokens == 0 || responseParams.collateralDeltaAmount == 0) {
+                revert Errors.HedgeWrongCloseResponse();
+            }
             requestParams.sizeDeltaInTokens = responseParams.sizeDeltaInTokens;
             requestParams.collateralDeltaAmount = responseParams.collateralDeltaAmount;
         }
