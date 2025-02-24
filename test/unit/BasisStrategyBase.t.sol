@@ -520,7 +520,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 maxRedeem = vault.maxRedeem(user1);
         uint256 maxAssets = vault.previewRedeem(maxRedeem);
         uint256 idleAssets = vault.idleAssets();
-        assertEq(maxAssets, idleAssets);
+        assertTrue(maxAssets <= idleAssets);
     }
 
     function test_withdraw_whenIdleNotEnough() public afterPartialUtilized validateFinalState {
@@ -1480,5 +1480,27 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(vault.idleAssets(), 0, "zero idle");
 
         assertEq(IERC20(asset).balanceOf(receiver), idleAssets);
+    }
+
+    function test_requestRedeem_whenThereDustInVault() public {
+        _writeTokenBalance(address(vault), asset, 100000);
+
+        uint256 amount = 199999999;
+        vm.startPrank(user1);
+        IERC20(asset).approve(address(vault), amount);
+        vault.deposit(amount, user1);
+
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        vm.startPrank(operator);
+        strategy.utilize(pendingUtilizationInAsset, ISpotManager.SwapType.MANUAL, "");
+        _executeOrder();
+
+        _writeTokenBalance(address(vault), asset, 1);
+        uint256 maxShares = vault.maxRedeem(user1);
+        uint256 maxAssets = vault.previewRedeem(maxShares);
+        assertTrue(maxAssets <= vault.idleAssets(), "maxAssets shouldn't be bigger than idle");
+
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
     }
 }

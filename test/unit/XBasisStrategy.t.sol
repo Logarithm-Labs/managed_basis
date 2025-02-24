@@ -524,7 +524,7 @@ contract XBasisStrategyTest is OffChainTest {
         uint256 maxRedeem = vault.maxRedeem(user1);
         uint256 maxAssets = vault.previewRedeem(maxRedeem);
         uint256 idleAssets = vault.idleAssets();
-        assertEq(maxAssets, idleAssets);
+        assertTrue(maxAssets <= idleAssets);
     }
 
     function test_withdraw_whenIdleNotEnough() public afterPartialUtilized validateFinalState {
