@@ -1260,7 +1260,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         // console.log("victim balance", IERC20(asset).balanceOf(user2));
     }
 
-    function test_idleAssetsShouldBeZero_whenSupplyZero() public {
+    function test_idleNotVulnerable_whenSupplyZero() public {
         _deposit(user1, TEN_THOUSANDS_USDC);
         (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
         _utilize(pendingUtilizationInAsset);
@@ -1270,6 +1270,23 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.stopPrank();
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
+        uint256 idle = vault.idleAssets();
+        assertTrue(vault.idleAssets() > 0, "idle not 0");
+        assertTrue(vault.totalSupply() == 0, "vault supply 0");
+        console.log("idle", idle);
+
+        // attacker deposits and withdraws at one tx
+        uint256 balanceBefore = idle * 100000;
+        address attacker = makeAddr("attacker");
+        _writeTokenBalance(attacker, asset, balanceBefore);
+        assertTrue(IERC20(asset).balanceOf(attacker) == balanceBefore);
+        _deposit(attacker, balanceBefore);
+
+        vm.startPrank(attacker);
+        vault.redeem(vault.balanceOf(attacker), attacker, attacker);
+        console.log("total supply", vault.totalSupply());
+
+        assertTrue(IERC20(asset).balanceOf(attacker) < balanceBefore, "attacker loses");
     }
 
     function test_executionCost_deposit_woWithdrawRequest_withIdle() public afterDeposited {
