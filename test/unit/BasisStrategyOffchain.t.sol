@@ -114,19 +114,25 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         _reportState();
     }
 
-    // function test_leverage_whenCollateralPriceFluctuated() public validateFinalState {
-    //     uint256 assets = 67671611780306;
-    //     vm.startPrank(USDC_WHALE);
-    //     IERC20(asset).transfer(user1, assets);
-    //     _deposit(user1, assets);
-    //     address priceFeed = oracle.getPriceFeed(address(asset));
-    //     int256 currPrice = IPriceFeed(priceFeed).latestAnswer();
-    //     uint256 deltaPrice = Math.mulDiv(uint256(currPrice), 774831388402323407, 1 ether);
-    //     int256 resultedPrice = currPrice - int256(deltaPrice);
-    //     _mockChainlinkPriceFeedAnswer(priceFeed, resultedPrice);
-    //     (uint256 amount,) = strategy.pendingUtilizations();
-    //     vm.startPrank(operator);
-    //     strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
-    //     _executeOrder();
-    // }
+    function test_revertLastExecution_withZeroResponse() public afterFullUtilized {
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+
+        (, uint256 deutilization) = strategy.pendingUtilizations();
+        _deutilizeWithoutExecution(deutilization);
+
+        OffChainPositionManager.RequestInfo memory requestInfo = hedgeManager.getLastRequest();
+        IHedgeManager.AdjustPositionPayload memory request = requestInfo.request;
+        IHedgeManager.AdjustPositionPayload memory response = _executeRequest(request);
+        uint256 markPrice = _getMarkPrice();
+        IHedgeManager.AdjustPositionPayload memory params = IHedgeManager.AdjustPositionPayload({
+            sizeDeltaInTokens: response.sizeDeltaInTokens,
+            collateralDeltaAmount: 0,
+            isIncrease: response.isIncrease
+        });
+        vm.startPrank(agent);
+        vm.expectRevert(Errors.HedgeWrongCloseResponse.selector);
+        hedgeManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
+        vm.stopPrank();
+    }
 }
