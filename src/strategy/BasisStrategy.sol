@@ -439,33 +439,24 @@ contract BasisStrategy is
             })
         );
 
-        // cap amount by pendingDeutilization
-        // btw pendingDeutilization keeps changing according to the oracle price
-        // so cap it only when amount is bigger than it over threshold
+        // Replace amount with pendingDeutilization when intend to deutilize fully
+        // Note: Oracle price keeps changing, so need to check deviation.
+        // Note: If the remaining product is smaller than the min size, treat it as full.
+        // because there is no way to deutilize it.
         (bool exceedsThreshold, int256 deutilizationDeviation) =
             _checkDeviation(pendingDeutilization_, amount, config().deutilizationThreshold());
-        if (exceedsThreshold && deutilizationDeviation < 0) {
+        uint256 min = _hedgeManager.decreaseSizeMin();
+        (, uint256 absoluteThreshold) = pendingDeutilization_.trySub(min);
+        if (deutilizationDeviation < 0 || !exceedsThreshold || amount >= absoluteThreshold) {
             amount = pendingDeutilization_;
         }
 
         // check if amount is in the possible adjustment range
-        uint256 min = _hedgeManager.decreaseSizeMin();
         amount = _clamp(min, amount);
 
         // can only deutilize when amount is positive
         if (amount == 0) {
             revert Errors.ZeroAmountUtilization();
-        }
-
-        bool isFullDeutilization;
-        // check if full or partial deutilizing
-        // if remaining deutiliization is smaller than min size
-        // treat it as full
-        (, uint256 absoluteThreshold) = pendingDeutilization_.trySub(min);
-        if (!exceedsThreshold || deutilizationDeviation < 0 || amount >= absoluteThreshold) {
-            isFullDeutilization = true;
-        } else {
-            isFullDeutilization = false;
         }
 
         // deutilize spot
@@ -479,7 +470,7 @@ contract BasisStrategy is
         // the collateral of hedge position as well.
         if (!_processingRebalanceDown) {
             // waste the reserved execution cost
-            if (isFullDeutilization) {
+            if (amount == pendingDeutilization_) {
                 $.utilizingExecutionCost = reservedExecutionCost();
             } else {
                 $.utilizingExecutionCost = reservedExecutionCost().mulDiv(amount, pendingDeutilization_);
@@ -491,7 +482,7 @@ contract BasisStrategy is
                 // close hedge position
                 sizeDeltaInTokens = type(uint256).max;
                 collateralDeltaAmount = type(uint256).max;
-            } else if (isFullDeutilization) {
+            } else if (amount == pendingDeutilization_) {
                 uint256 pendingWithdraw;
                 if (strategyStatus() == StrategyStatus.AWAITING_FINAL_DEUTILIZATION) {
                     // in case spot has been sold already
