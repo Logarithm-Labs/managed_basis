@@ -1503,4 +1503,47 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.startPrank(user1);
         vault.requestRedeem(vault.balanceOf(user1), user1, user1);
     }
+
+    function test_deutilize_withSmallerAmount_WhenLastRedeem() public afterFullUtilized {
+        // user1 requests full redeem
+        vm.startPrank(user1);
+        bytes32 key = vault.requestRedeem(vault.balanceOf(user1), user1, user1);
+        vm.stopPrank();
+
+        // operators executes deuilize with smaller amount than pendingDeutilization
+        uint256 dust = 10 ** 12;
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        vm.startPrank(operator);
+        strategy.deutilize(pendingDeutilization - dust, ISpotManager.SwapType.MANUAL, "");
+        vm.stopPrank();
+        _executeOrder();
+
+        // hedge and spot position closed fully
+        assertEq(ISpotManager(strategy.spotManager()).exposure(), 0, "0 exposure");
+        assertEq(IHedgeManager(strategy.hedgeManager()).positionSizeInTokens(), 0, "0 position size");
+
+        // utilized assets is 0
+        assertEq(strategy.utilizedAssets(), 0, "utilizedAssets");
+
+        // user1 can withdraw
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingDeutilization, 0, "pendingDeutilization");
+        assertTrue(vault.isClaimable(key), "claimable");
+
+        /*//////////////////////////////////////////////////////////////
+                                  POC
+        //////////////////////////////////////////////////////////////*/
+
+        // // hedge position closed fully while spot not
+        // assertEq(ISpotManager(strategy.spotManager()).exposure(), dust, "not 0 exposure");
+        // assertEq(IHedgeManager(strategy.hedgeManager()).positionSizeInTokens(), 0, "0 position size");
+
+        // // utilized assets is not 0
+        // assertNotEq(strategy.utilizedAssets(), 0, "utilizedAssets");
+
+        // // user1 can't withdraw
+        // (, pendingDeutilization) = strategy.pendingUtilizations();
+        // assertEq(pendingDeutilization, 0, "pendingDeutilization");
+        // assertFalse(vault.isClaimable(key), "not claimable");
+    }
 }
