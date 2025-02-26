@@ -123,8 +123,7 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
     }
 
     function reinitialize() external reinitializer(2) {
-        delete _getXSpotManagerStorage().pendingAssets;
-        IBasisStrategy(strategy()).spotBuyCallback(IERC20(asset()).balanceOf(address(this)), 0, block.timestamp);
+        delete _getXSpotManagerStorage().exposure;
     }
 
     function _setBuyReqGasLimit(uint128 newLimit) internal {
