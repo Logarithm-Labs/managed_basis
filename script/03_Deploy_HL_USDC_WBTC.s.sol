@@ -23,8 +23,8 @@ contract ArbDeploy is Script {
     address constant agent = 0x195fa26fb43D15567C3a99049f57B8Db992643d6;
 
     // vault params
-    uint256 constant entryCost = 0.002 ether; // 0.2% entry fee
-    uint256 constant exitCost = 0.002 ether; // 0.2% exit fee
+    uint256 constant entryCost = 0.0035 ether; // 0.35% entry fee
+    uint256 constant exitCost = 0.0035 ether; // 0.35% exit fee
     string constant vaultName = "Logarithm Basis USDC-WBTC Hyperliquid (Alpha)";
     string constant vaultSymbol = "log-b-usdc-wbtc-hl-a";
     // Strategy Addresses
