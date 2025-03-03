@@ -72,6 +72,18 @@ We have introduced cross-chain spot buy/sell operations to enhance protocol func
 - **Description:** Added a timestamp to swap event logs for better traceability.
 - **Git Commit:** `6aecedfd86316a56c76f00049b0de7be4ee2d976`
 
+### 5. Usage of 1Inch Swap Data with Slightly Different Amount
+
+- **Description:** With cross-chain setup and replacement of full deutilization amount, the amount that was used to get 1inch swap data is changed slightly on-chain.
+- **Solution:** Unpacked the swap data and repacked it with modified amount and minimum amount.
+- **Git Commit:** `dc85e1beae9c648c8c37e0f404a0d636827b93dc`
+
+### 6. Threshold Apply for Utilization/Deutilization
+
+- **Description:**
+- **Solution:** Capped the utilization/deutilization amount by a certain threshold that is derived by percentage of `idleAssets + utilizedAssets`.
+- **Git Commit:** `79c23e6d95bb4b84eea3ac4ebc7ace2822eb3323`
+
 ## Self-Found Issues and Fixes
 
 ### 1. DoS in `LogarithmVault.requestRedeem`
