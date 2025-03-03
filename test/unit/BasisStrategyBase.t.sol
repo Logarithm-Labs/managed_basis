@@ -1546,4 +1546,69 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         // assertEq(pendingDeutilization, 0, "pendingDeutilization");
         // assertFalse(vault.isClaimable(key), "not claimable");
     }
+
+    function test_cap_utilize() public afterDeposited {
+        // uncapped utilization = $10000 * 3 / 4 = $7500
+        vm.startPrank(owner);
+        strategy.setMaxUtilizePct(0.2 ether); // 20%
+        vm.stopPrank();
+
+        // TVL = $10000
+        // cap should be $2000
+        // need 4 steps of utilization
+        (uint256 utilization,) = strategy.pendingUtilizations();
+        console.log("1st utilization", utilization);
+        assertEq(utilization, TEN_THOUSANDS_USDC / 5, "1st utilization");
+        _utilize(utilization);
+
+        (utilization,) = strategy.pendingUtilizations();
+        console.log("2nd utilization", utilization);
+        assertNotEq(utilization, 0, "2nd utilization");
+        _utilize(utilization);
+
+        (utilization,) = strategy.pendingUtilizations();
+        console.log("3rd utilization", utilization);
+        assertNotEq(utilization, 0, "3rd utilization");
+        _utilize(utilization);
+
+        (utilization,) = strategy.pendingUtilizations();
+        console.log("4th utilization", utilization);
+        assertNotEq(utilization, 0, "4th utilization");
+        _utilize(utilization);
+
+        (utilization,) = strategy.pendingUtilizations();
+        // utilization should be 0
+        assertEq(utilization, 0);
+    }
+
+    function test_cap_deutilize() public afterFullUtilized {
+        vm.startPrank(owner);
+        strategy.setMaxUtilizePct(0.2 ether); // 20%
+        vm.stopPrank();
+
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1) / 2, user1, user1);
+        vm.stopPrank();
+
+        // TVL = $10000
+        // cap amount = $2000
+        // need 4 steps of utilization
+        (, uint256 deutilization) = strategy.pendingUtilizations();
+        console.log("1st deutilization", deutilization);
+        assertNotEq(deutilization, 0, "1st deutilization");
+        _deutilize(deutilization);
+
+        (, deutilization) = strategy.pendingUtilizations();
+        console.log("2nd deutilization", deutilization);
+        assertNotEq(deutilization, 0, "2nd deutilization");
+        _deutilize(deutilization);
+
+        (, deutilization) = strategy.pendingUtilizations();
+        console.log("3rd deutilization", deutilization);
+        assertNotEq(deutilization, 0, "3rd deutilization");
+        _deutilize(deutilization);
+
+        (, deutilization) = strategy.pendingUtilizations();
+        assertEq(deutilization, 0, "4th deutilization");
+    }
 }
