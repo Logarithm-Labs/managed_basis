@@ -80,7 +80,7 @@ We have introduced cross-chain spot buy/sell operations to enhance protocol func
 
 ### 6. Threshold Apply for Utilization/Deutilization
 
-- **Description:**
+- **Description:** The utilization/deutilization amount can affect the external protocols like HyperLiquid. During our live testing, we decided on applying limit the amounts on-chain.
 - **Solution:** Capped the utilization/deutilization amount by a certain threshold that is derived by percentage of `idleAssets + utilizedAssets`.
 - **Git Commit:** `79c23e6d95bb4b84eea3ac4ebc7ace2822eb3323`
 
