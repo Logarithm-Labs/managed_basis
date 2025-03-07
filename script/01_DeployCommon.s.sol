@@ -23,8 +23,8 @@ contract ArbDeploy is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
     // HL config
-    uint256 constant increaseSizeMin = 15 * 1e6;
-    uint256 constant decreaseSizeMin = 15 * 1e6;
+    uint256 constant increaseSizeMin = 50 * 1e6;
+    uint256 constant decreaseSizeMin = 50 * 1e6;
     uint256 constant increaseCollateralMin = 5 * 1e6;
     uint256 constant decreaseCollateralMin = 10 * 1e6;
     uint256 constant limitDecreaseCollateral = 50 * 1e6;
