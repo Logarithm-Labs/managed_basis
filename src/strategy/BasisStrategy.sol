@@ -1004,7 +1004,7 @@ contract BasisStrategy is
         uint256 _responseDeviationThreshold = config().responseDeviationThreshold();
 
         if (requestParams.sizeDeltaInTokens > 0) {
-            (bool exceedsThreshold, int256 sizeDeviation) = _checkDeviation(
+            (bool exceedsThreshold,) = _checkDeviation(
                 responseParams.sizeDeltaInTokens, requestParams.sizeDeltaInTokens, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
@@ -1013,7 +1013,7 @@ contract BasisStrategy is
         }
 
         if (requestParams.collateralDeltaAmount > 0) {
-            (bool exceedsThreshold, int256 collateralDeviation) = _checkDeviation(
+            (bool exceedsThreshold,) = _checkDeviation(
                 responseParams.collateralDeltaAmount, requestParams.collateralDeltaAmount, _responseDeviationThreshold
             );
             if (exceedsThreshold) {
