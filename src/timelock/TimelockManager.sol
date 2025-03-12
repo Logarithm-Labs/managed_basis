@@ -4,6 +4,8 @@ pragma solidity ^0.8.25;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
+import {DirectFunctionSelectors} from "./DirectFunctions.sol";
+
 /// @title TimelockManager
 /// @author
 /// @notice Manages the timelock for administrative transactions within the protocol.
@@ -19,6 +21,9 @@ contract TimelockManager is Ownable2Step {
 
     /// @notice Mapping of transaction hashes to their queued status.
     mapping(bytes32 => bool) public queuedTransactions;
+
+    /// @notice Mapping of function selectors to their direct execution availability.
+    mapping(bytes4 selector => bool isDirect) public isDirectSelector;
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -75,6 +80,18 @@ contract TimelockManager is Ownable2Step {
 
     constructor(address _owner, uint256 _delay) Ownable(_owner) {
         _setDelay(_delay);
+
+        // register direct functions
+        isDirectSelector[DirectFunctionSelectors.PAUSE] = true;
+        isDirectSelector[DirectFunctionSelectors.PAUSE_WITH_OPTION] = true;
+        isDirectSelector[DirectFunctionSelectors.SET_DEPOSIT_LIMITS] = true;
+        isDirectSelector[DirectFunctionSelectors.SET_ENTRY_COST] = true;
+        isDirectSelector[DirectFunctionSelectors.SET_EXIT_COST] = true;
+        isDirectSelector[DirectFunctionSelectors.SET_PRIORITY_PROVIDER] = true;
+        isDirectSelector[DirectFunctionSelectors.SET_WHITELIST_PROVIDER] = true;
+        isDirectSelector[DirectFunctionSelectors.SHUTDOWN] = true;
+        isDirectSelector[DirectFunctionSelectors.STOP] = true;
+        isDirectSelector[DirectFunctionSelectors.UNPAUSE] = true;
     }
 
     function _setDelay(uint256 _delay) internal {
@@ -118,25 +135,31 @@ contract TimelockManager is Ownable2Step {
         emit TransactionCanceled(txHash, target, value, signature, data, eta);
     }
 
+    /// @notice Executes a queued transaction or none-timelocked transaction.
+    /// @dev When executing a none-timelocked transaction, `eta` can be any value.
     function executeTransaction(address target, uint256 value, string memory signature, bytes memory data, uint256 eta)
         external
         payable
         onlyOwner
         returns (bytes memory)
     {
+        bytes4 selector = bytes4(keccak256(bytes(signature)));
         bytes32 txHash = keccak256(abi.encode(target, value, signature, data, eta));
-        if (!queuedTransactions[txHash]) revert TM__NotQueued();
-        if (block.timestamp < eta) revert TM__NotSurpassedTimeLock();
-        if (block.timestamp > eta + GRACE_PERIOD) revert TM__Stable();
 
-        queuedTransactions[txHash] = false;
+        if (!isDirectSelector[selector]) {
+            if (!queuedTransactions[txHash]) revert TM__NotQueued();
+            if (block.timestamp < eta) revert TM__NotSurpassedTimeLock();
+            if (block.timestamp > eta + GRACE_PERIOD) revert TM__Stable();
+
+            queuedTransactions[txHash] = false;
+        }
 
         bytes memory callData;
 
         if (bytes(signature).length == 0) {
             callData = data;
         } else {
-            callData = abi.encodePacked(bytes4(keccak256(bytes(signature))), data);
+            callData = abi.encodePacked(selector, data);
         }
 
         (bool success, bytes memory returnData) = target.call{value: value}(callData);

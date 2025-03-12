@@ -7,10 +7,15 @@ import {TimelockManager} from "src/timelock/TimelockManager.sol";
 contract MockTarget {
     address public lastSender;
     uint256 public lastValue;
+    bool public paused;
 
     function targetFunction(address sender, uint256 value) external payable {
         lastSender = sender;
         lastValue = value;
+    }
+
+    function pause() external {
+        paused = true;
     }
 }
 
@@ -122,5 +127,11 @@ contract TimelockManagerTest is Test {
         timelockManager.executeTransaction(
             address(mockTarget), 0, "targetFunction(address,uint256)", abi.encode(owner, value), eta
         );
+    }
+
+    function test_executeTransaction_direct() public {
+        vm.startPrank(owner);
+        timelockManager.executeTransaction(address(mockTarget), 0, "pause()", "", eta);
+        assertTrue(mockTarget.paused());
     }
 }
