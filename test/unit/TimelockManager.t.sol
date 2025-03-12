@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test, console} from "forge-std/Test.sol";
-import {TimelockManager} from "src/TimelockManager.sol";
+import {TimelockManager} from "src/timelock/TimelockManager.sol";
 
 contract MockTarget {
     address public lastSender;
