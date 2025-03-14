@@ -52,21 +52,33 @@ contract ArbDeploy is Script {
         // console.log("GasStation:", address(gasStation));
 
         // deploy LogarithmVaultBeacon
-        address vaultBeacon = DeployHelper.deployBeacon(address(new LogarithmVault()), owner);
+        address vaultImpl = address(new LogarithmVault());
+        console.log("Impl(Vault): ", vaultImpl);
+        address vaultBeacon = DeployHelper.deployBeacon(vaultImpl, owner);
         console.log("Beacon(Vault): ", vaultBeacon);
 
         // deploy BasisStrategyBeacon
-        address strategyBeacon = DeployHelper.deployBeacon(address(new BasisStrategy()), owner);
+        address strategyImpl = address(new BasisStrategy());
+        console.log("Impl(Strategy): ", strategyImpl);
+        address strategyBeacon = DeployHelper.deployBeacon(strategyImpl, owner);
         console.log("Beacon(Strategy): ", strategyBeacon);
 
-        address spotManagerBeacon = DeployHelper.deployBeacon(address(new SpotManager()), owner);
+        // deploy SpotManagerBeacon
+        address spotManagerImpl = address(new SpotManager());
+        console.log("Impl(SpotManager): ", spotManagerImpl);
+        address spotManagerBeacon = DeployHelper.deployBeacon(spotManagerImpl, owner);
         console.log("Beacon(SpotManager): ", spotManagerBeacon);
 
-        address xSpotManagerBeacon = DeployHelper.deployBeacon(address(new XSpotManager()), owner);
+        // deploy XSpotManagerBeacon
+        address xSpotManagerImpl = address(new XSpotManager());
+        console.log("Impl(XSpotManager): ", xSpotManagerImpl);
+        address xSpotManagerBeacon = DeployHelper.deployBeacon(xSpotManagerImpl, owner);
         console.log("Beacon(XSpotManager): ", xSpotManagerBeacon);
 
         // deploy OffChainPositionManagerBeacon
-        address offchainPositionManagerBeacon = DeployHelper.deployBeacon(address(new OffChainPositionManager()), owner);
+        address OffChainPositionManagerImpl = address(new OffChainPositionManager());
+        console.log("Impl(OffChainPositionManager): ", OffChainPositionManagerImpl);
+        address offchainPositionManagerBeacon = DeployHelper.deployBeacon(OffChainPositionManagerImpl, owner);
         console.log("Beacon(OffChainPositionManager): ", offchainPositionManagerBeacon);
 
         // deploy BasisStrategyConfig
