@@ -765,7 +765,6 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     /// @dev If there are pending withdraw requests, the deposited assets is used to process them.
-    /// And disables harvesting of the performance fee as a core logarithm vault doesn't have the functionality.
     ///
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
