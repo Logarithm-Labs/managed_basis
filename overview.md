@@ -32,6 +32,11 @@ We have introduced cross-chain spot buy/sell operations to enhance protocol func
 
   - Provides native token fees for protocol smart contracts for cross-chain operations.
 
+- **`TimelockManager.sol`**  
+  _Path: `managed_basis/src/timelock/TimelockManager.sol`_
+
+  - As being the owner of all smart contracts, adds timelock to the administrative functionalities for the protocol except several direct functions.
+
 - **`LzLogMessenger.sol`**  
   _Path: `logarithm-messenger/contracts/LzLogMessenger.sol`_
 
