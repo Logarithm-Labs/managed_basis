@@ -102,6 +102,12 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
                 address(priorityProvider),
                 entryCost,
                 exitCost,
+                address(0),
+                0,
+                0,
+                0,
+                type(uint256).max,
+                type(uint256).max,
                 "Logarithm Basis USDC-WETH HL (Alpha)",
                 "log-b-usdc-weth-hl-a"
             )

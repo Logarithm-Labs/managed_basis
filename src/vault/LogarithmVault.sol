@@ -45,6 +45,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
+    uint256 constant MAX_COST = 0.01 ether; //1%
+
     /// @notice A struct describing an user's withdraw request.
     struct WithdrawRequest {
         /// @dev The requested assets to withdraw.
@@ -195,7 +197,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     function _setEntryCost(uint256 value) internal {
-        require(value < 1 ether);
+        require(value < MAX_COST);
         if (entryCost() != value) {
             _getLogarithmVaultStorage().entryCost = value;
             emit EntryCostUpdated(_msgSender(), value);
@@ -203,7 +205,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     }
 
     function _setExitCost(uint256 value) internal {
-        require(value < 1 ether);
+        require(value < MAX_COST);
         if (exitCost() != value) {
             _getLogarithmVaultStorage().exitCost = value;
             emit ExitCostUpdated(_msgSender(), value);
