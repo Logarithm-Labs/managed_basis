@@ -259,13 +259,9 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         emit StrategyUpdated(_msgSender(), _strategy);
     }
 
-    /// @notice Configures new entry cost setting.
-    function setEntryCost(uint256 newEntryCost) external onlyOwner {
+    /// @notice Configures new entry/exit cost setting.
+    function setEntryAncExitCost(uint256 newEntryCost, uint256 newExitCost) external onlySecurityManager {
         _setEntryCost(newEntryCost);
-    }
-
-    /// @notice Configures new exit cost setting.
-    function setExitCost(uint256 newExitCost) external onlyOwner {
         _setExitCost(newExitCost);
     }
 
