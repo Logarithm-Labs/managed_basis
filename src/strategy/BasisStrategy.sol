@@ -57,13 +57,15 @@ contract BasisStrategy is
         IDLE,
         // When only hedge operation gets initiated.
         KEEPING,
-        // When sync utilizing following by hedge increase gets initiated.
+        // When utilizing gets initiated.
         UTILIZING,
-        // When async deutilizing with hedge decrease gets intiated.
+        // When deutilizing gets initiated.
         DEUTILIZING,
-        // When one of 2 deutilization operations has been proceeded,
-        // or either of deutilizing or hedge decrease gets initiated
-        AWAITING_FINAL_DEUTILIZATION
+        // When one of deutilizations (spot & hedge) has been proceeded,
+        // or rehedge with spot gets initiated
+        AWAITING_FINAL_DEUTILIZATION,
+        // When one of utilizations (spot & hedge) has been proceeded.
+        AWAITING_FINAL_UTILIZATION
     }
 
     /// @dev Used internally to optimize params of utilization.
@@ -439,8 +441,14 @@ contract BasisStrategy is
 
         ISpotManager _spotManager = $.spotManager;
         IERC20 _asset = $.asset;
-        // reserve asset for increase collateral of adjust position
+
+        // request hedge increase with estimated product amount
         _asset.safeTransferFrom(address(_vault), address(this), collateralDeltaAmount);
+        uint256 estimatedProductAmount = $.oracle.convertTokenAmount(address(_asset), product(), amount);
+        if (!_adjustPosition(estimatedProductAmount, collateralDeltaAmount, true)) {
+            revert Errors.HedgeRequestFailed();
+        }
+
         // buy spot
         _asset.safeTransferFrom(address(_vault), address(_spotManager), amount);
         _spotManager.buy(amount, swapType, swapData);
@@ -559,7 +567,7 @@ contract BasisStrategy is
 
         // the return value of this operation should be true
         // because size checks are already done in calling deutilize
-        _adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false);
+        assert(_adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false));
     }
 
     function reserveExecutionCost(uint256 amount) external authCaller(vault()) {
@@ -668,25 +676,14 @@ contract BasisStrategy is
             revert Errors.InvalidCallback();
         }
 
-        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
-        if (status == StrategyStatus.UTILIZING) {
-            if (productDelta == 0) {
-                // fail to buy product
-                IERC20 _asset = $.asset;
-                _asset.safeTransferFrom(_msgSender(), address(this), assetDelta);
-                _setStrategyStatus(StrategyStatus.IDLE);
-                _processAssetsToWithdraw(address(_asset));
-            } else {
-                if (!_adjustPosition(productDelta, assetsToWithdraw(), true)) {
-                    ISpotManager(_msgSender()).sell(productDelta, ISpotManager.SwapType.MANUAL, "");
-                } else {
-                    emit Utilize(_msgSender(), assetDelta, productDelta, timestamp);
-                }
-            }
-        } else {
-            // reverting of deutilizing
+        if (status == StrategyStatus.AWAITING_FINAL_UTILIZATION) {
             _setStrategyStatus(StrategyStatus.IDLE);
+            _processUtilizingExecutionCost();
+        } else if (status == StrategyStatus.UTILIZING) {
+            _setStrategyStatus(StrategyStatus.AWAITING_FINAL_UTILIZATION);
         }
+
+        emit Utilize(_msgSender(), assetDelta, productDelta, timestamp);
     }
 
     /// @dev Called after product is sold.
@@ -703,30 +700,18 @@ contract BasisStrategy is
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
         IERC20 _asset = $.asset;
 
-        // modify strategy status
-        if (status == StrategyStatus.UTILIZING) {
-            // revert utilizing
-            _asset.safeTransferFrom(_msgSender(), address(this), assetDelta);
+        // collect derived assets
+        _asset.safeTransferFrom(_msgSender(), address(this), assetDelta);
+        if (status == StrategyStatus.AWAITING_FINAL_DEUTILIZATION) {
+            // if hedge already adjusted
             _setStrategyStatus(StrategyStatus.IDLE);
+            _processUtilizingExecutionCost();
             _processAssetsToWithdraw(address(_asset));
-        } else {
-            if (assetDelta == 0) {
-                // fail to sell product
-                _setStrategyStatus(StrategyStatus.IDLE);
-            } else {
-                // collect derived assets
-                _asset.safeTransferFrom(_msgSender(), address(this), assetDelta);
-                if (status == StrategyStatus.AWAITING_FINAL_DEUTILIZATION) {
-                    // if hedge already adjusted
-                    _setStrategyStatus(StrategyStatus.IDLE);
-                    _processUtilizingExecutionCost();
-                    _processAssetsToWithdraw(address(_asset));
-                } else {
-                    _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
-                }
-                emit Deutilize(_msgSender(), productDelta, assetDelta, timestamp);
-            }
+        } else if (status == StrategyStatus.DEUTILIZING) {
+            _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
         }
+
+        emit Deutilize(_msgSender(), productDelta, assetDelta, timestamp);
     }
 
     /// @dev Callback function dispatcher of the hedge position adjustment.
@@ -741,10 +726,15 @@ contract BasisStrategy is
 
         if (params.isIncrease) {
             _afterIncreasePosition(params);
-            // utilize is sync one, and position adjustment is final
-            // hence, set status as idle
-            _setStrategyStatus(StrategyStatus.IDLE);
-            _processUtilizingExecutionCost();
+            if (status == StrategyStatus.AWAITING_FINAL_UTILIZATION) {
+                _setStrategyStatus(StrategyStatus.IDLE);
+                _processUtilizingExecutionCost();
+            } else if (status == StrategyStatus.UTILIZING) {
+                _setStrategyStatus(StrategyStatus.AWAITING_FINAL_UTILIZATION);
+            } else {
+                // for rebalance down to increase collateral
+                _setStrategyStatus(StrategyStatus.IDLE);
+            }
         } else {
             _afterDecreasePosition(params);
             if (status == StrategyStatus.AWAITING_FINAL_DEUTILIZATION) {
@@ -754,6 +744,7 @@ contract BasisStrategy is
             } else if (status == StrategyStatus.DEUTILIZING) {
                 _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
             } else {
+                // for rebalance up to decrease collateral
                 _setStrategyStatus(StrategyStatus.IDLE);
             }
         }
