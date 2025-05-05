@@ -10,8 +10,6 @@ import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol"
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
-import {IOrderHandler} from "src/externals/gmx-v2/interfaces/IOrderHandler.sol";
-import {ReaderPositionUtils} from "src/externals/gmx-v2/libraries/ReaderPositionUtils.sol";
 
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
@@ -48,8 +46,8 @@ contract XBasisStrategyTest is OffChainTest {
     address constant product = WETH; // WETH
     address constant assetPriceFeed = CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
     address constant productPriceFeed = CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
-    uint256 constant entryCost = 0.01 ether;
-    uint256 constant exitCost = 0.02 ether;
+    uint256 constant entryCost = 0.001 ether;
+    uint256 constant exitCost = 0.002 ether;
     bool constant isLong = false;
 
     uint256 constant targetLeverage = 3 ether;
@@ -104,6 +102,12 @@ contract XBasisStrategyTest is OffChainTest {
                 address(priorityProvider),
                 entryCost,
                 exitCost,
+                address(0),
+                0,
+                0,
+                0,
+                type(uint256).max,
+                type(uint256).max,
                 "Logarithm Basis USDC-WETH HL (Alpha)",
                 "log-b-usdc-weth-hl-a"
             )

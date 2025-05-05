@@ -40,6 +40,12 @@ library DeployHelper {
         address priorityProvider;
         uint256 entryCost;
         uint256 exitCost;
+        address feeRecipient;
+        uint256 managementFee;
+        uint256 performanceFee;
+        uint256 hurdleRate;
+        uint256 userDepositLimit;
+        uint256 vaultDepositLimit;
         string name;
         string symbol;
     }
@@ -61,7 +67,12 @@ library DeployHelper {
             )
         );
         LogarithmVault vault = LogarithmVault(vaultProxy);
+        if (params.feeRecipient != address(0)) {
+            vault.setFeeInfos(params.feeRecipient, params.managementFee, params.performanceFee, params.hurdleRate);
+        }
+        require(vault.feeRecipient() == params.feeRecipient, "Vault feeRecipient is not the expected feeRecipient");
         require(vault.owner() == params.owner, "Vault owner is not the expected owner");
+        vault.setDepositLimits(params.userDepositLimit, params.vaultDepositLimit);
         return vault;
     }
 
@@ -315,10 +326,16 @@ library DeployHelper {
         uint256 minLeverage;
         uint256 maxLeverage;
         uint256 safeMarginLeverage;
+        address feeRecipient;
+        uint256 managementFee;
+        uint256 performanceFee;
+        uint256 hurdleRate;
+        uint256 userDepositLimit;
+        uint256 vaultDepositLimit;
         address[] assetToProductSwapPath;
     }
 
-    function deployHLVault(DeployHLVaultParams memory params) internal {
+    function deployHLVault(DeployHLVaultParams memory params) internal returns (address) {
         // configure oracle
         LogarithmOracle oracle = LogarithmOracle(Arb.ORACLE);
         address[] memory assets = new address[](1);
@@ -339,6 +356,12 @@ library DeployHelper {
             priorityProvider: address(0),
             entryCost: params.entryCost,
             exitCost: params.exitCost,
+            feeRecipient: params.feeRecipient,
+            managementFee: params.managementFee,
+            performanceFee: params.performanceFee,
+            hurdleRate: params.hurdleRate,
+            userDepositLimit: params.userDepositLimit,
+            vaultDepositLimit: params.vaultDepositLimit,
             name: params.name,
             symbol: params.symbol
         });
@@ -382,6 +405,8 @@ library DeployHelper {
             })
         );
         console.log("OffChainPositionManager: ", address(positionManager));
+
+        return address(vault);
     }
 
     struct DeployHLVaultXParams {
@@ -400,6 +425,12 @@ library DeployHelper {
         uint256 minLeverage;
         uint256 maxLeverage;
         uint256 safeMarginLeverage;
+        address feeRecipient;
+        uint256 managementFee;
+        uint256 performanceFee;
+        uint256 hurdleRate;
+        uint256 userDepositLimit;
+        uint256 vaultDepositLimit;
         uint256 dstChainId;
     }
 
@@ -424,6 +455,12 @@ library DeployHelper {
             priorityProvider: address(0),
             entryCost: params.entryCost,
             exitCost: params.exitCost,
+            feeRecipient: params.feeRecipient,
+            managementFee: params.managementFee,
+            performanceFee: params.performanceFee,
+            hurdleRate: params.hurdleRate,
+            userDepositLimit: params.userDepositLimit,
+            vaultDepositLimit: params.vaultDepositLimit,
             name: params.name,
             symbol: params.symbol
         });
@@ -474,5 +511,54 @@ library DeployHelper {
             })
         );
         console.log("OffChainPositionManager: ", address(positionManager));
+    }
+
+    function validateDeployHLVault(address _vault, DeployHLVaultParams memory params) internal view {
+        LogarithmVault vault = LogarithmVault(_vault);
+        require(vault.owner() == params.owner, "Vault owner is not the expected owner");
+        require(vault.asset() == params.asset, "Vault asset is not the expected asset");
+        require(vault.entryCost() == params.entryCost, "Vault entryCost is not the expected entryCost");
+        require(vault.exitCost() == params.exitCost, "Vault exitCost is not the expected exitCost");
+        require(vault.feeRecipient() == params.feeRecipient, "Vault feeRecipient is not the expected feeRecipient");
+        require(vault.managementFee() == params.managementFee, "Vault managementFee is not the expected managementFee");
+        require(
+            vault.performanceFee() == params.performanceFee, "Vault performanceFee is not the expected performanceFee"
+        );
+        require(vault.hurdleRate() == params.hurdleRate, "Vault hurdleRate is not the expected hurdleRate");
+        require(
+            vault.userDepositLimit() == params.userDepositLimit,
+            "Vault userDepositLimit is not the expected userDepositLimit"
+        );
+        require(
+            vault.vaultDepositLimit() == params.vaultDepositLimit,
+            "Vault vaultDepositLimit is not the expected vaultDepositLimit"
+        );
+
+        BasisStrategy strategy = BasisStrategy(vault.strategy());
+        require(strategy.owner() == params.owner, "Strategy owner is not the expected owner");
+        require(address(strategy.config()) == Arb.CONFIG_STRATEGY, "Strategy config is not the expected config");
+        require(strategy.product() == params.product, "Strategy product is not the expected product");
+        require(strategy.vault() == address(vault), "Strategy vault is not the expected vault");
+        require(strategy.oracle() == Arb.ORACLE, "Strategy oracle is not the expected oracle");
+        require(strategy.operator() == params.operator, "Strategy operator is not the expected operator");
+        require(
+            strategy.targetLeverage() == params.targetLeverage,
+            "Strategy targetLeverage is not the expected targetLeverage"
+        );
+        require(strategy.minLeverage() == params.minLeverage, "Strategy minLeverage is not the expected minLeverage");
+        require(strategy.maxLeverage() == params.maxLeverage, "Strategy maxLeverage is not the expected maxLeverage");
+        require(
+            strategy.safeMarginLeverage() == params.safeMarginLeverage,
+            "Strategy safeMarginLeverage is not the expected safeMarginLeverage"
+        );
+
+        SpotManager spotManager = SpotManager(strategy.spotManager());
+        require(spotManager.owner() == params.owner, "SpotManager owner is not the expected owner");
+        require(spotManager.strategy() == address(strategy), "SpotManager strategy is not the expected strategy");
+
+        OffChainPositionManager positionManager = OffChainPositionManager(strategy.hedgeManager());
+        require(positionManager.owner() == params.owner, "PositionManager owner is not the expected owner");
+        require(positionManager.agent() == params.agent, "PositionManager agent is not the expected agent");
+        require(positionManager.oracle() == Arb.ORACLE, "PositionManager oracle is not the expected oracle");
     }
 }

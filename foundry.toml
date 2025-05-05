@@ -12,6 +12,8 @@ fs_permissions = [{ access = "read-write", path = "./" }]
 evm_version = 'cancun'
 gas_reports = ["GmxV2PositionManager", "BasisStrategy", "XSpotManager", "BrotherSwapper"]
 show_progress = true
+optimizer = true
+optimizer_runs = 200
 # threads = 1
 
 [rpc_endpoints]

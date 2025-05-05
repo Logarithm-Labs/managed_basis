@@ -48,8 +48,8 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     address constant product = WETH; // WETH
     address constant assetPriceFeed = CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
     address constant productPriceFeed = CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
-    uint256 constant entryCost = 0.01 ether;
-    uint256 constant exitCost = 0.02 ether;
+    uint256 constant entryCost = 0.001 ether;
+    uint256 constant exitCost = 0.002 ether;
     bool constant isLong = false;
 
     uint256 constant targetLeverage = 3 ether;
@@ -104,6 +104,12 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
                 address(priorityProvider),
                 entryCost,
                 exitCost,
+                address(0),
+                0,
+                0,
+                0,
+                type(uint256).max,
+                type(uint256).max,
                 "Logarithm Basis USDC-WETH HL (Alpha)",
                 "log-b-usdc-weth-hl-a"
             )
@@ -1262,7 +1268,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         // console.log("victim balance", IERC20(asset).balanceOf(user2));
     }
 
-    function test_idleAssetsShouldBeZero_whenSupplyZero() public {
+    function test_idleNotVulnerable_whenSupplyZero() public {
         _deposit(user1, TEN_THOUSANDS_USDC);
         (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
         _utilize(pendingUtilizationInAsset);
@@ -1272,6 +1278,23 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         vm.stopPrank();
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         _deutilize(pendingDeutilization);
+        uint256 idle = vault.idleAssets();
+        assertTrue(vault.idleAssets() > 0, "idle not 0");
+        assertTrue(vault.totalSupply() == 0, "vault supply 0");
+        console.log("idle", idle);
+
+        // attacker deposits and withdraws at one tx
+        uint256 balanceBefore = idle * 100000;
+        address attacker = makeAddr("attacker");
+        _writeTokenBalance(attacker, asset, balanceBefore);
+        assertTrue(IERC20(asset).balanceOf(attacker) == balanceBefore);
+        _deposit(attacker, balanceBefore);
+
+        vm.startPrank(attacker);
+        vault.redeem(vault.balanceOf(attacker), attacker, attacker);
+        console.log("total supply", vault.totalSupply());
+
+        assertTrue(IERC20(asset).balanceOf(attacker) < balanceBefore, "attacker loses");
     }
 
     function test_executionCost_deposit_woWithdrawRequest_withIdle() public afterDeposited {
