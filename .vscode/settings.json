@@ -1,14 +1,18 @@
 {
-    "editor.formatOnSave": true,
-    "[solidity]": {
-        "editor.defaultFormatter": "JuanBlanco.solidity"
-    },
-    "solidity.formatter": "forge",
-    "editor.foldingImportsByDefault": true,
-    "inline-bookmarks.default.words.red": "@fix, @FIX, @fixme, @FIXME, @vuln, @VULN",
-    "inline-bookmarks.default.words.blue": "@todo, @TODO, @note, @NOTE",
-    "inline-bookmarks.default.words.green": "@ok, @OK",
-    "inline-bookmarks.default.words.purple": "@issue, @ISSUE, @optimize, @OPTIMIZE, @review, @REVIEW",
-    "solidity.packageDefaultDependenciesContractsDirectory": "src",
-    "solidity.packageDefaultDependenciesDirectory": "lib"
+  "editor.formatOnSave": true,
+  "[solidity]": {
+    "editor.defaultFormatter": "JuanBlanco.solidity"
+  },
+  "solidity.formatter": "forge",
+  "editor.foldingImportsByDefault": true,
+  "inline-bookmarks.default.words.red": "@fix, @FIX, @fixme, @FIXME, @vuln, @VULN",
+  "inline-bookmarks.default.words.blue": "@todo, @TODO, @note, @NOTE",
+  "inline-bookmarks.default.words.green": "@ok, @OK",
+  "inline-bookmarks.default.words.purple": "@issue, @ISSUE, @optimize, @OPTIMIZE, @review, @REVIEW",
+  "solidity.packageDefaultDependenciesContractsDirectory": "src",
+  "solidity.packageDefaultDependenciesDirectory": "lib",
+  "solidity.remappings": [
+    "@openzeppelin/=project/contracts/lib/openzeppelin-contracts/",
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/"
+  ]
 }

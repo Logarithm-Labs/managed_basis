@@ -39,6 +39,13 @@ contract ArbDeploy is Script {
     uint256 constant maxLeverage = 11 ether;
     uint256 constant safeMarginLeverage = 20 ether;
 
+    address feeRecipient = address(0);
+    uint256 managementFee = 0;
+    uint256 performanceFee = 0;
+    uint256 hurdleRate = 0;
+    uint256 userDepositLimit = type(uint256).max;
+    uint256 vaultDepositLimit = type(uint256).max;
+
     address[] assetToProductSwapPath =
         [asset, ArbAddresses.UNI_V3_POOL_WETH_USDC, ArbAddresses.WETH, ArbAddresses.UNI_V3_POOL_WBTC_WETH, product];
 
@@ -64,6 +71,12 @@ contract ArbDeploy is Script {
                 minLeverage: minLeverage,
                 maxLeverage: maxLeverage,
                 safeMarginLeverage: safeMarginLeverage,
+                feeRecipient: feeRecipient,
+                managementFee: managementFee,
+                performanceFee: performanceFee,
+                hurdleRate: hurdleRate,
+                userDepositLimit: userDepositLimit,
+                vaultDepositLimit: vaultDepositLimit,
                 assetToProductSwapPath: assetToProductSwapPath
             })
         );
