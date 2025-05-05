@@ -12,7 +12,8 @@
   "solidity.packageDefaultDependenciesContractsDirectory": "src",
   "solidity.packageDefaultDependenciesDirectory": "lib",
   "solidity.remappings": [
-    "@openzeppelin/=project/contracts/lib/openzeppelin-contracts/",
+    "forge-std/=lib/forge-std/src/",
+    "@openzeppelin/=/lib/openzeppelin-contracts/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/"
   ]
 }
