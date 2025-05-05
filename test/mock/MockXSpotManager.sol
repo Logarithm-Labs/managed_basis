@@ -71,7 +71,7 @@ contract MockXSpotManager is ISpotManager, ISwapper {
                              INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address _owner, address _strategy, address[] calldata _assetToProductSwapPath) external {
+    function initialize(address, /*_owner*/ address _strategy, address[] calldata _assetToProductSwapPath) external {
         SpotManagerStorage storage $ = _getSpotManagerStorage();
         address _asset = IBasisStrategy(_strategy).asset();
         address _product = IBasisStrategy(_strategy).product();
