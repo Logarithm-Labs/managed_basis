@@ -84,6 +84,7 @@ contract XSpotManagerTest is ForkTest {
         vm.startPrank(address(strategy));
         IERC20(asset).transfer(address(spotManager), amount);
         spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
+        swapper.executeSwap("");
         uint256 productBalance = IERC20(product).balanceOf(address(swapper));
         uint256 rate = spotManager.decimalConversionRate();
         uint256 productsLD = productBalance / rate * rate;
@@ -104,6 +105,7 @@ contract XSpotManagerTest is ForkTest {
         _writeTokenBalance(address(swapper), product, amount);
         vm.startPrank(address(strategy));
         spotManager.sell(amount, ISpotManager.SwapType.MANUAL, "");
+        swapper.executeSwap("");
         uint256 rate = spotManager.decimalConversionRate();
         uint256 productsLD = (amount / rate) * rate;
 
