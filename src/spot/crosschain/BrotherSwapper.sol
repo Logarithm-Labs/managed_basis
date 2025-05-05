@@ -206,7 +206,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         authCaller(messenger())
         onlySpotManager(sender)
     {
-        (uint128 sellResGasLimit, uint64 productsSD, ISpotManager.SwapType swapType, bytes memory swapData) =
+        (uint128 sellResGasLimit, uint64 productsSD, ISpotManager.SwapType swapType,) =
             abi.decode(data, (uint128, uint64, ISpotManager.SwapType, bytes));
         uint256 productsLD = _toLD(productsSD);
 
