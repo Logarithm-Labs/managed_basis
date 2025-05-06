@@ -64,6 +64,7 @@ library Errors {
     error HedgeInvalidSizeResponse();
     error HedgeInvalidCollateralResponse();
     error HedgeWrongCloseResponse();
+    error HedgeRequestFailed();
 
     /*//////////////////////////////////////////////////////////////
                             POSITION MANAGER
