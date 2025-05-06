@@ -46,8 +46,8 @@ contract XBasisStrategyTest is OffChainTest {
     address constant product = WETH; // WETH
     address constant assetPriceFeed = CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
     address constant productPriceFeed = CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
-    uint256 constant entryCost = 0.01 ether;
-    uint256 constant exitCost = 0.02 ether;
+    uint256 constant entryCost = 0.001 ether;
+    uint256 constant exitCost = 0.002 ether;
     bool constant isLong = false;
 
     uint256 constant targetLeverage = 3 ether;
@@ -102,6 +102,12 @@ contract XBasisStrategyTest is OffChainTest {
                 address(priorityProvider),
                 entryCost,
                 exitCost,
+                address(0),
+                0,
+                0,
+                0,
+                type(uint256).max,
+                type(uint256).max,
                 "Logarithm Basis USDC-WETH HL (Alpha)",
                 "log-b-usdc-weth-hl-a"
             )
@@ -278,10 +284,11 @@ contract XBasisStrategyTest is OffChainTest {
         vm.startPrank(operator);
         StrategyState memory state0 = helper.getStrategyState();
         strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.UTILIZING));
         spotManager.executeCallback();
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, false);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.UTILIZING));
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.AWAITING_FINAL_UTILIZATION));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
