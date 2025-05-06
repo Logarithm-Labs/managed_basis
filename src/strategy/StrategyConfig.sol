@@ -50,7 +50,7 @@ contract StrategyConfig is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     function initialize(address owner_) external initializer {
         __Ownable_init(owner_);
-        _setResponseDeviationThreshold(1e16); // 1%
+        _setResponseDeviationThreshold(0.035 ether); // 3.5%
         _setHedgeDeviationThreshold(1e16); // 1%
         _setRebalanceDeviationThreshold(1e17); // 10%
         _setDeutilizationThreshold(1e16); // 1%
