@@ -89,6 +89,18 @@ We have introduced cross-chain spot buy/sell operations to enhance protocol func
 - **Solution:** Capped the utilization/deutilization amount by a certain threshold that is derived by percentage of `idleAssets + utilizedAssets`.
 - **Git Commit:** `79c23e6d95bb4b84eea3ac4ebc7ace2822eb3323`
 
+### 7. Asynchronous utilization
+
+- **Description:** Spot operations require time, creating inefficiencies in hedge adjustments.
+- **Solution:** Initiate both operations within the same transaction.
+- **Git Commit:** `dc1ebb857cf7ca679cb4d913787e8fbe5c484652`
+
+### 8. Grant the access of entry/exit cost modification to a security manager
+
+- **Description:** Utilizing/Deutilizing costs keep changing all the time due to price spread.
+- **Solution:** Granted the access to a security manager so that he can handle based on the current strategy status.
+- **Git Commit:** `5d493903003cdf9d3ca6ea22d6bb56760d846408`
+
 ## Self-Found Issues and Fixes
 
 ### 1. DoS in `LogarithmVault.requestRedeem`
