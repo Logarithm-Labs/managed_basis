@@ -245,10 +245,12 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         emit SellRequested(_msgSender(), swapType, amountLD);
     }
 
+    /// @notice The product value exposed by this spot manager.
     function exposure() public view returns (uint256) {
         return _getXSpotManagerStorage().exposure;
     }
 
+    /// @notice The asset value hold by this spot manager.
     function getAssetValue() public view returns (uint256) {
         return pendingAssets() + IOracle(oracle()).convertTokenAmount(product(), asset(), exposure());
     }
@@ -297,22 +299,27 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         return _getXSpotManagerStorage().swapper;
     }
 
+    /// @notice The asset amount that is being processed to buy spot on dest chain.
     function pendingAssets() public view returns (uint256) {
         return _getXSpotManagerStorage().pendingAssets;
     }
 
+    /// @dev The gas limit of lzCompose(swap + lzSend) on dest chain.
     function buyReqGasLimit() public view returns (uint128) {
         return _getXSpotManagerStorage().buyReqGasLimit;
     }
 
+    /// @dev The gas limit of lzSend(adjustPosition) on original chain.
     function buyResGasLimit() public view returns (uint128) {
         return _getXSpotManagerStorage().buyResGasLimit;
     }
 
+    /// @dev The gas limit of lzReceive(swap + sendToken) on dest chain.
     function sellReqGasLimit() public view returns (uint128) {
         return _getXSpotManagerStorage().sellReqGasLimit;
     }
 
+    /// @dev The gas limit of lzCompose() on original chain.
     function sellResGasLimit() public view returns (uint128) {
         return _getXSpotManagerStorage().sellResGasLimit;
     }
@@ -333,10 +340,12 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         return _getXSpotManagerStorage().product;
     }
 
+    /// @notice The address of Logarithm cross-chain messenger.
     function messenger() public view returns (address) {
         return _getXSpotManagerStorage().messenger;
     }
 
+    /// @notice The chain id that is used by the messenger, where the swapper is located.
     function dstChainId() public view returns (uint256) {
         return _getXSpotManagerStorage().dstChainId;
     }
