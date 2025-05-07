@@ -167,6 +167,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     /// @param newPriorityProvider The address of new priority provider.
     event PriorityProviderUpdated(address account, address newPriorityProvider);
 
+    /// @dev Emitted when the vault state is changed.
+    ///
+    /// @param totalAssets The total assets of the vault.
+    /// @param totalSupply The total supply of the vault.
+    event VaultState(uint256 indexed totalAssets, uint256 indexed totalSupply);
+
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -459,6 +465,8 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
             isClaimed: false
         });
         emit WithdrawRequested(caller, receiver, owner, withdrawKey, assetsToRequest, sharesToRequest);
+
+        emit VaultState(totalAssets(), totalSupply());
 
         return withdrawKey;
     }
@@ -775,6 +783,18 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         }
         super._deposit(caller, receiver, assets, shares);
         processPendingWithdrawRequests();
+
+        emit VaultState(totalAssets(), totalSupply());
+    }
+
+    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
+        internal
+        virtual
+        override
+    {
+        super._withdraw(caller, receiver, owner, assets, shares);
+
+        emit VaultState(totalAssets(), totalSupply());
     }
 
     /*//////////////////////////////////////////////////////////////
