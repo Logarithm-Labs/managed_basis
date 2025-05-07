@@ -70,9 +70,11 @@ contract BasisStrategy is
 
     /// @dev Used internally to optimize params of utilization.
     struct InternalPendingUtilization {
-        // The totalSupply of shares of its connected vault
+        // The totalSupply of connected vault
         uint256 totalSupply;
-        // The idle assets of its connected vault
+        // The totalAssets of connected vault
+        uint256 totalAssets;
+        // The idle assets of connected vault
         uint256 idleAssets;
         // The targetLeverage
         uint256 targetLeverage;
@@ -415,6 +417,7 @@ contract BasisStrategy is
         (uint256 pendingUtilization, uint256 uncappedUtilization) = _pendingUtilization(
             InternalPendingUtilization({
                 totalSupply: _vault.totalSupply(),
+                totalAssets: _vault.totalAssets(),
                 idleAssets: _idleAssets,
                 targetLeverage: _targetLeverage,
                 processingRebalanceDown: processingRebalanceDown(),
@@ -428,11 +431,11 @@ contract BasisStrategy is
         uint256 collateralDeltaAmount;
         if (amount == uncappedUtilization) {
             $.utilizingExecutionCost = reservedExecutionCost();
-            collateralDeltaAmount = _idleAssets - amount;
         } else {
             $.utilizingExecutionCost = reservedExecutionCost().mulDiv(amount, uncappedUtilization);
-            collateralDeltaAmount = amount.mulDiv(Constants.FLOAT_PRECISION, _targetLeverage);
         }
+
+        collateralDeltaAmount = amount.mulDiv(Constants.FLOAT_PRECISION, _targetLeverage);
 
         // can only utilize when amount is positive
         if (amount == 0) {
@@ -794,6 +797,7 @@ contract BasisStrategy is
         (pendingUtilizationInAsset,) = _pendingUtilization(
             InternalPendingUtilization({
                 totalSupply: totalSupply,
+                totalAssets: _vault.totalAssets(),
                 idleAssets: idleAssets,
                 targetLeverage: targetLeverage(),
                 processingRebalanceDown: _processingRebalanceDown,
@@ -1085,15 +1089,18 @@ contract BasisStrategy is
     /// @dev This return value should be 0 when rebalancing down or when paused or when the totalSupply is 0.
     function _pendingUtilization(InternalPendingUtilization memory params)
         private
-        pure
+        view
         returns (uint256 amount, uint256 uncappedAmount)
     {
         // don't use utilize function when rebalancing or when totalSupply is zero, or when paused
         if (params.totalSupply == 0 || params.processingRebalanceDown || params.paused) {
             return (0, 0);
         } else {
+            uint256 withdrawBuffer =
+                params.totalAssets.mulDiv(config().withdrawBufferThreshold(), Constants.FLOAT_PRECISION);
+            (, uint256 availableAssets) = params.idleAssets.trySub(withdrawBuffer);
             uncappedAmount =
-                params.idleAssets.mulDiv(params.targetLeverage, Constants.FLOAT_PRECISION + params.targetLeverage);
+                availableAssets.mulDiv(params.targetLeverage, Constants.FLOAT_PRECISION + params.targetLeverage);
             amount = _capAmount(uncappedAmount, params.maxAmount);
             return (amount, uncappedAmount);
         }

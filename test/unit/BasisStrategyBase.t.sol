@@ -1634,4 +1634,55 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (, deutilization) = strategy.pendingUtilizations();
         assertEq(deutilization, 0, "4th deutilization");
     }
+
+    function test_withdrawBuffer_afterDeposited() public afterDeposited {
+        vm.startPrank(owner);
+        StrategyConfig(address(strategy.config())).setWithdrawBufferThreshold(0.01 ether); // 1%
+        vm.stopPrank();
+
+        uint256 idleAssets = vault.idleAssets();
+        assertEq(idleAssets, TEN_THOUSANDS_USDC, "idleAssets");
+
+        (uint256 pendingUtilization,) = strategy.pendingUtilizations();
+        uint256 availableAssets = idleAssets - vault.totalAssets() * 1 / 100;
+        assertEq(
+            pendingUtilization,
+            availableAssets * strategy.targetLeverage() / (strategy.targetLeverage() + 1 ether),
+            "pendingUtilization"
+        );
+
+        // utilize
+        vm.startPrank(operator);
+        strategy.utilize(pendingUtilization, ISpotManager.SwapType.MANUAL, "");
+        vm.stopPrank();
+        _executeOrder();
+
+        (pendingUtilization,) = strategy.pendingUtilizations();
+        assertEq(pendingUtilization, 0, "pendingUtilization");
+        assertNotEq(vault.idleAssets(), 0, "not 0 idleAssets");
+
+        // user1 request withdraw
+        vm.startPrank(user1);
+        vault.requestWithdraw(vault.idleAssets() / 2, user1, user1);
+        vm.stopPrank();
+
+        (pendingUtilization,) = strategy.pendingUtilizations();
+        assertEq(pendingUtilization, 0, "pendingUtilization");
+        assertNotEq(vault.idleAssets(), 0, "not 0 idleAssets");
+    }
+
+    function test_withdrawBuffer_afterFullUtilized() public afterFullUtilized {
+        vm.startPrank(owner);
+        StrategyConfig(address(strategy.config())).setWithdrawBufferThreshold(0.01 ether); // 1%
+        vm.stopPrank();
+
+        // user1 request withdraw
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1) / 2, user1, user1);
+        vm.stopPrank();
+
+        (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingUtilization, 0, "pendingUtilization");
+        assertNotEq(pendingDeutilization, 0, "pendingDeutilization");
+    }
 }
