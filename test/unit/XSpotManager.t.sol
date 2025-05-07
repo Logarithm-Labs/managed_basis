@@ -9,6 +9,7 @@ import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
 import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
 import {GasStation} from "src/gas-station/GasStation.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 
 import {MockOracle} from "test/mock/MockOracle.sol";
@@ -76,7 +77,7 @@ contract XSpotManagerTest is ForkTest {
 
         spotManager.setSwapper(AddressCast.addressToBytes32(address(swapper)));
 
-        _writeTokenBalance(address(strategy), asset, TEN_THOUSAND_USDC);
+        _writeTokenBalance(address(strategy), asset, TEN_THOUSAND_USDC * 2);
     }
 
     function test_buy(uint256 amount) public {
@@ -117,5 +118,25 @@ contract XSpotManagerTest is ForkTest {
         uint256 productBalance = IERC20(product).balanceOf(address(swapper));
         assertEq(amount - productBalance, productsLD, "product balance");
         assertEq(IERC20(asset).balanceOf(address(swapper)), 0, "swapper asset balance");
+    }
+
+    function test_revert_double_request(uint256 amount) public {
+        amount = bound(amount, 10000, TEN_THOUSAND_USDC);
+        vm.startPrank(address(strategy));
+        IERC20(asset).transfer(address(spotManager), amount);
+        spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
+        IERC20(asset).transfer(address(spotManager), amount);
+        vm.expectRevert(Errors.RequestInPending.selector);
+        spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
+    }
+
+    function test_revert_double_execute(uint256 amount) public {
+        amount = bound(amount, 10000, TEN_THOUSAND_USDC);
+        vm.startPrank(address(strategy));
+        IERC20(asset).transfer(address(spotManager), amount);
+        spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
+        swapper.executeSwap("");
+        vm.expectRevert(Errors.NoPendingRequest.selector);
+        swapper.executeSwap("");
     }
 }

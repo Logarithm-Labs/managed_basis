@@ -160,6 +160,9 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
     }
 
     function _setPendingRequest(bool isBuy, uint256 amount, ISpotManager.SwapType swapType, uint128 gasLimit) private {
+        if (_getBrotherSwapperStorage().pendingRequest.amount != 0) {
+            revert Errors.RequestInPending();
+        }
         _getBrotherSwapperStorage().pendingRequest =
             SwapRequest({isBuy: isBuy, amount: amount, swapType: swapType, gasLimit: gasLimit});
         emit SwapRequested(swapType, amount, isBuy);
@@ -218,6 +221,11 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
     /// @param swapData Data used in swap, e.g. Empty for manual swap and non-empty for 1inch.
     function executeSwap(bytes calldata swapData) external {
         SwapRequest memory _pendingRequest = pendingRequest();
+
+        if (_pendingRequest.amount == 0) {
+            revert Errors.NoPendingRequest();
+        }
+
         if (_pendingRequest.isBuy) {
             uint256 productsLD;
             if (_pendingRequest.swapType == ISpotManager.SwapType.INCH_V6) {
@@ -278,6 +286,8 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
 
             emit SellProcessed(_pendingRequest.swapType, _pendingRequest.amount, assetsLD);
         }
+
+        delete _getBrotherSwapperStorage().pendingRequest;
     }
 
     /*//////////////////////////////////////////////////////////////
