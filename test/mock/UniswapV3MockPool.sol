@@ -58,7 +58,7 @@ contract UniswapV3MockPool {
         IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(amount0, amount1, data);
     }
 
-    function observe(uint32[] calldata secondsAgos)
+    function observe(uint32[] calldata /*secondsAgos*/ )
         external
         view
         returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s)
@@ -66,5 +66,6 @@ contract UniswapV3MockPool {
         tickCumulatives = new int56[](2);
         tickCumulatives[0] = 0;
         tickCumulatives[1] = int56(currentTick) * (uint256(ManualSwapLogic.TWAP_INTERVAL).toInt256()).toInt56();
+        return (tickCumulatives, secondsPerLiquidityCumulativeX128s);
     }
 }
