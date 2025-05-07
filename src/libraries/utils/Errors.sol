@@ -95,6 +95,8 @@ library Errors {
     error InvalidStargate();
     error InvalidSender();
     error InvalidTokenSend();
+    error RequestInPending();
+    error NoPendingRequest();
 
     /*//////////////////////////////////////////////////////////////
                               AUTH CALLER
