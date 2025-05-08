@@ -64,7 +64,6 @@ library Errors {
     error HedgeInvalidSizeResponse();
     error HedgeInvalidCollateralResponse();
     error HedgeWrongCloseResponse();
-    error HedgeRequestFailed();
 
     /*//////////////////////////////////////////////////////////////
                             POSITION MANAGER
@@ -84,6 +83,7 @@ library Errors {
     error NotEnoughCollateral();
     error NoActiveRequests();
     error InvalidAdjustmentParams();
+    error InvalidSizeRequest(uint256 sizeDeltaInTokens, bool isIncrease);
     error InvalidCollateralRequest(uint256 collateralDeltaAmount, bool isIncrease);
     error ProcessingRequest();
 

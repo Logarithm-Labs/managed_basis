@@ -190,6 +190,10 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
             revert Errors.CallerNotStrategy();
         }
 
+        if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount == 0) {
+            revert Errors.InvalidAdjustmentParams();
+        }
+
         uint256 round = $.currentRound + 1;
 
         if (params.isIncrease) {
@@ -202,8 +206,11 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
                 _transferToAgent(params.collateralDeltaAmount);
             }
             if (params.sizeDeltaInTokens > 0) {
+                if (params.collateralDeltaAmount == 0 && positionNetBalance() == 0) {
+                    revert Errors.InvalidSizeRequest(params.sizeDeltaInTokens, true);
+                }
                 if (params.sizeDeltaInTokens < increaseSizeMin()) {
-                    revert Errors.InvalidCollateralRequest(params.sizeDeltaInTokens, true);
+                    revert Errors.InvalidSizeRequest(params.sizeDeltaInTokens, true);
                 }
             }
 
@@ -216,7 +223,7 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
             }
             if (params.sizeDeltaInTokens > 0) {
                 if (params.sizeDeltaInTokens < decreaseSizeMin()) {
-                    revert Errors.InvalidCollateralRequest(params.sizeDeltaInTokens, false);
+                    revert Errors.InvalidSizeRequest(params.sizeDeltaInTokens, false);
                 }
             }
 

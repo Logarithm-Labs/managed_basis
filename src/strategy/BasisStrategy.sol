@@ -446,11 +446,8 @@ contract BasisStrategy is
         IERC20 _asset = $.asset;
 
         // request hedge increase with estimated product amount
-        _asset.safeTransferFrom(address(_vault), address(this), collateralDeltaAmount);
         uint256 estimatedProductAmount = $.oracle.convertTokenAmount(address(_asset), product(), amount);
-        if (!_adjustPosition(estimatedProductAmount, collateralDeltaAmount, true)) {
-            revert Errors.HedgeRequestFailed();
-        }
+        _adjustPosition(estimatedProductAmount, collateralDeltaAmount, true);
 
         // buy spot
         _asset.safeTransferFrom(address(_vault), address(_spotManager), amount);
@@ -568,9 +565,7 @@ contract BasisStrategy is
             }
         }
 
-        // the return value of this operation should be true
-        // because size checks are already done in calling deutilize
-        assert(_adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false));
+        _adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false);
     }
 
     function reserveExecutionCost(uint256 amount) external authCaller(vault()) {
@@ -629,36 +624,24 @@ contract BasisStrategy is
             uint256 idleAssets = _vault.idleAssets();
             result.deltaCollateralToIncrease =
                 idleAssets < result.deltaCollateralToIncrease ? idleAssets : result.deltaCollateralToIncrease;
-            if (result.deltaCollateralToIncrease > 0) {
-                $.asset.safeTransferFrom(address(_vault), address(this), result.deltaCollateralToIncrease);
-            }
-            if (!_adjustPosition(0, result.deltaCollateralToIncrease, true)) {
-                _setStrategyStatus(StrategyStatus.IDLE);
-                if (result.deltaCollateralToIncrease > 0) {
-                    $.asset.safeTransfer(address(_vault), result.deltaCollateralToIncrease);
-                }
-            }
+            if (result.deltaCollateralToIncrease > 0) _adjustPosition(0, result.deltaCollateralToIncrease, true);
+            else _setStrategyStatus(StrategyStatus.IDLE);
         } else if (result.clearProcessingRebalanceDown) {
             $.processingRebalanceDown = false;
             _setStrategyStatus(StrategyStatus.IDLE);
         } else if (result.hedgeDeviationInTokens != 0) {
             if (result.hedgeDeviationInTokens > 0) {
-                if (!_adjustPosition(uint256(result.hedgeDeviationInTokens), 0, false)) {
-                    _setStrategyStatus(StrategyStatus.IDLE);
-                }
+                _adjustPosition(uint256(result.hedgeDeviationInTokens), 0, false);
             } else {
                 uint256 hedgeDeviationInTokens = uint256(-result.hedgeDeviationInTokens);
-                if (!_adjustPosition(hedgeDeviationInTokens, 0, true)) {
-                    _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
-                    $.spotManager.sell(hedgeDeviationInTokens, ISpotManager.SwapType.MANUAL, "");
-                }
+                // not increase hedge size as it includes risks, instead sell spot
+                _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
+                $.spotManager.sell(hedgeDeviationInTokens, ISpotManager.SwapType.MANUAL, "");
             }
         } else if (result.hedgeManagerNeedKeep) {
             $.hedgeManager.keep();
         } else if (result.deltaCollateralToDecrease > 0) {
-            if (!_adjustPosition(0, result.deltaCollateralToDecrease, false)) {
-                _setStrategyStatus(StrategyStatus.IDLE);
-            }
+            _adjustPosition(0, result.deltaCollateralToDecrease, false);
         } else {
             _setStrategyStatus(StrategyStatus.IDLE);
         }
@@ -855,43 +838,22 @@ contract BasisStrategy is
     function _adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease)
         internal
         virtual
-        returns (bool)
     {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         IHedgeManager _hedgeManager = $.hedgeManager;
 
-        // check leverage
-        if (isIncrease && collateralDeltaAmount == 0 && _hedgeManager.positionNetBalance() == 0) {
-            return false;
-        }
-
-        // we don't allow to adjust hedge with modified amount due to min.
-        if (sizeDeltaInTokens > 0) {
-            uint256 min = isIncrease ? _hedgeManager.increaseSizeMin() : _hedgeManager.decreaseSizeMin();
-            if (sizeDeltaInTokens < min) return false;
-        }
-        if (collateralDeltaAmount > 0) {
-            uint256 min = isIncrease ? _hedgeManager.increaseCollateralMin() : _hedgeManager.decreaseCollateralMin();
-            if (collateralDeltaAmount < min) return false;
-        }
-
         if (isIncrease && collateralDeltaAmount > 0) {
-            $.asset.safeTransfer(address(_hedgeManager), collateralDeltaAmount);
+            $.asset.safeTransferFrom(vault(), address(_hedgeManager), collateralDeltaAmount);
         }
 
-        if (collateralDeltaAmount > 0 || sizeDeltaInTokens > 0) {
-            IHedgeManager.AdjustPositionPayload memory requestParams = IHedgeManager.AdjustPositionPayload({
-                sizeDeltaInTokens: sizeDeltaInTokens,
-                collateralDeltaAmount: collateralDeltaAmount,
-                isIncrease: isIncrease
-            });
-            $.requestParams = requestParams;
-            _hedgeManager.adjustPosition(requestParams);
-            return true;
-        } else {
-            return false;
-        }
+        IHedgeManager.AdjustPositionPayload memory requestParams = IHedgeManager.AdjustPositionPayload({
+            sizeDeltaInTokens: sizeDeltaInTokens,
+            collateralDeltaAmount: collateralDeltaAmount,
+            isIncrease: isIncrease
+        });
+        $.requestParams = requestParams;
+        _hedgeManager.adjustPosition(requestParams);
     }
 
     /// @dev Common function of checkUpkeep and performUpkeep.
