@@ -7,7 +7,7 @@ import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
 import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
 import {Arb, Bsc, Base} from "script/utils/ProtocolAddresses.sol";
 
-contract UpgradeXSpotManagerScript is Script {
+contract UpgradeXSpotManager is Script {
     function run() public {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
         vm.createSelectFork("arbitrum_one");
@@ -21,7 +21,6 @@ contract UpgradeXSpotManagerScript is Script {
 contract UpgradeBscBrotherSwapper is Script {
     function run() public {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
-        vm.createSelectFork("bnb_smart_chain");
         vm.startBroadcast(privateKey);
         UpgradeableBeacon beacon = UpgradeableBeacon(Bsc.BEACON_BROTHER_SWAPPER);
         beacon.upgradeTo(address(new BrotherSwapper()));

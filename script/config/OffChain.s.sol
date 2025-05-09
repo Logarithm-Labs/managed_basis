@@ -6,7 +6,7 @@ import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/Upgradeabl
 import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
 import {Arb} from "script/utils/ProtocolAddresses.sol";
 
-contract UpgradeOffChainScript is Script {
+contract UpgradeOffChain is Script {
     function run() public {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
         vm.createSelectFork("arbitrum_one");

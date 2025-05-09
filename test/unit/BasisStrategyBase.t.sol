@@ -48,8 +48,8 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     address constant product = WETH; // WETH
     address constant assetPriceFeed = CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
     address constant productPriceFeed = CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
-    uint256 constant entryCost = 0.005 ether;
-    uint256 constant exitCost = 0.005 ether;
+    uint256 constant entryCost = 0.003 ether;
+    uint256 constant exitCost = 0.003 ether;
     bool constant isLong = false;
 
     uint256 constant targetLeverage = 3 ether;

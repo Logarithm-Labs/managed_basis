@@ -8,10 +8,32 @@ import {Script} from "forge-std/Script.sol";
 
 contract UpgradeVault is Script {
     function run() public {
-        vm.startBroadcast();
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
         address vaultImpl = address(new LogarithmVault());
         UpgradeableBeacon vaultBeacon = UpgradeableBeacon(Arb.BEACON_VAULT);
         vaultBeacon.upgradeTo(vaultImpl);
+        vm.stopBroadcast();
+    }
+}
+
+contract SetDepositLimitScript is Script {
+    uint256 constant userDepositLimit = 1_000 * 10 ** 6;
+    uint256 constant vaultDepositLimit = type(uint256).max;
+
+    function run() public {
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
+        LogarithmVault wethVault = LogarithmVault(Arb.VAULT_HL_USDC_WETH);
+        LogarithmVault wbtcVault = LogarithmVault(Arb.VAULT_HL_USDC_WBTC);
+        LogarithmVault dogeVault = LogarithmVault(Arb.VAULT_HL_USDC_DOGE);
+        LogarithmVault virtualVault = LogarithmVault(Arb.VAULT_HL_USDC_VIRTUAL);
+        wethVault.setDepositLimits(userDepositLimit, vaultDepositLimit);
+        wbtcVault.setDepositLimits(userDepositLimit, vaultDepositLimit);
+        dogeVault.setDepositLimits(userDepositLimit, vaultDepositLimit);
+        virtualVault.setDepositLimits(userDepositLimit, vaultDepositLimit);
         vm.stopBroadcast();
     }
 }
