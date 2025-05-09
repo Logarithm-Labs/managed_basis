@@ -51,7 +51,7 @@ We have introduced cross-chain spot buy/sell operations to enhance protocol func
 
 ### 1. Asynchronous Deutilization
 
-- **Description:** Spot operations require time, creating inefficiencies in hedge adjustments.
+- **Description:** Spot operations require time, resulting in a considerable delay between the hedge operation.
 - **Solution:** Initiate both operations within the same transaction.
 - **Git Commit:** `9720d968e08140ecd733b17c92fdff9fc9e14e8e`
 
@@ -89,17 +89,29 @@ We have introduced cross-chain spot buy/sell operations to enhance protocol func
 - **Solution:** Capped the utilization/deutilization amount by a certain threshold that is derived by percentage of `idleAssets + utilizedAssets`.
 - **Git Commit:** `79c23e6d95bb4b84eea3ac4ebc7ace2822eb3323`
 
-### 7. Asynchronous utilization
+### 7. Semi-Asynchronous utilization
 
-- **Description:** Spot operations require time, creating inefficiencies in hedge adjustments.
-- **Solution:** Initiate both operations within the same transaction.
-- **Git Commit:** `dc1ebb857cf7ca679cb4d913787e8fbe5c484652`
+- **Description:** Spot operations require time, resulting in a considerable delay between the hedge operation.
+- **Solution:** Initiate both operations within the same transaction in case of cross-chain setup, otherwise sync one. This is because the hedge delta size to increase cannot be exact one with the async one. Applied it only to the cross-chain setup.
+- **Git Commit:** `dc1ebb857cf7ca679cb4d913787e8fbe5c484652`, `a827afff6bb1327127c95f9f598a2af74665441e`
 
 ### 8. Grant the access of entry/exit cost modification to a security manager
 
 - **Description:** Utilizing/Deutilizing costs keep changing all the time due to price spread.
 - **Solution:** Granted the access to a security manager so that he can handle based on the current strategy status.
 - **Git Commit:** `5d493903003cdf9d3ca6ea22d6bb56760d846408`
+
+### 9. Introduced Withdraw Buffer to reduce frequent deutilize operation
+
+- **Description:** Users ask to withdraw frequently, resulting in gas consumption for the operator.
+- **Solution:** Updated the logic for calculating pendingUtilization.For pending utilization we want to implement withdrawBuffer. The idea is that when we are utilizing we want to always keep the withdrawBuffer amount of idle assets in the vault, so users with small amounts can withdraw directly. The strategy does not take any direct actions to fill in withdraw buffer if it is empty, the withdraw buffer is depleted by new withdraws and filled in by new deposits. Withdraw buffer should have no affect on the rebalancing logic. For IDLE STATUS if pendingUtilization is smaller then withdraw buffer, then pendingUtilization should be zero.
+- **Git Commit:** `80dbdc6b0e9b5e63bac134ee0965b84510be44cb`
+
+### 10. Removed hedge size and collateral validation within strategy
+
+- **Description:** The hedge operation is done within the same tx with utilize/deutilize and the hedge manager has a reverting logic to validate the size and collateral adjustment. So don't need to double check it within strategy.
+- **Solution:** Removed the logic in strategy.
+- **Git Commit:** `6fd1ab546188d47598856b90d292ec682da35a5f`
 
 ## Self-Found Issues and Fixes
 
