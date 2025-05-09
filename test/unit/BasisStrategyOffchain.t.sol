@@ -135,4 +135,24 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         hedgeManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
         vm.stopPrank();
     }
+
+    function test_evt_createRequest_utilize() public afterDeposited {
+        (uint256 amount,) = strategy.pendingUtilizations();
+        vm.startPrank(operator);
+        vm.expectEmit(true, false, false, false);
+        emit OffChainPositionManager.CreateRequest(
+            1, oracle.convertTokenAmount(asset, product, amount), amount / strategy.targetLeverage(), true
+        );
+        strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
+        vm.stopPrank();
+    }
+
+    function test_evt_createRequest_deutilize() public afterWithdrawRequestCreated {
+        (, uint256 amount) = strategy.pendingUtilizations();
+        vm.startPrank(operator);
+        vm.expectEmit(true, false, false, false);
+        emit OffChainPositionManager.CreateRequest(3, amount, 0, true);
+        strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
+        vm.stopPrank();
+    }
 }

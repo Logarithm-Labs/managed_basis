@@ -262,4 +262,8 @@ contract MockXSpotManager is ISpotManager, ISwapper {
     function isSwapPool(address pool) public view returns (bool) {
         return _getSpotManagerStorage().isSwapPool[pool];
     }
+
+    function isXChain() public pure returns (bool) {
+        return true;
+    }
 }

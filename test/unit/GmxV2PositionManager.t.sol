@@ -114,7 +114,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 300 * USDC_PRECISION,
                 isIncrease: true
-            })
+            }),
+            false
         );
         bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
@@ -155,7 +156,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 300 * USDC_PRECISION,
                 isIncrease: true
-            })
+            }),
+            false
         );
         bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
@@ -174,7 +176,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
                 isIncrease: true
-            })
+            }),
+            false
         );
         bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
@@ -193,7 +196,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 400 * USDC_PRECISION,
                 isIncrease: true
-            })
+            }),
+            false
         );
     }
 
@@ -206,7 +210,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
                 isIncrease: true
-            })
+            }),
+            false
         );
 
         vm.startPrank(USDC_WHALE);
@@ -218,7 +223,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 1 ether,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
                 isIncrease: true
-            })
+            }),
+            false
         );
     }
 
@@ -230,7 +236,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: 0,
                 isIncrease: false
-            })
+            }),
+            false
         );
         _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderPositionUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
@@ -248,7 +255,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: 0,
                 isIncrease: true
-            })
+            }),
+            false
         );
         bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
@@ -269,7 +277,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: 200 * USDC_PRECISION,
                 isIncrease: true
-            })
+            }),
+            false
         );
         bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
@@ -288,7 +297,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: 0,
                 isIncrease: false
-            })
+            }),
+            false
         );
         _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderPositionUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
@@ -315,7 +325,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         IERC20(USDC).transfer(address(hedgeManager), 300 * USDC_PRECISION);
         vm.startPrank(address(strategy));
         hedgeManager.adjustPosition(
-            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 1 ether, collateralDeltaAmount: 0, isIncrease: true})
+            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 1 ether, collateralDeltaAmount: 0, isIncrease: true}),
+            false
         );
         assertEq(hedgeManager.positionNetBalance(), positionNetBalanceBefore + 300 * USDC_PRECISION);
     }
@@ -341,7 +352,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
-            })
+            }),
+            false
         );
         _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderPositionUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
@@ -376,7 +388,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: sizeDeltaInTokens,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
-            })
+            }),
+            false
         );
         _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderPositionUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
@@ -402,7 +415,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
-            })
+            }),
+            false
         );
         assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
         assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
@@ -436,7 +450,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
-            })
+            }),
+            false
         );
         assertNotEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
         assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
@@ -477,7 +492,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
-            })
+            }),
+            false
         );
         assertNotEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
         assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
@@ -515,7 +531,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
-            })
+            }),
+            false
         );
         assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
         assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
@@ -561,7 +578,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
-            })
+            }),
+            false
         );
         assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
         assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
@@ -608,7 +626,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
-            })
+            }),
+            false
         );
         assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
         assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
@@ -643,7 +662,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
-            })
+            }),
+            false
         );
         assertEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
         assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
@@ -687,7 +707,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 0.5 ether,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: false
-            })
+            }),
+            false
         );
         assertNotEq(hedgeManager.pendingIncreaseOrderKey(), bytes32(0));
         assertNotEq(hedgeManager.pendingDecreaseOrderKey(), bytes32(0));
@@ -723,7 +744,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         uint256 positionNetBalanceBefore = hedgeManager.positionNetBalance();
         vm.startPrank(address(strategy));
         hedgeManager.adjustPosition(
-            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
+            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false}),
+            false
         );
         _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         (claimableLongAmount, claimableShortAmount) = hedgeManager.getClaimableFundingAmounts();
@@ -746,7 +768,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
         address anyone = makeAddr("anyone");
         vm.startPrank(address(strategy));
         hedgeManager.adjustPosition(
-            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
+            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false}),
+            false
         );
         _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         (uint256 accruedClaimableLongAmount, uint256 accruedClaimableShortAmount) =
@@ -861,7 +884,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: sizeDeltaInTokens,
                 collateralDeltaAmount: 0,
                 isIncrease: false
-            })
+            }),
+            false
         );
         _executeOrder(hedgeManager.pendingDecreaseOrderKey());
         ReaderPositionUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
@@ -890,7 +914,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: sizeDeltaInTokens,
                 collateralDeltaAmount: 0,
                 isIncrease: true
-            })
+            }),
+            false
         );
         _executeOrder(hedgeManager.pendingIncreaseOrderKey());
         ReaderPositionUtils.PositionInfo memory positionInfoAfter = _getPositionInfo(address(oracle));
@@ -915,7 +940,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: 10 ether,
                 collateralDeltaAmount: 30_000 * USDC_PRECISION,
                 isIncrease: true
-            })
+            }),
+            false
         );
         bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);
@@ -935,7 +961,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
 
         vm.startPrank(address(strategy));
         hedgeManager.adjustPosition(
-            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false})
+            IHedgeManager.AdjustPositionPayload({sizeDeltaInTokens: 0, collateralDeltaAmount: 1, isIncrease: false}),
+            false
         );
         bytes32 decreaseOrderKey = hedgeManager.pendingDecreaseOrderKey();
         _executeOrder(decreaseOrderKey);
@@ -969,7 +996,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: type(uint256).max,
                 collateralDeltaAmount: 0,
                 isIncrease: false
-            })
+            }),
+            false
         );
         decreaseOrderKey = hedgeManager.pendingDecreaseOrderKey();
         _executeOrder(decreaseOrderKey);
@@ -1001,7 +1029,8 @@ contract GmxV2PositionManagerTest is GmxV2Test {
                 sizeDeltaInTokens: sizeDelta,
                 collateralDeltaAmount: collateralDelta,
                 isIncrease: true
-            })
+            }),
+            false
         );
         bytes32 increaseOrderKey = hedgeManager.pendingIncreaseOrderKey();
         _executeOrder(increaseOrderKey);

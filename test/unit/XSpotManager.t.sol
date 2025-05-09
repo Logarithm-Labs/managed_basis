@@ -81,10 +81,14 @@ contract XSpotManagerTest is ForkTest {
     }
 
     function test_buy(uint256 amount) public {
+        uint256 round = 1;
+        uint256 collateralDeltaAmount = 100;
         amount = bound(amount, 10000, TEN_THOUSAND_USDC);
         vm.startPrank(address(strategy));
         IERC20(asset).transfer(address(spotManager), amount);
-        spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
+        spotManager.buy(amount, ISpotManager.SwapType.MANUAL, abi.encode(round, collateralDeltaAmount));
+        vm.expectEmit(true, false, false, false);
+        emit BrotherSwapper.CreateRequest(round, amount, collateralDeltaAmount, true);
         swapper.executeSwap("");
         uint256 productBalance = IERC20(product).balanceOf(address(swapper));
         uint256 rate = spotManager.decimalConversionRate();
@@ -102,10 +106,19 @@ contract XSpotManagerTest is ForkTest {
     }
 
     function test_sell(uint256 amount) public {
+        uint256 round = 1;
+        uint256 collateralDeltaAmount = 100;
         amount = bound(amount, 0.000001 ether, 50 ether);
         _writeTokenBalance(address(swapper), product, amount);
         vm.startPrank(address(strategy));
-        spotManager.sell(amount, ISpotManager.SwapType.MANUAL, "");
+        spotManager.sell(amount, ISpotManager.SwapType.MANUAL, abi.encode(round, collateralDeltaAmount));
+        vm.expectEmit(true, false, false, true);
+        emit BrotherSwapper.CreateRequest(
+            round,
+            amount / spotManager.decimalConversionRate() * swapper.decimalConversionRate(),
+            collateralDeltaAmount,
+            false
+        );
         swapper.executeSwap("");
         uint256 rate = spotManager.decimalConversionRate();
         uint256 productsLD = (amount / rate) * rate;

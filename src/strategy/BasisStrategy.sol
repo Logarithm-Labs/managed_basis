@@ -383,7 +383,7 @@ contract BasisStrategy is
         _setStrategyStatus(StrategyStatus.DEUTILIZING);
         ISpotManager _spotManager = $.spotManager;
         _spotManager.sell(_spotManager.exposure(), ISpotManager.SwapType.MANUAL, "");
-        _adjustPosition(type(uint256).max, type(uint256).max, false);
+        _adjustPosition(type(uint256).max, type(uint256).max, false, true);
         _pause();
 
         emit Stopped(_msgSender());
@@ -428,14 +428,11 @@ contract BasisStrategy is
 
         amount = _capAmount(amount, pendingUtilization);
 
-        uint256 collateralDeltaAmount;
         if (amount == uncappedUtilization) {
             $.utilizingExecutionCost = reservedExecutionCost();
         } else {
             $.utilizingExecutionCost = reservedExecutionCost().mulDiv(amount, uncappedUtilization);
         }
-
-        collateralDeltaAmount = amount.mulDiv(Constants.FLOAT_PRECISION, _targetLeverage);
 
         // can only utilize when amount is positive
         if (amount == 0) {
@@ -445,13 +442,19 @@ contract BasisStrategy is
         ISpotManager _spotManager = $.spotManager;
         IERC20 _asset = $.asset;
 
-        // request hedge increase with estimated product amount
-        uint256 estimatedProductAmount = $.oracle.convertTokenAmount(address(_asset), product(), amount);
-        _adjustPosition(estimatedProductAmount, collateralDeltaAmount, true);
-
-        // buy spot
         _asset.safeTransferFrom(address(_vault), address(_spotManager), amount);
-        _spotManager.buy(amount, swapType, swapData);
+
+        if (_spotManager.isXChain()) {
+            // apply asynchronous utilization
+            uint256 collateralDeltaAmount = _calculateDeltaCollateralForUtilize(amount, _targetLeverage);
+            uint256 estimatedProductAmount = $.oracle.convertTokenAmount(address(_asset), product(), amount);
+            // don't emit hedge request
+            uint256 round = _adjustPosition(estimatedProductAmount, collateralDeltaAmount, true, false);
+            _spotManager.buy(amount, swapType, abi.encode(round, collateralDeltaAmount));
+        } else {
+            // apply synchronous utilization
+            _spotManager.buy(amount, swapType, swapData);
+        }
     }
 
     /// @notice Deutilizes products to decrease the spot size.
@@ -518,10 +521,6 @@ contract BasisStrategy is
             revert Errors.ZeroAmountUtilization();
         }
 
-        // deutilize spot
-        _spotManager.sell(amount, swapType, swapData);
-
-        // decrease hedge
         uint256 collateralDeltaAmount;
         uint256 sizeDeltaInTokens = amount;
         // if the operation is not for processing rebalance down,
@@ -538,18 +537,14 @@ contract BasisStrategy is
                     sizeDeltaInTokens = type(uint256).max;
                     collateralDeltaAmount = type(uint256).max;
                 } else {
-                    uint256 pendingWithdraw;
-                    if (strategyStatus() == StrategyStatus.AWAITING_FINAL_DEUTILIZATION) {
-                        // in case spot has been sold already
-                        pendingWithdraw = assetsToDeutilize();
-                    } else {
-                        // in case spot hasn't been sold yet
-                        uint256 estimatedAssets = $.oracle.convertTokenAmount(_product, _asset, amount);
-                        // subtract 1% less than the estimated one to process fully
-                        (, pendingWithdraw) = assetsToDeutilize().trySub(estimatedAssets * 99 / 100);
-                    }
+                    // estimate assets that will be derived from selling spot
+                    uint256 estimatedAssets = $.oracle.convertTokenAmount(_product, _asset, amount);
+                    // subtract 1% less than the estimated one to process fully
+                    (, collateralDeltaAmount) = assetsToDeutilize().trySub(estimatedAssets * 99 / 100);
                     min = _hedgeManager.decreaseCollateralMin();
-                    collateralDeltaAmount = min > pendingWithdraw ? min : pendingWithdraw;
+                    if (collateralDeltaAmount < min) {
+                        collateralDeltaAmount = min;
+                    }
                 }
             } else {
                 // when partial deutilizing
@@ -565,7 +560,22 @@ contract BasisStrategy is
             }
         }
 
-        _adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false);
+        if (sizeDeltaInTokens == type(uint256).max) {
+            _adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false, true);
+            if (_spotManager.isXChain()) {
+                _spotManager.sell(amount, swapType, "");
+            } else {
+                _spotManager.sell(amount, swapType, swapData);
+            }
+        } else {
+            if (_spotManager.isXChain()) {
+                uint256 round = _adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false, false);
+                _spotManager.sell(amount, swapType, abi.encode(round, collateralDeltaAmount));
+            } else {
+                _adjustPosition(sizeDeltaInTokens, collateralDeltaAmount, false, true);
+                _spotManager.sell(amount, swapType, swapData);
+            }
+        }
     }
 
     function reserveExecutionCost(uint256 amount) external authCaller(vault()) {
@@ -613,35 +623,44 @@ contract BasisStrategy is
         if (result.clearReservedExecutionCost) {
             $.reservedExecutionCost = 0;
         }
+
+        ISpotManager _spotManager = $.spotManager;
         if (result.emergencyDeutilizationAmount > 0) {
             $.processingRebalanceDown = true;
             _setStrategyStatus(StrategyStatus.DEUTILIZING);
-            $.spotManager.sell(result.emergencyDeutilizationAmount, ISpotManager.SwapType.MANUAL, "");
-            _adjustPosition(result.emergencyDeutilizationAmount, 0, false);
+            if (_spotManager.isXChain()) {
+                uint256 round = _adjustPosition(result.emergencyDeutilizationAmount, 0, false, false);
+                _spotManager.sell(
+                    result.emergencyDeutilizationAmount, ISpotManager.SwapType.MANUAL, abi.encode(round, 0)
+                );
+            } else {
+                _adjustPosition(result.emergencyDeutilizationAmount, 0, false, true);
+                _spotManager.sell(result.emergencyDeutilizationAmount, ISpotManager.SwapType.MANUAL, "");
+            }
         } else if (result.deltaCollateralToIncrease > 0) {
             $.processingRebalanceDown = true;
             ILogarithmVault _vault = $.vault;
             uint256 idleAssets = _vault.idleAssets();
             result.deltaCollateralToIncrease =
                 idleAssets < result.deltaCollateralToIncrease ? idleAssets : result.deltaCollateralToIncrease;
-            if (result.deltaCollateralToIncrease > 0) _adjustPosition(0, result.deltaCollateralToIncrease, true);
+            if (result.deltaCollateralToIncrease > 0) _adjustPosition(0, result.deltaCollateralToIncrease, true, true);
             else _setStrategyStatus(StrategyStatus.IDLE);
         } else if (result.clearProcessingRebalanceDown) {
             $.processingRebalanceDown = false;
             _setStrategyStatus(StrategyStatus.IDLE);
         } else if (result.hedgeDeviationInTokens != 0) {
             if (result.hedgeDeviationInTokens > 0) {
-                _adjustPosition(uint256(result.hedgeDeviationInTokens), 0, false);
+                _adjustPosition(uint256(result.hedgeDeviationInTokens), 0, false, true);
             } else {
                 uint256 hedgeDeviationInTokens = uint256(-result.hedgeDeviationInTokens);
                 // not increase hedge size as it includes risks, instead sell spot
-                _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
+                // in x chain, sell spot while not adjusting hedge position
                 $.spotManager.sell(hedgeDeviationInTokens, ISpotManager.SwapType.MANUAL, "");
             }
         } else if (result.hedgeManagerNeedKeep) {
             $.hedgeManager.keep();
         } else if (result.deltaCollateralToDecrease > 0) {
-            _adjustPosition(0, result.deltaCollateralToDecrease, false);
+            _adjustPosition(0, result.deltaCollateralToDecrease, false, true);
         } else {
             _setStrategyStatus(StrategyStatus.IDLE);
         }
@@ -662,11 +681,16 @@ contract BasisStrategy is
             revert Errors.InvalidCallback();
         }
 
-        if (status == StrategyStatus.AWAITING_FINAL_UTILIZATION) {
-            _setStrategyStatus(StrategyStatus.IDLE);
-            _processUtilizingExecutionCost();
-        } else if (status == StrategyStatus.UTILIZING) {
+        if (ISpotManager(_msgSender()).isXChain()) {
+            if (status == StrategyStatus.AWAITING_FINAL_UTILIZATION) {
+                _setStrategyStatus(StrategyStatus.IDLE);
+                _processUtilizingExecutionCost();
+            } else if (status == StrategyStatus.UTILIZING) {
+                _setStrategyStatus(StrategyStatus.AWAITING_FINAL_UTILIZATION);
+            }
+        } else {
             _setStrategyStatus(StrategyStatus.AWAITING_FINAL_UTILIZATION);
+            _adjustPosition(productDelta, _calculateDeltaCollateralForUtilize(assetDelta, targetLeverage()), true, true);
         }
 
         emit Utilize(_msgSender(), assetDelta, productDelta, timestamp);
@@ -695,6 +719,10 @@ contract BasisStrategy is
             _processAssetsToWithdraw(address(_asset));
         } else if (status == StrategyStatus.DEUTILIZING) {
             _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
+        } else {
+            // for rehedge
+            _setStrategyStatus(StrategyStatus.IDLE);
+            _processAssetsToWithdraw(address(_asset));
         }
 
         emit Deutilize(_msgSender(), productDelta, assetDelta, timestamp);
@@ -730,8 +758,9 @@ contract BasisStrategy is
             } else if (status == StrategyStatus.DEUTILIZING) {
                 _setStrategyStatus(StrategyStatus.AWAITING_FINAL_DEUTILIZATION);
             } else {
-                // for rebalance up to decrease collateral
+                // for rebalance up to decrease collateral or for rehedge
                 _setStrategyStatus(StrategyStatus.IDLE);
+                _processAssetsToWithdraw(asset());
             }
         }
 
@@ -835,10 +864,12 @@ contract BasisStrategy is
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Validate the position adjustment parameters before requesting.
-    function _adjustPosition(uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease)
-        internal
-        virtual
-    {
+    function _adjustPosition(
+        uint256 sizeDeltaInTokens,
+        uint256 collateralDeltaAmount,
+        bool isIncrease,
+        bool emitRequest
+    ) internal virtual returns (uint256) {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         IHedgeManager _hedgeManager = $.hedgeManager;
@@ -853,7 +884,7 @@ contract BasisStrategy is
             isIncrease: isIncrease
         });
         $.requestParams = requestParams;
-        _hedgeManager.adjustPosition(requestParams);
+        return _hedgeManager.adjustPosition(requestParams, emitRequest);
     }
 
     /// @dev Common function of checkUpkeep and performUpkeep.
@@ -1223,6 +1254,14 @@ contract BasisStrategy is
             deltaCollateral = positionNetBalance - targetCollateral;
         }
         return deltaCollateral;
+    }
+
+    function _calculateDeltaCollateralForUtilize(uint256 _utilization, uint256 _targetLeverage)
+        internal
+        pure
+        returns (uint256)
+    {
+        return _utilization.mulDiv(Constants.FLOAT_PRECISION, _targetLeverage);
     }
 
     /// @dev Validates the strategy status if it is desired one.

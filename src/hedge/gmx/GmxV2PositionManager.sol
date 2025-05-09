@@ -186,7 +186,12 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IHedgeManager
-    function adjustPosition(AdjustPositionPayload calldata params) external onlyStrategy whenNotPending {
+    function adjustPosition(AdjustPositionPayload calldata params, bool /*emitRequest*/ )
+        external
+        onlyStrategy
+        whenNotPending
+        returns (uint256)
+    {
         GmxV2PositionManagerStorage storage $ = _getGmxV2PositionManagerStorage();
         if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount == 0) {
             revert Errors.InvalidAdjustmentParams();
@@ -289,6 +294,8 @@ contract GmxV2PositionManager is Initializable, IHedgeManager, IOrderCallbackRec
         }
 
         emit PositionAdjustmentRequested(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
+
+        return 0;
     }
 
     /// @dev Realizes the claimable funding or increases collateral if there are idle assets

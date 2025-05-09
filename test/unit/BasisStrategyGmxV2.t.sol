@@ -88,7 +88,7 @@ contract BasisStrategyGmxV2Test is BasisStrategyBaseTest, GmxV2Test {
         _moveTimestamp(1 days, priceFeeds);
 
         vm.startPrank(address(owner));
-        GmxConfig(address(hedgeManager.config())).setMaxClaimableFundingShare(0.00001 ether);
+        GmxConfig(address(hedgeManager.config())).setMaxClaimableFundingShare(0.000001 ether);
 
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("hedgeManagerKeep");
         // assertTrue(upkeepNeeded, "upkeepNeeded");
