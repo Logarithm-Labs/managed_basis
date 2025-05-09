@@ -117,7 +117,7 @@ contract StrategyConfig is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     function setResponseDeviationThreshold(uint256 threshold) external onlyOwner {
-        _setRebalanceDeviationThreshold(threshold);
+        _setResponseDeviationThreshold(threshold);
     }
 
     function setWithdrawBufferThreshold(uint256 threshold) external onlyOwner {
