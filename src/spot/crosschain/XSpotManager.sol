@@ -194,17 +194,11 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
                                MAIN LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Requests Swapper to buy product.
-    ///
-    /// @param amountLD The asset amount in local decimals to buy product.
-    /// @param swapType The swap type.
-    /// @param swapData The data used in swapping if necessary.
-    /// Important: In case of 1Inch swapData, it must be derived on the dest chain.
-    /// At this time, the amount decimals should be the one on the dest chain as well.
-    function buy(uint256 amountLD, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
+    /// @inheritdoc ISpotManager
+    function buy(uint256 amountLD, SwapType swapType, bytes calldata hedgeData) external authCaller(strategy()) {
         _getXSpotManagerStorage().pendingAssets = amountLD;
         // build message data
-        bytes memory messageData = abi.encode(buyResGasLimit(), swapType, swapData);
+        bytes memory messageData = abi.encode(buyResGasLimit(), swapType, hedgeData);
         ILogarithmMessenger _messenger = ILogarithmMessenger(messenger());
         // send
         address _asset = asset();
@@ -222,16 +216,10 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         emit BuyRequested(_msgSender(), swapType, amountLD);
     }
 
-    /// @dev Requests Swapper to sell product.
-    ///
-    /// @param amountLD The product amount in local decimals to be sold.
-    /// @param swapType The swap type.
-    /// @param swapData The data used in swapping if necessary.
-    /// Important: In case of 1Inch swapData, it must be derived on the dest chain.
-    /// At this time, the amount decimals should be the one on the dest chain as well.
-    function sell(uint256 amountLD, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
+    /// @inheritdoc ISpotManager
+    function sell(uint256 amountLD, SwapType swapType, bytes calldata hedgeData) external authCaller(strategy()) {
         uint256 amountSD = _toSD(amountLD);
-        bytes memory messageData = abi.encode(sellResGasLimit(), amountSD, swapType, swapData);
+        bytes memory messageData = abi.encode(sellResGasLimit(), amountSD, swapType, hedgeData);
         ILogarithmMessenger(messenger()).send(
             SendParams({
                 dstChainId: dstChainId(),
@@ -332,10 +320,12 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         return _getXSpotManagerStorage().oracle;
     }
 
+    /// @inheritdoc ISpotManager
     function asset() public view returns (address) {
         return _getXSpotManagerStorage().asset;
     }
 
+    /// @inheritdoc ISpotManager
     function product() public view returns (address) {
         return _getXSpotManagerStorage().product;
     }
@@ -348,5 +338,10 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
     /// @notice The chain id that is used by the messenger, where the swapper is located.
     function dstChainId() public view returns (uint256) {
         return _getXSpotManagerStorage().dstChainId;
+    }
+
+    /// @inheritdoc ISpotManager
+    function isXChain() public pure returns (bool) {
+        return true;
     }
 }

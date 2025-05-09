@@ -28,6 +28,8 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         ISpotManager.SwapType swapType;
         bool isBuy;
         uint128 gasLimit;
+        uint256 round;
+        uint256 collateralDeltaAmount;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -63,18 +65,17 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
     /// @dev Emitted when swap operation is requested.
     event SwapRequested(ISpotManager.SwapType indexed swapType, uint256 indexed quoteAmount, bool indexed isBuy);
 
-    /// @dev Emitted when buy has been processed.
-    event BuyProcessed(
-        ISpotManager.SwapType indexed swapType, uint256 indexed assetsReceived, uint256 indexed productsSwapped
-    );
-
-    /// @dev Emitted when sell has been processed.
-    event SellProcessed(
-        ISpotManager.SwapType indexed swapType, uint256 indexed productsRequested, uint256 indexed assetsSwapped
+    event SwapProcessed(
+        ISpotManager.SwapType indexed swapType, uint256 indexed assets, uint256 indexed products, bool isBuy
     );
 
     /// @dev Emitted when cross-chain messenger gets updated.
     event MessengerUpdated(address indexed caller, address indexed newMessenger);
+
+    /// @dev Emitted when a new hedge request from strategy is created.
+    event CreateRequest(
+        uint256 indexed round, uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease
+    );
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -159,12 +160,29 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         }
     }
 
-    function _setPendingRequest(bool isBuy, uint256 amount, ISpotManager.SwapType swapType, uint128 gasLimit) private {
+    function _setPendingRequest(
+        bool isBuy,
+        uint256 amount,
+        ISpotManager.SwapType swapType,
+        uint128 gasLimit,
+        bytes memory hedgeData
+    ) private {
         if (_getBrotherSwapperStorage().pendingRequest.amount != 0) {
             revert Errors.RequestInPending();
         }
-        _getBrotherSwapperStorage().pendingRequest =
-            SwapRequest({isBuy: isBuy, amount: amount, swapType: swapType, gasLimit: gasLimit});
+        uint256 round;
+        uint256 collateralDeltaAmount;
+        if (hedgeData.length == 64) {
+            (round, collateralDeltaAmount) = abi.decode(hedgeData, (uint256, uint256));
+        }
+        _getBrotherSwapperStorage().pendingRequest = SwapRequest({
+            isBuy: isBuy,
+            amount: amount,
+            swapType: swapType,
+            gasLimit: gasLimit,
+            round: round,
+            collateralDeltaAmount: collateralDeltaAmount
+        });
         emit SwapRequested(swapType, amount, isBuy);
     }
 
@@ -197,10 +215,10 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         }
         // decode data
         // data = abi.encode(buyResGasLimit(), swapType, swapData);
-        (uint128 buyResGasLimit, ISpotManager.SwapType swapType,) =
+        (uint128 buyResGasLimit, ISpotManager.SwapType swapType, bytes memory hedgeData) =
             abi.decode(data, (uint128, ISpotManager.SwapType, bytes));
 
-        _setPendingRequest(true, amountLD, swapType, buyResGasLimit);
+        _setPendingRequest(true, amountLD, swapType, buyResGasLimit, hedgeData);
     }
 
     /// @dev Called when sell request has been sent from XSpotManager.
@@ -209,11 +227,11 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         authCaller(messenger())
         onlySpotManager(sender)
     {
-        (uint128 sellResGasLimit, uint64 productsSD, ISpotManager.SwapType swapType,) =
+        (uint128 sellResGasLimit, uint64 productsSD, ISpotManager.SwapType swapType, bytes memory hedgeData) =
             abi.decode(data, (uint128, uint64, ISpotManager.SwapType, bytes));
         uint256 productsLD = _toLD(productsSD);
 
-        _setPendingRequest(false, productsLD, swapType, sellResGasLimit);
+        _setPendingRequest(false, productsLD, swapType, sellResGasLimit, hedgeData);
     }
 
     /// @notice Execute swap that is pending
@@ -253,7 +271,10 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
                 })
             );
 
-            emit BuyProcessed(_pendingRequest.swapType, _pendingRequest.amount, productsLD);
+            emit SwapProcessed(_pendingRequest.swapType, _pendingRequest.amount, productsLD, true);
+            if (_pendingRequest.round != 0) {
+                emit CreateRequest(_pendingRequest.round, productsLD, _pendingRequest.collateralDeltaAmount, true);
+            }
         } else {
             uint256 assetsLD;
             address _asset = asset();
@@ -284,7 +305,12 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
                 })
             );
 
-            emit SellProcessed(_pendingRequest.swapType, _pendingRequest.amount, assetsLD);
+            emit SwapProcessed(_pendingRequest.swapType, assetsLD, _pendingRequest.amount, false);
+            if (_pendingRequest.round != 0) {
+                emit CreateRequest(
+                    _pendingRequest.round, _pendingRequest.amount, _pendingRequest.collateralDeltaAmount, false
+                );
+            }
         }
 
         delete _getBrotherSwapperStorage().pendingRequest;
@@ -346,17 +372,17 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         return _getBrotherSwapperStorage().dstChainId;
     }
 
-    /// @notice True if `pool` is registered liquidity pool in manual swap path
+    /// @inheritdoc ISwapper
     function isSwapPool(address pool) public view returns (bool) {
         return _getBrotherSwapperStorage().isSwapPool[pool];
     }
 
-    /// @notice The manual swap path for buy
+    /// @inheritdoc ISwapper
     function assetToProductSwapPath() public view returns (address[] memory) {
         return _getBrotherSwapperStorage().assetToProductSwapPath;
     }
 
-    /// @notice The manual swap path for sell
+    /// @inheritdoc ISwapper
     function productToAssetSwapPath() public view returns (address[] memory) {
         return _getBrotherSwapperStorage().productToAssetSwapPath;
     }

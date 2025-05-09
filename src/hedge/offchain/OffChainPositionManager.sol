@@ -179,7 +179,7 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IHedgeManager
-    function adjustPosition(AdjustPositionPayload memory params) external {
+    function adjustPosition(AdjustPositionPayload memory params, bool emitRequest) external returns (uint256) {
         // increments round
         // stores position state from the previous round in the current round
         // stores request in the current round
@@ -240,7 +240,11 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
         $.lastRequestRound = round;
         $.requestRounds.push(round);
 
-        emit CreateRequest(round, params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
+        if (emitRequest) {
+            emit CreateRequest(round, params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
+        }
+
+        return round;
     }
 
     /// @dev Reports the state of the hedge position.
