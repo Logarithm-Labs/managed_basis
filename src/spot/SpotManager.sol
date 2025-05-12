@@ -149,7 +149,7 @@ contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, IS
             revert Errors.UnsupportedSwapType();
         }
         _getSpotManagerStorage().exposure += amountOut;
-        emit SpotBuy(amount, amountOut);
+        emit SwapProcessed(swapType, amount, amountOut, true);
 
         IBasisStrategy(_msgSender()).spotBuyCallback(amount, amountOut, block.timestamp);
     }
@@ -170,7 +170,7 @@ contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, IS
             revert Errors.UnsupportedSwapType();
         }
         _getSpotManagerStorage().exposure -= amount;
-        emit SpotSell(amountOut, amount);
+        emit SwapProcessed(swapType, amountOut, amount, false);
 
         IBasisStrategy(_msgSender()).spotSellCallback(amountOut, amount, block.timestamp);
     }

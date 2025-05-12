@@ -65,10 +65,6 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
     /// @dev Emitted when swap operation is requested.
     event SwapRequested(ISpotManager.SwapType indexed swapType, uint256 indexed quoteAmount, bool indexed isBuy);
 
-    event SwapProcessed(
-        ISpotManager.SwapType indexed swapType, uint256 indexed assets, uint256 indexed products, bool isBuy
-    );
-
     /// @dev Emitted when cross-chain messenger gets updated.
     event MessengerUpdated(address indexed caller, address indexed newMessenger);
 
