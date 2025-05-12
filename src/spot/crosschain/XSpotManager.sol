@@ -259,7 +259,6 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         uint256 _pendingAssets = pendingAssets();
         delete _getXSpotManagerStorage().pendingAssets;
         _getXSpotManagerStorage().exposure += productsLD;
-        emit SpotBuy(_pendingAssets, productsLD);
 
         IBasisStrategy(strategy()).spotBuyCallback(_pendingAssets, productsLD, timestamp);
     }
@@ -277,7 +276,6 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         uint256 productsLD = _toLD(productsSD);
         (, uint256 newExposure) = exposure().trySub(productsLD);
         _getXSpotManagerStorage().exposure = newExposure;
-        emit SpotSell(amountLD, productsLD);
 
         IBasisStrategy(strategy()).spotSellCallback(amountLD, productsLD, timestamp);
     }

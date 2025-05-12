@@ -7,12 +7,6 @@ interface ISpotManager {
         INCH_V6
     }
 
-    /// @dev Emitted when product is bought in spot markets.
-    event SpotBuy(uint256 assetDelta, uint256 productDelta);
-
-    /// @dev Emitted when product is sold in spot markets.
-    event SpotSell(uint256 assetDelta, uint256 productDelta);
-
     /// @dev Buys product in the spot market.
     ///
     /// @param amount The asset amount to be swapped to product.
