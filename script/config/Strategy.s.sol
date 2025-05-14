@@ -29,11 +29,15 @@ contract UpgradeStrategyConfig is Script {
             abi.encodeWithSelector(StrategyConfig.setWithdrawBufferThreshold.selector, 0.01 ether)
         );
 
-        // upgrade strategy
-        address strategyImpl = address(new BasisStrategy());
-        UpgradeableBeacon strategyBeacon = UpgradeableBeacon(Arb.BEACON_STRATEGY);
-        strategyBeacon.upgradeTo(strategyImpl);
-
         vm.stopBroadcast();
     }
+}
+
+contract UpgradeStrategy is Script {
+    vm.startBroadcast();
+    address strategyImpl = address(new BasisStrategy());
+    UpgradeableBeacon strategyBeacon = UpgradeableBeacon(Arb.BEACON_STRATEGY);
+    strategyBeacon.upgradeTo(strategyImpl);
+    vm.stopBroadcast();
+
 }
