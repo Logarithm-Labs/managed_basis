@@ -34,10 +34,30 @@ contract UpgradeStrategyConfig is Script {
 }
 
 contract UpgradeStrategy is Script {
-    vm.startBroadcast();
-    address strategyImpl = address(new BasisStrategy());
-    UpgradeableBeacon strategyBeacon = UpgradeableBeacon(Arb.BEACON_STRATEGY);
-    strategyBeacon.upgradeTo(strategyImpl);
-    vm.stopBroadcast();
+    function run() public {
+        vm.startBroadcast();
+        address strategyImpl = address(new BasisStrategy());
+        UpgradeableBeacon strategyBeacon = UpgradeableBeacon(Arb.BEACON_STRATEGY);
+        strategyBeacon.upgradeTo(strategyImpl);
+        vm.stopBroadcast();
+    }
+}
 
+contract SetLeverages is Script {
+    address public strategy = Arb.STRATEGY_HL_USDC_LINK;
+    uint256 constant targetLeverage = 4 ether;
+    uint256 constant minLeverage = 1 ether;
+    uint256 constant maxLeverage = 7 ether;
+    uint256 constant safeMarginLeverage = 9 ether;
+
+    function run() public {
+        vm.startBroadcast();
+        BasisStrategy(strategy).setLeverages(targetLeverage, minLeverage, maxLeverage, safeMarginLeverage);
+        vm.stopBroadcast();
+
+        require(BasisStrategy(strategy).targetLeverage() == targetLeverage);
+        require(BasisStrategy(strategy).minLeverage() == minLeverage);
+        require(BasisStrategy(strategy).maxLeverage() == maxLeverage);
+        require(BasisStrategy(strategy).safeMarginLeverage() == safeMarginLeverage);
+    }
 }
