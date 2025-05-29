@@ -362,25 +362,41 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
         uint256 _totalSupply,
         uint256 _lastHarvestedTimestamp
     ) private view returns (uint256) {
+        // Early return if any of the required conditions are not met
         if (_performanceFee == 0 || _hwm == 0 || _lastHarvestedTimestamp == 0 || _totalAssets <= _hwm) {
             return 0;
         }
+
+        // Calculate profit and profit rate
         uint256 profit = _totalAssets - _hwm;
         uint256 profitRate = profit.mulDiv(Constants.FLOAT_PRECISION, _hwm);
-        uint256 hurdleRateFraction = _calcFeeFraction(hurdleRate(), block.timestamp - _lastHarvestedTimestamp);
-        if (profitRate > hurdleRateFraction) {
-            uint256 feeAssets = profit.mulDiv(_performanceFee, Constants.FLOAT_PRECISION);
-            // feeAssets = previewRedeem(feeShares)
-            // previewRedeem = shares.mulDiv(totalAssets + 1, totalSupply + 10 ** _decimalsOffset, Math.Rounding.Floor);
-            // feeAssets = feeShares.mulDiv(totalAssets + 1, (totalSupplyBeforeFeeMint + feeShares) + 10 ** _decimalsOffset, Math.Rounding.Floor);
-            // feeShares = feeAssets.mulDiv(totalSupplyBeforeFeeMint + 10 ** _decimalsOffset, totalAssets + 1 - feeAssets, Math.Rounding.Ceil);
-            uint256 feeShares = feeAssets.mulDiv(
-                _totalSupply + 10 ** _decimalsOffset(), _totalAssets + 1 - feeAssets, Math.Rounding.Ceil
-            );
-            return feeShares;
-        } else {
+
+        // Calculate hurdle rate fraction for the time period
+        uint256 timeElapsed = block.timestamp - _lastHarvestedTimestamp;
+        uint256 hurdleRateFraction = _calcFeeFraction(hurdleRate(), timeElapsed);
+
+        // Only collect fee if profit rate exceeds hurdle rate
+        if (hurdleRateFraction == 0 || profitRate <= hurdleRateFraction) {
             return 0;
         }
+
+        // Calculate excess profit above hurdle rate
+        uint256 excessProfit = profit.mulDiv(profitRate - hurdleRateFraction, profitRate, Math.Rounding.Floor);
+
+        // Calculate fee assets based on excess profit
+        uint256 feeAssets = excessProfit.mulDiv(_performanceFee, Constants.FLOAT_PRECISION, Math.Rounding.Floor);
+
+        // 1. feeAssets = previewRedeem(feeShares)
+        // previewRedeem : shares.mulDiv(totalAssets + 1, totalSupply + 10 ** decimalsOffset, Math.Rounding.Floor)
+        // 2. feeAssets = feeShares.mulDiv(totalAssets + 1, totalSupplyBeforeFeeMint + feeShares + 10 ** decimalsOffset, Math.Rounding.Floor)
+        //    feeAssets * (totalSupplyBeforeFeeMint + feeShares + 10 ** decimalsOffset) = feeShares * (totalAssets + 1)
+        //    feeAssets * (totalSupplyBeforeFeeMint + 10 ** decimalsOffset) + feeAssets * feeShares = feeShares * (totalAssets + 1)
+        //    feeAssets * (totalSupplyBeforeFeeMint + 10 ** decimalsOffset) = feeShares * (totalAssets + 1 - feeAssets)
+        // 3. Hence feeShares = feeAssets.mulDiv(totalSupplyBeforeFeeMint + 10 ** decimalsOffset, totalAssets + 1 - feeAssets, Math.Rounding.Ceil)
+        uint256 feeShares =
+            feeAssets.mulDiv(_totalSupply + 10 ** _decimalsOffset(), _totalAssets + 1 - feeAssets, Math.Rounding.Ceil);
+
+        return feeShares;
     }
 
     /// @dev The total supply of shares including the next management fee shares.
