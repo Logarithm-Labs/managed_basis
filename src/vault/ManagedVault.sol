@@ -283,17 +283,18 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
         uint256 feeShares = _nextPerformanceFeeShares(
             _performanceFee, _hwm, _totalAssets, totalSupplyWithManagementFeeShares, _lastHarvestedTimestamp
         );
-        if (_performanceFee == 0 || _lastHarvestedTimestamp == 0) {
-            // update lastHarvestedTimestamp to account for hurdleRate
-            // only after performance fee is set
-            _getManagedVaultStorage().lastHarvestedTimestamp = block.timestamp;
-        } else if (feeShares > 0) {
+
+        // update states
+        uint256 oldHwm = _totalAssets > _hwm ? _totalAssets : _hwm;
+        uint256 oldTotalSupply = totalSupplyWithManagementFeeShares + feeShares;
+        _getManagedVaultStorage().lastHarvestedTimestamp = block.timestamp;
+        _updateHighWaterMark(oldHwm, oldTotalSupply, assets, shares, isDeposit);
+
+        // mint performance fee shares
+        if (feeShares > 0) {
             _mint(_feeRecipient, feeShares);
-            _getManagedVaultStorage().lastHarvestedTimestamp = block.timestamp;
-            _hwm = _totalAssets;
             emit PerformanceFeeCollected(_feeRecipient, feeShares);
         }
-        _updateHighWaterMark(_hwm, totalSupplyWithManagementFeeShares + feeShares, assets, shares, isDeposit);
     }
 
     /// @dev Should not be called when minting to fee recipient
