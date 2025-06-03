@@ -50,7 +50,7 @@ contract ManagedVaultTest is ForkTest {
         vault.setFeeInfos(recipient, 0.05 ether, 0.2 ether, 0.07 ether);
 
         // top up user1
-        _writeTokenBalance(user, USDC, 100_000 * 1e6);
+        _writeTokenBalance(user, USDC, 10_000_000 * 1e6);
     }
 
     function _mint(address _user, uint256 _shares) internal {
@@ -174,19 +174,24 @@ contract ManagedVaultTest is ForkTest {
         _deposit(user, THOUSAND_USDC);
         _moveTimestamp(36.5 days);
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(vault), THOUSAND_USDC / 200); // 0.5% profit
+        uint256 profit = THOUSAND_USDC / 200;
+        IERC20(USDC).transfer(address(vault), profit); // 0.5% profit
+        uint256 perfFee = vault.nextPerformanceFeeShares();
+        assertEq(perfFee, 0, "no performance fee");
         _deposit(user, THOUSAND_USDC);
-        assertEq(vault.highWaterMark(), THOUSAND_USDC + THOUSAND_USDC);
+        assertEq(vault.highWaterMark(), THOUSAND_USDC + profit + THOUSAND_USDC);
     }
 
     function test_updateHwm_deposit_afterProfitBiggerThanHurdleRate() public {
         assertEq(vault.hurdleRate(), 0.07 ether, "hurdle rate");
         _deposit(user, THOUSAND_USDC);
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(vault), THOUSAND_USDC / 10); // 10% profit
-        assertEq(vault.totalAssets(), THOUSAND_USDC + THOUSAND_USDC / 10, "totalAssets");
+        uint256 profit = THOUSAND_USDC / 10;
+        IERC20(USDC).transfer(address(vault), profit); // 10% profit
+        assertEq(vault.totalAssets(), THOUSAND_USDC + profit, "totalAssets");
+        _moveTimestamp(36.5 days);
         _deposit(user, THOUSAND_USDC);
-        assertEq(vault.highWaterMark(), THOUSAND_USDC + THOUSAND_USDC + THOUSAND_USDC / 10);
+        assertEq(vault.highWaterMark(), THOUSAND_USDC + THOUSAND_USDC + profit);
     }
 
     function test_updateHwm_deposit_afterLoss() public {
@@ -201,12 +206,13 @@ contract ManagedVaultTest is ForkTest {
         _deposit(user, THOUSAND_USDC);
         _moveTimestamp(36.5 days);
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(vault), THOUSAND_USDC / 200); // 0.5% profit
+        uint256 profit = THOUSAND_USDC / 200;
+        IERC20(USDC).transfer(address(vault), profit); // 0.5% profit
         uint256 nextMgmtShare = vault.nextManagementFeeShares();
         uint256 nextPerfShare = vault.nextPerformanceFeeShares();
         assertEq(nextPerfShare, 0, "0 performance fee");
         _redeem(user, (vault.balanceOf(user) + nextMgmtShare) / 2);
-        assertEq(vault.highWaterMark(), THOUSAND_USDC / 2);
+        assertEq(vault.highWaterMark(), (THOUSAND_USDC + profit) / 2);
     }
 
     function test_updateHwm_withdraw_afterProfitBiggerThanHurdleRate() public {
@@ -248,14 +254,18 @@ contract ManagedVaultTest is ForkTest {
     function test_performanceFee_withdraw_withProfitBiggerThanHurdleRate() public {
         _deposit(user, THOUSAND_USDC);
         _moveTimestamp(36.5 days);
-        // managementFee = 5% / 10 = 0.5%
-        // performanceFee = THOUSAND_USDC / 100 / 5
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(vault), THOUSAND_USDC / 100); // 1%
+        uint256 profit = THOUSAND_USDC / 100;
+        IERC20(USDC).transfer(address(vault), profit); // 1%
+        // hurdleRateFraction = 7% / 10 = 0.7%
+        // performanceFee = 20%
+        // hurdleFraction = hwm * hurdleRateFraction = hwm * 7% / 10
+        uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
         uint256 mgmtFee = vault.nextManagementFeeShares();
         uint256 perfFee = vault.nextPerformanceFeeShares();
         assertEq(mgmtFee, THOUSAND_USDC / 20 / 10);
-        assertEq(vault.previewRedeem(perfFee), THOUSAND_USDC / 100 / 5, "20% of profit");
+        uint256 perfFeeAssets = vault.previewRedeem(perfFee);
+        assertEq(perfFeeAssets, profit / 5, "20% of profit");
         uint256 nextFeeAssets = vault.previewRedeem(mgmtFee + perfFee);
         _withdraw(user, THOUSAND_USDC / 2);
         uint256 feeShares = vault.balanceOf(recipient);
@@ -286,19 +296,94 @@ contract ManagedVaultTest is ForkTest {
         _deposit(user, THOUSAND_USDC);
         _moveTimestamp(36.5 days);
         vm.startPrank(USDC_WHALE);
-        IERC20(USDC).transfer(address(vault), THOUSAND_USDC / 100); // 1% profit
-        // managementFee = 5% / 10 = 0.5%
-        // performanceFee = THOUSAND_USDC / 100 / 5
+        uint256 profit = THOUSAND_USDC / 100;
+        IERC20(USDC).transfer(address(vault), profit); // 1% profit
+        // hurdleRateFraction = 7% / 10 = 0.7%
+        // performanceFee = 20%
+        // hurdleFraction = hwm * hurdleRateFraction = hwm * 7% / 10
+        uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
         uint256 mgmtFee = vault.nextManagementFeeShares();
         uint256 perfFee = vault.nextPerformanceFeeShares();
         uint256 perfFeeAssets = vault.previewRedeem(perfFee);
-        assertEq(perfFeeAssets, THOUSAND_USDC / 100 / 5, "20% of profit");
+        assertEq(perfFeeAssets, profit / 5, "20% of profit");
         uint256 nextFeeAssets = vault.previewRedeem(mgmtFee + perfFee);
         _deposit(user, THOUSAND_USDC / 2);
         uint256 feeShares = vault.balanceOf(recipient);
         assertEq(mgmtFee + perfFee, feeShares);
         uint256 feeAssets = vault.previewRedeem(feeShares);
         assertEq(nextFeeAssets, feeAssets);
+    }
+
+    function test_performanceFee_profit_same_time_after_collected() public {
+        _deposit(user, THOUSAND_USDC);
+        _moveTimestamp(36.5 days);
+        vm.startPrank(USDC_WHALE);
+        uint256 profit = THOUSAND_USDC / 100;
+        IERC20(USDC).transfer(address(vault), profit); // 1% profit
+        // hurdleRateFraction = 7% / 10 = 0.7%
+        // performanceFee = 20%
+        // hurdle = hwm * hurdleRateFraction = hwm * 7% / 10
+        uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
+        uint256 mgmtFee = vault.nextManagementFeeShares();
+        uint256 perfFee = vault.nextPerformanceFeeShares();
+        uint256 perfFeeAssets = vault.previewRedeem(perfFee);
+        assertEq(perfFeeAssets, profit / 5, "20% of profit");
+        uint256 nextFeeAssets = vault.previewRedeem(mgmtFee + perfFee);
+        _deposit(user, THOUSAND_USDC / 2);
+        uint256 feeShares = vault.balanceOf(recipient);
+        assertEq(mgmtFee + perfFee, feeShares);
+        uint256 feeAssets = vault.previewRedeem(feeShares);
+        assertEq(nextFeeAssets, feeAssets);
+
+        perfFee = vault.nextPerformanceFeeShares();
+        assertEq(perfFee, 0, "no per fee before");
+
+        IERC20(USDC).transfer(address(vault), THOUSAND_USDC / 100); // 1% profit
+        perfFee = vault.nextPerformanceFeeShares();
+        assertEq(THOUSAND_USDC / 100 / 5, vault.previewRedeem(perfFee), "no per fee after");
+    }
+
+    function test_performanceFee_scenario() public {
+        // management fee 0%
+        // performance fee 20%
+        // hurdleRate 5%
+        vault.setFeeInfos(recipient, 0, 0.2 ether, 0.05 ether);
+        uint256 ONE_MINION = THOUSAND_USDC * 1000;
+        _deposit(user, ONE_MINION);
+
+        _moveTimestamp(7 days);
+        vm.startPrank(address(vault));
+        IERC20(USDC).transfer(address(this), THOUSAND_USDC / 10 * 8);
+
+        assertEq(vault.previewRedeem(vault.nextPerformanceFeeShares()), 0, "no per fee");
+        assertEq(vault.highWaterMark(), ONE_MINION, "$1M hwm");
+
+        _deposit(user, ONE_MINION);
+        _moveTimestamp(7 days);
+        vm.startPrank(USDC_WHALE);
+        IERC20(USDC).transfer(address(vault), THOUSAND_USDC);
+
+        assertEq(vault.previewRedeem(vault.nextPerformanceFeeShares()), 0, "no per fee");
+        _withdraw(user, 0);
+        assertEq(vault.highWaterMark(), ONE_MINION * 2 + THOUSAND_USDC / 5, "$2M and $200 hwm");
+
+        _withdraw(user, ONE_MINION);
+        _moveTimestamp(7 days);
+        vm.startPrank(USDC_WHALE);
+        IERC20(USDC).transfer(address(vault), THOUSAND_USDC * 2);
+
+        assertEq(vault.previewRedeem(vault.previewRedeem(vault.nextPerformanceFeeShares())), 400519599, "~$40 perf fee");
+        _withdraw(user, 0);
+        assertEq(vault.highWaterMark(), ONE_MINION + THOUSAND_USDC * 2 + THOUSAND_USDC / 5, "$1M and $2200 hwm");
+
+        _deposit(user, ONE_MINION);
+        _moveTimestamp(7 days);
+        vm.startPrank(USDC_WHALE);
+        IERC20(USDC).transfer(address(vault), THOUSAND_USDC * 3);
+
+        assertEq(vault.previewRedeem(vault.previewRedeem(vault.nextPerformanceFeeShares())), 601499542, "~$60 perf fee");
+        _withdraw(user, 0);
+        assertEq(vault.highWaterMark(), ONE_MINION * 2 + THOUSAND_USDC * 5 + THOUSAND_USDC / 5, "$2M and $4200 hwm");
     }
 
     function test_maxDeposit_limit() public {
