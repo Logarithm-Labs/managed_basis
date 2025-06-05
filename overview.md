@@ -145,3 +145,21 @@ We have introduced cross-chain spot buy/sell operations to enhance protocol func
   3. The depositor re-deposits, exploiting the system.
 - **Fix:** Reserved entry/exit fees for utilization/deutilization operations.
 - **Git Commit:** `01912ca8596bd20e82679d9cb827920db976a847`
+
+### 4. Performance Fee Calculation
+
+- **Issue:** The performance fee is not harvested gradually based on the current strategy performance.
+- **PoC:**
+  1. Assume below parameters:
+  - Performance Fee: 20%
+  - Hurdle Rate: 5% annually
+  2. User deposits $1000 at Day 0.
+  3. Strategy generates profits $5 for 36.5 days. (`profit_rate_annual = 5 / 1000 \* 10 = 0.05 = 5% where PF is not harvested because the profit rate is not bigger than the hurdle rate`)
+  4. Another user deposits $10000 at the same time.
+  5. Strategy generates profits $10 for another 3.65 days. (`profit_rate_annual = 15 / 11000 / 0.11 = 0.0124 = 1.24% < hurdle_rate`)
+  6. Strategy generates profits $90 for another 3.65 \* 9 days. (`profit_rate_annual = 105 / 11000 \* 5 = 0.0477 = 4.77% < hurdle_rate`)
+  7. Strategy generates profits $100 for another 36.5 days. (`profit_rate_annual = 205 / 11000 \* 10 / 3 = 0.0621 = 6.21% > hurdle_rate`)
+  8. Harvest `performance_fee = $205 \* 0.2 = $41`
+     Ideally, the performance fee should be harvested gradually from Step 5 instead of being done at Step 7.
+- **Fix:** Reset the profit calculation by updating `lastHarvestedTimestamp` and `HWM` whenever there is a user action. For `HWM`, it is reset only when the strategy generates profits.
+- **Git Commit:** `2e79c33b78506028ca2f40b2321e6b2eaa01fdfd`
