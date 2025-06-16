@@ -1,12 +1,37 @@
 # Extended Audit Overview
 
+## Table of Contents
+
+- [Introduction](#introduction)
+- [System Architecture](#system-architecture)
+- [New Features](#new-features)
+- [Refactors](#refactors)
+- [Self-Found Issues and Fixes](#self-found-issues-and-fixes)
+
 ## Introduction
 
 We have introduced cross-chain spot buy/sell operations to enhance protocol functionality and efficiency.
 
-## Scope
+## System Architecture
 
-### New Components
+The system consists of several key components that work together to enable cross-chain spot operations:
+
+1. **Core Components**
+
+   - `XSpotManager`: Initiates and manages cross-chain spot operations
+   - `BrotherSwapper`: Executes swaps on remote chains
+   - `AssetValueTransmitter`: Handles cross-chain asset value conversions
+   - `GasStation`: Manages cross-chain gas fees
+   - `TimelockManager`: Implements administrative controls
+
+2. **Messaging Layer**
+
+   - `LzLogMessenger`: Handles cross-chain messaging via LayerZero
+   - `GasConsumer`: Common interface for gas management
+
+## Detailed Description
+
+### New Features
 
 - **`XSpotManager.sol`**  
   _Path: `managed_basis/src/spot/crosschain/XSpotManager.sol`_
@@ -47,7 +72,7 @@ We have introduced cross-chain spot buy/sell operations to enhance protocol func
   _Path: `logarithm-messenger/contracts/common/GasConsumer.sol`_
   - Common interface for utilizing the Gas Station.
 
-## New Features
+## Refactors
 
 ### 1. Asynchronous Deutilization
 
@@ -123,7 +148,7 @@ We have introduced cross-chain spot buy/sell operations to enhance protocol func
   2. Victim deposits 199,999,999 assets and receives `199,999,999 * (0 + 1) / (100,000 + 1) = 1,999` shares.
   3. Operator utilizes all assets.
   4. Attacker transfers 1 asset to the Vault.
-  5. Victim’s redemption request fails due to incorrect share calculations resulting in none-zero 1 shares to withdraw immediately utilizing the idle assets in the Vault. The calculated asset amount to withdraw immediately becomes `1 * 200,100,000 / 1,999 = 100,100` which is bigger than 1.
+  5. Victim's redemption request fails due to incorrect share calculations resulting in none-zero 1 shares to withdraw immediately utilizing the idle assets in the Vault. The calculated asset amount to withdraw immediately becomes `1 * 200,100,000 / 1,999 = 100,100` which is bigger than 1.
 - **Fix:**
   1. Modified rounding calculation of `LogarithmVault.maxRedeem` from ceil to floor.
   2. Changed the logic of `LogarithmVault.requestRedeem` from share-based to asset-based.
@@ -141,7 +166,7 @@ We have introduced cross-chain spot buy/sell operations to enhance protocol func
 - **Issue:** Entry/exit fees were freed immediately after deposit/withdrawal, enabling unintended profits to the existing depositors.
 - **PoC:**
   1. A whale deposits with considerable fees.
-  2. Other depositors withdraw, benefiting from whale’s entry fee.
+  2. Other depositors withdraw, benefiting from whale's entry fee.
   3. The depositor re-deposits, exploiting the system.
 - **Fix:** Reserved entry/exit fees for utilization/deutilization operations.
 - **Git Commit:** `01912ca8596bd20e82679d9cb827920db976a847`
@@ -154,12 +179,12 @@ We have introduced cross-chain spot buy/sell operations to enhance protocol func
   - Performance Fee: 20%
   - Hurdle Rate: 5% annually
   2. User deposits $1000 at Day 0.
-  3. Strategy generates profits $5 for 36.5 days. (`profit_rate_annual = 5 / 1000 \* 10 = 0.05 = 5% where PF is not harvested because the profit rate is not bigger than the hurdle rate`)
+  3. Strategy generates profits $5 for 36.5 days. (`profit_rate_annual = 5 / 1000 * 10 = 0.05 = 5% where PF is not harvested because the profit rate is not bigger than the hurdle rate`)
   4. Another user deposits $10000 at the same time.
   5. Strategy generates profits $10 for another 3.65 days. (`profit_rate_annual = 15 / 11000 / 0.11 = 0.0124 = 1.24% < hurdle_rate`)
-  6. Strategy generates profits $90 for another 3.65 \* 9 days. (`profit_rate_annual = 105 / 11000 \* 5 = 0.0477 = 4.77% < hurdle_rate`)
-  7. Strategy generates profits $100 for another 36.5 days. (`profit_rate_annual = 205 / 11000 \* 10 / 3 = 0.0621 = 6.21% > hurdle_rate`)
-  8. Harvest `performance_fee = $205 \* 0.2 = $41`
+  6. Strategy generates profits $90 for another 3.65 \* 9 days. (`profit_rate_annual = 105 / 11000 * 5 = 0.0477 = 4.77% < hurdle_rate`)
+  7. Strategy generates profits $100 for another 36.5 days. (`profit_rate_annual = 205 / 11000 * 10 / 3 = 0.0621 = 6.21% > hurdle_rate`)
+  8. Harvest `performance_fee = $205 * 0.2 = $41`
      Ideally, the performance fee should be harvested gradually from Step 5 instead of being done at Step 7.
 - **Fix:** Reset the profit calculation by updating `lastHarvestedTimestamp` and `HWM` whenever there is a user action. For `HWM`, it is reset only when the strategy generates profits.
 - **Git Commit:** `2e79c33b78506028ca2f40b2321e6b2eaa01fdfd`
