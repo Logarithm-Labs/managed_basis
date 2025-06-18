@@ -263,7 +263,7 @@ contract ManagedVaultTest is ForkTest {
         // hurdleRateFraction = 7% / 10 = 0.7%
         // performanceFee = 20%
         // hurdleFraction = hwm * hurdleRateFraction = hwm * 7% / 10
-        uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
+        // uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
         uint256 mgmtFee = vault.nextManagementFeeShares();
         uint256 perfFee = vault.nextPerformanceFeeShares();
         assertEq(mgmtFee, THOUSAND_USDC / 20 / 10);
@@ -304,7 +304,7 @@ contract ManagedVaultTest is ForkTest {
         // hurdleRateFraction = 7% / 10 = 0.7%
         // performanceFee = 20%
         // hurdleFraction = hwm * hurdleRateFraction = hwm * 7% / 10
-        uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
+        // uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
         uint256 mgmtFee = vault.nextManagementFeeShares();
         uint256 perfFee = vault.nextPerformanceFeeShares();
         uint256 perfFeeAssets = vault.previewRedeem(perfFee);
@@ -326,7 +326,7 @@ contract ManagedVaultTest is ForkTest {
         // hurdleRateFraction = 7% / 10 = 0.7%
         // performanceFee = 20%
         // hurdle = hwm * hurdleRateFraction = hwm * 7% / 10
-        uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
+        // uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
         uint256 mgmtFee = vault.nextManagementFeeShares();
         uint256 perfFee = vault.nextPerformanceFeeShares();
         uint256 perfFeeAssets = vault.previewRedeem(perfFee);
