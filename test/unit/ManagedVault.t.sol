@@ -231,7 +231,10 @@ contract ManagedVaultTest is ForkTest {
         vm.startPrank(address(vault));
         IERC20(USDC).transfer(address(this), 100 * 1e6); // 1% loss
         _redeem(user, vault.balanceOf(user) / 2);
-        assertEq(vault.highWaterMark(), THOUSAND_USDC / 2);
+        // user realize $50 loss
+        // system has to apply PF after recovering $50 loss
+        // hence, hwm = $500 + $50 = $550
+        assertEq(vault.highWaterMark(), THOUSAND_USDC / 2 + THOUSAND_USDC / 20);
     }
 
     function test_performanceFee_withdraw_withProfitLessThanHurdleRate() public {
@@ -260,7 +263,7 @@ contract ManagedVaultTest is ForkTest {
         // hurdleRateFraction = 7% / 10 = 0.7%
         // performanceFee = 20%
         // hurdleFraction = hwm * hurdleRateFraction = hwm * 7% / 10
-        uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
+        // uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
         uint256 mgmtFee = vault.nextManagementFeeShares();
         uint256 perfFee = vault.nextPerformanceFeeShares();
         assertEq(mgmtFee, THOUSAND_USDC / 20 / 10);
@@ -301,7 +304,7 @@ contract ManagedVaultTest is ForkTest {
         // hurdleRateFraction = 7% / 10 = 0.7%
         // performanceFee = 20%
         // hurdleFraction = hwm * hurdleRateFraction = hwm * 7% / 10
-        uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
+        // uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
         uint256 mgmtFee = vault.nextManagementFeeShares();
         uint256 perfFee = vault.nextPerformanceFeeShares();
         uint256 perfFeeAssets = vault.previewRedeem(perfFee);
@@ -323,7 +326,7 @@ contract ManagedVaultTest is ForkTest {
         // hurdleRateFraction = 7% / 10 = 0.7%
         // performanceFee = 20%
         // hurdle = hwm * hurdleRateFraction = hwm * 7% / 10
-        uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
+        // uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
         uint256 mgmtFee = vault.nextManagementFeeShares();
         uint256 perfFee = vault.nextPerformanceFeeShares();
         uint256 perfFeeAssets = vault.previewRedeem(perfFee);
