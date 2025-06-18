@@ -231,7 +231,10 @@ contract ManagedVaultTest is ForkTest {
         vm.startPrank(address(vault));
         IERC20(USDC).transfer(address(this), 100 * 1e6); // 1% loss
         _redeem(user, vault.balanceOf(user) / 2);
-        assertEq(vault.highWaterMark(), THOUSAND_USDC / 2);
+        // user realize $50 loss
+        // system has to apply PF after recovering $50 loss
+        // hence, hwm = $500 + $50 = $550
+        assertEq(vault.highWaterMark(), THOUSAND_USDC / 2 + THOUSAND_USDC / 20);
     }
 
     function test_performanceFee_withdraw_withProfitLessThanHurdleRate() public {

@@ -223,7 +223,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
     ///
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
-        _harvestPerformanceFeeShares(assets, shares, true);
+        _harvestPerformanceFeeShares(assets, true);
         super._deposit(caller, receiver, assets, shares);
     }
 
@@ -235,7 +235,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
         virtual
         override
     {
-        _harvestPerformanceFeeShares(assets, shares, false);
+        _harvestPerformanceFeeShares(assets, false);
         super._withdraw(caller, receiver, owner, assets, shares);
     }
 
@@ -273,7 +273,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Should be called before all deposits and withdrawals
-    function _harvestPerformanceFeeShares(uint256 assets, uint256 shares, bool isDeposit) internal {
+    function _harvestPerformanceFeeShares(uint256 assets, bool isDeposit) internal {
         address _feeRecipient = feeRecipient();
         uint256 _performanceFee = performanceFee();
         uint256 _hwm = highWaterMark();
@@ -285,10 +285,13 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
         );
 
         // update states
-        uint256 oldHwm = _totalAssets > _hwm ? _totalAssets : _hwm;
-        uint256 oldTotalSupply = totalSupplyWithManagementFeeShares + feeShares;
+        uint256 newHwm = _totalAssets > _hwm ? _totalAssets : _hwm;
         _getManagedVaultStorage().lastHarvestedTimestamp = block.timestamp;
-        _updateHighWaterMark(oldHwm, oldTotalSupply, assets, shares, isDeposit);
+        if (isDeposit) {
+            _getManagedVaultStorage().hwm = newHwm + assets;
+        } else {
+            _getManagedVaultStorage().hwm = newHwm - assets;
+        }
 
         // mint performance fee shares
         if (feeShares > 0) {
@@ -318,23 +321,6 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
             _getManagedVaultStorage().lastAccruedTimestamp = block.timestamp;
             emit ManagementFeeCollected(_feeRecipient, feeShares);
         }
-    }
-
-    /// @dev Updates the high water mark
-    function _updateHighWaterMark(
-        uint256 oldHwm,
-        uint256 oldTotalSupply,
-        uint256 assets,
-        uint256 shares,
-        bool isDeposit
-    ) private {
-        uint256 newHwm;
-        if (isDeposit) {
-            newHwm = oldHwm + assets;
-        } else {
-            newHwm = oldHwm.mulDiv(oldTotalSupply - shares, oldTotalSupply, Math.Rounding.Ceil);
-        }
-        _getManagedVaultStorage().hwm = newHwm;
     }
 
     /// @dev Calculates the claimable shares for the management fee

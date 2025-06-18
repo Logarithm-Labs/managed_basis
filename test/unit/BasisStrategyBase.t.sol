@@ -1683,4 +1683,27 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(pendingUtilization, 0, "pendingUtilization");
         assertNotEq(pendingDeutilization, 0, "pendingDeutilization");
     }
+
+    function test_performanceFee_requestRedeem_unwantedFeeShares() public {
+        // performance fee 20%
+        // hurdleRate 10%
+        vm.startPrank(owner);
+        vault.setFeeInfos(address(this), 0, 0.2 ether, 0.1095 ether);
+        vm.stopPrank();
+
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset * 99999 / 100000);
+
+        uint256 shares = vault.nextPerformanceFeeShares();
+
+        assertEq(shares, 0, "shares");
+
+        vm.startPrank(user1);
+        vault.requestRedeem(vault.balanceOf(user1) * 3 / 4, user1, user1);
+        vm.stopPrank();
+
+        uint256 feeSharesAfter = vault.nextPerformanceFeeShares();
+        assertEq(feeSharesAfter, 0, "feeSharesAfter");
+    }
 }

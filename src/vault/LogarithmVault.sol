@@ -434,7 +434,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 assetsToRequest,
         uint256 sharesToRequest
     ) internal virtual returns (bytes32) {
-        _harvestPerformanceFeeShares(assetsToRequest, sharesToRequest, false);
+        _harvestPerformanceFeeShares(assetsToRequest, false);
 
         if (caller != owner) {
             _spendAllowance(owner, caller, sharesToRequest);
