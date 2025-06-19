@@ -389,6 +389,30 @@ contract ManagedVaultTest is ForkTest {
         assertEq(vault.highWaterMark(), ONE_MINION * 2 + THOUSAND_USDC * 5 + THOUSAND_USDC / 5, "$2M and $4200 hwm");
     }
 
+    function test_performanceFee_profit_biggerThanHurdleRate_PF_invadeHurdle() public {
+        _deposit(user, THOUSAND_USDC);
+        _moveTimestamp(36.5 days);
+        vm.startPrank(USDC_WHALE);
+        uint256 profit = THOUSAND_USDC * 8 / 1000;
+        IERC20(USDC).transfer(address(vault), profit); // 0.8% profit
+        // hurdleRateFraction = 7% / 10 = 0.7%
+        // performanceFee = 20%
+        // hurdleFraction = hwm * hurdleRateFraction = hwm * 7% / 10
+        uint256 hurdleFraction = THOUSAND_USDC * vault.hurdleRate() / 1 ether / 10;
+        uint256 mgmtFee = vault.nextManagementFeeShares();
+        uint256 perfFee = vault.nextPerformanceFeeShares();
+        uint256 perfFeeAssets = vault.previewRedeem(perfFee);
+        assertNotEq(perfFeeAssets, profit / 5, "not 20% of profit");
+        assertEq(perfFeeAssets, profit - hurdleFraction, "PF is remaining");
+        uint256 nextFeeAssets = vault.previewRedeem(mgmtFee + perfFee);
+        uint256 mgtFeeAmount = vault.previewRedeem(mgmtFee);
+        _deposit(user, THOUSAND_USDC / 2);
+        uint256 feeShares = vault.balanceOf(recipient);
+        assertEq(mgmtFee + perfFee, feeShares);
+        uint256 feeAssets = vault.previewRedeem(feeShares);
+        assertEq(nextFeeAssets, feeAssets);
+    }
+
     function test_maxDeposit_limit() public {
         vm.startPrank(owner);
         vault.setDepositLimits(THOUSAND_USDC, THOUSAND_USDC);
