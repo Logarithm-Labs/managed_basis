@@ -188,3 +188,24 @@ The system consists of several key components that work together to enable cross
      Ideally, the performance fee should be harvested gradually from Step 5 instead of being done at Step 7.
 - **Fix:** Reset the profit calculation by updating `lastHarvestedTimestamp` and `HWM` whenever there is a user action. For `HWM`, it is reset only when the strategy generates profits.
 - **Git Commit:** `2e79c33b78506028ca2f40b2321e6b2eaa01fdfd`
+
+### 5. Unwanted Performance Fee Generation
+
+- **Issue:** Performance fee was being calculated and collected even when there was no actual profit above the hurdle rate, due to incorrect HWM management during withdrawal operations.
+- **PoC:** When users withdraw, the performance fee calculation was triggered even when the strategy had not generated sufficient profits to exceed the hurdle rate, leading to incorrect fee collection.
+- **Fix:** Implemented proper HWM management to ensure performance fees are only calculated when there is actual profit above the hurdle rate, preventing unwanted fee collection.
+- **Git Commit:** `6a975f56d8c737661334caf38253e4ee33c7c6c3`
+
+### 6. CEI Pattern Violation in Performance Fee Collection
+
+- **Issue:** Performance fee collection was affected by entry/exit costs due to violation of the Checks-Effects-Interactions (CEI) pattern, potentially leading to incorrect fee calculations.
+- **PoC:** When users deposit or withdraw, the performance fee calculation was influenced by the entry/exit costs, which could result in incorrect fee amounts being collected.
+- **Fix:** Implemented proper CEI pattern to ensure performance fee calculations are not affected by entry/exit costs, maintaining accurate fee collection.
+- **Git Commit:** `91898982d9a102f23eb9f2a68db07ca9ccb4217e`
+
+### 7. Hurdle Rate Guarantee Before Collecting Performance Fee
+
+- **Issue:** Performance fee calculation could potentially invade the hurdle rate, meaning users might not receive the guaranteed minimum profit above the hurdle rate.
+- **PoC:** In certain scenarios, the performance fee calculation could result in users receiving less than the hurdle rate profit, violating the intended fee structure.
+- **Fix:** Implemented logic to guarantee that performance fees never invade the hurdle rate, ensuring users always receive at least the hurdle rate profit before any performance fees are collected.
+- **Git Commit:** `3dd6b3924a3455d6162b503a3deccb5eb22f8f9f`
