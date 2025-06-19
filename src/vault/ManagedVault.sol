@@ -353,10 +353,14 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
             return 0;
         }
         uint256 profit = _totalAssets - _hwm;
-        uint256 profitRate = profit.mulDiv(Constants.FLOAT_PRECISION, _hwm);
         uint256 hurdleRateFraction = _calcFeeFraction(hurdleRate(), block.timestamp - _lastHarvestedTimestamp);
-        if (profitRate > hurdleRateFraction) {
+        uint256 hurdle = _hwm.mulDiv(hurdleRateFraction, Constants.FLOAT_PRECISION);
+        if (profit > hurdle) {
             uint256 feeAssets = profit.mulDiv(_performanceFee, Constants.FLOAT_PRECISION);
+            // we guarantee that user's profit is not less than hurdle
+            if (profit - feeAssets < hurdle) {
+                feeAssets = profit - hurdle;
+            }
             // feeAssets = previewRedeem(feeShares)
             // previewRedeem = shares.mulDiv(totalAssets + 1, totalSupply + 10 ** _decimalsOffset, Math.Rounding.Floor);
             // feeAssets = feeShares.mulDiv(totalAssets + 1, (totalSupplyBeforeFeeMint + feeShares) + 10 ** _decimalsOffset, Math.Rounding.Floor);
