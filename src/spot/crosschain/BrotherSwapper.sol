@@ -261,6 +261,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
     /// @param swapData Data used in swap, e.g. Empty for manual swap and non-empty for 1inch.
     function executeSwap(bytes calldata swapData) external authCaller(operator()) {
         SwapRequest memory _pendingRequest = pendingRequest();
+        delete _getBrotherSwapperStorage().pendingRequest;
 
         if (_pendingRequest.amount == 0) {
             revert Errors.NoPendingRequest();
@@ -340,8 +341,6 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
                 );
             }
         }
-
-        delete _getBrotherSwapperStorage().pendingRequest;
     }
 
     /*//////////////////////////////////////////////////////////////
