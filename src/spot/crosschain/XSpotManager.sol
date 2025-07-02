@@ -29,6 +29,8 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
     using SafeERC20 for IERC20;
     using Math for uint256;
 
+    uint16 constant SLIPPAGE_TOLERANCE_BPS = 50; // 100 bps = 1%
+
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -197,11 +199,14 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
     /// @inheritdoc ISpotManager
     function buy(uint256 amountLD, SwapType swapType, bytes calldata hedgeData) external authCaller(strategy()) {
         _getXSpotManagerStorage().pendingAssets = amountLD;
+        address _asset = asset();
+        // calc min amount
+        uint256 oracleAmount = IOracle(oracle()).convertTokenAmount(_asset, product(), amountLD);
+        uint256 minOutAmount = oracleAmount * (10000 - SLIPPAGE_TOLERANCE_BPS) / 10000;
         // build message data
-        bytes memory messageData = abi.encode(buyResGasLimit(), swapType, hedgeData);
+        bytes memory messageData = abi.encode(buyResGasLimit(), _toSD(minOutAmount), swapType, hedgeData);
         ILogarithmMessenger _messenger = ILogarithmMessenger(messenger());
         // send
-        address _asset = asset();
         IERC20(_asset).safeTransfer(address(_messenger), amountLD);
         _messenger.send(
             SendParams({
@@ -218,8 +223,10 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
 
     /// @inheritdoc ISpotManager
     function sell(uint256 amountLD, SwapType swapType, bytes calldata hedgeData) external authCaller(strategy()) {
-        uint256 amountSD = _toSD(amountLD);
-        bytes memory messageData = abi.encode(sellResGasLimit(), amountSD, swapType, hedgeData);
+        uint256 oracleAmount = IOracle(oracle()).convertTokenAmount(product(), asset(), amountLD);
+        uint256 minOutAmount = oracleAmount * (10000 - SLIPPAGE_TOLERANCE_BPS) / 10000;
+        bytes memory messageData =
+            abi.encode(sellResGasLimit(), _toSD(amountLD), _toSD(minOutAmount), swapType, hedgeData);
         ILogarithmMessenger(messenger()).send(
             SendParams({
                 dstChainId: dstChainId(),

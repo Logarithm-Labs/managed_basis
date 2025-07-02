@@ -283,6 +283,7 @@ library DeployHelper {
     struct DeployBrotherSwapperParams {
         address beacon;
         address owner;
+        address operator;
         address asset;
         address product;
         address messenger;
@@ -298,6 +299,7 @@ library DeployHelper {
                 abi.encodeWithSelector(
                     BrotherSwapper.initialize.selector,
                     params.owner,
+                    params.operator,
                     params.asset,
                     params.product,
                     params.messenger,

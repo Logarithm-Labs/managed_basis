@@ -25,6 +25,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
 
     struct SwapRequest {
         uint256 amount;
+        uint256 minOutAmount;
         ISpotManager.SwapType swapType;
         bool isBuy;
         uint128 gasLimit;
@@ -46,6 +47,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         address[] assetToProductSwapPath;
         address[] productToAssetSwapPath;
         SwapRequest pendingRequest;
+        address operator;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BrotherSwapper")) - 1)) & ~bytes32(uint256(0xff))
@@ -73,6 +75,8 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         uint256 indexed round, uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease
     );
 
+    event OperatorSet(address indexed newOperator);
+
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -98,6 +102,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
 
     function initialize(
         address _owner,
+        address _operator,
         address _asset,
         address _product,
         address _messenger,
@@ -112,6 +117,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         $.dstChainId = _dstChainId;
         $.spotManager = _spotManager;
 
+        _setOperator(_operator);
         _setMessenger(_messenger);
         __AssetValueTransmitter_init(_product);
         __Ownable_init(_owner);
@@ -156,9 +162,17 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         }
     }
 
+    function _setOperator(address newOperator) internal {
+        if (operator() != newOperator) {
+            _getBrotherSwapperStorage().operator = newOperator;
+            emit OperatorSet(newOperator);
+        }
+    }
+
     function _setPendingRequest(
         bool isBuy,
         uint256 amount,
+        uint256 minOutAmount,
         ISpotManager.SwapType swapType,
         uint128 gasLimit,
         bytes memory hedgeData
@@ -174,6 +188,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         _getBrotherSwapperStorage().pendingRequest = SwapRequest({
             isBuy: isBuy,
             amount: amount,
+            minOutAmount: minOutAmount,
             swapType: swapType,
             gasLimit: gasLimit,
             round: round,
@@ -196,6 +211,11 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         _setManualSwapPath(_assetToProductSwapPath, asset(), product());
     }
 
+    /// @notice Configure the operator
+    function setOperator(address newOperator) external onlyOwner {
+        _setOperator(newOperator);
+    }
+
     /*//////////////////////////////////////////////////////////////
                             CROSSCHAIN LOGIC
     //////////////////////////////////////////////////////////////*/
@@ -210,11 +230,11 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
             revert Errors.InvalidTokenSend();
         }
         // decode data
-        // data = abi.encode(buyResGasLimit(), swapType, swapData);
-        (uint128 buyResGasLimit, ISpotManager.SwapType swapType, bytes memory hedgeData) =
-            abi.decode(data, (uint128, ISpotManager.SwapType, bytes));
-
-        _setPendingRequest(true, amountLD, swapType, buyResGasLimit, hedgeData);
+        // data = abi.encode(buyResGasLimit(), minOutAmount, swapType, swapData);
+        (uint128 buyResGasLimit, uint64 minOutAmountSD, ISpotManager.SwapType swapType, bytes memory hedgeData) =
+            abi.decode(data, (uint128, uint64, ISpotManager.SwapType, bytes));
+        uint256 minOutAmountLD = _toLD(minOutAmountSD);
+        _setPendingRequest(true, amountLD, minOutAmountLD, swapType, buyResGasLimit, hedgeData);
     }
 
     /// @dev Called when sell request has been sent from XSpotManager.
@@ -223,17 +243,23 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         authCaller(messenger())
         onlySpotManager(sender)
     {
-        (uint128 sellResGasLimit, uint64 productsSD, ISpotManager.SwapType swapType, bytes memory hedgeData) =
-            abi.decode(data, (uint128, uint64, ISpotManager.SwapType, bytes));
+        (
+            uint128 sellResGasLimit,
+            uint64 productsSD,
+            uint64 minOutAmountSD,
+            ISpotManager.SwapType swapType,
+            bytes memory hedgeData
+        ) = abi.decode(data, (uint128, uint64, uint64, ISpotManager.SwapType, bytes));
         uint256 productsLD = _toLD(productsSD);
+        uint256 minOutAmountLD = _toLD(minOutAmountSD);
 
-        _setPendingRequest(false, productsLD, swapType, sellResGasLimit, hedgeData);
+        _setPendingRequest(false, productsLD, minOutAmountLD, swapType, sellResGasLimit, hedgeData);
     }
 
     /// @notice Execute swap that is pending
     ///
     /// @param swapData Data used in swap, e.g. Empty for manual swap and non-empty for 1inch.
-    function executeSwap(bytes calldata swapData) external {
+    function executeSwap(bytes calldata swapData) external authCaller(operator()) {
         SwapRequest memory _pendingRequest = pendingRequest();
 
         if (_pendingRequest.amount == 0) {
@@ -248,6 +274,9 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
                     InchAggregatorV6Logic.executeSwap(_pendingRequest.amount, asset(), product(), true, swapData);
                 if (!success) {
                     revert Errors.SwapFailed();
+                }
+                if (productsLD < _pendingRequest.minOutAmount) {
+                    revert Errors.ExceedsSlippage();
                 }
             } else if (_pendingRequest.swapType == ISpotManager.SwapType.MANUAL) {
                 productsLD = ManualSwapLogic.swap(_pendingRequest.amount, assetToProductSwapPath());
@@ -280,6 +309,9 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
                     InchAggregatorV6Logic.executeSwap(_pendingRequest.amount, _asset, product(), false, swapData);
                 if (!success) {
                     revert Errors.SwapFailed();
+                }
+                if (assetsLD < _pendingRequest.minOutAmount) {
+                    revert Errors.ExceedsSlippage();
                 }
             } else if (_pendingRequest.swapType == ISpotManager.SwapType.MANUAL) {
                 assetsLD = ManualSwapLogic.swap(_pendingRequest.amount, productToAssetSwapPath());
@@ -386,5 +418,9 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
     /// @notice The struct `SwapRequest` value that is pending for swap.
     function pendingRequest() public view returns (SwapRequest memory) {
         return _getBrotherSwapperStorage().pendingRequest;
+    }
+
+    function operator() public view returns (address) {
+        return _getBrotherSwapperStorage().operator;
     }
 }

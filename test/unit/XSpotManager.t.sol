@@ -20,6 +20,7 @@ import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 
 contract XSpotManagerTest is ForkTest {
     address owner = makeAddr("owner");
+    address operator = makeAddr("operator");
 
     address constant ARBI_STARTGATE = ArbAddresses.STARGATE_POOL_USDC;
     uint256 constant chainId = 56;
@@ -66,6 +67,7 @@ contract XSpotManagerTest is ForkTest {
             DeployHelper.DeployBrotherSwapperParams({
                 beacon: beaconSwapper,
                 owner: owner,
+                operator: operator,
                 asset: asset,
                 product: product,
                 messenger: address(messenger),
@@ -89,6 +91,7 @@ contract XSpotManagerTest is ForkTest {
         spotManager.buy(amount, ISpotManager.SwapType.MANUAL, abi.encode(round, collateralDeltaAmount));
         vm.expectEmit(true, false, false, false);
         emit BrotherSwapper.CreateRequest(round, amount, collateralDeltaAmount, true);
+        vm.startPrank(operator);
         swapper.executeSwap("");
         uint256 productBalance = IERC20(product).balanceOf(address(swapper));
         uint256 rate = spotManager.decimalConversionRate();
@@ -119,6 +122,7 @@ contract XSpotManagerTest is ForkTest {
             collateralDeltaAmount,
             false
         );
+        vm.startPrank(operator);
         swapper.executeSwap("");
         uint256 rate = spotManager.decimalConversionRate();
         uint256 productsLD = (amount / rate) * rate;
@@ -148,8 +152,10 @@ contract XSpotManagerTest is ForkTest {
         vm.startPrank(address(strategy));
         IERC20(asset).transfer(address(spotManager), amount);
         spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
+        vm.startPrank(operator);
         swapper.executeSwap("");
         vm.expectRevert(Errors.NoPendingRequest.selector);
+        vm.startPrank(operator);
         swapper.executeSwap("");
     }
 }
