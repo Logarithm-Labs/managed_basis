@@ -24,7 +24,7 @@ library ManualSwapLogic {
             revert Errors.SwapAmountExceedsBalance(amountIn, balance);
         }
 
-        for (uint256 i; i <= path.length / 2; i += 2) {
+        for (uint256 i; i < path.length - 2; i += 2) {
             address pool = path[i + 1];
             amountIn = exactInputInternal(
                 amountIn, address(this), pool, path[i] < path[i + 2], abi.encode(path[i], path[i + 2], address(this))

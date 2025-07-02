@@ -97,6 +97,7 @@ library Errors {
     error InvalidTokenSend();
     error RequestInPending();
     error NoPendingRequest();
+    error ExceedsSlippage();
 
     /*//////////////////////////////////////////////////////////////
                               AUTH CALLER

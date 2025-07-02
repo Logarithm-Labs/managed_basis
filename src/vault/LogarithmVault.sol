@@ -74,8 +74,6 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         address strategy;
         uint256 entryCost;
         uint256 exitCost;
-        uint256 userDepositLimit; // @TODO to be removed in production
-        uint256 vaultDepositLimit; // @TODO to be removed in production
         // withdraw state
         uint256 assetsToClaim; // asset balance of vault that is ready to claim
         uint256 accRequestedWithdrawAssets; // total requested withdraw assets
@@ -364,8 +362,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     /// If the idle assets is not enough, creates a withdraw request with
     /// the shortfall assets while sending the idle assets to receiver.
     ///
-    /// @return The withdraw key that is used in the claim function.
-    function requestWithdraw(uint256 assets, address receiver, address owner) public virtual returns (bytes32) {
+    /// @return withdrawKey The withdraw key that is used in the claim function.
+    function requestWithdraw(uint256 assets, address receiver, address owner)
+        public
+        virtual
+        returns (bytes32 withdrawKey)
+    {
         uint256 maxRequestAssets = maxRequestWithdraw(owner);
         if (assets > maxRequestAssets) {
             revert Errors.ExceededMaxRequestWithdraw(owner, assets, maxRequestAssets);
@@ -380,14 +382,15 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 sharesToRedeem = _convertToShares(assetsToWithdraw, Math.Rounding.Ceil);
         uint256 sharesToRequest = shares - sharesToRedeem;
 
-        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
-
         if (assetsToWithdraw > 0) _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
 
         if (assetsToRequest > 0) {
-            return _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
+            withdrawKey = _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
         }
-        return bytes32(0);
+
+        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
+
+        return withdrawKey;
     }
 
     /// @notice Requests to redeem shares and returns a unique withdraw key
@@ -401,8 +404,12 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
     /// If the idle assets is not enough, creates a withdraw request with
     /// the shortfall assets while sending the idle assets to receiver.
     ///
-    /// @return The withdraw key that is used in the claim function.
-    function requestRedeem(uint256 shares, address receiver, address owner) public virtual returns (bytes32) {
+    /// @return withdrawKey The withdraw key that is used in the claim function.
+    function requestRedeem(uint256 shares, address receiver, address owner)
+        public
+        virtual
+        returns (bytes32 withdrawKey)
+    {
         uint256 maxRequestShares = maxRequestRedeem(owner);
         if (shares > maxRequestShares) {
             revert Errors.ExceededMaxRequestRedeem(owner, shares, maxRequestShares);
@@ -418,14 +425,15 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 sharesToRedeem = _convertToShares(assetsToWithdraw, Math.Rounding.Ceil);
         uint256 sharesToRequest = shares - sharesToRedeem;
 
-        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
-
         if (assetsToWithdraw > 0) _withdraw(_msgSender(), receiver, owner, assetsToWithdraw, sharesToRedeem);
 
         if (assetsToRequest > 0) {
-            return _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
+            withdrawKey = _requestWithdraw(_msgSender(), receiver, owner, assetsToRequest, sharesToRequest);
         }
-        return bytes32(0);
+
+        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
+
+        return withdrawKey;
     }
 
     /// @dev requestWithdraw/requestRedeem common workflow.
@@ -436,7 +444,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 assetsToRequest,
         uint256 sharesToRequest
     ) internal virtual returns (bytes32) {
-        _harvestPerformanceFeeShares(assetsToRequest, sharesToRequest, false);
+        _harvestPerformanceFeeShares(assetsToRequest, false);
 
         if (caller != owner) {
             _spendAllowance(owner, caller, sharesToRequest);
@@ -622,8 +630,10 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         }
 
         (uint256 shares, uint256 cost) = _previewDepositWithCost(assets);
-        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
+
         _deposit(_msgSender(), receiver, assets, shares);
+
+        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
 
         return shares;
     }
@@ -636,8 +646,10 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         }
 
         (uint256 assets, uint256 cost) = _previewMintWithCost(shares);
-        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
+
         _deposit(_msgSender(), receiver, assets, shares);
+
+        if (cost > 0) IStrategy(strategy()).reserveExecutionCost(cost);
 
         return assets;
     }

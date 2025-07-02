@@ -19,9 +19,10 @@ import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManage
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 
+address constant operator = 0xBD3F4f622df9690e9202d6c8D7Fbdf2763D0B89f;
+
 contract ArbDeploy is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
-    address constant operator = 0xBD3F4f622df9690e9202d6c8D7Fbdf2763D0B89f;
     address constant agent = 0x0473174dA33598Aad43357644bFDf79f9d3167bA;
 
     // vault params
@@ -114,6 +115,7 @@ contract BaseDeploy is Script {
         DeployHelper.DeployBrotherSwapperParams memory swapperDeployParams = DeployHelper.DeployBrotherSwapperParams({
             beacon: Base.BEACON_BROTHER_SWAPPER,
             owner: owner,
+            operator: operator,
             asset: asset,
             product: product,
             messenger: BaseAddresses.LOGARITHM_MESSENGER,

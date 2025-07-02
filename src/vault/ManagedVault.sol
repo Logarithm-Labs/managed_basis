@@ -223,7 +223,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
     ///
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
-        _harvestPerformanceFeeShares(assets, shares, true);
+        _harvestPerformanceFeeShares(assets, true);
         super._deposit(caller, receiver, assets, shares);
     }
 
@@ -235,7 +235,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
         virtual
         override
     {
-        _harvestPerformanceFeeShares(assets, shares, false);
+        _harvestPerformanceFeeShares(assets, false);
         super._withdraw(caller, receiver, owner, assets, shares);
     }
 
@@ -273,7 +273,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Should be called before all deposits and withdrawals
-    function _harvestPerformanceFeeShares(uint256 assets, uint256 shares, bool isDeposit) internal {
+    function _harvestPerformanceFeeShares(uint256 assets, bool isDeposit) internal {
         address _feeRecipient = feeRecipient();
         uint256 _performanceFee = performanceFee();
         uint256 _hwm = highWaterMark();
@@ -283,17 +283,21 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
         uint256 feeShares = _nextPerformanceFeeShares(
             _performanceFee, _hwm, _totalAssets, totalSupplyWithManagementFeeShares, _lastHarvestedTimestamp
         );
-        if (_performanceFee == 0 || _lastHarvestedTimestamp == 0) {
-            // update lastHarvestedTimestamp to account for hurdleRate
-            // only after performance fee is set
-            _getManagedVaultStorage().lastHarvestedTimestamp = block.timestamp;
-        } else if (feeShares > 0) {
+
+        // update states
+        uint256 newHwm = _totalAssets > _hwm ? _totalAssets : _hwm;
+        _getManagedVaultStorage().lastHarvestedTimestamp = block.timestamp;
+        if (isDeposit) {
+            _getManagedVaultStorage().hwm = newHwm + assets;
+        } else {
+            _getManagedVaultStorage().hwm = newHwm - assets;
+        }
+
+        // mint performance fee shares
+        if (feeShares > 0) {
             _mint(_feeRecipient, feeShares);
-            _getManagedVaultStorage().lastHarvestedTimestamp = block.timestamp;
-            _hwm = _totalAssets;
             emit PerformanceFeeCollected(_feeRecipient, feeShares);
         }
-        _updateHighWaterMark(_hwm, totalSupplyWithManagementFeeShares + feeShares, assets, shares, isDeposit);
     }
 
     /// @dev Should not be called when minting to fee recipient
@@ -317,23 +321,6 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
             _getManagedVaultStorage().lastAccruedTimestamp = block.timestamp;
             emit ManagementFeeCollected(_feeRecipient, feeShares);
         }
-    }
-
-    /// @dev Updates the high water mark
-    function _updateHighWaterMark(
-        uint256 oldHwm,
-        uint256 oldTotalSupply,
-        uint256 assets,
-        uint256 shares,
-        bool isDeposit
-    ) private {
-        uint256 newHwm;
-        if (isDeposit) {
-            newHwm = oldHwm + assets;
-        } else {
-            newHwm = oldHwm.mulDiv(oldTotalSupply - shares, oldTotalSupply, Math.Rounding.Ceil);
-        }
-        _getManagedVaultStorage().hwm = newHwm;
     }
 
     /// @dev Calculates the claimable shares for the management fee
@@ -366,10 +353,14 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
             return 0;
         }
         uint256 profit = _totalAssets - _hwm;
-        uint256 profitRate = profit.mulDiv(Constants.FLOAT_PRECISION, _hwm);
         uint256 hurdleRateFraction = _calcFeeFraction(hurdleRate(), block.timestamp - _lastHarvestedTimestamp);
-        if (profitRate > hurdleRateFraction) {
+        uint256 hurdle = _hwm.mulDiv(hurdleRateFraction, Constants.FLOAT_PRECISION);
+        if (profit > hurdle) {
             uint256 feeAssets = profit.mulDiv(_performanceFee, Constants.FLOAT_PRECISION);
+            // we guarantee that user's profit is not less than hurdle
+            if (profit - feeAssets < hurdle) {
+                feeAssets = profit - hurdle;
+            }
             // feeAssets = previewRedeem(feeShares)
             // previewRedeem = shares.mulDiv(totalAssets + 1, totalSupply + 10 ** _decimalsOffset, Math.Rounding.Floor);
             // feeAssets = feeShares.mulDiv(totalAssets + 1, (totalSupplyBeforeFeeMint + feeShares) + 10 ** _decimalsOffset, Math.Rounding.Floor);
