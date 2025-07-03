@@ -8,6 +8,18 @@ import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
+contract UpgradeStrategy is Script {
+    function run() public {
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
+        address strategyImpl = address(new BasisStrategy());
+        UpgradeableBeacon strategyBeacon = UpgradeableBeacon(Arb.BEACON_STRATEGY);
+        strategyBeacon.upgradeTo(strategyImpl);
+        vm.stopBroadcast();
+    }
+}
+
 contract StrategyConfigScript is Script {
     function run() public {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");

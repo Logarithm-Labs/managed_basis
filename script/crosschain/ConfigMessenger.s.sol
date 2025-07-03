@@ -28,19 +28,21 @@ contract ArbConfigScript is Script {
     GasStation gasStation = GasStation(payable(Arb.GAS_STATION));
 
     function run() public {
-        vm.startBroadcast();
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
 
         // gasStation.registerManager(address(messenger), true);
 
         messenger.authorize(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
-        messenger.authorize(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL);
+        // messenger.authorize(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL);
         // messenger.updateGasStation(Arb.GAS_STATION);
         // messenger.registerDstMessenger(
         //     BSC_CHAIN_ID, BSC_EID, AddressCast.addressToBytes32(BscAddresses.LOGARITHM_MESSENGER)
         // );
-        messenger.registerDstMessenger(
-            BASE_CHAIN_ID, BASE_EID, AddressCast.addressToBytes32(BaseAddresses.LOGARITHM_MESSENGER)
-        );
+        // messenger.registerDstMessenger(
+        //     BASE_CHAIN_ID, BASE_EID, AddressCast.addressToBytes32(BaseAddresses.LOGARITHM_MESSENGER)
+        // );
         // messenger.registerStargate(ArbAddresses.USDC, ArbAddresses.STARGATE_POOL_USDC);
     }
 }
@@ -52,7 +54,9 @@ contract BscConfigScript is Script {
     GasStation gasStation = GasStation(payable(Bsc.GAS_STATION));
 
     function run() public {
-        vm.startBroadcast();
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("bnb_smart_chain");
+        vm.startBroadcast(privateKey);
 
         // gasStation.registerManager(address(messenger), true);
         messenger.authorize(Bsc.BROTHER_SWAPPER_HL_USDC_DOGE);
