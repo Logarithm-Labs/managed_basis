@@ -109,6 +109,7 @@ contract BaseDeploy is Script {
 
     function run() public {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("base");
         vm.startBroadcast(privateKey);
 
         // deploy BrotherSwapper
