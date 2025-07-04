@@ -101,6 +101,7 @@ library Errors {
     error CallerNotAuthorized(address authorized, address caller);
     error GasCallerNotAllowed();
     error CallerNotAgent();
+    error CallerNotCommitter();
     error InvalidCallback();
     error CallerNotOwnerOrVault();
     error InvalidSecurityManager();
