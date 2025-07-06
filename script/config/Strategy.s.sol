@@ -12,9 +12,17 @@ contract StrategyConfigScript is Script {
     function run() public {
         vm.startBroadcast();
         StrategyConfig config = StrategyConfig(Arb.CONFIG_STRATEGY);
-        require(config.responseDeviationThreshold() == 0.01 ether);
-        config.setResponseDeviationThreshold(0.035 ether);
-        require(config.responseDeviationThreshold() == 0.035 ether);
+
+        // set response deviation threshold
+        // require(config.responseDeviationThreshold() == 0.01 ether);
+        // config.setResponseDeviationThreshold(0.035 ether);
+        // require(config.responseDeviationThreshold() == 0.035 ether);
+
+        // set hedge deviation threshold
+        require(config.hedgeDeviationThreshold() == 1e16);
+        config.setHedgeDeviationThreshold(5 * 1e15);
+        require(config.hedgeDeviationThreshold() == 5 * 1e15);
+
         vm.stopBroadcast();
     }
 }
@@ -59,5 +67,21 @@ contract SetLeverages is Script {
         require(BasisStrategy(strategy).minLeverage() == minLeverage);
         require(BasisStrategy(strategy).maxLeverage() == maxLeverage);
         require(BasisStrategy(strategy).safeMarginLeverage() == safeMarginLeverage);
+    }
+}
+
+contract setMaxUtilizePct is Script {
+    address public strategyLink = Arb.STRATEGY_HL_USDC_LINK;
+    address public strategyBtc = Arb.STRATEGY_HL_USDC_WBTC;
+    uint256 constant maxUtilizePct = 15 * 1e15;
+
+    function run() public {
+        vm.startBroadcast();
+        BasisStrategy(strategyLink).setMaxUtilizePct(maxUtilizePct);
+        BasisStrategy(strategyBtc).setMaxUtilizePct(maxUtilizePct);
+        vm.stopBroadcast();
+
+        require(BasisStrategy(strategyLink).maxUtilizePct() == 15 * 1e15);
+        require(BasisStrategy(strategyBtc).maxUtilizePct() == 15 * 1e15);
     }
 }
