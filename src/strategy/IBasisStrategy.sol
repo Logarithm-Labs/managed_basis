@@ -14,4 +14,5 @@ interface IBasisStrategy is IStrategy {
     function afterAdjustPosition(IHedgeManager.AdjustPositionPayload calldata responseParams) external;
     function spotBuyCallback(uint256 assetDelta, uint256 productDelta, uint256 timestamp) external;
     function spotSellCallback(uint256 assetDelta, uint256 productDelta, uint256 timestamp) external;
+    function harvestPerformanceFee() external;
 }

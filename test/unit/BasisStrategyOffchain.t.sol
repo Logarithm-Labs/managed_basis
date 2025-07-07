@@ -155,4 +155,34 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
         vm.stopPrank();
     }
+
+    function test_harvest_performanceFee() public {
+        address recipient = makeAddr("recipient");
+        // performance fee 20%
+        // hurdleRate 10%
+        vm.startPrank(owner);
+        vault.setFeeInfos(recipient, 0, 0.2 ether, 0.1 ether);
+        vm.stopPrank();
+        _reportState();
+        _deposit(user1, TEN_THOUSANDS_USDC);
+
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+
+        address[] memory priceFeeds = new address[](2);
+        priceFeeds[0] = assetPriceFeed;
+        priceFeeds[1] = productPriceFeed;
+        // hurdle rate fraction = 10% / 10 = 1%
+        _moveTimestamp(36.5 days, priceFeeds);
+
+        uint256 profit = TEN_THOUSANDS_USDC * 15 / 1000; // 1.5% profit
+        _updatePositionNetBalance(positionNetBalance + profit);
+        _reportState();
+
+        uint256 feeShares = vault.balanceOf(recipient);
+        uint256 feeAssets = vault.previewRedeem(feeShares);
+        uint256 expectedPF = profit * 20 / 100 * (1 ether - vault.exitCost()) / 1e18;
+
+        assertApproxEqRel(feeAssets, expectedPF, 0.0001 ether, "feeAssets");
+    }
 }
