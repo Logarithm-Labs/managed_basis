@@ -140,7 +140,9 @@ contract ConfigXSpot is Script {
     bytes32 swapper = AddressCast.addressToBytes32(Base.BROTHER_SWAPPER_HL_USDC_VIRTUAL);
 
     function run() public {
-        vm.startBroadcast();
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
         XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL).setSwapper(swapper);
 
         // hlXSpotManager.setBuyReqGasLimit(1_000_000);
