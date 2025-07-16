@@ -31,7 +31,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, ISwapper {
     using SafeERC20 for IERC20;
 
-    uint16 constant SLIPPAGE_TOLERANCE_BPS = 50; // 100 bps = 1%
+    uint16 constant SLIPPAGE_TOLERANCE_BPS = 100; // 1%
 
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT

@@ -29,7 +29,7 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
     using SafeERC20 for IERC20;
     using Math for uint256;
 
-    uint16 constant SLIPPAGE_TOLERANCE_BPS = 50; // 100 bps = 1%
+    uint16 constant SLIPPAGE_TOLERANCE_BPS = 500; // 5%
 
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
