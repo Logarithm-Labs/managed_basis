@@ -22,6 +22,7 @@ import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 
 import {console} from "forge-std/console.sol";
+import {StrategyHelper} from "test/helper/StrategyHelper.sol";
 
 contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
     function _mockChainlinkPriceFeedAnswer(address priceFeed, int256 answer) internal override {
@@ -154,5 +155,45 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         emit OffChainPositionManager.CreateRequest(3, amount, 0, true);
         strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
         vm.stopPrank();
+    }
+
+    function test_performUpkeep_rebalanceDown_whenIdleNotEnough_smallerThanMinCollateral()
+        public
+        afterFullUtilized
+        validateFinalState
+    {
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(vault), 10 * 1e6);
+
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
+        assertTrue(upkeepNeeded);
+        BasisStrategy.InternalCheckUpkeepResult memory result =
+            abi.decode(performData, (BasisStrategy.InternalCheckUpkeepResult));
+
+        // set min increase collateral bigger than deltaCollateralToIncrease
+        vm.startPrank(owner);
+        OffChainConfig config =
+            OffChainConfig(address(OffChainPositionManager(address(strategy.hedgeManager())).config()));
+        config.setLimitDecreaseCollateral(result.deltaCollateralToIncrease + 10);
+        config.setCollateralMin(result.deltaCollateralToIncrease + 1, result.deltaCollateralToIncrease + 1);
+
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertFalse(decodedPerformData.rebalanceUpNeeded);
+        assertTrue(decodedPerformData.rebalanceDownNeeded);
+        assertFalse(decodedPerformData.hedgeManagerNeedKeep);
+
+        _performKeep("rebalanceDown_whenIdleNotEnough");
+
+        (, uint256 amount) = strategy.pendingUtilizations();
+        _deutilize(amount);
+
+        _performKeep("rebalanceDown_whenIdleNotEnough");
+
+        (, amount) = strategy.pendingUtilizations();
+        _deutilize(amount);
+
+        _performKeep("rebalanceDown_whenIdleNotEnough");
     }
 }
