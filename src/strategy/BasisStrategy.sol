@@ -643,8 +643,14 @@ contract BasisStrategy is
             uint256 idleAssets = _vault.idleAssets();
             result.deltaCollateralToIncrease =
                 idleAssets < result.deltaCollateralToIncrease ? idleAssets : result.deltaCollateralToIncrease;
-            if (result.deltaCollateralToIncrease > 0) _adjustPosition(0, result.deltaCollateralToIncrease, true, true);
-            else _setStrategyStatus(StrategyStatus.IDLE);
+            if (
+                result.deltaCollateralToIncrease > 0
+                    && result.deltaCollateralToIncrease >= $.hedgeManager.increaseCollateralMin()
+            ) {
+                _adjustPosition(0, result.deltaCollateralToIncrease, true, true);
+            } else {
+                _setStrategyStatus(StrategyStatus.IDLE);
+            }
         } else if (result.clearProcessingRebalanceDown) {
             $.processingRebalanceDown = false;
             _setStrategyStatus(StrategyStatus.IDLE);
