@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import "forge-std/Script.sol";
 
 import {ArbAddresses} from "script/utils/ArbAddresses.sol";
-import {BscAddresses} from "script/utils/BscAddresses.sol";
-import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
+import {EthAddresses} from "script/utils/EthAddresses.sol";
+import {Arb, Eth} from "script/utils/ProtocolAddresses.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
 
@@ -19,23 +19,23 @@ import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManage
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 
-address constant operator = 0xC3AcB9dF13095E7A27919D78aD8323CF7717Bb16;
+address constant operator = 0x004aeE17516ca6ADA873601A45368600E06195F8;
 
 contract ArbDeploy is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
-    address constant agent = 0xA184231aAE8DE21E7FcD962746Ef350CbB650FbD;
+    address constant agent = 0x6d68c139e7DCd0dF477A1256558e6ae130cf62f3;
 
     // vault params
     uint256 constant entryCost = 0.004 ether; // 0.4% entry fee
     uint256 constant exitCost = 0.004 ether; // 0.4% exit fee
-    string constant vaultName = "Logarithm Basis USDC-DOGE Hyperliquid (Alpha)";
-    string constant vaultSymbol = "log-b-usdc-doge-hl-a";
+    string constant vaultName = "Logarithm Basis USDC-PEPE Hyperliquid (Alpha)";
+    string constant vaultSymbol = "log-b-usdc-pepe-hl-a";
     // Strategy Addresses
     address constant asset = ArbAddresses.USDC; // USDC
-    address constant product = ArbAddresses.DOGE; // DOGE
+    address constant product = ArbAddresses.PEPE; // PEPE
     address constant assetPriceFeed = ArbAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
-    address constant productPriceFeed = ArbAddresses.CHL_DOGE_USD_PRICE_FEED; // Chainlink DOGE-USD price feed
-    uint256 constant feedHeartbeat = 24 * 3600;
+    address constant productPriceFeed = ArbAddresses.CHL_PEPE_USD_PRICE_FEED; // Chainlink PEPE-USD price feed
+    uint256 constant feedHeartbeat = 3600;
     // strategy params
     uint256 constant targetLeverage = 4 ether;
     uint256 constant minLeverage = 1 ether;
@@ -49,7 +49,7 @@ contract ArbDeploy is Script {
     uint256 userDepositLimit = type(uint256).max;
     uint256 vaultDepositLimit = type(uint256).max;
 
-    uint256 constant BSC_CHAIN_ID = 56;
+    uint256 constant ETH_CHAIN_ID = 1;
 
     function run() public {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
@@ -79,7 +79,7 @@ contract ArbDeploy is Script {
                 hurdleRate: hurdleRate,
                 userDepositLimit: userDepositLimit,
                 vaultDepositLimit: vaultDepositLimit,
-                dstChainId: BSC_CHAIN_ID
+                dstChainId: ETH_CHAIN_ID
             })
         );
 
@@ -87,25 +87,25 @@ contract ArbDeploy is Script {
     }
 }
 
-contract BscDeploy is Script {
+contract EthDeploy is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
     address[] assetToProductSwapPath = [
-        BscAddresses.USDC,
-        BscAddresses.PCS_V3_POOL_WBNB_USDC,
-        BscAddresses.WBNB,
-        BscAddresses.PCS_V3_POOL_DOGE_WBNB,
-        BscAddresses.DOGE
+        EthAddresses.USDC,
+        EthAddresses.UNI_V3_POOL_WETH_USDC,
+        EthAddresses.WETH,
+        EthAddresses.UNI_V3_POOL_PEPE_WETH,
+        EthAddresses.PEPE
     ];
 
     uint256 constant ARB_CHAIN_ID = 42161;
 
     // Strategy Addresses
-    address constant asset = BscAddresses.USDC; // USDC
-    address constant product = BscAddresses.DOGE; // DOGE
+    address constant asset = EthAddresses.USDC; // USDC
+    address constant product = EthAddresses.PEPE; // PEPE
 
     // predeployed contracts
-    bytes32 xSpotManager = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
+    bytes32 xSpotManager = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_HL_USDC_PEPE);
 
     function run() public {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
@@ -113,12 +113,12 @@ contract BscDeploy is Script {
 
         // deploy BrotherSwapper
         DeployHelper.DeployBrotherSwapperParams memory swapperDeployParams = DeployHelper.DeployBrotherSwapperParams({
-            beacon: Bsc.BEACON_BROTHER_SWAPPER,
+            beacon: Eth.BEACON_BROTHER_SWAPPER,
             owner: owner,
             operator: operator,
             asset: asset,
             product: product,
-            messenger: BscAddresses.LOGARITHM_MESSENGER,
+            messenger: EthAddresses.LOGARITHM_MESSENGER,
             spotManager: xSpotManager,
             dstChainId: ARB_CHAIN_ID,
             assetToProductSwapPath: assetToProductSwapPath
@@ -135,14 +135,14 @@ contract ConfigXSpot is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
     // predeployed contracts
-    XSpotManager xSpotManager = XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
-    bytes32 swapper = AddressCast.addressToBytes32(Bsc.BROTHER_SWAPPER_HL_USDC_DOGE);
+    XSpotManager xSpotManager = XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_PEPE);
+    bytes32 swapper = AddressCast.addressToBytes32(Eth.BROTHER_SWAPPER_HL_USDC_PEPE);
 
     function run() public {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
         vm.createSelectFork("arbitrum_one");
         vm.startBroadcast(privateKey);
-        XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_DOGE).setSwapper(swapper);
+        XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_PEPE).setSwapper(swapper);
 
         // hlXSpotManager.setBuyReqGasLimit(1_000_000);
         // hlXSpotManager.setBuyResGasLimit(800_000);

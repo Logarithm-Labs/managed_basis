@@ -24,6 +24,7 @@ import {Arb, Bsc} from "script/utils/ProtocolAddresses.sol";
 import {ArbAddresses} from "./ArbAddresses.sol";
 
 import {console} from "forge-std/console.sol";
+import {ILogarithmMessenger} from "src/messenger/ILogarithmMessenger.sol";
 
 library DeployHelper {
     function deployBeacon(address implementation, address owner) internal returns (address) {
@@ -309,7 +310,12 @@ library DeployHelper {
                 )
             )
         );
-        return BrotherSwapper(payable(swapperProxy));
+        BrotherSwapper swapper = BrotherSwapper(payable(swapperProxy));
+        ILogarithmMessenger messenger = ILogarithmMessenger(params.messenger);
+        console.log("Authorizing messenger");
+        messenger.authorize(address(swapper));
+        console.log("Messenger authorized");
+        return swapper;
     }
 
     struct DeployHLVaultParams {
@@ -439,6 +445,7 @@ library DeployHelper {
     function deployHLVaultX(DeployHLVaultXParams memory params) internal {
         // configure oracle
         LogarithmOracle oracle = LogarithmOracle(Arb.ORACLE);
+        ILogarithmMessenger messenger = ILogarithmMessenger(ArbAddresses.LOGARITHM_MESSENGER);
         address[] memory assets = new address[](1);
         address[] memory feeds = new address[](1);
         uint256[] memory heartbeats = new uint256[](1);
@@ -513,6 +520,10 @@ library DeployHelper {
             })
         );
         console.log("OffChainPositionManager: ", address(positionManager));
+
+        console.log("Authorizing messenger");
+        messenger.authorize(address(xSpotManager));
+        console.log("Messenger authorized");
     }
 
     function validateDeployHLVault(address _vault, DeployHLVaultParams memory params) internal view {

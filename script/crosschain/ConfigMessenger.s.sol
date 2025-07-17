@@ -34,8 +34,6 @@ contract ArbConfigScript is Script {
 
         gasStation.registerManager(address(messenger), true);
 
-        messenger.authorize(Arb.X_SPOT_MANAGER_HL_USDC_DOGE);
-        messenger.authorize(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL);
         messenger.updateGasStation(Arb.GAS_STATION);
         messenger.registerDstMessenger(
             BSC_CHAIN_ID, BSC_EID, AddressCast.addressToBytes32(BscAddresses.LOGARITHM_MESSENGER)
@@ -59,7 +57,6 @@ contract BscConfigScript is Script {
         vm.startBroadcast(privateKey);
 
         gasStation.registerManager(address(messenger), true);
-        messenger.authorize(Bsc.BROTHER_SWAPPER_HL_USDC_DOGE);
         messenger.updateGasStation(Bsc.GAS_STATION);
         messenger.registerDstMessenger(
             ARB_CHAIN_ID, ARB_EID, AddressCast.addressToBytes32(ArbAddresses.LOGARITHM_MESSENGER)
@@ -80,7 +77,6 @@ contract BaseConfigScript is Script {
         vm.startBroadcast(privateKey);
 
         gasStation.registerManager(address(messenger), true);
-        messenger.authorize(Base.BROTHER_SWAPPER_HL_USDC_VIRTUAL);
         messenger.updateGasStation(Base.GAS_STATION);
         messenger.registerDstMessenger(
             ARB_CHAIN_ID, ARB_EID, AddressCast.addressToBytes32(ArbAddresses.LOGARITHM_MESSENGER)
