@@ -843,7 +843,11 @@ contract BasisStrategy is
 
         uint256 pendingUtilizationInProduct = _oracle.convertTokenAmount(_asset, _product, pendingUtilizationInAsset);
         if (pendingUtilizationInProduct < _hedgeManager.increaseSizeMin()) pendingUtilizationInAsset = 0;
-        if (pendingDeutilizationInProduct < _hedgeManager.decreaseSizeMin()) pendingDeutilizationInProduct = 0;
+        // Deutilization is for withdrawing and leverage down, so it shouldn't be 0 when it is required.
+        uint256 decreaseSizeMin = _hedgeManager.decreaseSizeMin();
+        if (pendingDeutilizationInProduct > 0 && pendingDeutilizationInProduct < decreaseSizeMin) {
+            pendingDeutilizationInProduct = decreaseSizeMin;
+        }
 
         return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
     }
