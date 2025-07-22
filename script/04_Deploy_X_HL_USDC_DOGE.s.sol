@@ -20,11 +20,10 @@ import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 
 address constant operator = 0xC3AcB9dF13095E7A27919D78aD8323CF7717Bb16;
+address constant agent = 0xA184231aAE8DE21E7FcD962746Ef350CbB650FbD;
+address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
 contract ArbDeploy is Script {
-    address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
-    address constant agent = 0xA184231aAE8DE21E7FcD962746Ef350CbB650FbD;
-
     // vault params
     uint256 constant entryCost = 0.004 ether; // 0.4% entry fee
     uint256 constant exitCost = 0.004 ether; // 0.4% exit fee

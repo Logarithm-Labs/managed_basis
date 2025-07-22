@@ -20,11 +20,10 @@ import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 
 address constant operator = 0xBD3F4f622df9690e9202d6c8D7Fbdf2763D0B89f;
+address constant agent = 0x0473174dA33598Aad43357644bFDf79f9d3167bA;
+address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
 contract ArbDeploy is Script {
-    address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
-    address constant agent = 0x0473174dA33598Aad43357644bFDf79f9d3167bA;
-
     // vault params
     uint256 constant entryCost = 0.004 ether; // 0.4% entry fee
     uint256 constant exitCost = 0.004 ether; // 0.4% exit fee
@@ -88,8 +87,6 @@ contract ArbDeploy is Script {
 }
 
 contract BaseDeploy is Script {
-    address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
-
     address[] assetToProductSwapPath = [
         BaseAddresses.USDC,
         BaseAddresses.UNI_V3_POOL_WETH_USDC,
@@ -132,9 +129,6 @@ contract BaseDeploy is Script {
 }
 
 contract ConfigXSpot is Script {
-    // access control addresses
-    address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
-
     // predeployed contracts
     XSpotManager xSpotManager = XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL);
     bytes32 swapper = AddressCast.addressToBytes32(Base.BROTHER_SWAPPER_HL_USDC_VIRTUAL);

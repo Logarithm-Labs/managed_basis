@@ -11,5 +11,5 @@ library EthAddresses {
     address constant UNI_V3_POOL_PEPE_WETH = 0x11950d141EcB863F01007AdD7D1A342041227b58;
     address constant UNI_V3_POOL_WETH_USDC = 0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640;
 
-    address constant LOGARITHM_MESSENGER = address(0);
+    address constant LOGARITHM_MESSENGER = 0x4B57c9c6B58a454Def3Ad5AD0C15cF4974c818DE;
 }

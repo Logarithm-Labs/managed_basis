@@ -3,10 +3,11 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Script.sol";
 import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
-import {Arb, Bsc, Base} from "script/utils/ProtocolAddresses.sol";
+import {Arb, Bsc, Base, Eth} from "script/utils/ProtocolAddresses.sol";
 import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 import {BscAddresses} from "script/utils/BscAddresses.sol";
 import {BaseAddresses} from "script/utils/BaseAddresses.sol";
+import {EthAddresses} from "script/utils/EthAddresses.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 import {GasStation} from "src/gas-station/GasStation.sol";
@@ -20,10 +21,10 @@ uint256 constant ARB_CHAIN_ID = 42161;
 uint32 constant ARB_EID = uint32(30110);
 uint256 constant BASE_CHAIN_ID = 8453;
 uint32 constant BASE_EID = uint32(30184);
+uint256 constant ETH_CHAIN_ID = 1;
+uint32 constant ETH_EID = uint32(30101);
 
 contract ArbConfigScript is Script {
-    // access control addresses
-    address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
     ILogarithmMessenger messenger = ILogarithmMessenger(ArbAddresses.LOGARITHM_MESSENGER);
     GasStation gasStation = GasStation(payable(Arb.GAS_STATION));
 
@@ -41,13 +42,14 @@ contract ArbConfigScript is Script {
         messenger.registerDstMessenger(
             BASE_CHAIN_ID, BASE_EID, AddressCast.addressToBytes32(BaseAddresses.LOGARITHM_MESSENGER)
         );
+        messenger.registerDstMessenger(
+            ETH_CHAIN_ID, ETH_EID, AddressCast.addressToBytes32(EthAddresses.LOGARITHM_MESSENGER)
+        );
         messenger.registerStargate(ArbAddresses.USDC, ArbAddresses.STARGATE_POOL_USDC);
     }
 }
 
 contract BscConfigScript is Script {
-    // access control addresses
-    address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
     ILogarithmMessenger messenger = ILogarithmMessenger(BscAddresses.LOGARITHM_MESSENGER);
     GasStation gasStation = GasStation(payable(Bsc.GAS_STATION));
 
@@ -66,8 +68,6 @@ contract BscConfigScript is Script {
 }
 
 contract BaseConfigScript is Script {
-    // access control addresses
-    address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
     ILogarithmMessenger messenger = ILogarithmMessenger(BaseAddresses.LOGARITHM_MESSENGER);
     GasStation gasStation = GasStation(payable(Base.GAS_STATION));
 
@@ -82,6 +82,26 @@ contract BaseConfigScript is Script {
             ARB_CHAIN_ID, ARB_EID, AddressCast.addressToBytes32(ArbAddresses.LOGARITHM_MESSENGER)
         );
         messenger.registerStargate(BaseAddresses.USDC, BaseAddresses.STARGATE_POOL_USDC);
+
+        vm.stopBroadcast();
+    }
+}
+
+contract EthConfigScript is Script {
+    ILogarithmMessenger messenger = ILogarithmMessenger(EthAddresses.LOGARITHM_MESSENGER);
+    GasStation gasStation = GasStation(payable(Eth.GAS_STATION));
+
+    function run() public {
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("mainnet");
+        vm.startBroadcast(privateKey);
+
+        gasStation.registerManager(address(messenger), true);
+        messenger.updateGasStation(Eth.GAS_STATION);
+        messenger.registerDstMessenger(
+            ARB_CHAIN_ID, ARB_EID, AddressCast.addressToBytes32(ArbAddresses.LOGARITHM_MESSENGER)
+        );
+        messenger.registerStargate(EthAddresses.USDC, EthAddresses.STARGATE_POOL_USDC);
 
         vm.stopBroadcast();
     }

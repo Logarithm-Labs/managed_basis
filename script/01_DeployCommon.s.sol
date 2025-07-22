@@ -92,7 +92,8 @@ contract XDeploy is Script {
     address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
 
     function run() public {
-        vm.startBroadcast();
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.startBroadcast(privateKey);
         // deploy GasStation
         GasStation gasStation = DeployHelper.deployGasStation(owner);
         console.log("GasStation:", address(gasStation));
