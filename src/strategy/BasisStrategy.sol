@@ -643,8 +643,14 @@ contract BasisStrategy is
             uint256 idleAssets = _vault.idleAssets();
             result.deltaCollateralToIncrease =
                 idleAssets < result.deltaCollateralToIncrease ? idleAssets : result.deltaCollateralToIncrease;
-            if (result.deltaCollateralToIncrease > 0) _adjustPosition(0, result.deltaCollateralToIncrease, true, true);
-            else _setStrategyStatus(StrategyStatus.IDLE);
+            if (
+                result.deltaCollateralToIncrease > 0
+                    && result.deltaCollateralToIncrease >= $.hedgeManager.increaseCollateralMin()
+            ) {
+                _adjustPosition(0, result.deltaCollateralToIncrease, true, true);
+            } else {
+                _setStrategyStatus(StrategyStatus.IDLE);
+            }
         } else if (result.clearProcessingRebalanceDown) {
             $.processingRebalanceDown = false;
             _setStrategyStatus(StrategyStatus.IDLE);
@@ -837,7 +843,11 @@ contract BasisStrategy is
 
         uint256 pendingUtilizationInProduct = _oracle.convertTokenAmount(_asset, _product, pendingUtilizationInAsset);
         if (pendingUtilizationInProduct < _hedgeManager.increaseSizeMin()) pendingUtilizationInAsset = 0;
-        if (pendingDeutilizationInProduct < _hedgeManager.decreaseSizeMin()) pendingDeutilizationInProduct = 0;
+        // Deutilization is for withdrawing and leverage down, so it shouldn't be 0 when it is required.
+        uint256 decreaseSizeMin = _hedgeManager.decreaseSizeMin();
+        if (pendingDeutilizationInProduct > 0 && pendingDeutilizationInProduct < decreaseSizeMin) {
+            pendingDeutilizationInProduct = decreaseSizeMin;
+        }
 
         return (pendingUtilizationInAsset, pendingDeutilizationInProduct);
     }
