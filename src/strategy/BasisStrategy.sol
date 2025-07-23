@@ -513,8 +513,13 @@ contract BasisStrategy is
             amount = uncappedDeutilization;
         }
 
-        // check if amount is in the possible adjustment range
-        amount = _clamp(min, amount);
+        if (_processingRebalanceDown && amount > 0 && amount < min) {
+            // when processing rebalance down, deutilization should be at least decreaseSizeMin
+            amount = min;
+        } else {
+            // check if amount is in the possible adjustment range
+            amount = _clamp(min, amount);
+        }
 
         // can only deutilize when amount is positive
         if (amount == 0) {
