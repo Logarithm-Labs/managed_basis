@@ -434,8 +434,6 @@ contract BasisStrategy is
             $.utilizingExecutionCost = reservedExecutionCost().mulDiv(amount, uncappedUtilization);
         }
 
-        collateralDeltaAmount = amount.mulDiv(Constants.FLOAT_PRECISION, _targetLeverage);
-
         // can only utilize when amount is positive
         if (amount == 0) {
             revert Errors.ZeroAmountUtilization();

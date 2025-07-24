@@ -243,7 +243,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
 
         // 3. Trigger keeper logic to set processingRebalanceDown
-        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
+        (bool upkeepNeeded,) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
         assertTrue(upkeepNeeded);
         _performKeep("rebalanceDown_whenIdleNotEnough");
 
