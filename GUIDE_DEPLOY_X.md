@@ -33,27 +33,23 @@
 - Deploy proxies for arbitrum (source) chain strategy collection.
 
   ```script
-  forge script .\script\07_Deploy_X_HL_USDC_PEPE.s.sol:ArbDeploy --broadcast
+  forge script .\script\04_Deploy_X_VIRTUAL_USDC_HL_Prod.s.sol:ArbDeploy --broadcast
   ```
 
-  Note: `07_Deploy_X_HL_USDC_PEPE` should be replaced.
+  **Important**: Make sure all strategy parameters are set properly.
 
 - Set the deployed proxy addresses (Vault, Strategy, XSpotManager, OffChainPositionManager) [here](script/utils/ProtocolAddresses.sol)
 
 - Deploy `BrotherSwapper` proxy on destination chain.
 
   ```script
-  forge script .\script\07_Deploy_X_HL_USDC_PEPE.s.sol:EthDeploy --broadcast
+  forge script .\script\04_Deploy_X_VIRTUAL_USDC_HL_Prod.s.sol:BaseDeploy --broadcast
   ```
-
-  Note: `07_Deploy_X_HL_USDC_PEPE.s.sol:EthDeploy` should be replaced.
 
 - Set the deployed `BrotherSwapper` address [here](script/utils/ProtocolAddresses.sol)
 
 - Register `XSpotManager` with the deployed swapper address.
 
   ```script
-  forge script .\script\07_Deploy_X_HL_USDC_PEPE.s.sol:ConfigXSpot --broadcast
+  forge script .\script\04_Deploy_X_VIRTUAL_USDC_HL_Prod.s.sol:ConfigXSpot --broadcast
   ```
-
-  Note: `07_Deploy_X_HL_USDC_PEPE` should be replaced.
