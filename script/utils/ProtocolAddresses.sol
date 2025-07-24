@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 library Arb {
     address constant ORACLE = 0x70cfA166f710a3f5f4C91c67f17541aC75d52432;
     address constant DATA_PROVIDER = 0xD588209dFd70a71347B5D09bDdeee993f038fF77;
+    address constant GAS_STATION = address(0);
 
     address constant BEACON_VAULT = 0x23f685bD55D5A1AEb626Cb3F2aAf6124E65dA555;
     address constant BEACON_STRATEGY = 0xc57Be8bAf545dc63d1135a9Fb43B94765565C7c8;
