@@ -513,8 +513,13 @@ contract BasisStrategy is
             amount = uncappedDeutilization;
         }
 
-        // check if amount is in the possible adjustment range
-        amount = _clamp(min, amount);
+        if (_processingRebalanceDown && amount > 0 && amount < min) {
+            // when processing rebalance down, deutilization should be at least decreaseSizeMin
+            amount = min;
+        } else {
+            // check if amount is in the possible adjustment range
+            amount = _clamp(min, amount);
+        }
 
         // can only deutilize when amount is positive
         if (amount == 0) {
@@ -843,10 +848,14 @@ contract BasisStrategy is
 
         uint256 pendingUtilizationInProduct = _oracle.convertTokenAmount(_asset, _product, pendingUtilizationInAsset);
         if (pendingUtilizationInProduct < _hedgeManager.increaseSizeMin()) pendingUtilizationInAsset = 0;
-        // Deutilization is for withdrawing and leverage down, so it shouldn't be 0 when it is required.
+        // When processing rebalance down, deutilization should be at least decreaseSizeMin
         uint256 decreaseSizeMin = _hedgeManager.decreaseSizeMin();
         if (pendingDeutilizationInProduct > 0 && pendingDeutilizationInProduct < decreaseSizeMin) {
-            pendingDeutilizationInProduct = decreaseSizeMin;
+            if (_processingRebalanceDown) {
+                pendingDeutilizationInProduct = decreaseSizeMin;
+            } else {
+                pendingDeutilizationInProduct = 0;
+            }
         }
 
         return (pendingUtilizationInAsset, pendingDeutilizationInProduct);

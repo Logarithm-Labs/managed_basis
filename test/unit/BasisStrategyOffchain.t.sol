@@ -226,4 +226,56 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
 
         _performKeep("rebalanceDown_whenIdleNotEnough");
     }
+
+    function test_deutilize_clamps_to_min_when_processingRebalanceDown() public {
+        // 1. Setup: fully utilize, then trigger rebalance down
+        _deposit(user1, TEN_THOUSANDS_USDC);
+        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
+        _utilize(pendingUtilizationInAsset);
+
+        // 2. Manipulate state so that a rebalance down is needed, and the deutilization amount is less than decreaseSizeMin
+        // For example, set the vault's idle assets to 0, and increase leverage by changing price
+        vm.startPrank(USDC_WHALE);
+        IERC20(asset).transfer(address(vault), 1); // minimal idle
+        vm.stopPrank();
+
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+
+        // 3. Trigger keeper logic to set processingRebalanceDown
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("rebalanceDown_whenIdleNotEnough");
+        assertTrue(upkeepNeeded);
+        _performKeep("rebalanceDown_whenIdleNotEnough");
+
+        // 4. Mock decreaseSizeMin
+        (, uint256 pendingDeutilizationOriginal) = strategy.pendingUtilizations();
+        uint256 pendingDeutilizationInAsset = oracle.convertTokenAmount(product, asset, pendingDeutilizationOriginal);
+        uint256 decreaseSizeMin = pendingDeutilizationInAsset * 2;
+        vm.startPrank(owner);
+        OffChainConfig config =
+            OffChainConfig(address(OffChainPositionManager(address(strategy.hedgeManager())).config()));
+        config.setSizeMin(config.increaseSizeMin(), decreaseSizeMin);
+        vm.stopPrank();
+
+        // 5. Now, pendingUtilizations should return deutilization == decreaseSizeMin
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        uint256 pendingDeutilizationInAssetExpected = oracle.convertTokenAmount(asset, product, decreaseSizeMin);
+        assertEq(pendingDeutilization, pendingDeutilizationInAssetExpected, "Should clamp to decreaseSizeMin");
+
+        uint256 exposureBefore = ISpotManager(strategy.spotManager()).exposure();
+        uint256 positionSizeBefore = IHedgeManager(strategy.hedgeManager()).positionSizeInTokens();
+
+        // 6. Optionally, call deutilize and check the event or state
+        vm.startPrank(operator);
+        strategy.deutilize(pendingDeutilization, ISpotManager.SwapType.MANUAL, "");
+        vm.stopPrank();
+        _executeOrder();
+
+        uint256 exposureAfter = ISpotManager(strategy.spotManager()).exposure();
+        uint256 positionSizeAfter = IHedgeManager(strategy.hedgeManager()).positionSizeInTokens();
+        assertEq(exposureAfter + pendingDeutilizationInAssetExpected, exposureBefore, "Exposure should increase");
+        assertEq(
+            positionSizeAfter + pendingDeutilizationInAssetExpected, positionSizeBefore, "Position size should decrease"
+        );
+    }
 }
