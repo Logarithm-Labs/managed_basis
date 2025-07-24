@@ -63,7 +63,7 @@ contract OffChainTest is PositionMngerForkTest {
         // deploy positionMnager beacon proxy
         hedgeManager = DeployHelper.deployOffChainPositionManager(
             DeployHelper.OffChainPositionManagerDeployParams(
-                owner, address(config), hedgeManagerBeacon, strategy, agent, oracle, product, asset, false
+                owner, address(config), hedgeManagerBeacon, strategy, agent, agent, oracle, product, asset, false
             )
         );
         vm.label(address(hedgeManager), "hedgeManager");

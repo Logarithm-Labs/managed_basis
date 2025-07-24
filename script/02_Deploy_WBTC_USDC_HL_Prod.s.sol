@@ -21,6 +21,7 @@ contract ArbDeploy is Script {
     address constant owner = 0xd1DD21D53eC43C8FE378E51029Aa3F380b229c98;
     address constant operator = 0xE32b95441C23D87906929F2Dae25B9E9DD62F1B1;
     address constant agent = 0xEdD0D94a267550C926cbe4A1A562157945cc6c6c;
+    address constant committer = agent;
 
     // vault params
     uint256 constant entryCost = 0.0035 ether; // 0.35% entry fee
@@ -67,6 +68,7 @@ contract ArbDeploy is Script {
             exitCost: exitCost,
             operator: operator,
             agent: agent,
+            committer: committer,
             targetLeverage: targetLeverage,
             minLeverage: minLeverage,
             maxLeverage: maxLeverage,

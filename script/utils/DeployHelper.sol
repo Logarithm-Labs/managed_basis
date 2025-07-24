@@ -214,6 +214,7 @@ library DeployHelper {
         address beacon;
         address strategy;
         address agent;
+        address committer;
         address oracle;
         address product;
         address asset;
@@ -232,6 +233,7 @@ library DeployHelper {
                     params.config,
                     params.strategy,
                     params.agent,
+                    params.committer,
                     params.oracle,
                     params.isLong
                 )
@@ -324,6 +326,7 @@ library DeployHelper {
         uint256 exitCost;
         address operator;
         address agent;
+        address committer;
         uint256 targetLeverage;
         uint256 minLeverage;
         uint256 maxLeverage;
@@ -400,6 +403,7 @@ library DeployHelper {
                 beacon: Arb.BEACON_OFF_CHAIN_POSITION_MANAGER,
                 strategy: address(strategy),
                 agent: params.agent,
+                committer: params.committer,
                 oracle: Arb.ORACLE,
                 product: params.product,
                 asset: params.asset,
@@ -423,6 +427,7 @@ library DeployHelper {
         uint256 exitCost;
         address operator;
         address agent;
+        address committer;
         uint256 targetLeverage;
         uint256 minLeverage;
         uint256 maxLeverage;
@@ -506,6 +511,7 @@ library DeployHelper {
                 beacon: Arb.BEACON_OFF_CHAIN_POSITION_MANAGER,
                 strategy: address(strategy),
                 agent: params.agent,
+                committer: params.committer,
                 oracle: Arb.ORACLE,
                 product: params.product,
                 asset: params.asset,
