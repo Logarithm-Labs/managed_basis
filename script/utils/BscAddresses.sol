@@ -11,5 +11,5 @@ library BscAddresses {
     address constant PCS_V3_POOL_DOGE_WBNB = 0xce6160bB594fC055c943F59De92ceE30b8c6B32c;
     address constant PCS_V3_POOL_WBNB_USDC = 0xf2688Fb5B81049DFB7703aDa5e770543770612C4;
 
-    address constant LOGARITHM_MESSENGER = 0x9Ca2d751B68B325aC0d2820c2E765b1089cDD915;
+    address constant LOGARITHM_MESSENGER = address(0);
 }

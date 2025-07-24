@@ -11,5 +11,5 @@ library BaseAddresses {
     address constant UNI_V3_POOL_VIRTUAL_WETH = 0x9c087Eb773291e50CF6c6a90ef0F4500e349B903;
     address constant UNI_V3_POOL_WETH_USDC = 0xd0b53D9277642d899DF5C87A3966A349A798F224;
 
-    address constant LOGARITHM_MESSENGER = 0x78dce1bc2498a042035efD139567A6DC0a077c46;
+    address constant LOGARITHM_MESSENGER = address(0);
 }

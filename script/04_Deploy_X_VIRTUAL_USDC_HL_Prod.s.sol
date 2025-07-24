@@ -1,0 +1,144 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.0;
+
+import "forge-std/Script.sol";
+
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
+import {BaseAddresses} from "script/utils/BaseAddresses.sol";
+import {Arb, Base} from "script/utils/ProtocolAddresses.sol";
+import {DeployHelper} from "script/utils/DeployHelper.sol";
+import {AddressCast} from "src/libraries/utils/AddressCast.sol";
+
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
+import {LogarithmVault} from "src/vault/LogarithmVault.sol";
+import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {SpotManager} from "src/spot/SpotManager.sol";
+import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
+import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
+import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
+import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
+
+address constant operator = 0xBD3F4f622df9690e9202d6c8D7Fbdf2763D0B89f;
+address constant agent = 0x0473174dA33598Aad43357644bFDf79f9d3167bA;
+address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
+address constant committer = agent;
+
+contract ArbDeploy is Script {
+    // vault params
+    uint256 constant entryCost = 0.004 ether; // 0.4% entry fee
+    uint256 constant exitCost = 0.004 ether; // 0.4% exit fee
+    string constant vaultName = "BasisOS USDC-VIRTUAL Hyperliquid";
+    string constant vaultSymbol = "basisos-usdc-virtual-hl";
+    // Strategy Addresses
+    address constant asset = ArbAddresses.USDC; // USDC
+    address constant product = ArbAddresses.VIRTUAL; // VIRTUAL
+    address constant assetPriceFeed = ArbAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
+    address constant productPriceFeed = ArbAddresses.CUSTOM_VIRTUAL_USD_PRICE_FEED; // Custom VIRTUAL-USD price feed
+    uint256 constant feedHeartbeat = 24 * 3600;
+    // strategy params
+    uint256 constant targetLeverage = 3 ether;
+    uint256 constant minLeverage = 1 ether;
+    uint256 constant maxLeverage = 5 ether;
+    uint256 constant safeMarginLeverage = 6 ether;
+
+    address feeRecipient = address(0);
+    uint256 managementFee = 0;
+    uint256 performanceFee = 0;
+    uint256 hurdleRate = 0;
+    uint256 userDepositLimit = type(uint256).max;
+    uint256 vaultDepositLimit = type(uint256).max;
+
+    uint256 constant BASE_CHAIN_ID = 8453;
+
+    function run() public {
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
+
+        DeployHelper.deployHLVaultX(
+            DeployHelper.DeployHLVaultXParams({
+                owner: owner,
+                name: vaultName,
+                symbol: vaultSymbol,
+                asset: asset,
+                product: product,
+                productPriceFeed: productPriceFeed,
+                productPriceFeedHeartbeats: feedHeartbeat,
+                entryCost: entryCost,
+                exitCost: exitCost,
+                operator: operator,
+                agent: agent,
+                committer: committer,
+                targetLeverage: targetLeverage,
+                minLeverage: minLeverage,
+                maxLeverage: maxLeverage,
+                safeMarginLeverage: safeMarginLeverage,
+                feeRecipient: feeRecipient,
+                managementFee: managementFee,
+                performanceFee: performanceFee,
+                hurdleRate: hurdleRate,
+                userDepositLimit: userDepositLimit,
+                vaultDepositLimit: vaultDepositLimit,
+                dstChainId: BASE_CHAIN_ID
+            })
+        );
+
+        vm.stopBroadcast();
+    }
+}
+
+contract BaseDeploy is Script {
+    address[] assetToProductSwapPath = [
+        BaseAddresses.USDC,
+        BaseAddresses.UNI_V3_POOL_WETH_USDC,
+        BaseAddresses.WETH,
+        BaseAddresses.UNI_V3_POOL_VIRTUAL_WETH,
+        BaseAddresses.VIRTUAL
+    ];
+
+    uint256 constant ARB_CHAIN_ID = 42161;
+
+    // Strategy Addresses
+    address constant asset = BaseAddresses.USDC; // USDC
+    address constant product = BaseAddresses.VIRTUAL; // VIRTUAL
+
+    // predeployed contracts
+    bytes32 xSpotManager = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL);
+
+    function run() public {
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("base");
+        vm.startBroadcast(privateKey);
+
+        // deploy BrotherSwapper
+        DeployHelper.DeployBrotherSwapperParams memory swapperDeployParams = DeployHelper.DeployBrotherSwapperParams({
+            beacon: Base.BEACON_BROTHER_SWAPPER,
+            owner: owner,
+            operator: operator,
+            asset: asset,
+            product: product,
+            messenger: BaseAddresses.LOGARITHM_MESSENGER,
+            spotManager: xSpotManager,
+            dstChainId: ARB_CHAIN_ID,
+            assetToProductSwapPath: assetToProductSwapPath
+        });
+        BrotherSwapper swapper = DeployHelper.deployBrotherSwapper(swapperDeployParams);
+        console.log("BrotherSwapper: ", address(swapper));
+
+        vm.stopBroadcast();
+    }
+}
+
+contract ConfigXSpot is Script {
+    // predeployed contracts
+    XSpotManager xSpotManager = XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL);
+    bytes32 swapper = AddressCast.addressToBytes32(Base.BROTHER_SWAPPER_HL_USDC_VIRTUAL);
+
+    function run() public {
+        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast(privateKey);
+        XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL).setSwapper(swapper);
+    }
+}

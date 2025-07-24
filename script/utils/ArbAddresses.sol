@@ -16,7 +16,8 @@ library ArbAddresses {
     address constant WBTC = 0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f;
     address constant LINK = 0xf97f4df75117a78c1A5a0DBb814Af92458539FB4;
     address constant DOGE = CHL_DOGE_USD_PRICE_FEED; // does not exist on arbitrum
-    address constant VIRTUAL = 0x8dC2B211aa50FFD263DdA0453E690EFf77849ed6; // does not exist on arbitrum
+    address constant VIRTUAL = CHL_PEPE_USD_PRICE_FEED; // does not exist on arbitrum
+    address constant PEPE = 0x25d887Ce7a35172C62FeBFD67a1856F20FaEbB00;
 
     address constant STARGATE_POOL_USDC = 0xe8CDF27AcD73a434D661C84887215F7598e7d0d3;
 
@@ -30,6 +31,7 @@ library ArbAddresses {
     address constant CHL_DOGE_USD_PRICE_FEED = 0x9A7FB1b3950837a8D9b40517626E11D4127C098C;
     address constant CHL_LINK_USD_PRICE_FEED = 0x86E53CF1B870786351Da77A57575e79CB55812CB;
     address constant CUSTOM_VIRTUAL_USD_PRICE_FEED = 0xFF71AcB229dEB9B29bd4993930cC13661c156e21;
+    address constant CHL_PEPE_USD_PRICE_FEED = 0x02DEd5a7EDDA750E3Eb240b54437a54d57b74dBE;
 
-    address constant LOGARITHM_MESSENGER = 0x2Bb34d36CC88C77F8057B4DF1C14434bFa117673;
+    address constant LOGARITHM_MESSENGER = address(0);
 }

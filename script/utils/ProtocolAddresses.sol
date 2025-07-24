@@ -25,6 +25,28 @@ library Arb {
     address constant STRATEGY_HL_USDC_LINK = 0xd6e39c22C22fF1d13457e226a75B73b382441632;
     address constant SPOT_MANAGER_HL_USDC_LINK = 0x47310058B08D108e75E582bF718A10E97990eaFB;
     address constant OFF_CHAIN_POSITION_MANAGER_HL_USDC_LINK = 0x4D79DB3bF2788Ec1C9cCF6dE023c95AEcf984204;
+
+    // virtual hl x vault
+    address constant VAULT_HL_USDC_VIRTUAL = address(0);
+    address constant STRATEGY_HL_USDC_VIRTUAL = address(0);
+    address constant X_SPOT_MANAGER_HL_USDC_VIRTUAL = address(0);
+    address constant HEDGE_MANAGER_HL_USDC_VIRTUAL = address(0);
 }
 
-library Bsc {}
+library Bsc {
+    address constant GAS_STATION = address(0);
+    address constant BEACON_BROTHER_SWAPPER = address(0);
+    address constant BROTHER_SWAPPER_HL_USDC_DOGE = address(0);
+}
+
+library Base {
+    address constant GAS_STATION = address(0);
+    address constant BEACON_BROTHER_SWAPPER = address(0);
+    address constant BROTHER_SWAPPER_HL_USDC_VIRTUAL = address(0);
+}
+
+library Eth {
+    address constant GAS_STATION = address(0);
+    address constant BEACON_BROTHER_SWAPPER = address(0);
+    address constant BROTHER_SWAPPER_HL_USDC_PEPE = address(0);
+}
