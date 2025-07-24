@@ -114,10 +114,10 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         __Ownable_init(_owner);
 
         // set big enough initially
-        _setBuyReqGasLimit(1_000_000); // lzCompose(swap + lzSend)
-        _setBuyResGasLimit(800_000); // lzSend(adjustPosition)  HL - 800_000
-        _setSellReqGasLimit(1_000_000); // lzReceive(swap + sendToken)
-        _setSellResGasLimit(800_000); // lzCompose()
+        _setBuyReqGasLimit(500_000); // lzCompose()
+        _setBuyResGasLimit(300_000); // lzReceive()
+        _setSellReqGasLimit(300_000); // lzReceive()
+        _setSellResGasLimit(400_000); // lzCompose()
         _setMessenger(_messenger);
 
         // approve strategy to max amount
