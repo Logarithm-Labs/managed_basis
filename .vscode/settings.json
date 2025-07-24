@@ -10,10 +10,5 @@
   "inline-bookmarks.default.words.green": "@ok, @OK",
   "inline-bookmarks.default.words.purple": "@issue, @ISSUE, @optimize, @OPTIMIZE, @review, @REVIEW",
   "solidity.packageDefaultDependenciesContractsDirectory": "src",
-  "solidity.packageDefaultDependenciesDirectory": "lib",
-  "solidity.remappings": [
-    "forge-std/=lib/forge-std/src/",
-    "@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/",
-    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/"
-  ]
+  "solidity.packageDefaultDependenciesDirectory": "lib"
 }

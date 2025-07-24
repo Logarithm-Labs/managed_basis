@@ -24,7 +24,7 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 /// with off-chain perpetual protocols to manage hedge positions.
 /// By coordinating with off-chain systems, such as through an oracle or relayer network,
 /// the contract adjusts perpetual positions to maintain a target exposure aligned with
-/// the strategy’s requirements.
+/// the strategy's requirements.
 /// This component is ideal for delta-neutral strategies seeking yield from
 /// funding payments on off-chain perpetual markets.
 ///
@@ -77,6 +77,7 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
         mapping(uint256 round => PositionState) positionStates;
         mapping(uint256 round => RequestInfo) requests;
         uint256[] requestRounds;
+        address committer;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.OffChainPositionManager")) - 1)) & ~bytes32(uint256(0xff))
@@ -99,6 +100,9 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
 
     /// @dev Emitted when agent gets updated.
     event AgentUpdated(address indexed account, address indexed newAgent);
+
+    /// @dev Emitted when committer gets updated.
+    event CommitterUpdated(address indexed account, address indexed newCommitter);
 
     /// @dev Emitted when a new request from strategy is created.
     event CreateRequest(
@@ -140,14 +144,27 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
         _;
     }
 
+    /// @dev Authorize caller if it is a configured committer.
+    modifier onlyCommitter() {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        if (msg.sender != $.committer) {
+            revert Errors.CallerNotCommitter();
+        }
+        _;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             INITIALIZATION
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address config_, address strategy_, address agent_, address oracle_, bool isLong_)
-        external
-        initializer
-    {
+    function initialize(
+        address config_,
+        address strategy_,
+        address agent_,
+        address committer_,
+        address oracle_,
+        bool isLong_
+    ) external initializer {
         __Ownable_init(msg.sender);
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         $.config = config_;
@@ -158,6 +175,7 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
         $.collateralToken = asset;
         $.isLong = isLong_;
         _setAgent(agent_);
+        _setCommitter(committer_);
         // strategy is trusted
         IERC20(asset).approve(strategy_, type(uint256).max);
     }
@@ -172,6 +190,18 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
 
     function setAgent(address newAgent) external onlyOwner {
         _setAgent(newAgent);
+    }
+
+    function _setCommitter(address newCommitter) internal {
+        if (committer() != newCommitter) {
+            OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+            $.committer = newCommitter;
+            emit CommitterUpdated(_msgSender(), newCommitter);
+        }
+    }
+
+    function setCommitter(address newCommitter) external onlyOwner {
+        _setCommitter(newCommitter);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -248,7 +278,7 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
     }
 
     /// @dev Reports the state of the hedge position.
-    function reportState(uint256 sizeInTokens, uint256 netBalance, uint256 markPrice) external onlyAgent {
+    function reportState(uint256 sizeInTokens, uint256 netBalance, uint256 markPrice) external onlyCommitter {
         // increments round
         // stores position state in the current round
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
@@ -428,6 +458,12 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
     function agent() public view returns (address) {
         OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
         return $.agent;
+    }
+
+    /// @notice The address of committer.
+    function committer() public view returns (address) {
+        OffChainPositionManagerStorage storage $ = _getOffChainPositionManagerStorage();
+        return $.committer;
     }
 
     /// @notice The address of oracle smart contract.
