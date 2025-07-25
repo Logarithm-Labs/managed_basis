@@ -30,7 +30,7 @@
 
 - Upgrade all existing beacon contracts (OffChainManager, SpotManager, XSpotManager, BasisStrategy, LogarithmVault) on Arbitrum chain.
 
-- Deploy proxies for arbitrum (source) chain strategy collection.
+- Deploy proxies for arbitrum (sou.rce) chain strategy collection.
 
   ```script
   forge script .\script\04_Deploy_X_VIRTUAL_USDC_HL_Prod.s.sol:ArbDeploy --broadcast

@@ -8,8 +8,8 @@ import {Arb, Bsc, Base} from "script/utils/ProtocolAddresses.sol";
 
 contract UpgradeSpotManager is Script {
     function run() public {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(privateKey);
+        // uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        vm.startBroadcast();
         UpgradeableBeacon beacon = UpgradeableBeacon(Arb.BEACON_SPOT_MANAGER);
         beacon.upgradeTo(address(new SpotManager()));
         vm.stopBroadcast();

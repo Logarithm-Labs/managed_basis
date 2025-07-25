@@ -9,9 +9,9 @@ import {Arb, Bsc, Base} from "script/utils/ProtocolAddresses.sol";
 
 contract UpgradeXSpotManager is Script {
     function run() public {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
-        vm.createSelectFork("arbitrum_one");
-        vm.startBroadcast(privateKey);
+        // uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        // vm.createSelectFork("arbitrum_one");
+        vm.startBroadcast( /* privateKey */ );
         UpgradeableBeacon beacon = UpgradeableBeacon(Arb.BEACON_X_SPOT_MANAGER);
         beacon.upgradeTo(address(new XSpotManager()));
         vm.stopBroadcast();
@@ -20,8 +20,9 @@ contract UpgradeXSpotManager is Script {
 
 contract UpgradeBscBrotherSwapper is Script {
     function run() public {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(privateKey);
+        // uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        // vm.createSelectFork("bnb_smart_chain");
+        vm.startBroadcast( /* privateKey */ );
         UpgradeableBeacon beacon = UpgradeableBeacon(Bsc.BEACON_BROTHER_SWAPPER);
         beacon.upgradeTo(address(new BrotherSwapper()));
         vm.stopBroadcast();
@@ -30,8 +31,9 @@ contract UpgradeBscBrotherSwapper is Script {
 
 contract UpgradeBaseBrotherSwapper is Script {
     function run() public {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(privateKey);
+        // uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        // vm.createSelectFork("base");
+        vm.startBroadcast( /* privateKey */ );
         UpgradeableBeacon beacon = UpgradeableBeacon(Base.BEACON_BROTHER_SWAPPER);
         beacon.upgradeTo(address(new BrotherSwapper()));
         vm.stopBroadcast();

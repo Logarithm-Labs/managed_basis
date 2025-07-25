@@ -29,9 +29,9 @@ contract ArbConfigScript is Script {
     GasStation gasStation = GasStation(payable(Arb.GAS_STATION));
 
     function run() public {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        // uint256 privateKey = vm.envUint("PRIVATE_KEY");
         vm.createSelectFork("arbitrum_one");
-        vm.startBroadcast(privateKey);
+        vm.startBroadcast( /* privateKey */ );
 
         gasStation.registerManager(address(messenger), true);
 
@@ -54,9 +54,9 @@ contract BscConfigScript is Script {
     GasStation gasStation = GasStation(payable(Bsc.GAS_STATION));
 
     function run() public {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        // uint256 privateKey = vm.envUint("PRIVATE_KEY");
         vm.createSelectFork("bnb_smart_chain");
-        vm.startBroadcast(privateKey);
+        vm.startBroadcast( /* privateKey */ );
 
         gasStation.registerManager(address(messenger), true);
         messenger.updateGasStation(Bsc.GAS_STATION);
@@ -72,9 +72,9 @@ contract BaseConfigScript is Script {
     GasStation gasStation = GasStation(payable(Base.GAS_STATION));
 
     function run() public {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        // uint256 privateKey = vm.envUint("PRIVATE_KEY");
         vm.createSelectFork("base");
-        vm.startBroadcast(privateKey);
+        vm.startBroadcast( /* privateKey */ );
 
         gasStation.registerManager(address(messenger), true);
         messenger.updateGasStation(Base.GAS_STATION);
@@ -92,9 +92,9 @@ contract EthConfigScript is Script {
     GasStation gasStation = GasStation(payable(Eth.GAS_STATION));
 
     function run() public {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        // uint256 privateKey = vm.envUint("PRIVATE_KEY");
         vm.createSelectFork("mainnet");
-        vm.startBroadcast(privateKey);
+        vm.startBroadcast( /* privateKey */ );
 
         gasStation.registerManager(address(messenger), true);
         messenger.updateGasStation(Eth.GAS_STATION);

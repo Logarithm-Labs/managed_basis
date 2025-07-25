@@ -52,9 +52,9 @@ contract ArbDeploy is Script {
     uint256 constant BASE_CHAIN_ID = 8453;
 
     function run() public {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        // uint256 privateKey = vm.envUint("PRIVATE_KEY");
         vm.createSelectFork("arbitrum_one");
-        vm.startBroadcast(privateKey);
+        vm.startBroadcast( /* privateKey */ );
 
         DeployHelper.deployHLVaultX(
             DeployHelper.DeployHLVaultXParams({
@@ -107,9 +107,9 @@ contract BaseDeploy is Script {
     bytes32 xSpotManager = AddressCast.addressToBytes32(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL);
 
     function run() public {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        // uint256 privateKey = vm.envUint("PRIVATE_KEY");
         vm.createSelectFork("base");
-        vm.startBroadcast(privateKey);
+        vm.startBroadcast( /* privateKey */ );
 
         // deploy BrotherSwapper
         DeployHelper.DeployBrotherSwapperParams memory swapperDeployParams = DeployHelper.DeployBrotherSwapperParams({
@@ -136,9 +136,9 @@ contract ConfigXSpot is Script {
     bytes32 swapper = AddressCast.addressToBytes32(Base.BROTHER_SWAPPER_HL_USDC_VIRTUAL);
 
     function run() public {
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        // uint256 privateKey = vm.envUint("PRIVATE_KEY");
         vm.createSelectFork("arbitrum_one");
-        vm.startBroadcast(privateKey);
+        vm.startBroadcast( /* privateKey */ );
         XSpotManager(Arb.X_SPOT_MANAGER_HL_USDC_VIRTUAL).setSwapper(swapper);
     }
 }

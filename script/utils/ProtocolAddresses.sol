@@ -4,13 +4,14 @@ pragma solidity ^0.8.0;
 library Arb {
     address constant ORACLE = 0x70cfA166f710a3f5f4C91c67f17541aC75d52432;
     address constant DATA_PROVIDER = 0xD588209dFd70a71347B5D09bDdeee993f038fF77;
-    address constant GAS_STATION = address(0);
+    address constant GAS_STATION = 0x965B743b29fB1F70506D8Cb457b9ED60788e26f8;
 
     address constant BEACON_VAULT = 0x23f685bD55D5A1AEb626Cb3F2aAf6124E65dA555;
     address constant BEACON_STRATEGY = 0xc57Be8bAf545dc63d1135a9Fb43B94765565C7c8;
     address constant BEACON_SPOT_MANAGER = 0x30eD7e8E8103AB57d5d21d48F001E0EaE371dC7e;
     address constant BEACON_X_SPOT_MANAGER = 0x3981CedD1001A847848aCdd616EEB7f68f2a0748;
     address constant BEACON_OFF_CHAIN_POSITION_MANAGER = 0x105755108a8dfcD90c5a0de597BB3A8bce83C535;
+    address constant BEACON_BROTHER_SWAPPER = 0x7227804A345aB8030EF85785A694E939e0b3AFD9;
 
     address constant CONFIG_STRATEGY = 0xBf2bFCEf1135389A91c1a9742D60AAc7FAb432b3;
     address constant CONFIG_HL = 0x47b8D09B3Bcba3F5687b223336cf6a76944572E1;
@@ -28,10 +29,10 @@ library Arb {
     address constant OFF_CHAIN_POSITION_MANAGER_HL_USDC_LINK = 0x4D79DB3bF2788Ec1C9cCF6dE023c95AEcf984204;
 
     // virtual hl x vault
-    address constant VAULT_HL_USDC_VIRTUAL = address(0);
-    address constant STRATEGY_HL_USDC_VIRTUAL = address(0);
-    address constant X_SPOT_MANAGER_HL_USDC_VIRTUAL = address(0);
-    address constant HEDGE_MANAGER_HL_USDC_VIRTUAL = address(0);
+    address constant VAULT_HL_USDC_VIRTUAL = 0x72ca1069847ddf6b172c2bfA1012368d29c5A2e2;
+    address constant STRATEGY_HL_USDC_VIRTUAL = 0xD79dd12B7bC927E39aEf596F9C78385e9f9A4d1D;
+    address constant X_SPOT_MANAGER_HL_USDC_VIRTUAL = 0x7123D4D8059D14Da7cAca9Aa336D2fcc1A205450;
+    address constant HEDGE_MANAGER_HL_USDC_VIRTUAL = 0x97D0122A473457f1dd2BAd64f73E6343b3f10cF5;
 }
 
 library Bsc {
@@ -43,7 +44,7 @@ library Bsc {
 library Base {
     address constant GAS_STATION = 0xE798635fB09D02d7c8FaFa03339356709fd5d2d2;
     address constant BEACON_BROTHER_SWAPPER = 0xF9b33eaaC69408c79d1CC523b9200a38d0a0D9Eb;
-    address constant BROTHER_SWAPPER_HL_USDC_VIRTUAL = address(0);
+    address constant BROTHER_SWAPPER_HL_USDC_VIRTUAL = 0x1667190e3Ec20dB891ed379f0601cEC91B43Dca6;
 }
 
 library Eth {
