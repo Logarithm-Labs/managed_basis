@@ -41,8 +41,8 @@ library Bsc {
 }
 
 library Base {
-    address constant GAS_STATION = address(0);
-    address constant BEACON_BROTHER_SWAPPER = address(0);
+    address constant GAS_STATION = 0xE798635fB09D02d7c8FaFa03339356709fd5d2d2;
+    address constant BEACON_BROTHER_SWAPPER = 0xF9b33eaaC69408c79d1CC523b9200a38d0a0D9Eb;
     address constant BROTHER_SWAPPER_HL_USDC_VIRTUAL = address(0);
 }
 

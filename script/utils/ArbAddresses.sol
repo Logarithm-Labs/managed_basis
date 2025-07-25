@@ -33,5 +33,5 @@ library ArbAddresses {
     address constant CUSTOM_VIRTUAL_USD_PRICE_FEED = 0xFF71AcB229dEB9B29bd4993930cC13661c156e21;
     address constant CHL_PEPE_USD_PRICE_FEED = 0x02DEd5a7EDDA750E3Eb240b54437a54d57b74dBE;
 
-    address constant LOGARITHM_MESSENGER = address(0);
+    address constant LOGARITHM_MESSENGER = 0xb95Bb68bb3C6170ef766767e74345Dc5b7501d29;
 }

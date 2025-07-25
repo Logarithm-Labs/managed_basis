@@ -101,7 +101,7 @@ contract ArbDeploy is Script {
 }
 
 contract XDeploy is Script {
-    address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
+    address constant owner = 0xd1DD21D53eC43C8FE378E51029Aa3F380b229c98;
 
     function run() public {
         vm.startBroadcast();

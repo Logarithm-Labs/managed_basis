@@ -19,22 +19,22 @@ import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManage
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 
-address constant operator = 0xBD3F4f622df9690e9202d6c8D7Fbdf2763D0B89f;
-address constant agent = 0x0473174dA33598Aad43357644bFDf79f9d3167bA;
-address constant owner = 0xDaFed9a0A40f810FCb5C3dfCD0cB3486036414eb;
-address constant committer = agent;
+address constant operator = 0x00602eCED20b217747f87b6EE08D64a8FD214a64;
+address constant agent = 0x9a66B886995274E0914a202EC73E376cfb0EFB2D;
+address constant owner = 0xd1DD21D53eC43C8FE378E51029Aa3F380b229c98;
+address constant committer = 0xB065eeEd0f9403AdacC7706726d98471995ACE76;
 
 contract ArbDeploy is Script {
     // vault params
-    uint256 constant entryCost = 0.004 ether; // 0.4% entry fee
-    uint256 constant exitCost = 0.004 ether; // 0.4% exit fee
+    uint256 constant entryCost = 0.001 ether; // 0.1% entry cost
+    uint256 constant exitCost = 0.001 ether; // 0.1% exit cost
     string constant vaultName = "BasisOS USDC-VIRTUAL Hyperliquid";
     string constant vaultSymbol = "basisos-usdc-virtual-hl";
     // Strategy Addresses
     address constant asset = ArbAddresses.USDC; // USDC
     address constant product = ArbAddresses.VIRTUAL; // VIRTUAL
     address constant assetPriceFeed = ArbAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
-    address constant productPriceFeed = ArbAddresses.CUSTOM_VIRTUAL_USD_PRICE_FEED; // Custom VIRTUAL-USD price feed
+    address constant productPriceFeed = 0x4A9a09f514b394A1d8F3Bb8158DFaf15c9E4cb0B; // Custom VIRTUAL-USD price feed
     uint256 constant feedHeartbeat = 24 * 3600;
     // strategy params
     uint256 constant targetLeverage = 3 ether;
@@ -42,12 +42,12 @@ contract ArbDeploy is Script {
     uint256 constant maxLeverage = 5 ether;
     uint256 constant safeMarginLeverage = 6 ether;
 
-    address feeRecipient = address(0);
-    uint256 managementFee = 0;
-    uint256 performanceFee = 0;
-    uint256 hurdleRate = 0;
+    address feeRecipient = 0xF27cAf44644a4c774CDB2e6acC786c6B0fCB8dB2;
+    uint256 managementFee = 0.02 ether; // 2% management fee
+    uint256 performanceFee = 0.2 ether; // 20% performance fee
+    uint256 hurdleRate = 0.1095 ether; // 10.95% hurdle rate
     uint256 userDepositLimit = type(uint256).max;
-    uint256 vaultDepositLimit = type(uint256).max;
+    uint256 vaultDepositLimit = 4_000_000 * 1e6;
 
     uint256 constant BASE_CHAIN_ID = 8453;
 
