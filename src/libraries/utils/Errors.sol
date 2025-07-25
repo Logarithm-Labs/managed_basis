@@ -83,6 +83,7 @@ library Errors {
     error NotEnoughCollateral();
     error NoActiveRequests();
     error InvalidAdjustmentParams();
+    error InvalidSizeRequest(uint256 sizeDeltaInTokens, bool isIncrease);
     error InvalidCollateralRequest(uint256 collateralDeltaAmount, bool isIncrease);
     error ProcessingRequest();
 
@@ -94,6 +95,9 @@ library Errors {
     error InvalidStargate();
     error InvalidSender();
     error InvalidTokenSend();
+    error RequestInPending();
+    error NoPendingRequest();
+    error ExceedsSlippage();
 
     /*//////////////////////////////////////////////////////////////
                               AUTH CALLER

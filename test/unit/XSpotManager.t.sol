@@ -9,6 +9,7 @@ import {XSpotManager} from "src/spot/crosschain/XSpotManager.sol";
 import {BrotherSwapper} from "src/spot/crosschain/BrotherSwapper.sol";
 import {GasStation} from "src/gas-station/GasStation.sol";
 import {AddressCast} from "src/libraries/utils/AddressCast.sol";
+import {Errors} from "src/libraries/utils/Errors.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
 
 import {MockOracle} from "test/mock/MockOracle.sol";
@@ -19,6 +20,7 @@ import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 
 contract XSpotManagerTest is ForkTest {
     address owner = makeAddr("owner");
+    address operator = makeAddr("operator");
 
     address constant ARBI_STARTGATE = ArbAddresses.STARGATE_POOL_USDC;
     uint256 constant chainId = 56;
@@ -65,6 +67,7 @@ contract XSpotManagerTest is ForkTest {
             DeployHelper.DeployBrotherSwapperParams({
                 beacon: beaconSwapper,
                 owner: owner,
+                operator: operator,
                 asset: asset,
                 product: product,
                 messenger: address(messenger),
@@ -76,14 +79,20 @@ contract XSpotManagerTest is ForkTest {
 
         spotManager.setSwapper(AddressCast.addressToBytes32(address(swapper)));
 
-        _writeTokenBalance(address(strategy), asset, TEN_THOUSAND_USDC);
+        _writeTokenBalance(address(strategy), asset, TEN_THOUSAND_USDC * 2);
     }
 
     function test_buy(uint256 amount) public {
+        uint256 round = 1;
+        uint256 collateralDeltaAmount = 100;
         amount = bound(amount, 10000, TEN_THOUSAND_USDC);
         vm.startPrank(address(strategy));
         IERC20(asset).transfer(address(spotManager), amount);
-        spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
+        spotManager.buy(amount, ISpotManager.SwapType.MANUAL, abi.encode(round, collateralDeltaAmount));
+        vm.expectEmit(true, false, false, false);
+        emit BrotherSwapper.CreateRequest(round, amount, collateralDeltaAmount, true);
+        vm.startPrank(operator);
+        swapper.executeSwap("");
         uint256 productBalance = IERC20(product).balanceOf(address(swapper));
         uint256 rate = spotManager.decimalConversionRate();
         uint256 productsLD = productBalance / rate * rate;
@@ -100,10 +109,21 @@ contract XSpotManagerTest is ForkTest {
     }
 
     function test_sell(uint256 amount) public {
+        uint256 round = 1;
+        uint256 collateralDeltaAmount = 100;
         amount = bound(amount, 0.000001 ether, 50 ether);
         _writeTokenBalance(address(swapper), product, amount);
         vm.startPrank(address(strategy));
-        spotManager.sell(amount, ISpotManager.SwapType.MANUAL, "");
+        spotManager.sell(amount, ISpotManager.SwapType.MANUAL, abi.encode(round, collateralDeltaAmount));
+        vm.expectEmit(true, false, false, true);
+        emit BrotherSwapper.CreateRequest(
+            round,
+            amount / spotManager.decimalConversionRate() * swapper.decimalConversionRate(),
+            collateralDeltaAmount,
+            false
+        );
+        vm.startPrank(operator);
+        swapper.executeSwap("");
         uint256 rate = spotManager.decimalConversionRate();
         uint256 productsLD = (amount / rate) * rate;
 
@@ -115,5 +135,27 @@ contract XSpotManagerTest is ForkTest {
         uint256 productBalance = IERC20(product).balanceOf(address(swapper));
         assertEq(amount - productBalance, productsLD, "product balance");
         assertEq(IERC20(asset).balanceOf(address(swapper)), 0, "swapper asset balance");
+    }
+
+    function test_revert_double_request(uint256 amount) public {
+        amount = bound(amount, 10000, TEN_THOUSAND_USDC);
+        vm.startPrank(address(strategy));
+        IERC20(asset).transfer(address(spotManager), amount);
+        spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
+        IERC20(asset).transfer(address(spotManager), amount);
+        vm.expectRevert(Errors.RequestInPending.selector);
+        spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
+    }
+
+    function test_revert_double_execute(uint256 amount) public {
+        amount = bound(amount, 10000, TEN_THOUSAND_USDC);
+        vm.startPrank(address(strategy));
+        IERC20(asset).transfer(address(spotManager), amount);
+        spotManager.buy(amount, ISpotManager.SwapType.MANUAL, "");
+        vm.startPrank(operator);
+        swapper.executeSwap("");
+        vm.expectRevert(Errors.NoPendingRequest.selector);
+        vm.startPrank(operator);
+        swapper.executeSwap("");
     }
 }

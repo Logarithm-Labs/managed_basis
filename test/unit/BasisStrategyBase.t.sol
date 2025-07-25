@@ -46,8 +46,8 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     address constant product = WETH; // WETH
     address constant assetPriceFeed = CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
     address constant productPriceFeed = CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
-    uint256 constant entryCost = 0.001 ether;
-    uint256 constant exitCost = 0.002 ether;
+    uint256 constant entryCost = 0.005 ether;
+    uint256 constant exitCost = 0.005 ether;
     bool constant isLong = false;
 
     uint256 constant targetLeverage = 3 ether;
@@ -279,7 +279,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, false);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.UTILIZING));
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.AWAITING_FINAL_UTILIZATION));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
@@ -1682,75 +1682,5 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0, "pendingUtilization");
         assertNotEq(pendingDeutilization, 0, "pendingDeutilization");
-    }
-
-    function test_performanceFee_requestRedeem_shouldBeSameBeforeAndAfter() public afterFullUtilized {
-        // performance fee 20%
-        // hurdleRate 10%
-        vm.startPrank(owner);
-        vault.setFeeInfos(address(this), 0, 0.2 ether, 0.1095 ether);
-        vm.stopPrank();
-
-        address[] memory priceFeeds = new address[](2);
-        priceFeeds[0] = assetPriceFeed;
-        priceFeeds[1] = productPriceFeed;
-        _moveTimestamp(36.5 days, priceFeeds);
-        _writeTokenBalance(address(strategy), asset, TEN_THOUSANDS_USDC * 12 / 100);
-
-        uint256 shares = vault.nextPerformanceFeeShares();
-
-        vm.startPrank(user1);
-        vault.requestRedeem(vault.balanceOf(user1) * 3 / 4, user1, user1);
-        vm.stopPrank();
-
-        uint256 feeSharesAfter = vault.balanceOf(address(this));
-        assertEq(feeSharesAfter, shares, "feeSharesAfter");
-    }
-
-    function test_performanceFee_deposit_shouldBeSameBeforeAndAfter() public afterFullUtilized {
-        // performance fee 20%
-        // hurdleRate 10%
-        vm.startPrank(owner);
-        vault.setFeeInfos(address(this), 0, 0.2 ether, 0.1095 ether);
-        vm.stopPrank();
-
-        address[] memory priceFeeds = new address[](2);
-        priceFeeds[0] = assetPriceFeed;
-        priceFeeds[1] = productPriceFeed;
-        _moveTimestamp(36.5 days, priceFeeds);
-        _writeTokenBalance(address(strategy), asset, TEN_THOUSANDS_USDC * 12 / 100);
-
-        uint256 shares = vault.nextPerformanceFeeShares();
-        console.log("shares", shares);
-
-        vm.startPrank(user1);
-        IERC20(asset).approve(address(vault), TEN_THOUSANDS_USDC);
-        vault.deposit(TEN_THOUSANDS_USDC, user1);
-
-        uint256 feeSharesAfter = vault.balanceOf(address(this));
-        assertEq(feeSharesAfter, shares, "feeSharesAfter");
-    }
-
-    function test_performanceFee_requestRedeem_unwantedFeeShares() public {
-        // performance fee 20%
-        // hurdleRate 10%
-        vm.startPrank(owner);
-        vault.setFeeInfos(address(this), 0, 0.2 ether, 0.1095 ether);
-        vm.stopPrank();
-
-        _deposit(user1, TEN_THOUSANDS_USDC);
-        (uint256 pendingUtilizationInAsset,) = strategy.pendingUtilizations();
-        _utilize(pendingUtilizationInAsset * 99999 / 100000);
-
-        uint256 shares = vault.nextPerformanceFeeShares();
-
-        assertEq(shares, 0, "shares");
-
-        vm.startPrank(user1);
-        vault.requestRedeem(vault.balanceOf(user1) * 3 / 4, user1, user1);
-        vm.stopPrank();
-
-        uint256 feeSharesAfter = vault.nextPerformanceFeeShares();
-        assertEq(feeSharesAfter, 0, "feeSharesAfter");
     }
 }

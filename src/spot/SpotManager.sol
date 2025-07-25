@@ -31,6 +31,8 @@ import {Errors} from "src/libraries/utils/Errors.sol";
 contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, ISwapper {
     using SafeERC20 for IERC20;
 
+    uint16 constant SLIPPAGE_TOLERANCE_BPS = 100; // 1%
+
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -133,18 +135,22 @@ contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, IS
                              BUY/SELL LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Buys product in the spot market.
-    ///
-    /// @param amount The asset amount to be swapped to product.
-    /// @param swapType The swap type.
-    /// @param swapData The data used in swapping if necessary.
+    /// @inheritdoc ISpotManager
     function buy(uint256 amount, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
         uint256 amountOut;
         if (swapType == SwapType.INCH_V6) {
             bool success;
-            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, asset(), product(), true, swapData);
+            address _asset = asset();
+            address _product = product();
+            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, _asset, _product, true, swapData);
             if (!success) {
                 revert Errors.SwapFailed();
+            }
+            // check slippage
+            uint256 oracleAmount = IOracle(oracle()).convertTokenAmount(_asset, _product, amount);
+            uint256 minOutAmount = oracleAmount * (10000 - SLIPPAGE_TOLERANCE_BPS) / 10000;
+            if (amountOut < minOutAmount) {
+                revert Errors.ExceedsSlippage();
             }
         } else if (swapType == SwapType.MANUAL) {
             amountOut = ManualSwapLogic.swap(amount, assetToProductSwapPath());
@@ -153,23 +159,26 @@ contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, IS
             revert Errors.UnsupportedSwapType();
         }
         _getSpotManagerStorage().exposure += amountOut;
-        emit SpotBuy(amount, amountOut);
+        emit SwapProcessed(swapType, amount, amountOut, true);
 
         IBasisStrategy(_msgSender()).spotBuyCallback(amount, amountOut, block.timestamp);
     }
 
-    /// @dev Sells product in the spot market.
-    ///
-    /// @param amount The product amount to be swapped to asset.
-    /// @param swapType The swap type.
-    /// @param swapData The data used in swapping if necessary.
+    /// @inheritdoc ISpotManager
     function sell(uint256 amount, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
         uint256 amountOut;
         if (swapType == SwapType.INCH_V6) {
             bool success;
-            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, asset(), product(), false, swapData);
+            address _asset = asset();
+            address _product = product();
+            (amountOut, success) = InchAggregatorV6Logic.executeSwap(amount, _asset, _product, false, swapData);
             if (!success) {
                 revert Errors.SwapFailed();
+            }
+            uint256 oracleAmount = IOracle(oracle()).convertTokenAmount(_product, _asset, amount);
+            uint256 minOutAmount = oracleAmount * (10000 - SLIPPAGE_TOLERANCE_BPS) / 10000;
+            if (amountOut < minOutAmount) {
+                revert Errors.ExceedsSlippage();
             }
         } else if (swapType == SwapType.MANUAL) {
             amountOut = ManualSwapLogic.swap(amount, productToAssetSwapPath());
@@ -178,14 +187,14 @@ contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, IS
             revert Errors.UnsupportedSwapType();
         }
         _getSpotManagerStorage().exposure -= amount;
-        emit SpotSell(amountOut, amount);
+        emit SwapProcessed(swapType, amountOut, amount, false);
 
         IBasisStrategy(_msgSender()).spotSellCallback(amountOut, amount, block.timestamp);
     }
 
-    /// @dev Returns the product amount in asset.
+    /// @inheritdoc ISpotManager
     function getAssetValue() public view returns (uint256) {
-        return IOracle(oralce()).convertTokenAmount(product(), asset(), exposure());
+        return IOracle(oracle()).convertTokenAmount(product(), asset(), exposure());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -227,34 +236,42 @@ contract SpotManager is Initializable, Ownable2StepUpgradeable, ISpotManager, IS
     }
 
     /// @notice The oracle address.
-    function oralce() public view returns (address) {
+    function oracle() public view returns (address) {
         return _getSpotManagerStorage().oracle;
     }
 
-    /// @notice The asset address.
+    /// @inheritdoc ISpotManager
     function asset() public view returns (address) {
         return _getSpotManagerStorage().asset;
     }
 
-    /// @dev The spot exposure that is needed to be hedged by the perpetual positions.
+    /// @inheritdoc ISpotManager
     function exposure() public view returns (uint256) {
         return _getSpotManagerStorage().exposure;
     }
 
-    /// @notice The product address.
+    /// @inheritdoc ISpotManager
     function product() public view returns (address) {
         return _getSpotManagerStorage().product;
     }
 
+    /// @inheritdoc ISwapper
     function assetToProductSwapPath() public view returns (address[] memory) {
         return _getSpotManagerStorage().assetToProductSwapPath;
     }
 
+    /// @inheritdoc ISwapper
     function productToAssetSwapPath() public view returns (address[] memory) {
         return _getSpotManagerStorage().productToAssetSwapPath;
     }
 
+    /// @inheritdoc ISwapper
     function isSwapPool(address pool) public view returns (bool) {
         return _getSpotManagerStorage().isSwapPool[pool];
+    }
+
+    /// @inheritdoc ISpotManager
+    function isXChain() public pure returns (bool) {
+        return false;
     }
 }

@@ -32,8 +32,8 @@ contract OffChainInvariants is StdInvariant, ForkTest {
     address constant product = WETH; // WETH
     address constant assetPriceFeed = CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
     address constant productPriceFeed = CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
-    uint256 constant entryCost = 0.01 ether;
-    uint256 constant exitCost = 0.02 ether;
+    uint256 constant entryCost = 0.001 ether;
+    uint256 constant exitCost = 0.002 ether;
     bool constant isLong = false;
     uint256 constant targetLeverage = 3 ether;
     uint256 constant minLeverage = 2 ether;

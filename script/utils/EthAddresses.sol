@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.0;
+
+library EthAddresses {
+    address constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address constant PEPE = 0x6982508145454Ce325dDbE47a25d4ec3d2311933;
+    address constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+
+    address constant STARGATE_POOL_USDC = 0xc026395860Db2d07ee33e05fE50ed7bD583189C7;
+
+    address constant UNI_V3_POOL_PEPE_WETH = 0x11950d141EcB863F01007AdD7D1A342041227b58;
+    address constant UNI_V3_POOL_WETH_USDC = 0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640;
+
+    address constant LOGARITHM_MESSENGER = address(0);
+}

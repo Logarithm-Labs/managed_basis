@@ -209,7 +209,7 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IHedgeManager
-    function adjustPosition(AdjustPositionPayload memory params) external {
+    function adjustPosition(AdjustPositionPayload memory params, bool emitRequest) external returns (uint256) {
         // increments round
         // stores position state from the previous round in the current round
         // stores request in the current round
@@ -218,6 +218,10 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
 
         if (msg.sender != $.strategy) {
             revert Errors.CallerNotStrategy();
+        }
+
+        if (params.sizeDeltaInTokens == 0 && params.collateralDeltaAmount == 0) {
+            revert Errors.InvalidAdjustmentParams();
         }
 
         uint256 round = $.currentRound + 1;
@@ -232,8 +236,11 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
                 _transferToAgent(params.collateralDeltaAmount);
             }
             if (params.sizeDeltaInTokens > 0) {
+                if (params.collateralDeltaAmount == 0 && positionNetBalance() == 0) {
+                    revert Errors.InvalidSizeRequest(params.sizeDeltaInTokens, true);
+                }
                 if (params.sizeDeltaInTokens < increaseSizeMin()) {
-                    revert Errors.InvalidCollateralRequest(params.sizeDeltaInTokens, true);
+                    revert Errors.InvalidSizeRequest(params.sizeDeltaInTokens, true);
                 }
             }
 
@@ -246,7 +253,7 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
             }
             if (params.sizeDeltaInTokens > 0) {
                 if (params.sizeDeltaInTokens < decreaseSizeMin()) {
-                    revert Errors.InvalidCollateralRequest(params.sizeDeltaInTokens, false);
+                    revert Errors.InvalidSizeRequest(params.sizeDeltaInTokens, false);
                 }
             }
 
@@ -263,7 +270,11 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
         $.lastRequestRound = round;
         $.requestRounds.push(round);
 
-        emit CreateRequest(round, params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
+        if (emitRequest) {
+            emit CreateRequest(round, params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
+        }
+
+        return round;
     }
 
     /// @dev Reports the state of the hedge position.
@@ -287,6 +298,8 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
 
         $.positionStates[round] = state;
         $.currentRound = round;
+
+        IBasisStrategy($.strategy).harvestPerformanceFee();
 
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
     }

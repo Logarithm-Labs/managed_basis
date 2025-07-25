@@ -29,6 +29,8 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
     using SafeERC20 for IERC20;
     using Math for uint256;
 
+    uint16 constant SLIPPAGE_TOLERANCE_BPS = 500; // 5%
+
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -112,10 +114,10 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         __Ownable_init(_owner);
 
         // set big enough initially
-        _setBuyReqGasLimit(1_000_000); // lzCompose(swap + lzSend)
-        _setBuyResGasLimit(800_000); // lzSend(adjustPosition)  HL - 800_000
-        _setSellReqGasLimit(1_000_000); // lzReceive(swap + sendToken)
-        _setSellResGasLimit(800_000); // lzCompose()
+        _setBuyReqGasLimit(500_000); // lzCompose()
+        _setBuyResGasLimit(300_000); // lzReceive()
+        _setSellReqGasLimit(300_000); // lzReceive()
+        _setSellResGasLimit(400_000); // lzCompose()
         _setMessenger(_messenger);
 
         // approve strategy to max amount
@@ -194,20 +196,17 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
                                MAIN LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Requests Swapper to buy product.
-    ///
-    /// @param amountLD The asset amount in local decimals to buy product.
-    /// @param swapType The swap type.
-    /// @param swapData The data used in swapping if necessary.
-    /// Important: In case of 1Inch swapData, it must be derived on the dest chain.
-    /// At this time, the amount decimals should be the one on the dest chain as well.
-    function buy(uint256 amountLD, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
+    /// @inheritdoc ISpotManager
+    function buy(uint256 amountLD, SwapType swapType, bytes calldata hedgeData) external authCaller(strategy()) {
         _getXSpotManagerStorage().pendingAssets = amountLD;
+        address _asset = asset();
+        // calc min amount
+        uint256 oracleAmount = IOracle(oracle()).convertTokenAmount(_asset, product(), amountLD);
+        uint256 minOutAmount = oracleAmount * (10000 - SLIPPAGE_TOLERANCE_BPS) / 10000;
         // build message data
-        bytes memory messageData = abi.encode(buyResGasLimit(), swapType, swapData);
+        bytes memory messageData = abi.encode(buyResGasLimit(), _toSD(minOutAmount), swapType, hedgeData);
         ILogarithmMessenger _messenger = ILogarithmMessenger(messenger());
         // send
-        address _asset = asset();
         IERC20(_asset).safeTransfer(address(_messenger), amountLD);
         _messenger.send(
             SendParams({
@@ -222,16 +221,12 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         emit BuyRequested(_msgSender(), swapType, amountLD);
     }
 
-    /// @dev Requests Swapper to sell product.
-    ///
-    /// @param amountLD The product amount in local decimals to be sold.
-    /// @param swapType The swap type.
-    /// @param swapData The data used in swapping if necessary.
-    /// Important: In case of 1Inch swapData, it must be derived on the dest chain.
-    /// At this time, the amount decimals should be the one on the dest chain as well.
-    function sell(uint256 amountLD, SwapType swapType, bytes calldata swapData) external authCaller(strategy()) {
-        uint256 amountSD = _toSD(amountLD);
-        bytes memory messageData = abi.encode(sellResGasLimit(), amountSD, swapType, swapData);
+    /// @inheritdoc ISpotManager
+    function sell(uint256 amountLD, SwapType swapType, bytes calldata hedgeData) external authCaller(strategy()) {
+        uint256 oracleAmount = IOracle(oracle()).convertTokenAmount(product(), asset(), amountLD);
+        uint256 minOutAmount = oracleAmount * (10000 - SLIPPAGE_TOLERANCE_BPS) / 10000;
+        bytes memory messageData =
+            abi.encode(sellResGasLimit(), _toSD(amountLD), _toSD(minOutAmount), swapType, hedgeData);
         ILogarithmMessenger(messenger()).send(
             SendParams({
                 dstChainId: dstChainId(),
@@ -245,10 +240,12 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         emit SellRequested(_msgSender(), swapType, amountLD);
     }
 
+    /// @notice The product value exposed by this spot manager.
     function exposure() public view returns (uint256) {
         return _getXSpotManagerStorage().exposure;
     }
 
+    /// @notice The asset value hold by this spot manager.
     function getAssetValue() public view returns (uint256) {
         return pendingAssets() + IOracle(oracle()).convertTokenAmount(product(), asset(), exposure());
     }
@@ -265,7 +262,6 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         uint256 _pendingAssets = pendingAssets();
         delete _getXSpotManagerStorage().pendingAssets;
         _getXSpotManagerStorage().exposure += productsLD;
-        emit SpotBuy(_pendingAssets, productsLD);
 
         IBasisStrategy(strategy()).spotBuyCallback(_pendingAssets, productsLD, timestamp);
     }
@@ -283,7 +279,6 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         uint256 productsLD = _toLD(productsSD);
         (, uint256 newExposure) = exposure().trySub(productsLD);
         _getXSpotManagerStorage().exposure = newExposure;
-        emit SpotSell(amountLD, productsLD);
 
         IBasisStrategy(strategy()).spotSellCallback(amountLD, productsLD, timestamp);
     }
@@ -297,22 +292,27 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         return _getXSpotManagerStorage().swapper;
     }
 
+    /// @notice The asset amount that is being processed to buy spot on dest chain.
     function pendingAssets() public view returns (uint256) {
         return _getXSpotManagerStorage().pendingAssets;
     }
 
+    /// @dev The gas limit of lzCompose(swap + lzSend) on dest chain.
     function buyReqGasLimit() public view returns (uint128) {
         return _getXSpotManagerStorage().buyReqGasLimit;
     }
 
+    /// @dev The gas limit of lzSend(adjustPosition) on original chain.
     function buyResGasLimit() public view returns (uint128) {
         return _getXSpotManagerStorage().buyResGasLimit;
     }
 
+    /// @dev The gas limit of lzReceive(swap + sendToken) on dest chain.
     function sellReqGasLimit() public view returns (uint128) {
         return _getXSpotManagerStorage().sellReqGasLimit;
     }
 
+    /// @dev The gas limit of lzCompose() on original chain.
     function sellResGasLimit() public view returns (uint128) {
         return _getXSpotManagerStorage().sellResGasLimit;
     }
@@ -325,19 +325,28 @@ contract XSpotManager is Initializable, AssetValueTransmitter, OwnableUpgradeabl
         return _getXSpotManagerStorage().oracle;
     }
 
+    /// @inheritdoc ISpotManager
     function asset() public view returns (address) {
         return _getXSpotManagerStorage().asset;
     }
 
+    /// @inheritdoc ISpotManager
     function product() public view returns (address) {
         return _getXSpotManagerStorage().product;
     }
 
+    /// @notice The address of Logarithm cross-chain messenger.
     function messenger() public view returns (address) {
         return _getXSpotManagerStorage().messenger;
     }
 
+    /// @notice The chain id that is used by the messenger, where the swapper is located.
     function dstChainId() public view returns (uint256) {
         return _getXSpotManagerStorage().dstChainId;
+    }
+
+    /// @inheritdoc ISpotManager
+    function isXChain() public pure returns (bool) {
+        return true;
     }
 }

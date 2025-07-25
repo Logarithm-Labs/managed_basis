@@ -51,7 +51,12 @@ interface IHedgeManager {
     /// @notice Called to adjust the hedge position based on specified parameters.
     ///
     /// @param requestParams The parameters used for adjusting the position (size and collateral delta).
-    function adjustPosition(AdjustPositionPayload calldata requestParams) external;
+    /// @param emitRequest A boolean indicating whether to emit a request event.
+    ///
+    /// @return The round number of the request.
+    function adjustPosition(AdjustPositionPayload calldata requestParams, bool emitRequest)
+        external
+        returns (uint256);
 
     /// @notice Returns the minimum and maximum collateral limits for increasing the position.
     ///

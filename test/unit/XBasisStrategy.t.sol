@@ -19,6 +19,8 @@ import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 
+import {OffChainPositionManager} from "src/hedge/offchain/OffChainPositionManager.sol";
+
 import {StrategyHelper, StrategyState} from "test/helper/StrategyHelper.sol";
 import {MockPriorityProvider} from "test/mock/MockPriorityProvider.sol";
 import {MockXSpotManager} from "test/mock/MockXSpotManager.sol";
@@ -284,10 +286,11 @@ contract XBasisStrategyTest is OffChainTest {
         vm.startPrank(operator);
         StrategyState memory state0 = helper.getStrategyState();
         strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.UTILIZING));
         spotManager.executeCallback();
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, false);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.UTILIZING));
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.AWAITING_FINAL_UTILIZATION));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
@@ -306,7 +309,7 @@ contract XBasisStrategyTest is OffChainTest {
         _executeOrder();
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, false);
-        // assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.DEUTILIZING));
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.AWAITING_FINAL_DEUTILIZATION));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);

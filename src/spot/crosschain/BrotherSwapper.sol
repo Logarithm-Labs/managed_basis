@@ -23,6 +23,16 @@ import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
 contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradeable, IMessageRecipient, ISwapper {
     using SafeERC20 for IERC20;
 
+    struct SwapRequest {
+        uint256 amount;
+        uint256 minOutAmount;
+        ISpotManager.SwapType swapType;
+        bool isBuy;
+        uint128 gasLimit;
+        uint256 round;
+        uint256 collateralDeltaAmount;
+    }
+
     /*//////////////////////////////////////////////////////////////
                         NAMESPACED STORAGE LAYOUT
     //////////////////////////////////////////////////////////////*/
@@ -36,6 +46,8 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         mapping(address => bool) isSwapPool;
         address[] assetToProductSwapPath;
         address[] productToAssetSwapPath;
+        SwapRequest pendingRequest;
+        address operator;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BrotherSwapper")) - 1)) & ~bytes32(uint256(0xff))
@@ -52,13 +64,18 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event BuyProcessed(
-        ISpotManager.SwapType indexed swapType, uint256 indexed assetsReceived, uint256 indexed productsSwapped
-    );
-    event SellProcessed(
-        ISpotManager.SwapType indexed swapType, uint256 indexed productsRequested, uint256 indexed assetsSwapped
-    );
+    /// @dev Emitted when swap operation is requested.
+    event SwapRequested(ISpotManager.SwapType indexed swapType, uint256 indexed quoteAmount, bool indexed isBuy);
+
+    /// @dev Emitted when cross-chain messenger gets updated.
     event MessengerUpdated(address indexed caller, address indexed newMessenger);
+
+    /// @dev Emitted when a new hedge request from strategy is created.
+    event CreateRequest(
+        uint256 indexed round, uint256 sizeDeltaInTokens, uint256 collateralDeltaAmount, bool isIncrease
+    );
+
+    event OperatorSet(address indexed newOperator);
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
@@ -85,6 +102,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
 
     function initialize(
         address _owner,
+        address _operator,
         address _asset,
         address _product,
         address _messenger,
@@ -99,6 +117,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         $.dstChainId = _dstChainId;
         $.spotManager = _spotManager;
 
+        _setOperator(_operator);
         _setMessenger(_messenger);
         __AssetValueTransmitter_init(_product);
         __Ownable_init(_owner);
@@ -143,102 +162,185 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         }
     }
 
+    function _setOperator(address newOperator) internal {
+        if (operator() != newOperator) {
+            _getBrotherSwapperStorage().operator = newOperator;
+            emit OperatorSet(newOperator);
+        }
+    }
+
+    function _setPendingRequest(
+        bool isBuy,
+        uint256 amount,
+        uint256 minOutAmount,
+        ISpotManager.SwapType swapType,
+        uint128 gasLimit,
+        bytes memory hedgeData
+    ) private {
+        if (_getBrotherSwapperStorage().pendingRequest.amount != 0) {
+            revert Errors.RequestInPending();
+        }
+        uint256 round;
+        uint256 collateralDeltaAmount;
+        if (hedgeData.length == 64) {
+            (round, collateralDeltaAmount) = abi.decode(hedgeData, (uint256, uint256));
+        }
+        _getBrotherSwapperStorage().pendingRequest = SwapRequest({
+            isBuy: isBuy,
+            amount: amount,
+            minOutAmount: minOutAmount,
+            swapType: swapType,
+            gasLimit: gasLimit,
+            round: round,
+            collateralDeltaAmount: collateralDeltaAmount
+        });
+        emit SwapRequested(swapType, amount, isBuy);
+    }
+
     /*//////////////////////////////////////////////////////////////
                             ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Update cross-chain messenger.
     function setMessenger(address newMessenger) external onlyOwner {
         _setMessenger(newMessenger);
     }
 
+    /// @notice Modify the manual swap path
     function setManualSwapPath(address[] calldata _assetToProductSwapPath) external onlyOwner {
         _setManualSwapPath(_assetToProductSwapPath, asset(), product());
+    }
+
+    /// @notice Configure the operator
+    function setOperator(address newOperator) external onlyOwner {
+        _setOperator(newOperator);
     }
 
     /*//////////////////////////////////////////////////////////////
                             CROSSCHAIN LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Called after asset has been transferred to this when requesting buy.
+    /// @dev Called when asset has been transferred to buy product.
     function receiveToken(bytes32 sender, address token, uint256 amountLD, bytes calldata data)
         external
         authCaller(messenger())
         onlySpotManager(sender)
     {
-        address _asset = asset();
-        address _product = product();
-        if (token != _asset) {
+        if (token != asset()) {
             revert Errors.InvalidTokenSend();
         }
         // decode data
-        // data = abi.encode(buyResGasLimit(), swapType, swapData);
-        (uint128 buyResGasLimit, ISpotManager.SwapType swapType, bytes memory swapData) =
-            abi.decode(data, (uint128, ISpotManager.SwapType, bytes));
-
-        uint256 productsLD;
-        if (swapType == ISpotManager.SwapType.INCH_V6) {
-            bool success;
-            (productsLD, success) = InchAggregatorV6Logic.executeSwap(amountLD, _asset, _product, true, swapData);
-            if (!success) {
-                revert Errors.SwapFailed();
-            }
-        } else if (swapType == ISpotManager.SwapType.MANUAL) {
-            productsLD = ManualSwapLogic.swap(amountLD, assetToProductSwapPath());
-        } else {
-            // TODO: fallback swap
-            revert Errors.UnsupportedSwapType();
-        }
-
-        ILogarithmMessenger(messenger()).send(
-            SendParams({
-                dstChainId: dstChainId(),
-                receiver: spotManager(),
-                token: address(0),
-                gasLimit: buyResGasLimit,
-                amount: 0, // 0 because none of token gets transferred
-                data: abi.encode(_toSD(productsLD), block.timestamp)
-            })
-        );
-        emit BuyProcessed(swapType, amountLD, productsLD);
+        // data = abi.encode(buyResGasLimit(), minOutAmount, swapType, swapData);
+        (uint128 buyResGasLimit, uint64 minOutAmountSD, ISpotManager.SwapType swapType, bytes memory hedgeData) =
+            abi.decode(data, (uint128, uint64, ISpotManager.SwapType, bytes));
+        uint256 minOutAmountLD = _toLD(minOutAmountSD);
+        _setPendingRequest(true, amountLD, minOutAmountLD, swapType, buyResGasLimit, hedgeData);
     }
 
-    /// @dev Called when sell request is sent from XSpotManager.
+    /// @dev Called when sell request has been sent from XSpotManager.
     function receiveMessage(bytes32 sender, bytes calldata data)
         external
         authCaller(messenger())
         onlySpotManager(sender)
     {
-        (uint128 sellResGasLimit, uint64 productsSD, ISpotManager.SwapType swapType, bytes memory swapData) =
-            abi.decode(data, (uint128, uint64, ISpotManager.SwapType, bytes));
+        (
+            uint128 sellResGasLimit,
+            uint64 productsSD,
+            uint64 minOutAmountSD,
+            ISpotManager.SwapType swapType,
+            bytes memory hedgeData
+        ) = abi.decode(data, (uint128, uint64, uint64, ISpotManager.SwapType, bytes));
         uint256 productsLD = _toLD(productsSD);
-        uint256 assetsLD;
-        address _asset = asset();
-        if (swapType == ISpotManager.SwapType.INCH_V6) {
-            bool success;
-            (assetsLD, success) = InchAggregatorV6Logic.executeSwap(productsLD, _asset, product(), false, swapData);
-            if (!success) {
-                revert Errors.SwapFailed();
-            }
-        } else if (swapType == ISpotManager.SwapType.MANUAL) {
-            assetsLD = ManualSwapLogic.swap(productsLD, productToAssetSwapPath());
-        } else {
-            // TODO: fallback swap
-            revert Errors.UnsupportedSwapType();
+        uint256 minOutAmountLD = _toLD(minOutAmountSD);
+
+        _setPendingRequest(false, productsLD, minOutAmountLD, swapType, sellResGasLimit, hedgeData);
+    }
+
+    /// @notice Execute swap that is pending
+    ///
+    /// @param swapData Data used in swap, e.g. Empty for manual swap and non-empty for 1inch.
+    function executeSwap(bytes calldata swapData) external authCaller(operator()) {
+        SwapRequest memory _pendingRequest = pendingRequest();
+        delete _getBrotherSwapperStorage().pendingRequest;
+
+        if (_pendingRequest.amount == 0) {
+            revert Errors.NoPendingRequest();
         }
 
-        ILogarithmMessenger _messenger = ILogarithmMessenger(messenger());
-        IERC20(_asset).safeTransfer(address(_messenger), assetsLD);
-        _messenger.send(
-            SendParams({
-                dstChainId: dstChainId(),
-                receiver: spotManager(),
-                token: _asset,
-                gasLimit: sellResGasLimit,
-                amount: assetsLD,
-                data: abi.encode(productsSD, block.timestamp)
-            })
-        );
-        emit SellProcessed(swapType, productsLD, assetsLD);
+        if (_pendingRequest.isBuy) {
+            uint256 productsLD;
+            if (_pendingRequest.swapType == ISpotManager.SwapType.INCH_V6) {
+                bool success;
+                (productsLD, success) =
+                    InchAggregatorV6Logic.executeSwap(_pendingRequest.amount, asset(), product(), true, swapData);
+                if (!success) {
+                    revert Errors.SwapFailed();
+                }
+                if (productsLD < _pendingRequest.minOutAmount) {
+                    revert Errors.ExceedsSlippage();
+                }
+            } else if (_pendingRequest.swapType == ISpotManager.SwapType.MANUAL) {
+                productsLD = ManualSwapLogic.swap(_pendingRequest.amount, assetToProductSwapPath());
+            } else {
+                // TODO: fallback swap
+                revert Errors.UnsupportedSwapType();
+            }
+
+            ILogarithmMessenger(messenger()).send(
+                SendParams({
+                    dstChainId: dstChainId(),
+                    receiver: spotManager(),
+                    token: address(0),
+                    gasLimit: _pendingRequest.gasLimit,
+                    amount: 0, // 0 because none of token gets transferred
+                    data: abi.encode(_toSD(productsLD), block.timestamp)
+                })
+            );
+
+            emit SwapProcessed(_pendingRequest.swapType, _pendingRequest.amount, productsLD, true);
+            if (_pendingRequest.round != 0) {
+                emit CreateRequest(_pendingRequest.round, productsLD, _pendingRequest.collateralDeltaAmount, true);
+            }
+        } else {
+            uint256 assetsLD;
+            address _asset = asset();
+            if (_pendingRequest.swapType == ISpotManager.SwapType.INCH_V6) {
+                bool success;
+                (assetsLD, success) =
+                    InchAggregatorV6Logic.executeSwap(_pendingRequest.amount, _asset, product(), false, swapData);
+                if (!success) {
+                    revert Errors.SwapFailed();
+                }
+                if (assetsLD < _pendingRequest.minOutAmount) {
+                    revert Errors.ExceedsSlippage();
+                }
+            } else if (_pendingRequest.swapType == ISpotManager.SwapType.MANUAL) {
+                assetsLD = ManualSwapLogic.swap(_pendingRequest.amount, productToAssetSwapPath());
+            } else {
+                // TODO: fallback swap
+                revert Errors.UnsupportedSwapType();
+            }
+
+            ILogarithmMessenger _messenger = ILogarithmMessenger(messenger());
+            IERC20(_asset).safeTransfer(address(_messenger), assetsLD);
+            _messenger.send(
+                SendParams({
+                    dstChainId: dstChainId(),
+                    receiver: spotManager(),
+                    token: _asset,
+                    gasLimit: _pendingRequest.gasLimit,
+                    amount: assetsLD,
+                    data: abi.encode(_toSD(_pendingRequest.amount), block.timestamp)
+                })
+            );
+
+            emit SwapProcessed(_pendingRequest.swapType, assetsLD, _pendingRequest.amount, false);
+            if (_pendingRequest.round != 0) {
+                emit CreateRequest(
+                    _pendingRequest.round, _pendingRequest.amount, _pendingRequest.collateralDeltaAmount, false
+                );
+            }
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -282,27 +384,42 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         return _getBrotherSwapperStorage().product;
     }
 
+    /// @notice The address of cross-chain messenger.
     function messenger() public view returns (address) {
         return _getBrotherSwapperStorage().messenger;
     }
 
+    /// @notice The bytes32 value of the address of the spot manager on original chain
     function spotManager() public view returns (bytes32) {
         return _getBrotherSwapperStorage().spotManager;
     }
 
+    /// @notice The chain id of original chain that is used in messenger
     function dstChainId() public view returns (uint256) {
         return _getBrotherSwapperStorage().dstChainId;
     }
 
+    /// @inheritdoc ISwapper
     function isSwapPool(address pool) public view returns (bool) {
         return _getBrotherSwapperStorage().isSwapPool[pool];
     }
 
+    /// @inheritdoc ISwapper
     function assetToProductSwapPath() public view returns (address[] memory) {
         return _getBrotherSwapperStorage().assetToProductSwapPath;
     }
 
+    /// @inheritdoc ISwapper
     function productToAssetSwapPath() public view returns (address[] memory) {
         return _getBrotherSwapperStorage().productToAssetSwapPath;
+    }
+
+    /// @notice The struct `SwapRequest` value that is pending for swap.
+    function pendingRequest() public view returns (SwapRequest memory) {
+        return _getBrotherSwapperStorage().pendingRequest;
+    }
+
+    function operator() public view returns (address) {
+        return _getBrotherSwapperStorage().operator;
     }
 }
