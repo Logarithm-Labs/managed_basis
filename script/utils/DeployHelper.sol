@@ -343,6 +343,7 @@ library DeployHelper {
         address operator;
         address agent;
         address committer;
+        address securityManager;
         uint256 targetLeverage;
         uint256 minLeverage;
         uint256 maxLeverage;
@@ -375,6 +376,7 @@ library DeployHelper {
             owner: params.owner,
             asset: params.asset,
             priorityProvider: address(0),
+            securityManager: params.securityManager,
             entryCost: params.entryCost,
             exitCost: params.exitCost,
             feeRecipient: params.feeRecipient,

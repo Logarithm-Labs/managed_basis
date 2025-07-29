@@ -105,6 +105,7 @@ contract XBasisStrategyTest is OffChainTest {
                 entryCost,
                 exitCost,
                 address(0),
+                address(0),
                 0,
                 0,
                 0,
