@@ -23,6 +23,7 @@ address constant operator = 0x00602eCED20b217747f87b6EE08D64a8FD214a64;
 address constant agent = 0x9a66B886995274E0914a202EC73E376cfb0EFB2D;
 address constant owner = 0xd1DD21D53eC43C8FE378E51029Aa3F380b229c98;
 address constant committer = 0xB065eeEd0f9403AdacC7706726d98471995ACE76;
+address constant securityManager = 0x4F42fa2f07f81e6E1D348245EcB7EbFfC5267bE0;
 
 contract ArbDeploy is Script {
     // vault params
@@ -70,6 +71,7 @@ contract ArbDeploy is Script {
                 operator: operator,
                 agent: agent,
                 committer: committer,
+                securityManager: securityManager,
                 targetLeverage: targetLeverage,
                 minLeverage: minLeverage,
                 maxLeverage: maxLeverage,

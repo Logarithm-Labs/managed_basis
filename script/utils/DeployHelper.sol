@@ -42,6 +42,7 @@ library DeployHelper {
         uint256 entryCost;
         uint256 exitCost;
         address feeRecipient;
+        address securityManager;
         uint256 managementFee;
         uint256 performanceFee;
         uint256 hurdleRate;
@@ -71,9 +72,18 @@ library DeployHelper {
         if (params.feeRecipient != address(0)) {
             vault.setFeeInfos(params.feeRecipient, params.managementFee, params.performanceFee, params.hurdleRate);
         }
+        if (params.securityManager != address(0)) {
+            vault.setSecurityManager(params.securityManager);
+        }
         require(vault.feeRecipient() == params.feeRecipient, "Vault feeRecipient is not the expected feeRecipient");
         require(vault.owner() == params.owner, "Vault owner is not the expected owner");
-        vault.setDepositLimits(params.userDepositLimit, params.vaultDepositLimit);
+        require(
+            vault.securityManager() == params.securityManager,
+            "Vault securityManager is not the expected securityManager"
+        );
+        if (params.userDepositLimit != type(uint256).max) {
+            vault.setDepositLimits(params.userDepositLimit, params.vaultDepositLimit);
+        }
         return vault;
     }
 
@@ -434,6 +444,7 @@ library DeployHelper {
         address operator;
         address agent;
         address committer;
+        address securityManager;
         uint256 targetLeverage;
         uint256 minLeverage;
         uint256 maxLeverage;
@@ -467,6 +478,7 @@ library DeployHelper {
             owner: params.owner,
             asset: params.asset,
             priorityProvider: address(0),
+            securityManager: params.securityManager,
             entryCost: params.entryCost,
             exitCost: params.exitCost,
             feeRecipient: params.feeRecipient,
