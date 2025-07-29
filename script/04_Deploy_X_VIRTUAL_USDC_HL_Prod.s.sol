@@ -35,7 +35,7 @@ contract ArbDeploy is Script {
     address constant asset = ArbAddresses.USDC; // USDC
     address constant product = ArbAddresses.VIRTUAL; // VIRTUAL
     address constant assetPriceFeed = ArbAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
-    address constant productPriceFeed = 0x4A9a09f514b394A1d8F3Bb8158DFaf15c9E4cb0B; // Custom VIRTUAL-USD price feed
+    address constant productPriceFeed = 0xFF71AcB229dEB9B29bd4993930cC13661c156e21; // Custom VIRTUAL-USD price feed
     uint256 constant feedHeartbeat = 24 * 3600;
     // strategy params
     uint256 constant targetLeverage = 3 ether;
