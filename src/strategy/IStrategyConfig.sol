@@ -6,4 +6,5 @@ interface IStrategyConfig {
     function rebalanceDeviationThreshold() external view returns (uint256);
     function hedgeDeviationThreshold() external view returns (uint256);
     function responseDeviationThreshold() external view returns (uint256);
+    function withdrawBufferThreshold() external view returns (uint256);
 }

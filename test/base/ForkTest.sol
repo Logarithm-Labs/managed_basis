@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+pragma solidity 0.8.28;
 
 import {Test, stdStorage, StdStorage} from "forge-std/Test.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
@@ -11,22 +11,22 @@ import {MockPriceFeed} from "test/mock/MockPriceFeed.sol";
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
 import {ArbSysMock} from "test/mock/ArbSysMock.sol";
 import {UniswapV3MockPool} from "test/mock/UniswapV3MockPool.sol";
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 
 abstract contract ForkTest is Test {
     using stdStorage for StdStorage;
 
     uint256 constant USDC_PRECISION = 1e6;
 
-    address constant USDC = ArbiAddresses.USDC;
-    address constant WETH = ArbiAddresses.WETH;
+    address constant USDC = ArbAddresses.USDC;
+    address constant WETH = ArbAddresses.WETH;
 
     address constant USDC_WHALE = 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7;
     address constant WETH_WHALE = 0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8;
 
-    address constant UNI_V3_POOL_WETH_USDC = ArbiAddresses.UNI_V3_POOL_WETH_USDC;
-    address constant CHL_USDC_USD_PRICE_FEED = ArbiAddresses.CHL_USDC_USD_PRICE_FEED;
-    address constant CHL_ETH_USD_PRICE_FEED = ArbiAddresses.CHL_ETH_USD_PRICE_FEED;
+    address constant UNI_V3_POOL_WETH_USDC = ArbAddresses.UNI_V3_POOL_WETH_USDC;
+    address constant CHL_USDC_USD_PRICE_FEED = ArbAddresses.CHL_USDC_USD_PRICE_FEED;
+    address constant CHL_ETH_USD_PRICE_FEED = ArbAddresses.CHL_ETH_USD_PRICE_FEED;
 
     function _writeTokenBalance(address who, address token, uint256 amt) internal {
         stdstore.target(token).sig(IERC20(token).balanceOf.selector).with_key(who).checked_write(amt);
@@ -34,8 +34,7 @@ abstract contract ForkTest is Test {
     }
 
     function _forkArbitrum(uint256 blockNumber) internal {
-        uint256 arbitrumFork = vm.createFork(vm.rpcUrl("arbitrum_one"));
-        vm.selectFork(arbitrumFork);
+        vm.createSelectFork("arbitrum_one");
         if (blockNumber > 0) vm.rollFork(blockNumber); //213168025
         // L2 contracts explicitly reference 0x64 for the ArbSys precompile
         // and 0x6C for the ArbGasInfo precompile

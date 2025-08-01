@@ -63,7 +63,7 @@ contract OffChainTest is PositionMngerForkTest {
         // deploy positionMnager beacon proxy
         hedgeManager = DeployHelper.deployOffChainPositionManager(
             DeployHelper.OffChainPositionManagerDeployParams(
-                owner, address(config), hedgeManagerBeacon, strategy, agent, oracle, product, asset, false
+                owner, address(config), hedgeManagerBeacon, strategy, agent, agent, oracle, product, asset, false
             )
         );
         vm.label(address(hedgeManager), "hedgeManager");
@@ -90,11 +90,9 @@ contract OffChainTest is PositionMngerForkTest {
     function _executeOrder() internal override {
         OffChainPositionManager.RequestInfo memory requestInfo = hedgeManager.getLastRequest();
         if (!requestInfo.isReported && requestInfo.requestTimestamp != 0) {
-            vm.startPrank(agent);
             IHedgeManager.AdjustPositionPayload memory request = requestInfo.request;
             IHedgeManager.AdjustPositionPayload memory response = _executeRequest(request);
             _reportStateAndExecuteRequest(response);
-            vm.stopPrank();
         }
     }
 
@@ -102,6 +100,7 @@ contract OffChainTest is PositionMngerForkTest {
         internal
         returns (IHedgeManager.AdjustPositionPayload memory response)
     {
+        vm.startPrank(agent);
         if (request.isIncrease) {
             response.isIncrease = true;
             if (request.collateralDeltaAmount > 0) {
@@ -119,11 +118,14 @@ contract OffChainTest is PositionMngerForkTest {
                 response.collateralDeltaAmount = _decreasePositionCollateral(request.collateralDeltaAmount);
             }
         }
+        vm.stopPrank();
     }
 
     function _reportState() internal {
         uint256 markPrice = _getMarkPrice();
+        vm.startPrank(agent);
         hedgeManager.reportState(positionSizeInTokens, positionNetBalance, markPrice);
+        vm.stopPrank();
     }
 
     function _updatePositionNetBalance(uint256 netBalance) internal {
@@ -140,7 +142,9 @@ contract OffChainTest is PositionMngerForkTest {
             collateralDeltaAmount: response.collateralDeltaAmount,
             isIncrease: response.isIncrease
         });
+        vm.startPrank(agent);
         hedgeManager.reportStateAndExecuteRequest(positionSizeInTokens, positionNetBalance, markPrice, params);
+        vm.stopPrank();
     }
 
     function _increasePositionSize(uint256 sizeDeltaInTokens) internal returns (uint256) {
@@ -149,9 +153,10 @@ contract OffChainTest is PositionMngerForkTest {
     }
 
     function _decreasePositionSize(uint256 sizeDeltaInTokens) internal returns (uint256) {
-        if (sizeDeltaInTokens > positionSizeInTokens) {
+        uint256 _positionSizeInTokens = positionSizeInTokens;
+        if (sizeDeltaInTokens > _positionSizeInTokens) {
             positionSizeInTokens = 0;
-            return positionSizeInTokens;
+            return _positionSizeInTokens;
         } else {
             positionSizeInTokens -= sizeDeltaInTokens;
             return sizeDeltaInTokens;

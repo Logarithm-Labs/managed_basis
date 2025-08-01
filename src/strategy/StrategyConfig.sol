@@ -19,6 +19,7 @@ contract StrategyConfig is UUPSUpgradeable, Ownable2StepUpgradeable {
         uint256 rebalanceDeviationThreshold;
         uint256 hedgeDeviationThreshold;
         uint256 responseDeviationThreshold;
+        uint256 withdrawBufferThreshold;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.StrategyConfig")) - 1)) & ~bytes32(uint256(0xff))
@@ -43,6 +44,7 @@ contract StrategyConfig is UUPSUpgradeable, Ownable2StepUpgradeable {
     event RebalanceDeviationThresholdUpdated(address indexed account, uint256 value);
     event HedgeDeviationThresholdUpdated(address indexed account, uint256 value);
     event ResponseDeviationThresholdUpdated(address indexed account, uint256 value);
+    event WithdrawBufferThresholdUpdated(address indexed account, uint256 value);
 
     /*//////////////////////////////////////////////////////////////
                         INITIALIZATION
@@ -50,7 +52,7 @@ contract StrategyConfig is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     function initialize(address owner_) external initializer {
         __Ownable_init(owner_);
-        _setResponseDeviationThreshold(1e16); // 1%
+        _setResponseDeviationThreshold(0.035 ether); // 3.5%
         _setHedgeDeviationThreshold(1e16); // 1%
         _setRebalanceDeviationThreshold(1e17); // 10%
         _setDeutilizationThreshold(1e16); // 1%
@@ -90,6 +92,14 @@ contract StrategyConfig is UUPSUpgradeable, Ownable2StepUpgradeable {
         }
     }
 
+    function _setWithdrawBufferThreshold(uint256 threshold) private {
+        require(threshold < 1 ether);
+        if (withdrawBufferThreshold() != threshold) {
+            _getStrategyConfigStorage().withdrawBufferThreshold = threshold;
+            emit WithdrawBufferThresholdUpdated(_msgSender(), threshold);
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -107,7 +117,11 @@ contract StrategyConfig is UUPSUpgradeable, Ownable2StepUpgradeable {
     }
 
     function setResponseDeviationThreshold(uint256 threshold) external onlyOwner {
-        _setRebalanceDeviationThreshold(threshold);
+        _setResponseDeviationThreshold(threshold);
+    }
+
+    function setWithdrawBufferThreshold(uint256 threshold) external onlyOwner {
+        _setWithdrawBufferThreshold(threshold);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -128,5 +142,9 @@ contract StrategyConfig is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     function responseDeviationThreshold() public view returns (uint256) {
         return _getStrategyConfigStorage().responseDeviationThreshold;
+    }
+
+    function withdrawBufferThreshold() public view returns (uint256) {
+        return _getStrategyConfigStorage().withdrawBufferThreshold;
     }
 }

@@ -61,6 +61,9 @@ library Errors {
     error ZeroPendingUtilization();
     error ZeroAmountUtilization();
     error InvalidStrategyStatus(uint8 currentStatus, uint8 targetStatus);
+    error HedgeInvalidSizeResponse();
+    error HedgeInvalidCollateralResponse();
+    error HedgeWrongCloseResponse();
 
     /*//////////////////////////////////////////////////////////////
                             POSITION MANAGER
@@ -80,21 +83,31 @@ library Errors {
     error NotEnoughCollateral();
     error NoActiveRequests();
     error InvalidAdjustmentParams();
+    error InvalidSizeRequest(uint256 sizeDeltaInTokens, bool isIncrease);
     error InvalidCollateralRequest(uint256 collateralDeltaAmount, bool isIncrease);
+    error ProcessingRequest();
 
     /*//////////////////////////////////////////////////////////////
                               SPOT MANAGER
     //////////////////////////////////////////////////////////////*/
     error UnsupportedSwapType();
     error SwapFailed();
+    error InvalidStargate();
+    error InvalidSender();
+    error InvalidTokenSend();
+    error RequestInPending();
+    error NoPendingRequest();
+    error ExceedsSlippage();
 
     /*//////////////////////////////////////////////////////////////
                               AUTH CALLER
     //////////////////////////////////////////////////////////////*/
     error CallerNotAuthorized(address authorized, address caller);
-    error CallerNotPositionManager();
+    error GasCallerNotAllowed();
     error CallerNotAgent();
+    error CallerNotCommitter();
     error InvalidCallback();
     error CallerNotOwnerOrVault();
     error InvalidSecurityManager();
+    error CallerNotRegisteredPool();
 }

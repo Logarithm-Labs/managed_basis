@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity 0.8.28;
 
 import "forge-std/Test.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
@@ -8,7 +8,7 @@ import {ArbSysMock} from "test/mock/ArbSysMock.sol";
 import {ArbGasInfoMock} from "test/mock/ArbGasInfoMock.sol";
 import {MockPriceFeed} from "test/mock/MockPriceFeed.sol";
 import {DeployHelper} from "script/utils/DeployHelper.sol";
-import {ArbiAddresses} from "script/utils/ArbiAddresses.sol";
+import {ArbAddresses} from "script/utils/ArbAddresses.sol";
 import {ForkTest} from "test/base/ForkTest.sol";
 
 contract LogarithmOracleTest is ForkTest {
@@ -16,10 +16,10 @@ contract LogarithmOracleTest is ForkTest {
 
     address owner = makeAddr("owner");
 
-    address constant asset = ArbiAddresses.USDC; // USDC
-    address constant product = ArbiAddresses.WETH; // WETH
-    address constant assetPriceFeed = ArbiAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
-    address constant productPriceFeed = ArbiAddresses.CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
+    address constant asset = ArbAddresses.USDC; // USDC
+    address constant product = ArbAddresses.WETH; // WETH
+    address constant assetPriceFeed = ArbAddresses.CHL_USDC_USD_PRICE_FEED; // Chainlink USDC-USD price feed
+    address constant productPriceFeed = ArbAddresses.CHL_ETH_USD_PRICE_FEED; // Chainlink ETH-USD price feed
 
     address constant gmxDogeVirtualAsset = 0xC4da4c24fd591125c3F47b340b6f4f76111883d8;
 

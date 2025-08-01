@@ -7,4 +7,5 @@ interface ILogarithmVault is IERC4626 {
     function idleAssets() external view returns (uint256);
     function totalPendingWithdraw() external view returns (uint256);
     function processPendingWithdrawRequests() external returns (uint256);
+    function harvestPerformanceFee() external;
 }
