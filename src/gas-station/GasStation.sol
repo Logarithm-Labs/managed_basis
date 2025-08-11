@@ -4,9 +4,9 @@ pragma solidity ^0.8.0;
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
-// import {IExchangeRouter} from "src/externals/gmx-v2/interfaces/IExchangeRouter.sol";
-import {IGasStation} from "src/gas-station/IGasStation.sol";
-import {Errors} from "src/libraries/utils/Errors.sol";
+// import {IExchangeRouter} from "../externals/gmx-v2/interfaces/IExchangeRouter.sol";
+import {IGasStation} from "./IGasStation.sol";
+import {Errors} from "../libraries/utils/Errors.sol";
 
 /// @title GasStation
 ///
