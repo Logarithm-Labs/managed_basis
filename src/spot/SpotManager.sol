@@ -5,16 +5,16 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
-import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
-import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
-import {IOracle} from "src/oracle/IOracle.sol";
-import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {ISwapper} from "src/spot/ISwapper.sol";
-import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
-import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
+import {IUniswapV3Pool} from "../externals/uniswap/interfaces/IUniswapV3Pool.sol";
+import {IBasisStrategy} from "../strategy/IBasisStrategy.sol";
+import {IOracle} from "../oracle/IOracle.sol";
+import {ISpotManager} from "../spot/ISpotManager.sol";
+import {ISwapper} from "../spot/ISwapper.sol";
+import {InchAggregatorV6Logic} from "../libraries/inch/InchAggregatorV6Logic.sol";
+import {ManualSwapLogic} from "../libraries/uniswap/ManualSwapLogic.sol";
 
-import {Constants} from "src/libraries/utils/Constants.sol";
-import {Errors} from "src/libraries/utils/Errors.sol";
+import {Constants} from "../libraries/utils/Constants.sol";
+import {Errors} from "../libraries/utils/Errors.sol";
 
 /// @title SpotManager
 ///

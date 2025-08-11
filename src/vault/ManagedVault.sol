@@ -10,10 +10,10 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {IWhitelistProvider} from "src/whitelist/IWhitelistProvider.sol";
+import {IWhitelistProvider} from "../whitelist/IWhitelistProvider.sol";
 
-import {Constants} from "src/libraries/utils/Constants.sol";
-import {Errors} from "src/libraries/utils/Errors.sol";
+import {Constants} from "../libraries/utils/Constants.sol";
+import {Errors} from "../libraries/utils/Errors.sol";
 
 /// @title ManagedVault
 ///

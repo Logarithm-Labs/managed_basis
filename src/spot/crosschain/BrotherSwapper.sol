@@ -6,17 +6,17 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
+import {IUniswapV3Pool} from "../../externals/uniswap/interfaces/IUniswapV3Pool.sol";
 
-import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {ISwapper} from "src/spot/ISwapper.sol";
-import {InchAggregatorV6Logic} from "src/libraries/inch/InchAggregatorV6Logic.sol";
-import {ManualSwapLogic} from "src/libraries/uniswap/ManualSwapLogic.sol";
-import {Errors} from "src/libraries/utils/Errors.sol";
-import {Constants} from "src/libraries/utils/Constants.sol";
-import {AddressCast} from "src/libraries/utils/AddressCast.sol";
-import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
-import {ILogarithmMessenger, SendParams} from "src/messenger/ILogarithmMessenger.sol";
+import {ISpotManager} from "../../spot/ISpotManager.sol";
+import {ISwapper} from "../../spot/ISwapper.sol";
+import {InchAggregatorV6Logic} from "../../libraries/inch/InchAggregatorV6Logic.sol";
+import {ManualSwapLogic} from "../../libraries/uniswap/ManualSwapLogic.sol";
+import {Errors} from "../../libraries/utils/Errors.sol";
+import {Constants} from "../../libraries/utils/Constants.sol";
+import {AddressCast} from "../../libraries/utils/AddressCast.sol";
+import {IMessageRecipient} from "../../messenger/IMessageRecipient.sol";
+import {ILogarithmMessenger, SendParams} from "../../messenger/ILogarithmMessenger.sol";
 
 import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
 

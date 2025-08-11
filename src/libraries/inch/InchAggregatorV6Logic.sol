@@ -3,9 +3,9 @@ pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import "src/externals/1inch/interfaces/IAggregationRouterV6.sol";
-import "src/externals/uniswap/interfaces/IUniswapPool.sol";
-import "src/libraries/utils/Errors.sol";
+import "../../externals/1inch/interfaces/IAggregationRouterV6.sol";
+import "../../externals/uniswap/interfaces/IUniswapPool.sol";
+import "../../libraries/utils/Errors.sol";
 
 import "./AddressLib.sol";
 import "./ProtocolLib.sol";

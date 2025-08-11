@@ -6,15 +6,15 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
-import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
-import {IOracle} from "src/oracle/IOracle.sol";
-import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
-import {IOffChainConfig} from "src/hedge/offchain/IOffChainConfig.sol";
+import {IHedgeManager} from "../IHedgeManager.sol";
+import {IOracle} from "../../oracle/IOracle.sol";
+import {IBasisStrategy} from "../../strategy/IBasisStrategy.sol";
+import {IOffChainConfig} from "./IOffChainConfig.sol";
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {Constants} from "src/libraries/utils/Constants.sol";
-import {Errors} from "src/libraries/utils/Errors.sol";
+import {Constants} from "../../libraries/utils/Constants.sol";
+import {Errors} from "../../libraries/utils/Errors.sol";
 
 /// @title OffChainPositionManager
 ///

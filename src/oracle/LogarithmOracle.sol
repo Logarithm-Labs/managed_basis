@@ -8,11 +8,11 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
-import {IPriceFeed} from "src/externals/chainlink/interfaces/IPriceFeed.sol";
+import {IPriceFeed} from "../externals/chainlink/interfaces/IPriceFeed.sol";
 
-import {IOracle} from "src/oracle/IOracle.sol";
-import {Errors} from "src/libraries/utils/Errors.sol";
-import {Constants} from "src/libraries/utils/Constants.sol";
+import {IOracle} from "../oracle/IOracle.sol";
+import {Errors} from "../libraries/utils/Errors.sol";
+import {Constants} from "../libraries/utils/Constants.sol";
 
 contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
     /*//////////////////////////////////////////////////////////////

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-import {ISpotManager} from "src/spot/ISpotManager.sol";
+import {ISpotManager} from "../spot/ISpotManager.sol";
 
 interface ISwapper {
     /// @notice Emitted when a swap is processed
