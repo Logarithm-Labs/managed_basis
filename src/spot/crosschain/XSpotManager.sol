@@ -7,13 +7,13 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
-import {IOracle} from "src/oracle/IOracle.sol";
-import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {Errors} from "src/libraries/utils/Errors.sol";
-import {Constants} from "src/libraries/utils/Constants.sol";
-import {IMessageRecipient} from "src/messenger/IMessageRecipient.sol";
-import {ILogarithmMessenger, SendParams} from "src/messenger/ILogarithmMessenger.sol";
+import {IBasisStrategy} from "../../strategy/IBasisStrategy.sol";
+import {IOracle} from "../../oracle/IOracle.sol";
+import {ISpotManager} from "../ISpotManager.sol";
+import {Errors} from "../../libraries/utils/Errors.sol";
+import {Constants} from "../../libraries/utils/Constants.sol";
+import {IMessageRecipient} from "../../messenger/IMessageRecipient.sol";
+import {ILogarithmMessenger, SendParams} from "../../messenger/ILogarithmMessenger.sol";
 
 import {AssetValueTransmitter} from "./AssetValueTransmitter.sol";
 

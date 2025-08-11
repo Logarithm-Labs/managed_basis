@@ -9,16 +9,16 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {AutomationCompatibleInterface} from "src/externals/chainlink/interfaces/AutomationCompatibleInterface.sol";
-import {ISpotManager} from "src/spot/ISpotManager.sol";
-import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
-import {IBasisStrategy} from "src/strategy/IBasisStrategy.sol";
-import {ILogarithmVault} from "src/vault/ILogarithmVault.sol";
-import {IOracle} from "src/oracle/IOracle.sol";
-import {IStrategyConfig} from "src/strategy/IStrategyConfig.sol";
+import {AutomationCompatibleInterface} from "../externals/chainlink/interfaces/AutomationCompatibleInterface.sol";
+import {ISpotManager} from "../spot/ISpotManager.sol";
+import {IHedgeManager} from "../hedge/IHedgeManager.sol";
+import {IBasisStrategy} from "../strategy/IBasisStrategy.sol";
+import {ILogarithmVault} from "../vault/ILogarithmVault.sol";
+import {IOracle} from "../oracle/IOracle.sol";
+import {IStrategyConfig} from "../strategy/IStrategyConfig.sol";
 
-import {Constants} from "src/libraries/utils/Constants.sol";
-import {Errors} from "src/libraries/utils/Errors.sol";
+import {Constants} from "../libraries/utils/Constants.sol";
+import {Errors} from "../libraries/utils/Errors.sol";
 
 /// @title BasisStrategy
 ///

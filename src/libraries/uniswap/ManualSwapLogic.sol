@@ -5,11 +5,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import {IUniswapV3Pool} from "src/externals/uniswap/interfaces/IUniswapV3Pool.sol";
-import {FixedPoint96} from "src/externals/uniswap/libraries/FixedPoint96.sol";
-import {TickMath} from "src/externals/uniswap/libraries/TickMath.sol";
+import {IUniswapV3Pool} from "../../externals/uniswap/interfaces/IUniswapV3Pool.sol";
+import {FixedPoint96} from "../../externals/uniswap/libraries/FixedPoint96.sol";
+import {TickMath} from "../../externals/uniswap/libraries/TickMath.sol";
 
-import {Errors} from "src/libraries/utils/Errors.sol";
+import {Errors} from "../../libraries/utils/Errors.sol";
 
 library ManualSwapLogic {
     using SafeCast for uint256;

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.0;
 
-import {IStrategy} from "src/strategy/IStrategy.sol";
-import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
+import {IStrategy} from "../strategy/IStrategy.sol";
+import {IHedgeManager} from "../hedge/IHedgeManager.sol";
 
 interface IBasisStrategy is IStrategy {
     function oracle() external view returns (address);
