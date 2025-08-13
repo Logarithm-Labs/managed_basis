@@ -206,17 +206,15 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
 
     /// @inheritdoc ERC4626Upgradeable
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view override returns (uint256) {
-        uint256 _totalAssets = totalAssets();
         return assets.mulDiv(
-            _totalSupplyWithNextFeeShares(_totalAssets) + 10 ** _decimalsOffset(), _totalAssets + 1, rounding
+            _totalSupplyWithManagementFeeShares(feeRecipient()) + 10 ** _decimalsOffset(), totalAssets() + 1, rounding
         );
     }
 
     /// @inheritdoc ERC4626Upgradeable
     function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view override returns (uint256) {
-        uint256 _totalAssets = totalAssets();
         return shares.mulDiv(
-            _totalAssets + 1, _totalSupplyWithNextFeeShares(_totalAssets) + 10 ** _decimalsOffset(), rounding
+            totalAssets() + 1, _totalSupplyWithManagementFeeShares(feeRecipient()) + 10 ** _decimalsOffset(), rounding
         );
     }
 
@@ -224,7 +222,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
     ///
     /// @inheritdoc ERC4626Upgradeable
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal virtual override {
-        _harvestPerformanceFeeShares(assets, true);
+        _updateHwmDeposit(assets);
         super._deposit(caller, receiver, assets, shares);
     }
 
@@ -236,7 +234,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
         virtual
         override
     {
-        _harvestPerformanceFeeShares(assets, false);
+        _updateHwmWithdraw(shares);
         super._withdraw(caller, receiver, owner, assets, shares);
     }
 
@@ -273,32 +271,39 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
                            FEE LOGIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Should be called before all deposits and withdrawals
-    function _harvestPerformanceFeeShares(uint256 assets, bool isDeposit) internal {
+    function _harvestPerformanceFeeShares() internal {
         address _feeRecipient = feeRecipient();
         uint256 _performanceFee = performanceFee();
         uint256 _hwm = highWaterMark();
         uint256 _totalAssets = totalAssets();
         uint256 totalSupplyWithManagementFeeShares = _totalSupplyWithManagementFeeShares(_feeRecipient);
         uint256 _lastHarvestedTimestamp = lastHarvestedTimestamp();
-        uint256 feeShares = _nextPerformanceFeeShares(
+        uint256 feeShares = _calcPerformanceFeeShares(
             _performanceFee, _hwm, _totalAssets, totalSupplyWithManagementFeeShares, _lastHarvestedTimestamp
         );
 
-        // update states
+        // reset performance fee calculation
         uint256 newHwm = _totalAssets > _hwm ? _totalAssets : _hwm;
         _getManagedVaultStorage().lastHarvestedTimestamp = block.timestamp;
-        if (isDeposit) {
-            _getManagedVaultStorage().hwm = newHwm + assets;
-        } else {
-            _getManagedVaultStorage().hwm = newHwm - assets;
-        }
+        _getManagedVaultStorage().hwm = newHwm;
 
         // mint performance fee shares
         if (feeShares > 0) {
             _mint(_feeRecipient, feeShares);
             emit PerformanceFeeCollected(_feeRecipient, feeShares);
         }
+    }
+
+    /// @dev Should be called whenever a deposit is made
+    function _updateHwmDeposit(uint256 assets) internal {
+        _getManagedVaultStorage().hwm = highWaterMark() + assets;
+    }
+
+    /// @dev Should be called before all withdrawals
+    function _updateHwmWithdraw(uint256 shares) internal {
+        uint256 oldTotalSupply = _totalSupplyWithManagementFeeShares(feeRecipient());
+        _getManagedVaultStorage().hwm =
+            highWaterMark().mulDiv(oldTotalSupply - shares, oldTotalSupply, Math.Rounding.Ceil);
     }
 
     /// @dev Should not be called when minting to fee recipient
@@ -343,7 +348,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
     }
 
     /// @dev Calculates the claimable performance fee shares
-    function _nextPerformanceFeeShares(
+    function _calcPerformanceFeeShares(
         uint256 _performanceFee,
         uint256 _hwm,
         uint256 _totalAssets,
@@ -382,20 +387,6 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
             + _nextManagementFeeShares(_feeRecipient, managementFee(), _totalSupply, lastAccruedTimestamp());
     }
 
-    /// @dev The total supply of shares including the the next management and performance fee shares
-    function _totalSupplyWithNextFeeShares(uint256 _totalAssets) private view returns (uint256) {
-        address _feeRecipient = feeRecipient();
-        uint256 totalSupplyWithManagementFeeShares = _totalSupplyWithManagementFeeShares(_feeRecipient);
-        return totalSupplyWithManagementFeeShares
-            + _nextPerformanceFeeShares(
-                performanceFee(),
-                highWaterMark(),
-                _totalAssets,
-                totalSupplyWithManagementFeeShares,
-                lastHarvestedTimestamp()
-            );
-    }
-
     function _calcFeeFraction(uint256 annualFee, uint256 duration) private pure returns (uint256) {
         return annualFee.mulDiv(duration, 365 days);
     }
@@ -417,17 +408,6 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
     /// @notice Returns the accrued shares of the management fee recipient
     function nextManagementFeeShares() public view returns (uint256) {
         return _nextManagementFeeShares(feeRecipient(), managementFee(), totalSupply(), lastAccruedTimestamp());
-    }
-
-    /// @notice Returns the claimable shares of the performance fee recipient
-    function nextPerformanceFeeShares() public view returns (uint256) {
-        return _nextPerformanceFeeShares(
-            performanceFee(),
-            highWaterMark(),
-            totalAssets(),
-            _totalSupplyWithManagementFeeShares(feeRecipient()),
-            lastHarvestedTimestamp()
-        );
     }
 
     /*//////////////////////////////////////////////////////////////

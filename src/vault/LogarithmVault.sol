@@ -327,6 +327,13 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         IERC20(asset()).safeTransfer(receiver, idleAssets());
     }
 
+    function harvestPerformanceFee() external {
+        if (_msgSender() != strategy()) {
+            revert Errors.CallerNotStrategy();
+        }
+        _harvestPerformanceFeeShares();
+    }
+
     /*//////////////////////////////////////////////////////////////
                           ASYNC WITHDRAW LOGIC
     //////////////////////////////////////////////////////////////*/
@@ -444,7 +451,7 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         uint256 assetsToRequest,
         uint256 sharesToRequest
     ) internal virtual returns (bytes32) {
-        _harvestPerformanceFeeShares(assetsToRequest, false);
+        _updateHwmWithdraw(sharesToRequest);
 
         if (caller != owner) {
             _spendAllowance(owner, caller, sharesToRequest);

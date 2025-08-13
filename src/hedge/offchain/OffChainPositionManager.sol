@@ -269,6 +269,8 @@ contract OffChainPositionManager is Initializable, Ownable2StepUpgradeable, IHed
         $.positionStates[round] = state;
         $.currentRound = round;
 
+        IBasisStrategy($.strategy).harvestPerformanceFee();
+
         emit ReportState(state.sizeInTokens, state.netBalance, state.markPrice, state.timestamp);
     }
 
