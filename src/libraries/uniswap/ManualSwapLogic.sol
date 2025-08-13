@@ -15,7 +15,7 @@ library ManualSwapLogic {
     using SafeCast for uint256;
 
     uint32 constant TWAP_INTERVAL = 30; //30s
-    uint16 constant SLIPPAGE_TOLERANCE_BPS = 50; // 100 bps = 1%
+    uint16 constant SLIPPAGE_TOLERANCE_BPS = 200; // 2%
 
     function swap(uint256 amountIn, address[] memory path) external returns (uint256 amountOut) {
         address tokenIn = path[0];

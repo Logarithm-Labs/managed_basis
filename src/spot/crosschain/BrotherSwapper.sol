@@ -216,6 +216,13 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         _setOperator(newOperator);
     }
 
+    /// @notice Clears the minimum output requirement (`minOutAmount`) of the current pending swap request.
+    /// @dev Owner-only escape hatch to unblock a stuck strategy when the original min becomes unattainable.
+    ///      Sets `pendingRequest.minOutAmount` to 0; does not modify amount, swap type, or gas limits.
+    function clearMinRequirement() external onlyOwner {
+        _getBrotherSwapperStorage().pendingRequest.minOutAmount = 0;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             CROSSCHAIN LOGIC
     //////////////////////////////////////////////////////////////*/
