@@ -781,6 +781,11 @@ contract BasisStrategy is
         emit PositionAdjusted(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
 
+    function harvestPerformanceFee() external authCaller(operator()) whenIdle {
+        BasisStrategyStorage storage $ = _getBasisStrategyStorage();
+        $.vault.harvestPerformanceFee();
+    }
+
     /// @notice Returns available pending utilization and deutilization amounts.
     ///
     /// @dev The operator uses these values on offchain side to decide the parameters
