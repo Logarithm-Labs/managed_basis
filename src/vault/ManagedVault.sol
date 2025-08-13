@@ -140,6 +140,7 @@ abstract contract ManagedVault is Initializable, ERC4626Upgradeable, Ownable2Ste
         require(_feeRecipient != address(0));
         require(_managementFee <= MAX_MANAGEMENT_FEE);
         require(_performanceFee <= MAX_PERFORMANCE_FEE);
+        _harvestPerformanceFeeShares();
 
         ManagedVaultStorage storage $ = _getManagedVaultStorage();
         if (feeRecipient() != _feeRecipient) {
