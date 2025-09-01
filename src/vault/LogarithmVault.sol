@@ -600,6 +600,11 @@ contract LogarithmVault is Initializable, PausableUpgradeable, ManagedVault {
         return isExecuted && !withdrawRequest.isClaimed;
     }
 
+    /// @notice Tells if the withdraw request is claimed or not.
+    function isClaimed(bytes32 withdrawRequestKey) external view returns (bool) {
+        return _getLogarithmVaultStorage().withdrawRequests[withdrawRequestKey].isClaimed;
+    }
+
     /// @notice Tells if the owner is prioritized to withdraw.
     function isPrioritized(address owner) public view returns (bool) {
         address _priorityProvider = _getLogarithmVaultStorage().priorityProvider;
