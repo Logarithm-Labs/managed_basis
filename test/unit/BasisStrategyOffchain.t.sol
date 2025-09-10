@@ -63,7 +63,51 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         uint256 balDelta = IERC20(asset).balanceOf(user1) - balBefore;
 
         assertGt(requestedAssets, balDelta);
+        assertEq(strategy.pendingDecreaseCollateral(), 0);
         assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
+    }
+
+    function test_performUpkeep_processPendingDecreaseCollateral()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
+        uint256 increaseCollateralMin = 5 * 1e6;
+        uint256 decreaseCollateralMin = 10 * 1e6;
+        uint256 limitDecreaseCollateral = 50 * 1e6;
+        vm.startPrank(owner);
+        address _config = address(hedgeManager.config());
+        OffChainConfig(_config).setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
+        OffChainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        uint256 amount = pendingDeutilization * 9 / 10;
+        _deutilize(amount);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        vm.startPrank(operator);
+        strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
+        assertGt(strategy.pendingDecreaseCollateral(), 0, "0 pendingDecreaseCollateral");
+        _deposit(user1, 404_000_000);
+        _executeOrder();
+
+        assertGt(
+            strategy.pendingDecreaseCollateral(),
+            strategy.assetsToDeutilize(),
+            "pendingDecreaseCollateral > assetsToDeutilize"
+        );
+
+        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE), "StrategyStatus.IDLE");
+
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingDeutilization, 0, "0 pendingDeutilization");
+
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("decreaseCollateral");
+        assertTrue(upkeepNeeded, "upkeepNeeded");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertTrue(decodedPerformData.processPendingDecreaseCollateral, "processPendingDecreaseCollateral");
+        assertTrue(strategy.pendingDecreaseCollateral() > 0, "0 pendingDecreaseCollateral");
+        _performKeep("processPendingDecreaseCollateral");
+        assertTrue(strategy.pendingDecreaseCollateral() == 0, "not 0 pendingDecreaseCollateral");
     }
 
     function test_idleCollateral_fullRedeem() public afterFullUtilized validateFinalState {

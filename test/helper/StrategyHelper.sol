@@ -51,6 +51,7 @@ contract StrategyHelper {
         bool clearProcessingRebalanceDown;
         int256 hedgeDeviationInTokens;
         bool hedgeManagerNeedKeep;
+        bool processPendingDecreaseCollateral;
         bool rebalanceUpNeeded;
         bool clearReservedExecutionCost;
     }
@@ -146,6 +147,7 @@ contract StrategyHelper {
         decodedPerformData.clearProcessingRebalanceDown = result.clearProcessingRebalanceDown;
         decodedPerformData.hedgeDeviationInTokens = result.hedgeDeviationInTokens;
         decodedPerformData.hedgeManagerNeedKeep = result.hedgeManagerNeedKeep;
+        decodedPerformData.processPendingDecreaseCollateral = result.processPendingDecreaseCollateral;
         decodedPerformData.clearReservedExecutionCost = result.clearReservedExecutionCost;
 
         decodedPerformData.rebalanceDownNeeded =
