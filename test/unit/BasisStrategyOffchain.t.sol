@@ -67,6 +67,46 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
     }
 
+    function test_deutilize_PendingDecreaseCollateral() public afterMultipleWithdrawRequestCreated validateFinalState {
+        uint256 increaseCollateralMin = 5 * 1e6;
+        uint256 decreaseCollateralMin = 10 * 1e6;
+        uint256 limitDecreaseCollateral = 50 * 1e6;
+        vm.startPrank(owner);
+        address _config = address(hedgeManager.config());
+        OffChainConfig(_config).setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
+        OffChainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        uint256 amount = pendingDeutilization * 9 / 10;
+        _deutilize(amount);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        uint256 initialLeverage = hedgeManager.currentLeverage();
+        uint256 initialPendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
+        assertEq(initialPendingDecreaseCollateral, 0, "0 initialPendingDecreaseCollateral");
+        _deutilize(amount);
+        uint256 pendingDecreaseCollateralAtFirst = strategy.pendingDecreaseCollateral();
+        assertGt(pendingDecreaseCollateralAtFirst, 0, "0 pendingDecreaseCollateral");
+        uint256 leverageAtFirst = hedgeManager.currentLeverage();
+        assertGt(initialLeverage, leverageAtFirst, "initialLeverage > leverageAtFirst");
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        _deutilize(amount);
+        uint256 pendingDecreaseCollateralAtSecond = strategy.pendingDecreaseCollateral();
+        assertGt(
+            pendingDecreaseCollateralAtSecond,
+            pendingDecreaseCollateralAtFirst,
+            "pendingDecreaseCollateralAtSecond > pendingDecreaseCollateralAtFirst"
+        );
+        uint256 leverageAtSecond = hedgeManager.currentLeverage();
+        assertGt(leverageAtFirst, leverageAtSecond, "leverageAtFirst > leverageAtSecond");
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        uint256 leverageAtThird = hedgeManager.currentLeverage();
+        uint256 pendingDecreaseCollateralAtThird = strategy.pendingDecreaseCollateral();
+        assertEq(pendingDecreaseCollateralAtThird, 0, "0 pendingDecreaseCollateral");
+        assertApproxEqRel(leverageAtFirst, leverageAtThird, 0.01 ether, "leverageAtFirst == leverageAtFourth");
+    }
+
     function test_performUpkeep_processPendingDecreaseCollateral()
         public
         afterMultipleWithdrawRequestCreated

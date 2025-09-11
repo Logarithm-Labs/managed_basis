@@ -1569,6 +1569,41 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         // assertFalse(vault.isClaimable(key), "not claimable");
     }
 
+    function test_leverage_utilize() public afterDeposited {
+        (uint256 utilization,) = strategy.pendingUtilizations();
+        console.log("1st utilization", utilization);
+        uint256 leverageBefore = _hedgeManager().currentLeverage();
+        console.log("leverageBefore", leverageBefore);
+        _utilize(utilization / 2);
+        uint256 leverageAfter = _hedgeManager().currentLeverage();
+        console.log("leverageAfter", leverageAfter);
+        (utilization,) = strategy.pendingUtilizations();
+        _utilize(utilization);
+        uint256 leverageLast = _hedgeManager().currentLeverage();
+        console.log("leverageLast", leverageLast);
+        assertApproxEqRel(leverageLast, leverageAfter, 0.001 ether, "leverage should be similar");
+    }
+
+    function test_leverage_partialDeutilize() public afterMultipleWithdrawRequestCreated {
+        uint256 leverageBefore = _hedgeManager().currentLeverage();
+        console.log("leverageBefore", leverageBefore);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization / 2);
+        uint256 leverageAfter = _hedgeManager().currentLeverage();
+        console.log("leverageAfter", leverageAfter);
+        assertApproxEqRel(leverageAfter, leverageBefore, 0.001 ether, "leverage should be similar");
+    }
+
+    function test_leverage_fullDeutilize() public afterMultipleWithdrawRequestCreated {
+        uint256 leverageBefore = _hedgeManager().currentLeverage();
+        console.log("leverageBefore", leverageBefore);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        uint256 leverageAfter = _hedgeManager().currentLeverage();
+        console.log("leverageAfter", leverageAfter);
+        assertApproxEqRel(leverageAfter, leverageBefore, 0.01 ether, "leverage should be similar");
+    }
+
     function test_cap_utilize() public afterDeposited {
         // uncapped utilization = $10000 * 3 / 4 = $7500
         vm.startPrank(owner);
