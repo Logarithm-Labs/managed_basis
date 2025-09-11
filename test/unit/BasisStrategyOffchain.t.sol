@@ -107,6 +107,87 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         assertApproxEqRel(leverageAtFirst, leverageAtThird, 0.01 ether, "leverageAtFirst == leverageAtFourth");
     }
 
+    function test_partialDeutilize_PendingDecreaseCollateral_whenLeverageBiggerThanTargetLeverage()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
+        uint256 increaseCollateralMin = 5 * 1e6;
+        uint256 decreaseCollateralMin = 10 * 1e6;
+        uint256 limitDecreaseCollateral = 50 * 1e6;
+        vm.startPrank(owner);
+        address _config = address(hedgeManager.config());
+        OffChainConfig(_config).setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
+        OffChainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        uint256 amount = pendingDeutilization * 9 / 10;
+        _deutilize(amount);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        _deutilize(amount);
+
+        assertGt(strategy.pendingDecreaseCollateral(), 0, "pendingDecreaseCollateral != 0");
+        assertLt(hedgeManager.currentLeverage(), strategy.targetLeverage(), "currentLeverage < targetLeverage");
+
+        // mock current leverage bigger than target leverage
+        address priceFeed = oracle.getPriceFeed(address(product));
+        int256 currPrice = IPriceFeed(priceFeed).latestAnswer();
+        uint256 deltaPrice = Math.mulDiv(uint256(currPrice), 0.01 ether, 1 ether);
+        int256 resultedPrice = currPrice + int256(deltaPrice);
+        _mockChainlinkPriceFeedAnswer(priceFeed, resultedPrice);
+
+        uint256 leverageBefore = hedgeManager.currentLeverage();
+        assertGt(leverageBefore, strategy.targetLeverage(), "currentLeverage > targetLeverage");
+
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        _deutilize(amount);
+
+        uint256 leverageAfter = hedgeManager.currentLeverage();
+        assertLt(leverageAfter, leverageBefore, "leverageAfter < leverageBefore");
+        assertEq(strategy.pendingDecreaseCollateral(), 0, "pendingDecreaseCollateral == 0");
+    }
+
+    function test_fullDeutilize_PendingDecreaseCollateral_whenLeverageBiggerThanTargetLeverage()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
+        uint256 increaseCollateralMin = 5 * 1e6;
+        uint256 decreaseCollateralMin = 10 * 1e6;
+        uint256 limitDecreaseCollateral = 50 * 1e6;
+        vm.startPrank(owner);
+        address _config = address(hedgeManager.config());
+        OffChainConfig(_config).setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
+        OffChainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        uint256 amount = pendingDeutilization * 9 / 10;
+        _deutilize(amount);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        _deutilize(amount);
+
+        assertGt(strategy.pendingDecreaseCollateral(), 0, "pendingDecreaseCollateral != 0");
+        assertLt(hedgeManager.currentLeverage(), strategy.targetLeverage(), "currentLeverage < targetLeverage");
+
+        // mock current leverage bigger than target leverage
+        address priceFeed = oracle.getPriceFeed(address(product));
+        int256 currPrice = IPriceFeed(priceFeed).latestAnswer();
+        uint256 deltaPrice = Math.mulDiv(uint256(currPrice), 0.01 ether, 1 ether);
+        int256 resultedPrice = currPrice + int256(deltaPrice);
+        _mockChainlinkPriceFeedAnswer(priceFeed, resultedPrice);
+
+        uint256 leverageBefore = hedgeManager.currentLeverage();
+        assertGt(leverageBefore, strategy.targetLeverage(), "currentLeverage > targetLeverage");
+
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+
+        uint256 leverageAfter = hedgeManager.currentLeverage();
+        assertApproxEqRel(leverageAfter, leverageBefore, 0.001 ether, "leverageAfter == leverageBefore");
+        assertEq(strategy.pendingDecreaseCollateral(), 0, "pendingDecreaseCollateral == 0");
+    }
+
     function test_performUpkeep_processPendingDecreaseCollateral()
         public
         afterMultipleWithdrawRequestCreated

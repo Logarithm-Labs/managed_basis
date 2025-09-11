@@ -559,7 +559,11 @@ contract BasisStrategy is
                 // when partial deutilizing
                 $.utilizingExecutionCost = reservedExecutionCost().mulDiv(amount, uncappedDeutilization);
                 uint256 positionNetBalance = _hedgeManager.positionNetBalance();
-                uint256 _pendingDecreaseCollateral = pendingDecreaseCollateral();
+                uint256 currentLeverage = _hedgeManager.currentLeverage();
+                uint256 _targetLeverage = $.targetLeverage;
+                // when current leverage is bigger than target leverage,
+                // don't account for pending decrease collateral
+                uint256 _pendingDecreaseCollateral = currentLeverage > _targetLeverage ? 0 : pendingDecreaseCollateral();
                 if (_pendingDecreaseCollateral > 0) {
                     (, positionNetBalance) = positionNetBalance.trySub(_pendingDecreaseCollateral);
                 }
@@ -568,7 +572,15 @@ contract BasisStrategy is
                 collateralDeltaToDecrease += _pendingDecreaseCollateral;
                 uint256 limitDecreaseCollateral = _hedgeManager.limitDecreaseCollateral();
                 if (collateralDeltaToDecrease < limitDecreaseCollateral) {
-                    $.pendingDecreaseCollateral = collateralDeltaToDecrease;
+                    if (currentLeverage > _targetLeverage) {
+                        // when current leverage is bigger than target leverage,
+                        // don't account for pending decrease collateral
+                        delete $.pendingDecreaseCollateral;
+                    } else {
+                        // when current leverage is smaller than target leverage,
+                        // we should decrease accumulated pending decrease collateral
+                        $.pendingDecreaseCollateral = collateralDeltaToDecrease;
+                    }
                 } else {
                     collateralDeltaAmount = collateralDeltaToDecrease;
                 }
@@ -1215,7 +1227,11 @@ contract BasisStrategy is
         } else {
             if (totalPendingWithdraw == 0) return (0, 0);
 
-            uint256 _pendingDecreaseCollateral = pendingDecreaseCollateral();
+            // when current leverage is bigger than target leverage,
+            // don't account for pending decrease collateral
+            uint256 _pendingDecreaseCollateral =
+                params.hedgeManager.currentLeverage() > $.targetLeverage ? 0 : pendingDecreaseCollateral();
+
             uint256 sizeAndNetBalance = positionSizeInAssets + positionNetBalance;
             if (_pendingDecreaseCollateral > totalPendingWithdraw || _pendingDecreaseCollateral >= sizeAndNetBalance) {
                 // in this case, should decrease collateral to process pending withdrawl through performUpkeep
