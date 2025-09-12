@@ -19,6 +19,7 @@ import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {StrategyStatus} from "src/libraries/strategy/BasisStrategyState.sol";
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 
 import {console} from "forge-std/console.sol";
@@ -217,7 +218,7 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
             "pendingDecreaseCollateral > assetsToDeutilize"
         );
 
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE), "StrategyStatus.IDLE");
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.IDLE), "StrategyStatus.IDLE");
 
         (, pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingDeutilization, 0, "0 pendingDeutilization");
