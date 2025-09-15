@@ -17,6 +17,7 @@ import {SpotManager} from "src/spot/SpotManager.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {StrategyStatus} from "src/libraries/strategy/BasisStrategyState.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 
@@ -63,7 +64,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
     MockPriorityProvider priorityProvider;
 
     function setUp() public {
-        _forkArbitrum(0);
+        _forkArbitrum(377737110);
         vm.startPrank(owner);
         // deploy oracle
         oracle = DeployHelper.deployLogarithmOracle(owner);
@@ -280,7 +281,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, false);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.AWAITING_FINAL_UTILIZATION));
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.AWAITING_FINAL_UTILIZATION));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
@@ -288,7 +289,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _executeOrder();
         state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, true);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.IDLE));
     }
 
     function _deutilize(uint256 amount) internal {
@@ -298,7 +299,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, false);
-        // assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.DEUTILIZING));
+        // assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.DEUTILIZING));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
@@ -306,7 +307,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _executeOrder();
         state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, true);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.IDLE));
     }
 
     function _deutilizeWithoutExecution(uint256 amount) internal {
@@ -994,7 +995,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 vaultBalanceBefore = IERC20(asset).balanceOf(address(vault));
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE), "not idle");
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.IDLE), "not idle");
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
@@ -1569,6 +1570,41 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         // assertFalse(vault.isClaimable(key), "not claimable");
     }
 
+    function test_leverage_utilize() public afterDeposited {
+        (uint256 utilization,) = strategy.pendingUtilizations();
+        console.log("1st utilization", utilization);
+        uint256 leverageBefore = _hedgeManager().currentLeverage();
+        console.log("leverageBefore", leverageBefore);
+        _utilize(utilization / 2);
+        uint256 leverageAfter = _hedgeManager().currentLeverage();
+        console.log("leverageAfter", leverageAfter);
+        (utilization,) = strategy.pendingUtilizations();
+        _utilize(utilization);
+        uint256 leverageLast = _hedgeManager().currentLeverage();
+        console.log("leverageLast", leverageLast);
+        assertApproxEqRel(leverageLast, leverageAfter, 0.001 ether, "leverage should be similar");
+    }
+
+    function test_leverage_partialDeutilize() public afterMultipleWithdrawRequestCreated {
+        uint256 leverageBefore = _hedgeManager().currentLeverage();
+        console.log("leverageBefore", leverageBefore);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization / 2);
+        uint256 leverageAfter = _hedgeManager().currentLeverage();
+        console.log("leverageAfter", leverageAfter);
+        assertApproxEqRel(leverageAfter, leverageBefore, 0.001 ether, "leverage should be similar");
+    }
+
+    function test_leverage_fullDeutilize() public afterMultipleWithdrawRequestCreated {
+        uint256 leverageBefore = _hedgeManager().currentLeverage();
+        console.log("leverageBefore", leverageBefore);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        uint256 leverageAfter = _hedgeManager().currentLeverage();
+        console.log("leverageAfter", leverageAfter);
+        assertApproxEqRel(leverageAfter, leverageBefore, 0.01 ether, "leverage should be similar");
+    }
+
     function test_cap_utilize() public afterDeposited {
         // uncapped utilization = $10000 * 3 / 4 = $7500
         vm.startPrank(owner);
@@ -1683,5 +1719,49 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0, "pendingUtilization");
         assertNotEq(pendingDeutilization, 0, "pendingDeutilization");
+    }
+
+    function test_forceRebalance_whenLeverageIsHigherThanTargetLeverage() public afterFullUtilized {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+
+        uint256 leverageBefore = _hedgeManager().currentLeverage();
+        console.log("leverageBefore", leverageBefore);
+        assertGt(leverageBefore, strategy.targetLeverage(), "leverage > target leverage");
+
+        vm.startPrank(owner);
+        strategy.forceRebalance();
+        vm.stopPrank();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        assertGt(pendingDeutilization, 0, "pendingDeutilization > 0");
+        _deutilize(pendingDeutilization);
+
+        _performKeep("forceRebalance");
+
+        uint256 leverageAfter = _hedgeManager().currentLeverage();
+        console.log("leverageAfter", leverageAfter);
+        assertApproxEqRel(leverageAfter, strategy.targetLeverage(), 0.001 ether, "leverage should be similar");
+    }
+
+    function test_forceRebalance_whenLeverageIsLowerThanTargetLeverage() public afterFullUtilized {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 8 / 10);
+
+        uint256 leverageBefore = _hedgeManager().currentLeverage();
+        console.log("leverageBefore", leverageBefore);
+        assertLt(leverageBefore, strategy.targetLeverage(), "leverage < target leverage");
+
+        vm.startPrank(owner);
+        strategy.forceRebalance();
+        vm.stopPrank();
+        _executeOrder();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingDeutilization, 0, "pendingDeutilization == 0");
+
+        uint256 leverageAfter = _hedgeManager().currentLeverage();
+        console.log("leverageAfter", leverageAfter);
+        assertApproxEqRel(leverageAfter, strategy.targetLeverage(), 0.001 ether, "leverage should be similar");
     }
 }
