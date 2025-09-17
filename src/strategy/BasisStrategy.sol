@@ -118,6 +118,8 @@ contract BasisStrategy is
         int256 hedgeDeviationInTokens;
         // position manager is in need of keeping
         bool hedgeManagerNeedKeep;
+        // process pending decrease collateral
+        bool processPendingDecreaseCollateral;
         // rebalance up by decreasing collateral
         uint256 deltaCollateralToDecrease;
         // eliminate pending exection cost
@@ -157,6 +159,8 @@ contract BasisStrategy is
         uint256 utilizingExecutionCost;
         // percentage of vault's TVL that caps pending utilization/deutilization
         uint256 maxUtilizePct;
+        // cache decrease collateral to save execution cost by executing in a larger size
+        uint256 pendingDecreaseCollateral;
     }
 
     // keccak256(abi.encode(uint256(keccak256("logarithm.storage.BasisStrategy")) - 1)) & ~bytes32(uint256(0xff))
@@ -555,11 +559,17 @@ contract BasisStrategy is
                 // when partial deutilizing
                 $.utilizingExecutionCost = reservedExecutionCost().mulDiv(amount, uncappedDeutilization);
                 uint256 positionNetBalance = _hedgeManager.positionNetBalance();
+                uint256 _pendingDecreaseCollateral = pendingDecreaseCollateral();
+                if (_pendingDecreaseCollateral > 0) {
+                    (, positionNetBalance) = positionNetBalance.trySub(_pendingDecreaseCollateral);
+                }
                 uint256 positionSizeInTokens = _hedgeManager.positionSizeInTokens();
                 uint256 collateralDeltaToDecrease = positionNetBalance.mulDiv(amount, positionSizeInTokens);
+                collateralDeltaToDecrease += _pendingDecreaseCollateral;
                 uint256 limitDecreaseCollateral = _hedgeManager.limitDecreaseCollateral();
-                // only decrease collateral bigger than limit
-                if (collateralDeltaToDecrease >= limitDecreaseCollateral) {
+                if (collateralDeltaToDecrease < limitDecreaseCollateral) {
+                    $.pendingDecreaseCollateral = collateralDeltaToDecrease;
+                } else {
                     collateralDeltaAmount = collateralDeltaToDecrease;
                 }
             }
@@ -611,7 +621,8 @@ contract BasisStrategy is
 
         upkeepNeeded = result.emergencyDeutilizationAmount > 0 || result.deltaCollateralToIncrease > 0
             || result.clearProcessingRebalanceDown || result.hedgeDeviationInTokens != 0 || result.hedgeManagerNeedKeep
-            || result.deltaCollateralToDecrease > 0 || result.clearReservedExecutionCost;
+            || result.deltaCollateralToDecrease > 0 || result.clearReservedExecutionCost
+            || result.processPendingDecreaseCollateral;
 
         performData = abi.encode(result);
 
@@ -670,6 +681,17 @@ contract BasisStrategy is
             }
         } else if (result.hedgeManagerNeedKeep) {
             $.hedgeManager.keep();
+        } else if (result.processPendingDecreaseCollateral) {
+            // where pendingWithdraw <= pendingDecreaseCollateral
+            uint256 minDecreaseCollateral = $.hedgeManager.decreaseCollateralMin();
+            uint256 _pendingDecreaseCollateral = pendingDecreaseCollateral();
+            if (_pendingDecreaseCollateral < minDecreaseCollateral) {
+                // pending decrease collateral is too small, so we just remove it
+                $.pendingDecreaseCollateral = 0;
+                _setStrategyStatus(StrategyStatus.IDLE);
+            } else {
+                _adjustPosition(0, _pendingDecreaseCollateral, false, true);
+            }
         } else if (result.deltaCollateralToDecrease > 0) {
             _adjustPosition(0, result.deltaCollateralToDecrease, false, true);
         } else {
@@ -989,6 +1011,26 @@ contract BasisStrategy is
             return result;
         }
 
+        if (pendingDecreaseCollateral() > 0) {
+            (, uint256 pendingDeutilization_) = _pendingDeutilization(
+                InternalPendingDeutilization({
+                    hedgeManager: _hedgeManager,
+                    asset: asset(),
+                    product: product(),
+                    totalSupply: _vault.totalSupply(),
+                    exposure: $.spotManager.exposure(),
+                    processingRebalanceDown: false,
+                    paused: paused(),
+                    maxAmount: 0
+                })
+            );
+            uint256 min = _hedgeManager.decreaseSizeMin();
+            if (pendingDeutilization_ < min) {
+                result.processPendingDecreaseCollateral = true;
+                return result;
+            }
+        }
+
         if (rebalanceUpNeeded) {
             result.deltaCollateralToDecrease = _calculateDeltaCollateralForRebalance(
                 _hedgeManager.positionNetBalance(), currentLeverage, _targetLeverage
@@ -1038,6 +1080,9 @@ contract BasisStrategy is
             // only when rebalance was started, we need to check
             $.processingRebalanceDown = $.processingRebalanceDown && rebalanceDownNeeded;
         }
+
+        // clear pending decrease collateral
+        $.pendingDecreaseCollateral = 0;
     }
 
     /// @dev Called after the hedge position is decreased.
@@ -1079,6 +1124,8 @@ contract BasisStrategy is
             if (exceedsThreshold) {
                 revert Errors.HedgeInvalidCollateralResponse();
             }
+            // clear pending decrease collateral
+            $.pendingDecreaseCollateral = 0;
         }
 
         if (responseParams.collateralDeltaAmount > 0) {
@@ -1168,8 +1215,16 @@ contract BasisStrategy is
         } else {
             if (totalPendingWithdraw == 0) return (0, 0);
 
-            uncappedAmount =
-                positionSizeInTokens.mulDiv(totalPendingWithdraw, positionSizeInAssets + positionNetBalance);
+            uint256 _pendingDecreaseCollateral = pendingDecreaseCollateral();
+            uint256 sizeAndNetBalance = positionSizeInAssets + positionNetBalance;
+            if (_pendingDecreaseCollateral > totalPendingWithdraw || _pendingDecreaseCollateral >= sizeAndNetBalance) {
+                // in this case, should decrease collateral to process pending withdrawl through performUpkeep
+                return (0, 0);
+            }
+
+            uncappedAmount = positionSizeInTokens.mulDiv(
+                totalPendingWithdraw - _pendingDecreaseCollateral, sizeAndNetBalance - _pendingDecreaseCollateral
+            );
         }
 
         uncappedAmount = _capAmount(uncappedAmount, params.exposure);
@@ -1391,5 +1446,10 @@ contract BasisStrategy is
     /// @notice Percentage of vault's TVL that caps pending utilization/deutilization.
     function maxUtilizePct() public view returns (uint256) {
         return _getBasisStrategyStorage().maxUtilizePct;
+    }
+
+    /// @notice The pending decrease collateral to save execution cost by executing in a larger size.
+    function pendingDecreaseCollateral() public view returns (uint256) {
+        return _getBasisStrategyStorage().pendingDecreaseCollateral;
     }
 }
