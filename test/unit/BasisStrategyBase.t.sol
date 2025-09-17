@@ -1718,4 +1718,48 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         assertEq(pendingUtilization, 0, "pendingUtilization");
         assertNotEq(pendingDeutilization, 0, "pendingDeutilization");
     }
+
+    function test_forceRebalance_whenLeverageIsHigherThanTargetLeverage() public afterFullUtilized {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 12 / 10);
+
+        uint256 leverageBefore = _hedgeManager().currentLeverage();
+        console.log("leverageBefore", leverageBefore);
+        assertGt(leverageBefore, strategy.targetLeverage(), "leverage > target leverage");
+
+        vm.startPrank(owner);
+        strategy.forceRebalance();
+        vm.stopPrank();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        assertGt(pendingDeutilization, 0, "pendingDeutilization > 0");
+        _deutilize(pendingDeutilization);
+
+        _performKeep("forceRebalance");
+
+        uint256 leverageAfter = _hedgeManager().currentLeverage();
+        console.log("leverageAfter", leverageAfter);
+        assertApproxEqRel(leverageAfter, strategy.targetLeverage(), 0.001 ether, "leverage should be similar");
+    }
+
+    function test_forceRebalance_whenLeverageIsLowerThanTargetLeverage() public afterFullUtilized {
+        int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
+        _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 8 / 10);
+
+        uint256 leverageBefore = _hedgeManager().currentLeverage();
+        console.log("leverageBefore", leverageBefore);
+        assertLt(leverageBefore, strategy.targetLeverage(), "leverage < target leverage");
+
+        vm.startPrank(owner);
+        strategy.forceRebalance();
+        vm.stopPrank();
+        _executeOrder();
+
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingDeutilization, 0, "pendingDeutilization == 0");
+
+        uint256 leverageAfter = _hedgeManager().currentLeverage();
+        console.log("leverageAfter", leverageAfter);
+        assertApproxEqRel(leverageAfter, strategy.targetLeverage(), 0.001 ether, "leverage should be similar");
+    }
 }

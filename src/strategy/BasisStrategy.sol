@@ -393,6 +393,16 @@ contract BasisStrategy is
         emit Stopped(_msgSender());
     }
 
+    function forceRebalance() external onlyOwner whenNotPaused whenIdle {
+        _forceRebalance();
+    }
+
+    function _forceRebalance() internal {
+        uint256 _targetLeverage = targetLeverage();
+        InternalCheckUpkeepResult memory result = _checkUpkeep(_targetLeverage, _targetLeverage, safeMarginLeverage());
+        _performUpkeep(result);
+    }
+
     /*//////////////////////////////////////////////////////////////
                             UTILIZE/DEUTILZE   
     //////////////////////////////////////////////////////////////*/
@@ -629,7 +639,7 @@ contract BasisStrategy is
 
     /// @inheritdoc AutomationCompatibleInterface
     function checkUpkeep(bytes memory) public view returns (bool upkeepNeeded, bytes memory performData) {
-        InternalCheckUpkeepResult memory result = _checkUpkeep();
+        InternalCheckUpkeepResult memory result = _checkUpkeep(minLeverage(), maxLeverage(), safeMarginLeverage());
 
         upkeepNeeded = result.emergencyDeutilizationAmount > 0 || result.deltaCollateralToIncrease > 0
             || result.clearProcessingRebalanceDown || result.hedgeDeviationInTokens != 0 || result.hedgeManagerNeedKeep
@@ -642,9 +652,12 @@ contract BasisStrategy is
     }
 
     /// @inheritdoc AutomationCompatibleInterface
-    function performUpkeep(bytes calldata /*performData*/ ) external whenIdle {
-        InternalCheckUpkeepResult memory result = _checkUpkeep();
+    function performUpkeep(bytes calldata /*performData*/ ) external {
+        InternalCheckUpkeepResult memory result = _checkUpkeep(minLeverage(), maxLeverage(), safeMarginLeverage());
+        _performUpkeep(result);
+    }
 
+    function _performUpkeep(InternalCheckUpkeepResult memory result) internal {
         _setStrategyStatus(StrategyStatus.KEEPING);
 
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
@@ -946,7 +959,11 @@ contract BasisStrategy is
     }
 
     /// @dev Common function of checkUpkeep and performUpkeep.
-    function _checkUpkeep() private view returns (InternalCheckUpkeepResult memory result) {
+    function _checkUpkeep(uint256 _minLeverage, uint256 _maxLeverage, uint256 _safeMarginLeverage)
+        private
+        view
+        returns (InternalCheckUpkeepResult memory result)
+    {
         BasisStrategyStorage storage $ = _getBasisStrategyStorage();
 
         if ($.strategyStatus != StrategyStatus.IDLE) {
@@ -958,11 +975,11 @@ contract BasisStrategy is
 
         uint256 currentLeverage = _hedgeManager.currentLeverage();
         bool _processingRebalanceDown = $.processingRebalanceDown;
-        uint256 _maxLeverage = $.maxLeverage;
+
         uint256 _targetLeverage = $.targetLeverage;
 
         (bool rebalanceUpNeeded, bool rebalanceDownNeeded, bool deleverageNeeded) =
-            _checkRebalance(currentLeverage, $.minLeverage, _maxLeverage, $.safeMarginLeverage);
+            _checkRebalance(currentLeverage, _minLeverage, _maxLeverage, _safeMarginLeverage);
 
         // rebalanceDownNeeded becomes true if currentLeverage is not near to target
         // when processingRebalanceDown is true
