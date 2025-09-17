@@ -20,6 +20,7 @@ import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
 import {SpotManager} from "src/spot/SpotManager.sol";
+import {StrategyStatus} from "src/libraries/strategy/BasisStrategyState.sol";
 
 import {OffChainHandler} from "./OffChainHandler.sol";
 
@@ -160,11 +161,11 @@ contract OffChainInvariants is StdInvariant, ForkTest {
         IHedgeManager hedgeManager = IHedgeManager(strategy.hedgeManager());
         uint256 sizeInTokens = hedgeManager.positionSizeInTokens();
         uint256 positionBalance = hedgeManager.positionNetBalance();
-        BasisStrategy.StrategyStatus status = strategy.strategyStatus();
+        StrategyStatus status = strategy.strategyStatus();
         (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         if (
-            !upkeepNeeded && sizeInTokens != 0 && status == BasisStrategy.StrategyStatus.IDLE
-                && pendingDeutilization == 0 && positionBalance != 0
+            !upkeepNeeded && sizeInTokens != 0 && status == StrategyStatus.IDLE && pendingDeutilization == 0
+                && positionBalance != 0
         ) {
             uint256 currLeverage = hedgeManager.currentLeverage();
             assertTrue(currLeverage >= minLeverage, "minLeverage");

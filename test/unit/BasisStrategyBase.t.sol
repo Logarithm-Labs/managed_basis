@@ -17,6 +17,7 @@ import {SpotManager} from "src/spot/SpotManager.sol";
 import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 import {Errors} from "src/libraries/utils/Errors.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {StrategyStatus} from "src/libraries/strategy/BasisStrategyState.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {StrategyConfig} from "src/strategy/StrategyConfig.sol";
 
@@ -279,7 +280,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, false);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.AWAITING_FINAL_UTILIZATION));
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.AWAITING_FINAL_UTILIZATION));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
@@ -287,7 +288,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _executeOrder();
         state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, true);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.IDLE));
     }
 
     function _deutilize(uint256 amount) internal {
@@ -297,7 +298,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, false);
-        // assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.DEUTILIZING));
+        // assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.DEUTILIZING));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
@@ -305,7 +306,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         _executeOrder();
         state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, true);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.IDLE));
     }
 
     function _deutilizeWithoutExecution(uint256 amount) internal {
@@ -993,7 +994,7 @@ abstract contract BasisStrategyBaseTest is PositionMngerForkTest {
         uint256 vaultBalanceBefore = IERC20(asset).balanceOf(address(vault));
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE), "not idle");
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.IDLE), "not idle");
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);

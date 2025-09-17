@@ -27,6 +27,7 @@ import {MockXSpotManager} from "test/mock/MockXSpotManager.sol";
 import {console2 as console} from "forge-std/console2.sol";
 
 import {DeployHelper} from "script/utils/DeployHelper.sol";
+import {StrategyStatus} from "src/libraries/strategy/BasisStrategyState.sol";
 
 contract XBasisStrategyTest is OffChainTest {
     using stdStorage for StdStorage;
@@ -286,11 +287,11 @@ contract XBasisStrategyTest is OffChainTest {
         vm.startPrank(operator);
         StrategyState memory state0 = helper.getStrategyState();
         strategy.utilize(amount, ISpotManager.SwapType.MANUAL, "");
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.UTILIZING));
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.UTILIZING));
         spotManager.executeCallback();
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, false);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.AWAITING_FINAL_UTILIZATION));
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.AWAITING_FINAL_UTILIZATION));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
@@ -298,7 +299,7 @@ contract XBasisStrategyTest is OffChainTest {
         _executeOrder();
         state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, true);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.IDLE));
     }
 
     function _deutilize(uint256 amount) internal {
@@ -309,7 +310,7 @@ contract XBasisStrategyTest is OffChainTest {
         _executeOrder();
         StrategyState memory state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, false);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.AWAITING_FINAL_DEUTILIZATION));
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.AWAITING_FINAL_DEUTILIZATION));
         (uint256 pendingUtilization, uint256 pendingDeutilization) = strategy.pendingUtilizations();
         assertEq(pendingUtilization, 0);
         assertEq(pendingDeutilization, 0);
@@ -317,7 +318,7 @@ contract XBasisStrategyTest is OffChainTest {
         spotManager.executeCallback();
         state1 = helper.getStrategyState();
         _validateStateTransition(state0, state1, true);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE));
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.IDLE));
     }
 
     function _checkUpkeep(string memory operation)
@@ -1000,7 +1001,7 @@ contract XBasisStrategyTest is OffChainTest {
         uint256 vaultBalanceBefore = IERC20(asset).balanceOf(address(vault));
         int256 priceBefore = IPriceFeed(productPriceFeed).latestAnswer();
         _mockChainlinkPriceFeedAnswer(productPriceFeed, priceBefore * 13 / 10);
-        assertEq(uint256(strategy.strategyStatus()), uint256(BasisStrategy.StrategyStatus.IDLE), "not idle");
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.IDLE), "not idle");
         (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("emergencyRebalanceDown_whenIdleEnough");
         assertTrue(upkeepNeeded, "upkeepNeeded");
         StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
