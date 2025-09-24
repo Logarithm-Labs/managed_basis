@@ -607,9 +607,9 @@ contract BasisStrategy is
         IHedgeManager _hedgeManager = BasisStrategyState.getHedgeManager();
 
         bool _paused = paused();
-
+        uint256 uncappedPendingDeutilization;
         (pendingUtilizationInAsset,) = Utilization.pendingUtilization(_paused);
-        (pendingDeutilizationInProduct,) = Deutilization.pendingDeutilization(_paused);
+        (pendingDeutilizationInProduct, uncappedPendingDeutilization) = Deutilization.pendingDeutilization(_paused);
 
         uint256 pendingUtilizationInProduct = BasisStrategyState.getOracle().convertTokenAmount(
             address(BasisStrategyState.getAsset()), address(BasisStrategyState.getProduct()), pendingUtilizationInAsset
@@ -617,11 +617,16 @@ contract BasisStrategy is
         if (pendingUtilizationInProduct < _hedgeManager.increaseSizeMin()) pendingUtilizationInAsset = 0;
         // When processing rebalance down, deutilization should be at least decreaseSizeMin
         uint256 decreaseSizeMin = _hedgeManager.decreaseSizeMin();
-        if (pendingDeutilizationInProduct > 0 && pendingDeutilizationInProduct < decreaseSizeMin) {
-            if (BasisStrategyState.getProcessingRebalanceDown()) {
-                pendingDeutilizationInProduct = decreaseSizeMin;
-            } else {
-                pendingDeutilizationInProduct = 0;
+        if (pendingDeutilizationInProduct > 0) {
+            (, uint256 absoluteThreshold) = uncappedPendingDeutilization.trySub(decreaseSizeMin);
+            if (pendingDeutilizationInProduct < decreaseSizeMin) {
+                if (BasisStrategyState.getProcessingRebalanceDown()) {
+                    pendingDeutilizationInProduct = decreaseSizeMin;
+                } else {
+                    pendingDeutilizationInProduct = 0;
+                }
+            } else if (pendingDeutilizationInProduct > absoluteThreshold) {
+                pendingDeutilizationInProduct = uncappedPendingDeutilization;
             }
         }
 
