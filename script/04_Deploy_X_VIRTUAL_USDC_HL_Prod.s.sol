@@ -40,8 +40,8 @@ contract ArbDeploy is Script {
     // strategy params
     uint256 constant targetLeverage = 3 ether;
     uint256 constant minLeverage = 1 ether;
-    uint256 constant maxLeverage = 5 ether;
-    uint256 constant safeMarginLeverage = 6 ether;
+    uint256 constant maxLeverage = 4 ether;
+    uint256 constant safeMarginLeverage = 4.5 ether;
 
     address feeRecipient = 0xF27cAf44644a4c774CDB2e6acC786c6B0fCB8dB2;
     uint256 managementFee = 0.02 ether; // 2% management fee
