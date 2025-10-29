@@ -1206,9 +1206,16 @@ contract XBasisStrategyTest is OffChainTest {
         assertNotEq(state.productBalance, 0, "productBalance");
         assertEq(state.assetsToWithdraw, 0, "assetsToWithdraw");
         assertEq(state.pendingUtilization, 0, "pendingUtilization");
-        assertEq(state.pendingDeutilization, 0, "pendingDeutilization");
+        assertNotEq(state.pendingDeutilization, 0, "pendingDeutilization");
         assertNotEq(state.positionNetBalance, 0, "positionNetBalance");
         assertEq(state.upkeepNeeded, false, "upkeepNeeded");
+
+        _deutilize(state.pendingDeutilization);
+        state = helper.getStrategyState();
+        assertEq(state.utilizedAssets, 0, "utilizedAssets");
+        assertEq(state.productBalance, 0, "productBalance");
+        assertEq(state.pendingDeutilization, 0, "pendingDeutilization");
+        assertEq(state.positionNetBalance, 0, "positionNetBalance");
     }
 
     function test_inflation_attack() public {
