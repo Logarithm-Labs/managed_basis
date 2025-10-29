@@ -19,6 +19,7 @@ import {BasisStrategyBaseTest} from "./BasisStrategyBase.t.sol";
 import {IHedgeManager} from "src/hedge/IHedgeManager.sol";
 import {ISpotManager} from "src/spot/ISpotManager.sol";
 import {BasisStrategy} from "src/strategy/BasisStrategy.sol";
+import {StrategyStatus} from "src/libraries/strategy/BasisStrategyState.sol";
 import {OffChainConfig} from "src/hedge/offchain/OffChainConfig.sol";
 
 import {console} from "forge-std/console.sol";
@@ -63,7 +64,172 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         uint256 balDelta = IERC20(asset).balanceOf(user1) - balBefore;
 
         assertGt(requestedAssets, balDelta);
+        assertEq(strategy.pendingDecreaseCollateral(), 0);
         assertEq(vault.accRequestedWithdrawAssets(), vault.processedWithdrawAssets());
+    }
+
+    function test_deutilize_PendingDecreaseCollateral() public afterMultipleWithdrawRequestCreated validateFinalState {
+        uint256 increaseCollateralMin = 5 * 1e6;
+        uint256 decreaseCollateralMin = 10 * 1e6;
+        uint256 limitDecreaseCollateral = 50 * 1e6;
+        vm.startPrank(owner);
+        address _config = address(hedgeManager.config());
+        OffChainConfig(_config).setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
+        OffChainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        uint256 amount = pendingDeutilization * 9 / 10;
+        _deutilize(amount);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        uint256 initialLeverage = hedgeManager.currentLeverage();
+        uint256 initialPendingDecreaseCollateral = strategy.pendingDecreaseCollateral();
+        assertEq(initialPendingDecreaseCollateral, 0, "0 initialPendingDecreaseCollateral");
+        _deutilize(amount);
+        uint256 pendingDecreaseCollateralAtFirst = strategy.pendingDecreaseCollateral();
+        assertGt(pendingDecreaseCollateralAtFirst, 0, "0 pendingDecreaseCollateral");
+        uint256 leverageAtFirst = hedgeManager.currentLeverage();
+        assertGt(initialLeverage, leverageAtFirst, "initialLeverage > leverageAtFirst");
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        _deutilize(amount);
+        uint256 pendingDecreaseCollateralAtSecond = strategy.pendingDecreaseCollateral();
+        assertGt(
+            pendingDecreaseCollateralAtSecond,
+            pendingDecreaseCollateralAtFirst,
+            "pendingDecreaseCollateralAtSecond > pendingDecreaseCollateralAtFirst"
+        );
+        uint256 leverageAtSecond = hedgeManager.currentLeverage();
+        assertGt(leverageAtFirst, leverageAtSecond, "leverageAtFirst > leverageAtSecond");
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+        uint256 leverageAtThird = hedgeManager.currentLeverage();
+        uint256 pendingDecreaseCollateralAtThird = strategy.pendingDecreaseCollateral();
+        assertEq(pendingDecreaseCollateralAtThird, 0, "0 pendingDecreaseCollateral");
+        assertApproxEqRel(leverageAtFirst, leverageAtThird, 0.01 ether, "leverageAtFirst == leverageAtFourth");
+    }
+
+    function test_partialDeutilize_PendingDecreaseCollateral_whenLeverageBiggerThanTargetLeverage()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
+        uint256 increaseCollateralMin = 5 * 1e6;
+        uint256 decreaseCollateralMin = 10 * 1e6;
+        uint256 limitDecreaseCollateral = 50 * 1e6;
+        vm.startPrank(owner);
+        address _config = address(hedgeManager.config());
+        OffChainConfig(_config).setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
+        OffChainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        uint256 amount = pendingDeutilization * 9 / 10;
+        _deutilize(amount);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        _deutilize(amount);
+
+        assertGt(strategy.pendingDecreaseCollateral(), 0, "pendingDecreaseCollateral != 0");
+        assertLt(hedgeManager.currentLeverage(), strategy.targetLeverage(), "currentLeverage < targetLeverage");
+
+        // mock current leverage bigger than target leverage
+        address priceFeed = oracle.getPriceFeed(address(product));
+        int256 currPrice = IPriceFeed(priceFeed).latestAnswer();
+        uint256 deltaPrice = Math.mulDiv(uint256(currPrice), 0.01 ether, 1 ether);
+        int256 resultedPrice = currPrice + int256(deltaPrice);
+        _mockChainlinkPriceFeedAnswer(priceFeed, resultedPrice);
+
+        uint256 leverageBefore = hedgeManager.currentLeverage();
+        assertGt(leverageBefore, strategy.targetLeverage(), "currentLeverage > targetLeverage");
+
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        _deutilize(amount);
+
+        uint256 leverageAfter = hedgeManager.currentLeverage();
+        assertLt(leverageAfter, leverageBefore, "leverageAfter < leverageBefore");
+        assertEq(strategy.pendingDecreaseCollateral(), 0, "pendingDecreaseCollateral == 0");
+    }
+
+    function test_fullDeutilize_PendingDecreaseCollateral_whenLeverageBiggerThanTargetLeverage()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
+        uint256 increaseCollateralMin = 5 * 1e6;
+        uint256 decreaseCollateralMin = 10 * 1e6;
+        uint256 limitDecreaseCollateral = 50 * 1e6;
+        vm.startPrank(owner);
+        address _config = address(hedgeManager.config());
+        OffChainConfig(_config).setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
+        OffChainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        uint256 amount = pendingDeutilization * 9 / 10;
+        _deutilize(amount);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        _deutilize(amount);
+
+        assertGt(strategy.pendingDecreaseCollateral(), 0, "pendingDecreaseCollateral != 0");
+        assertLt(hedgeManager.currentLeverage(), strategy.targetLeverage(), "currentLeverage < targetLeverage");
+
+        // mock current leverage bigger than target leverage
+        address priceFeed = oracle.getPriceFeed(address(product));
+        int256 currPrice = IPriceFeed(priceFeed).latestAnswer();
+        uint256 deltaPrice = Math.mulDiv(uint256(currPrice), 0.01 ether, 1 ether);
+        int256 resultedPrice = currPrice + int256(deltaPrice);
+        _mockChainlinkPriceFeedAnswer(priceFeed, resultedPrice);
+
+        uint256 leverageBefore = hedgeManager.currentLeverage();
+        assertGt(leverageBefore, strategy.targetLeverage(), "currentLeverage > targetLeverage");
+
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        _deutilize(pendingDeutilization);
+
+        uint256 leverageAfter = hedgeManager.currentLeverage();
+        assertApproxEqRel(leverageAfter, leverageBefore, 0.001 ether, "leverageAfter == leverageBefore");
+        assertEq(strategy.pendingDecreaseCollateral(), 0, "pendingDecreaseCollateral == 0");
+    }
+
+    function test_performUpkeep_processPendingDecreaseCollateral()
+        public
+        afterMultipleWithdrawRequestCreated
+        validateFinalState
+    {
+        uint256 increaseCollateralMin = 5 * 1e6;
+        uint256 decreaseCollateralMin = 10 * 1e6;
+        uint256 limitDecreaseCollateral = 50 * 1e6;
+        vm.startPrank(owner);
+        address _config = address(hedgeManager.config());
+        OffChainConfig(_config).setCollateralMin(increaseCollateralMin, decreaseCollateralMin);
+        OffChainConfig(_config).setLimitDecreaseCollateral(limitDecreaseCollateral);
+        (, uint256 pendingDeutilization) = strategy.pendingUtilizations();
+        uint256 amount = pendingDeutilization * 9 / 10;
+        _deutilize(amount);
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        amount = pendingDeutilization * 1 / 10;
+        vm.startPrank(operator);
+        strategy.deutilize(amount, ISpotManager.SwapType.MANUAL, "");
+        assertGt(strategy.pendingDecreaseCollateral(), 0, "0 pendingDecreaseCollateral");
+        _deposit(user1, 404_000_000);
+        _executeOrder();
+
+        assertGt(
+            strategy.pendingDecreaseCollateral(),
+            strategy.assetsToDeutilize(),
+            "pendingDecreaseCollateral > assetsToDeutilize"
+        );
+
+        assertEq(uint256(strategy.strategyStatus()), uint256(StrategyStatus.IDLE), "StrategyStatus.IDLE");
+
+        (, pendingDeutilization) = strategy.pendingUtilizations();
+        assertEq(pendingDeutilization, 0, "0 pendingDeutilization");
+
+        (bool upkeepNeeded, bytes memory performData) = _checkUpkeep("decreaseCollateral");
+        assertTrue(upkeepNeeded, "upkeepNeeded");
+        StrategyHelper.DecodedPerformData memory decodedPerformData = helper.decodePerformData(performData);
+        assertTrue(decodedPerformData.processPendingDecreaseCollateral, "processPendingDecreaseCollateral");
+        assertTrue(strategy.pendingDecreaseCollateral() > 0, "0 pendingDecreaseCollateral");
+        _performKeep("processPendingDecreaseCollateral");
+        assertTrue(strategy.pendingDecreaseCollateral() == 0, "not 0 pendingDecreaseCollateral");
     }
 
     function test_idleCollateral_fullRedeem() public afterFullUtilized validateFinalState {
