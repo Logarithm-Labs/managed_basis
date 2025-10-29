@@ -276,7 +276,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
 
         if (_pendingRequest.isBuy) {
             uint256 productsLD;
-            if (_pendingRequest.swapType == ISpotManager.SwapType.INCH_V6) {
+            if (swapData.length > 0) {
                 bool success;
                 (productsLD, success) =
                     InchAggregatorV6Logic.executeSwap(_pendingRequest.amount, asset(), product(), true, swapData);
@@ -286,11 +286,8 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
                 if (productsLD < _pendingRequest.minOutAmount) {
                     revert Errors.ExceedsSlippage();
                 }
-            } else if (_pendingRequest.swapType == ISpotManager.SwapType.MANUAL) {
-                productsLD = ManualSwapLogic.swap(_pendingRequest.amount, assetToProductSwapPath());
             } else {
-                // TODO: fallback swap
-                revert Errors.UnsupportedSwapType();
+                productsLD = ManualSwapLogic.swap(_pendingRequest.amount, assetToProductSwapPath());
             }
 
             ILogarithmMessenger(messenger()).send(
@@ -311,7 +308,7 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
         } else {
             uint256 assetsLD;
             address _asset = asset();
-            if (_pendingRequest.swapType == ISpotManager.SwapType.INCH_V6) {
+            if (swapData.length > 0) {
                 bool success;
                 (assetsLD, success) =
                     InchAggregatorV6Logic.executeSwap(_pendingRequest.amount, _asset, product(), false, swapData);
@@ -321,11 +318,8 @@ contract BrotherSwapper is Initializable, AssetValueTransmitter, OwnableUpgradea
                 if (assetsLD < _pendingRequest.minOutAmount) {
                     revert Errors.ExceedsSlippage();
                 }
-            } else if (_pendingRequest.swapType == ISpotManager.SwapType.MANUAL) {
-                assetsLD = ManualSwapLogic.swap(_pendingRequest.amount, productToAssetSwapPath());
             } else {
-                // TODO: fallback swap
-                revert Errors.UnsupportedSwapType();
+                assetsLD = ManualSwapLogic.swap(_pendingRequest.amount, productToAssetSwapPath());
             }
 
             ILogarithmMessenger _messenger = ILogarithmMessenger(messenger());
