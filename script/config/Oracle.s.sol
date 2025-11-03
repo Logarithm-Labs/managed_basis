@@ -27,3 +27,12 @@ contract UpdatePriceFeed is Script {
         console.log("price", vm.toString(price));
     }
 }
+
+contract UpgradeLogarithmOracle is Script {
+    function run() public {
+        vm.startBroadcast();
+        LogarithmOracle oracle = LogarithmOracle(Arb.ORACLE);
+        oracle.upgradeToAndCall(address(new LogarithmOracle()), "");
+        vm.stopBroadcast();
+    }
+}

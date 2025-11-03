@@ -10,7 +10,7 @@ import {Arb, Bsc, Base} from "script/utils/ProtocolAddresses.sol";
 contract UpgradeXSpotManager is Script {
     function run() public {
         // uint256 privateKey = vm.envUint("PRIVATE_KEY");
-        // vm.createSelectFork("arbitrum_one");
+        vm.createSelectFork("arbitrum_one");
         vm.startBroadcast( /* privateKey */ );
         UpgradeableBeacon beacon = UpgradeableBeacon(Arb.BEACON_X_SPOT_MANAGER);
         beacon.upgradeTo(address(new XSpotManager()));
@@ -21,7 +21,7 @@ contract UpgradeXSpotManager is Script {
 contract UpgradeBscBrotherSwapper is Script {
     function run() public {
         // uint256 privateKey = vm.envUint("PRIVATE_KEY");
-        // vm.createSelectFork("bnb_smart_chain");
+        vm.createSelectFork("bnb_smart_chain");
         vm.startBroadcast( /* privateKey */ );
         UpgradeableBeacon beacon = UpgradeableBeacon(Bsc.BEACON_BROTHER_SWAPPER);
         beacon.upgradeTo(address(new BrotherSwapper()));
