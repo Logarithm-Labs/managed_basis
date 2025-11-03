@@ -43,9 +43,7 @@ library Deutilization {
         returns (uint256 amount, uint256 uncappedAmount)
     {
         // disable only withdraw deutilization
-        if (!params.processingRebalanceDown && params.paused) return (0, 0);
-
-        if (params.totalSupply == 0) {
+        if (params.totalSupply == 0 || params.paused) {
             uncappedAmount = params.exposure;
             amount = CommonLib._capAmount(params.exposure, params.maxAmount);
             return (amount, uncappedAmount);
@@ -198,9 +196,9 @@ library Deutilization {
             if (amount == uncappedDeutilization) {
                 // when full deutilization
                 BasisStrategyState.setUtilizingExecutionCost(BasisStrategyState.getReservedExecutionCost());
-                if (_totalSupply == 0) {
+                if (_totalSupply == 0 || _paused) {
                     // in case of redeeming all by users,
-                    // or selling out all product
+                    // or strategy is paused
                     // close hedge position
                     sizeDeltaInTokens = type(uint256).max;
                     collateralDeltaAmount = type(uint256).max;
