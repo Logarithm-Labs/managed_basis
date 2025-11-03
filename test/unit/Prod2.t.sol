@@ -4,6 +4,8 @@ pragma solidity >=0.8.0;
 import "forge-std/Test.sol";
 import {LogarithmVault} from "src/vault/LogarithmVault.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
+import {Arb} from "script/utils/ProtocolAddresses.sol";
+import {LogarithmOracle} from "src/oracle/LogarithmOracle.sol";
 
 contract Prod2Test is Test {
     LogarithmVault public vault = LogarithmVault(0xe5fc579f20C2dbffd78a92ddD124871a35519659);
@@ -48,5 +50,16 @@ contract Prod2Test is Test {
 
         vm.startPrank(depositor);
         vault.claim(withdrawKey);
+    }
+
+    function test_custome_oracle_stop() public {
+        vm.createSelectFork("arbitrum_one", 396245422);
+        LogarithmOracle oracle = LogarithmOracle(Arb.ORACLE);
+        vm.startPrank(oracle.owner());
+        oracle.upgradeToAndCall(address(new LogarithmOracle()), "");
+        vm.stopPrank();
+        LogarithmVault vitualVault = LogarithmVault(Arb.VAULT_HL_USDC_VIRTUAL);
+        uint256 totalAssets = vitualVault.totalAssets();
+        console.log("totalAssets", vm.toString(totalAssets));
     }
 }

@@ -161,6 +161,9 @@ contract LogarithmOracle is UUPSUpgradeable, Ownable2StepUpgradeable, IOracle {
     }
 
     function convertTokenAmount(address from, address to, uint256 amount) external view returns (uint256) {
+        if (amount == 0) {
+            return 0;
+        }
         uint256 fromPrice = getAssetPrice(from);
         uint256 toPrice = getAssetPrice(to);
 
