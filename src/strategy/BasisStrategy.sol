@@ -577,7 +577,7 @@ contract BasisStrategy is
         emit PositionAdjusted(params.sizeDeltaInTokens, params.collateralDeltaAmount, params.isIncrease);
     }
 
-    function harvestPerformanceFee() external authCaller(hedgeManager()) {
+    function harvestPerformanceFee() external authCaller(operator()) {
         BasisStrategyState.getVault().harvestPerformanceFee();
     }
 
