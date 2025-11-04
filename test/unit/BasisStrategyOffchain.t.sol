@@ -346,6 +346,10 @@ contract BasisStrategyOffChainTest is BasisStrategyBaseTest, OffChainTest {
         _updatePositionNetBalance(positionNetBalance + profit);
         _reportState();
 
+        vm.startPrank(operator);
+        strategy.harvestPerformanceFee();
+        vm.stopPrank();
+
         uint256 feeShares = vault.balanceOf(recipient);
         uint256 feeAssets = vault.previewRedeem(feeShares);
         uint256 expectedPF = profit * 20 / 100 * (1 ether - vault.exitCost()) / 1e18;
